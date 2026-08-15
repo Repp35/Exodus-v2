@@ -38,18 +38,23 @@ local function installHooks()
     if HookState.installed then
         return true
     end
-    if type(hookmetamethod) ~= "function" then
-        return false
-    end
-    local ok, installed = pcall(function()
-        local oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-            local method = type(getnamecallmethod) == "function" and getnamecallmethod() or nil
+    local ok = pcall(function()
+        if type(hookmetamethod) ~= "function" then
+            return
+        end
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+            local method = getnamecallmethod()
             local args = { ... }
-            local caller = type(checkcaller) == "function" and checkcaller() or false
-            if not caller and (method == "FireServer" or method == "fireServer") then
-                local first = args[1]
-                local isPayload = typeof(first) == "buffer"
-                    or (typeof(first) == "string" and (string.find(first, "\x01") or string.find(first, "\x02")))
+            if not checkcaller() and (method == "FireServer" or method == "fireServer") then
+                local isPayload = false
+                if args[1] then
+                    if typeof(args[1]) == "buffer"
+                        or (typeof(args[1]) == "string" and (string.find(args[1], "\x01") or string.find(args[1], "\x02")))
+                    then
+                        isPayload = true
+                    end
+                end
                 if isPayload or self.Name == "RemoteEvent" then
                     if type(HookState.register) == "function" then
                         HookState.register(self)
@@ -58,24 +63,28 @@ local function installHooks()
             end
             return oldNamecall(self, ...)
         end)
-        local oldIndex = hookmetamethod(game, "__index", function(self, key)
-            local caller = type(checkcaller) == "function" and checkcaller() or false
-            if not caller
+        local oldIndex
+        oldIndex = hookmetamethod(game, "__index", function(self, key)
+            if not checkcaller()
                 and (key == "FireServer" or key == "fireServer")
                 and typeof(self) == "Instance"
                 and self:IsA("RemoteEvent")
-                and (self.Name == "RemoteEvent" or (self.Parent and string.find(self.Parent.Name, "Remote")))
             then
-                if type(HookState.register) == "function" then
-                    task.spawn(HookState.register, self)
+                if self.Name == "RemoteEvent"
+                    or (self.Parent and string.find(self.Parent.Name, "Remote"))
+                then
+                    if type(HookState.register) == "function" then
+                        task.spawn(HookState.register, self)
+                    end
                 end
             end
             return oldIndex(self, key)
         end)
-        return oldNamecall ~= nil and oldIndex ~= nil
     end)
-    HookState.installed = ok and installed == true
-    return HookState.installed
+    if ok then
+        HookState.installed = true
+    end
+    return HookState.installed == true
 end
 
 -- ball sync
