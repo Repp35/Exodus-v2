@@ -18,10 +18,8 @@ local P = {
 	PING_CAP = 0.150,
 	RAD_SPD_REF = 200,
 
-	-- janela normal
-	EARLY_PARRY_T = 0.130,
 
-	-- janela adicional baseada no ping
+	EARLY_PARRY_T = 0.130,
 	PING_PARRY_MIN = 0.030,
 	PING_PARRY_MAX = 0.500,
 
