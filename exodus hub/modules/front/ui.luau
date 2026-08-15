@@ -404,6 +404,11 @@ local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
 local LEFT_STACK_H = CARD_H * 3 + CARD_GAP * 2
 local RIGHT_STACK_H = RATE_CARD_H + CARD_H + SPAM_CARD_H + CARD_GAP * 2
 
+-- card layout
+local function nextCardY(yPos, cardHeight)
+    return yPos + cardHeight + CARD_GAP
+end
+
 -- panel
 local function panelPos()
     local config = Utils.getConfig()
@@ -691,7 +696,7 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
             end
         )
     )
-    return yPos + CARD_H + CARD_GAP
+    return nextCardY(yPos, CARD_H)
 end
 
 -- rate selector
@@ -720,10 +725,11 @@ local function createRateSelector(yPos, parent)
             Parent = f
         }
     )
-    local rateInputWidth, rateModeWidth, rateDefaultWidth = 72, 34, 68
-    local defBtn = makeBtn("Padrao", 52, 28, rateDefaultWidth, 30, f, C.btnBlue)
-    defBtn.TextSize = 11
-    local modeBtn = makeBtn(rateMode, 122, 28, rateModeWidth, 30, f, C.btnPurple)
+    local rateInputWidth, rateModeWidth = 72, 34
+    local function rateModeColor(mode)
+        return mode == "CPS" and C.btnPurple or C.btnBlue
+    end
+    local modeBtn = makeBtn(rateMode, 52, 28, rateModeWidth, 30, f, rateModeColor(rateMode))
     modeBtn.TextSize = 10
     trackConn(modeBtn.Activated:Connect(
         function()
@@ -732,6 +738,7 @@ local function createRateSelector(yPos, parent)
             Utils.setConfig(currentConfig)
             modeBtn.Text = currentConfig.SpamRateMode
             rateLabel.Text = currentConfig.SpamRateMode .. ":"
+            twPlay(modeBtn, 0.24, {BackgroundColor3 = rateModeColor(currentConfig.SpamRateMode)}, EASE_SINE, DIR_INOUT)
         end
     ))
     local inputBox =
@@ -763,22 +770,6 @@ local function createRateSelector(yPos, parent)
             twPlay(inputStroke, 0.15, {Color = C.border})
         end
     ))
-    trackConn(defBtn.Activated:Connect(
-        function()
-            local currentConfig = Utils.getConfig()
-            currentConfig.CustomCPS = false
-            currentConfig.CPS = 25
-            Utils.setConfig(currentConfig)
-            inputBox.Text = "25"
-            twPlay(defBtn, 0.15, {BackgroundColor3 = C.green})
-            task.delay(
-                0.5,
-                function()
-                    twPlay(defBtn, 0.15, {BackgroundColor3 = C.btnBlue})
-                end
-            )
-        end
-    ))
     trackConn(inputBox.FocusLost:Connect(
         function()
             local v = tonumber(inputBox.Text)
@@ -793,7 +784,7 @@ local function createRateSelector(yPos, parent)
             end
         end
     ))
-    return yPos + CARD_H + CARD_GAP
+    return nextCardY(yPos, RATE_CARD_H)
 end
 local function createKeybindSelector(yPos, parent)
     local f = cardFrame(yPos, CARD_H, parent)
@@ -825,7 +816,7 @@ local function createKeybindSelector(yPos, parent)
             twPlay(kbBtn, 0.18, {BackgroundColor3 = C.btnBlue}, EASE_BACK)
         end
     )
-    return yPos + CARD_H + CARD_GAP
+    return nextCardY(yPos, CARD_H)
 end
 local function createSpamCard(yPos, parent)
     local f = cardFrame(yPos, SPAM_CARD_H, parent)
@@ -866,7 +857,7 @@ local function createSpamCard(yPos, parent)
             end
         end
     ))
-    return yPos + SPAM_CARD_H + CARD_GAP
+    return nextCardY(yPos, SPAM_CARD_H)
 end
 
 -- panel controls
@@ -967,9 +958,10 @@ function ExodusUI.setup(deps)
             Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE),
             Position = btnPos(),
             BackgroundColor3 = C.header,
-            BackgroundTransparency = 0.1,
+            BackgroundTransparency = 1,
             Text = "E",
             TextColor3 = C.text,
+            TextTransparency = 1,
             TextSize = 26,
             Font = Enum.Font.GothamBold,
             Active = true,
@@ -978,7 +970,14 @@ function ExodusUI.setup(deps)
         }
     )
     corner(floatingButton, 999)
-    registerFlow(stroke(floatingButton, C.accent, 2))
+    local floatingStroke = stroke(floatingButton, C.accent, 2)
+    floatingStroke.Transparency = 1
+    registerFlow(floatingStroke)
+    task.defer(function()
+        if not floatingButton or not floatingButton.Parent then return end
+        twPlay(floatingButton, 0.38, {BackgroundTransparency = 0.1, TextTransparency = 0}, EASE_OUT, DIR_OUT)
+        twPlay(floatingStroke, 0.42, {Transparency = 0}, EASE_OUT, DIR_OUT)
+    end)
     local config = Utils.getConfig()
     local clashX = config.ClashBallX or 14
     local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
