@@ -36,6 +36,7 @@ local C = {
     subtext = Color3.fromRGB(140, 140, 200),
     border = Color3.fromRGB(55, 55, 100),
     btnBlue = Color3.fromRGB(45, 55, 130),
+    btnPurple = Color3.fromRGB(88, 28, 135),
     btnDark = Color3.fromRGB(30, 30, 65),
     toggleOn = Color3.fromRGB(139, 92, 246),
     toggleOff = Color3.fromRGB(45, 45, 80),
@@ -530,8 +531,8 @@ local function cardLabel(text, parent)
     inst(
         "TextLabel",
         {
-            Size = UDim2.new(1, -INNER_PAD * 2, 0, 16),
-            Position = UDim2.new(0, INNER_PAD, 0, 5),
+            Size = UDim2.new(1, -10, 0, 16),
+            Position = UDim2.new(0, 10, 0, 5),
             BackgroundTransparency = 1,
             Text = text,
             TextColor3 = C.accent,
@@ -650,8 +651,8 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
     inst(
         "TextLabel",
         {
-            Size = UDim2.new(1, -INNER_PAD * 2 - 48 - CONTROL_GAP, 1, 0),
-            Position = UDim2.new(0, INNER_PAD, 0, 0),
+            Size = UDim2.new(0.55, 0, 1, 0),
+            Position = UDim2.new(0, 14, 0, 0),
             BackgroundTransparency = 1,
             Text = labelText,
             TextColor3 = C.text,
@@ -702,7 +703,7 @@ local function createRateSelector(yPos, parent)
     local rateMode = config.SpamRateMode == "CPS" and "CPS" or "CPF"
     config.SpamRateMode = rateMode
     Utils.setConfig(config)
-    cardLabel("Spam Rate", f)
+    cardLabel((rateMode == "CPF" and "CPF Spam") or "CPS Spam", f)
     local rateLabel =
         inst(
         "TextLabel",
@@ -719,10 +720,10 @@ local function createRateSelector(yPos, parent)
             Parent = f
         }
     )
-    local rateInputWidth, rateModeWidth, rateDefaultWidth = 84, 34, 54
+    local rateInputWidth, rateModeWidth, rateDefaultWidth = 72, 34, 68
     local defBtn = makeBtn("Padrao", 52, 28, rateDefaultWidth, 30, f, C.btnBlue)
-    defBtn.TextSize = 10
-    local modeBtn = makeBtn(rateMode, 112, 28, rateModeWidth, 30, f, C.btnPurple)
+    defBtn.TextSize = 11
+    local modeBtn = makeBtn(rateMode, 122, 28, rateModeWidth, 30, f, C.btnPurple)
     modeBtn.TextSize = 10
     trackConn(modeBtn.Activated:Connect(
         function()
@@ -738,7 +739,7 @@ local function createRateSelector(yPos, parent)
         "TextBox",
         {
             Size = UDim2.new(0, rateInputWidth, 0, 30),
-            Position = UDim2.new(1, -INNER_PAD - rateInputWidth, 0, 28),
+            Position = UDim2.new(1, -82, 0, 28),
             BackgroundColor3 = C.inputBg,
             BackgroundTransparency = 0.1,
             Text = tostring(config.CPS),
@@ -799,8 +800,8 @@ local function createKeybindSelector(yPos, parent)
     inst(
         "TextLabel",
         {
-            Size = UDim2.new(1, -INNER_PAD * 2 - 88 - CONTROL_GAP, 1, 0),
-            Position = UDim2.new(0, INNER_PAD, 0, 0),
+            Size = UDim2.new(0.55, 0, 1, 0),
+            Position = UDim2.new(0, 14, 0, 0),
             BackgroundTransparency = 1,
             Text = "Tecla de Atalho",
             TextColor3 = C.text,
@@ -813,7 +814,7 @@ local function createKeybindSelector(yPos, parent)
     )
     local config = Utils.getConfig()
     local kbBtn = makeBtn(config.Keybind and config.Keybind.Name or "V", 0, 0, 88, 30, f, C.btnBlue)
-    kbBtn.Position = UDim2.new(1, -INNER_PAD - 88, 0.5, -15)
+    kbBtn.Position = UDim2.new(1, -100, 0.5, -15)
     bindKeyCapture(
         kbBtn,
         function(keyCode)
@@ -829,8 +830,8 @@ end
 local function createSpamCard(yPos, parent)
     local f = cardFrame(yPos, SPAM_CARD_H, parent)
     cardLabel("Manual Spam", f)
-    local halfW = math.floor((COL_W - INNER_PAD * 2 - CONTROL_GAP) / 2)
-    local visBtn = makeBtn("Mini UI: Oculto", INNER_PAD, 24, COL_W - INNER_PAD * 2, 30, f, C.btnDark)
+    local halfW = math.floor((COL_W - 32) / 2)
+    local visBtn = makeBtn("Mini UI: Oculto", 8, 24, COL_W - 16, 30, f, C.btnDark)
     visBtn.TextSize = 11
     trackConn(visBtn.Activated:Connect(
         function()
@@ -838,7 +839,7 @@ local function createSpamCard(yPos, parent)
         end
     ))
     local config = Utils.getConfig()
-    local kbBtn = makeBtn(config.SpamKeybind and config.SpamKeybind.Name or "X", INNER_PAD, 64, halfW, 32, f, C.btnBlue)
+    local kbBtn = makeBtn(config.SpamKeybind and config.SpamKeybind.Name or "X", 8, 64, halfW, 32, f, C.btnBlue)
     bindKeyCapture(
         kbBtn,
         function(keyCode)
@@ -852,7 +853,7 @@ local function createSpamCard(yPos, parent)
     local function modeColor(mode)
         return mode == "Hold" and C.hold or C.toggleOn
     end
-    local modeBtn = makeBtn(config.SpamMode or "Toggle", INNER_PAD + halfW + CONTROL_GAP, 64, halfW, 32, f, modeColor(config.SpamMode))
+    local modeBtn = makeBtn(config.SpamMode or "Toggle", 8 + halfW + 14, 64, halfW, 32, f, modeColor(config.SpamMode))
     trackConn(modeBtn.Activated:Connect(
         function()
             local currentConfig = Utils.getConfig()
@@ -1333,11 +1334,11 @@ function ExodusUI.setup(deps)
             cleanupUI()
         end
     ))
-    local yL = math.floor(math.max(0, (CONTENT_H - LEFT_STACK_H) / 2))
+    local yL = 4
     yL = createToggleCard("Auto Parry", "AutoParry", yL, colLeft)
     local function buildAutoClash(y)
         local f = cardFrame(y, CARD_H, colLeft)
-        inst("TextLabel", {Size = UDim2.new(1, -INNER_PAD * 2 - 48 - CONTROL_GAP, 1, 0), Position = UDim2.new(0, INNER_PAD, 0, 0), BackgroundTransparency = 1, Text = "Auto Clash", TextColor3 = C.text, TextSize = 14, Font = Enum.Font.GothamSemibold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7, Parent = f})
+        inst("TextLabel", {Size = UDim2.new(0.55, 0, 1, 0), Position = UDim2.new(0, 14, 0, 0), BackgroundTransparency = 1, Text = "Auto Clash", TextColor3 = C.text, TextSize = 14, Font = Enum.Font.GothamSemibold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7, Parent = f})
         local track, thumb, setVisual = makeToggle(f, config.AutoClash)
         autoClashTrack, autoClashThumb = track, thumb
         trackConn(inst("TextButton", {Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", ZIndex = 9, Parent = f}).Activated:Connect(function()
@@ -1353,7 +1354,7 @@ function ExodusUI.setup(deps)
     yL = createToggleCard("Mini Clash UI", "ClashBallVisible", yL, colLeft, function(v)
         showClashBall(v)
     end)
-    local yR = math.floor(math.max(0, (CONTENT_H - RIGHT_STACK_H) / 2))
+    local yR = 4
     yR = createRateSelector(yR, colRight)
     yR = createKeybindSelector(yR, colRight)
     yR = createSpamCard(yR, colRight)
