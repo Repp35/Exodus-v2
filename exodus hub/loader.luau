@@ -9,8 +9,9 @@ _G.Exodus = Exodus
 _G.ExodusModules = Modules
 local Loader = {}
 local HttpService = game:GetService("HttpService")
-local REPOSITORY = "Repp35/Exodus"
+local REPOSITORY = "Repp35/Exodus-v2"
 local BRANCH = "main"
+local PROJECT_PATH = "exodus%20hub/"
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local MODULE_ORDER = {
     "Config",
@@ -107,7 +108,7 @@ end
 
 -- urls
 local function buildURLs(version)
-    local root = BASE_URL .. (version or ("refs/heads/" .. BRANCH)) .. "/modules/"
+    local root = BASE_URL .. (version or ("refs/heads/" .. BRANCH)) .. "/" .. PROJECT_PATH .. "modules/"
     return {
         Config = root .. "front/config.luau",
         Utils = root .. "logic/utils.luau",
