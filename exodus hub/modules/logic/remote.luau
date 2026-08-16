@@ -35,9 +35,8 @@ local function clearParryRemote(remote)
 end
 
 local function registerRemote(remote)
-    if isAlive(remote) and (not parryRemote or not isAlive(parryRemote)) then
+    if not parryRemote then
         parryRemote = remote
-        parryInitialized = false
     end
 end
 
@@ -51,80 +50,53 @@ local function payloadFor(flag)
     return value
 end
 
-local function isParryPayload(value)
-    local valueType = typeof(value)
-
-    if valueType == "buffer" then
-        return true
-    end
-
-    if valueType == "string" then
-        return string.find(value, "\x01", 1, true) ~= nil
-            or string.find(value, "\x02", 1, true) ~= nil
-    end
-
-    return false
-end
-
 -- hooks
 local function installHooks()
-    if HookState.installed then
-        return true
-    end
-
-    if type(hookmetamethod) ~= "function"
-        or type(getnamecallmethod) ~= "function"
-        or type(checkcaller) ~= "function"
-    then
-        return false
-    end
-
+    if HookState.installed then return true end
+    if type(hookmetamethod) ~= "function" then return false end
     local ok = pcall(function()
         local oldNamecall
-
         oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
             local method = getnamecallmethod()
-            local firstArgument = ...
-
-            if not checkcaller()
-                and (method == "FireServer" or method == "fireServer")
-                and typeof(self) == "Instance"
-                and self:IsA("RemoteEvent")
-                and (isParryPayload(firstArgument) or self.Name == "RemoteEvent")
-            then
-                if type(HookState.register) == "function" then
-                    HookState.register(self)
+            local args = { ... }
+            if not checkcaller() and (method == "FireServer" or method == "fireServer") then
+                local isPayload = false
+                if args[1] then
+                    if typeof(args[1]) == "buffer"
+                        or (typeof(args[1]) == "string" and (string.find(args[1], "\x01") or string.find(args[1], "\x02")))
+                    then
+                        isPayload = true
+                    end
+                end
+                if isPayload or self.Name == "RemoteEvent" then
+                    if type(HookState.register) == "function" then
+                        HookState.register(self)
+                    end
                 end
             end
-
             return oldNamecall(self, ...)
         end)
-
         local oldIndex
-
         oldIndex = hookmetamethod(game, "__index", function(self, key)
             if not checkcaller()
                 and (key == "FireServer" or key == "fireServer")
                 and typeof(self) == "Instance"
                 and self:IsA("RemoteEvent")
-                and (
-                    self.Name == "RemoteEvent"
-                    or (self.Parent and string.find(self.Parent.Name, "Remote", 1, true))
-                )
             then
-                if type(HookState.register) == "function" then
-                    task.spawn(HookState.register, self)
+                if self.Name == "RemoteEvent"
+                    or (self.Parent and string.find(self.Parent.Name, "Remote"))
+                then
+                    if type(HookState.register) == "function" then
+                        task.spawn(HookState.register, self)
+                    end
                 end
             end
-
             return oldIndex(self, key)
         end)
     end)
-
     if ok then
         HookState.installed = true
     end
-
     return HookState.installed == true
 end
 
@@ -163,8 +135,6 @@ function Remote.setup(deps)
     end
 
     Utils = deps.Utils
-    parryRemote = nil
-    parryInitialized = false
     HookState.register = registerRemote
 
     if not installHooks() then
@@ -178,10 +148,6 @@ end
 
 -- parry api
 function Remote.fireParry(flag)
-    if flag ~= 2 then
-        flag = 1
-    end
-
     if not isAlive(parryRemote) then
         clearParryRemote(parryRemote)
         return false
@@ -195,16 +161,21 @@ function Remote.fireParry(flag)
 end
 
 function Remote.initParry()
+    if not isAlive(parryRemote) then
+        clearParryRemote(parryRemote)
+        return false
+    end
+
     if parryInitialized then
         return true
     end
 
-    if not Remote.fireParry(2) then
-        return false
-    end
+    local ok = pcall(function()
+        parryRemote:FireServer(payloadFor(2))
+    end)
 
-    parryInitialized = true
-    return true
+    parryInitialized = ok
+    return ok
 end
 
 function Remote.getRemote()
