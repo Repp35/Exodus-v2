@@ -9,7 +9,7 @@ local AutoParry
 local Remote
 
 -- tuning
-local RED_HOLD = 0.25
+local RED_HOLD = 0.13
 local SPAM_INTERVAL = 0.05
 
 local TARGET_RETURN_MAX_LO = 0.280
@@ -22,7 +22,7 @@ local PHYS_THRESH = 0.14
 local PHYS_RAD_SLACK = 1.22
 local ACT_RADIUS_MULT = 1.32
 local SYNC_TARGET_RADIUS_MULT = 1.05
-local DEACT_RADIUS_MULT = 1.15
+local DEACT_RADIUS_MULT = 1.08
 
 -- state
 local S = {
