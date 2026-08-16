@@ -326,13 +326,15 @@ local function deactivate()
 end
 
 local function getRedHold(speed)
-    return lerpBySpeed(
-        speed,
-        RED_HOLD_SPD_LO,
-        RED_HOLD_SPD_HI,
-        RED_HOLD_MAX_LO,
-        RED_HOLD_MIN_HI
-    )
+    speed = speed or 0
+    if speed >= RED_HOLD_SPD_HI then
+        return RED_HOLD_MIN_HI
+    end
+    if speed <= RED_HOLD_SPD_LO then
+        return RED_HOLD_MAX_LO
+    end
+    local alpha = (speed - RED_HOLD_SPD_LO) / (RED_HOLD_SPD_HI - RED_HOLD_SPD_LO)
+    return RED_HOLD_MAX_LO + (RED_HOLD_MIN_HI - RED_HOLD_MAX_LO) * alpha
 end
 
 local function shouldDeactivate(t, ctx)
