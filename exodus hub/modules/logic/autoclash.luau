@@ -1,4 +1,4 @@
--- [[ auto clash ]]
+--[[ autoclah ]]
 
 -- parameters
 local AutoClash = {}
