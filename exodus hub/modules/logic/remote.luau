@@ -1,8 +1,7 @@
--- [[ Remote ]]
+--[[ Remote ]]
 
 -- state
 local Remote = {}
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Utils
 local ballSyncConnection
 local ballSyncRemote
@@ -35,13 +34,9 @@ end
 
 -- hooks
 local function installHooks()
-    if HookState.installed then
-        return true
-    end
+    if HookState.installed then return true end
+    if type(hookmetamethod) ~= "function" then return false end
     local ok = pcall(function()
-        if type(hookmetamethod) ~= "function" then
-            return
-        end
         local oldNamecall
         oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
             local method = getnamecallmethod()
@@ -89,7 +84,7 @@ end
 
 -- ball sync
 local function locateBallSync()
-    local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+    local remotes = Utils.getReplicatedStorage():FindFirstChild("Remotes")
     local candidate = remotes and remotes:FindFirstChild("BallSyncData")
     return candidate and candidate:IsA("RemoteEvent") and candidate or nil
 end
