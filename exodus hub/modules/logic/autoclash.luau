@@ -4,16 +4,30 @@ local GameInfo, Utils, AutoParry
 
 -- tuning
 local RED_HOLD = 0.25
+
 local TARGET_RETURN_MAX_LO = 0.280
 local TARGET_RETURN_MIN_HI = 0.170
 local TARGET_RETURN_SPD_LO = 60
 local TARGET_RETURN_SPD_HI = 200
+
 local PHYS_DOT_EMA = 0.25
 local PHYS_THRESH = 0.14
 local PHYS_RAD_SLACK = 1.22
 local ACT_RADIUS_MULT = 1.32
 local SYNC_TARGET_RADIUS_MULT = 1.05
 local DEACT_RADIUS_MULT = 1.15
+
+local DEFLECT_R = 8.5
+local RAD_FLOOR = 14
+local RAD_CAP = 30
+local RAD_SPD_REF = 200
+local RES_BASE = 0
+local RES_PER_PARRY = 0.225
+local RES_CAP = 6.0
+local RES_HOLD_T = 1.2
+local RES_DECAY_T = 4.0
+local RES_HITBOX_PROX = 12
+local RES_HITBOX_GAP = 0.4
 
 -- state
 local S = {
@@ -27,6 +41,14 @@ local S = {
     lostMeAt = 0,
     physDotEma = 0,
 }
+
+local RES = {
+    stack = 0,
+    lastHitboxAt = 0,
+    lastStackAt = 0,
+}
+
+local resConnection
 
 local heartbeatConnection
 local bindGeneration = 0
@@ -113,8 +135,13 @@ local function nearestInRange(myHRP, distance)
     end
 
     local localPlayer = getLP()
+    local players = Utils.getPlayers()
 
-    for _, player in ipairs(Utils.getPlayers():GetPlayers()) do
+    if not players then
+        return false
+    end
+
+    for _, player in ipairs(players:GetPlayers()) do
         if player ~= localPlayer then
             local character = player.Character
             local hrp = character and character:FindFirstChild("HumanoidRootPart")
@@ -157,6 +184,7 @@ end
 local function getSyncSpeed(ball, t)
     if GameInfo and type(GameInfo.ballSpeed) == "function" then
         local ok, speed = pcall(GameInfo.ballSpeed, ball, t)
+
         if ok and type(speed) == "number" and speed >= 0 then
             return speed
         end
@@ -165,17 +193,130 @@ local function getSyncSpeed(ball, t)
     return getBallSpeed(ball)
 end
 
+local function resRadiusBonus()
+    return math.min(RES.stack * RES_PER_PARRY, RES_CAP)
+end
+
+local function tickResilience(t)
+    if RES.stack <= 0 then
+        return
+    end
+
+    local since = t - RES.lastStackAt
+
+    if since > RES_HOLD_T + RES_DECAY_T then
+        RES.stack = 0
+        return
+    end
+
+    if since > RES_HOLD_T then
+        local frac = 1 - (since - RES_HOLD_T) / RES_DECAY_T
+
+        if frac <= 0 then
+            RES.stack = 0
+        else
+            RES.stack = math.floor(RES.stack * frac + 0.5)
+        end
+    end
+end
+
+local function handleHitbox(d)
+    if not d or d.Name ~= "HitboxGrow" then
+        return
+    end
+
+    if not S.active then
+        return
+    end
+
+    local t = now()
+
+    local ok, hitboxPosition = pcall(function()
+        return d.Position
+    end)
+
+    if not ok or typeof(hitboxPosition) ~= "Vector3" then
+        return
+    end
+
+    if t - RES.lastHitboxAt < RES_HITBOX_GAP then
+        return
+    end
+
+    local ball = getBall()
+
+    if not (ball and ball.Parent) then
+        return
+    end
+
+    local okDistance, distance = pcall(function()
+        return (ball.Position - hitboxPosition).Magnitude
+    end)
+
+    if not okDistance
+        or typeof(distance) ~= "number"
+        or distance > RES_HITBOX_PROX
+    then
+        return
+    end
+
+    RES.lastHitboxAt = t
+    RES.lastStackAt = t
+    RES.stack = math.min(
+        RES.stack + 1,
+        math.floor((RES_CAP - RES_BASE) / RES_PER_PARRY)
+    )
+end
+
+local function installResilienceHook()
+    if resConnection then
+        pcall(function()
+            resConnection:Disconnect()
+        end)
+        resConnection = nil
+    end
+
+    local ok, connection = pcall(function()
+        return game:GetService("Workspace").DescendantAdded:Connect(handleHitbox)
+    end)
+
+    if ok and connection then
+        resConnection = connection
+        Utils.trackGlobal(connection)
+    end
+end
+
+local function computeParryRadius(speed, t)
+    tickResilience(t)
+
+    local factor = math.clamp(
+        (tonumber(speed) or 0) / RAD_SPD_REF,
+        0,
+        1
+    )
+
+    local parryRadius = math.clamp(
+        DEFLECT_R
+            + (RAD_FLOOR - DEFLECT_R) * factor
+            + resRadiusBonus(),
+        DEFLECT_R,
+        RAD_CAP
+    )
+
+    return parryRadius, parryRadius
+end
+
 local function getParryContext(t, hr, ball)
     local speed = getSyncSpeed(ball, t)
-    local parryRadius, detectRadius = AutoParry.computeParryRadius(speed, t)
+    local parryRadius, detectRadius = computeParryRadius(speed, t)
 
     return {
         time = t,
         hr = hr,
         ball = ball,
-        targeted = GameInfo.isTargeted(S.lastTargetId),
+        targeted = AutoParry.isTargeted(),
         parryRadius = parryRadius,
-        detectRadius = detectRadius or parryRadius,
+        detectRadius = detectRadius,
         sync = {Speed = speed},
         spd = speed,
     }
@@ -341,35 +482,39 @@ local function onTarget(targetId)
     end
 
     local isMe = targetId == localPlayer.UserId
-    local wasMe = previousTarget == localPlayer.UserId
 
-    if wasMe and not isMe then
-        S.wasMeTarget = true
-        S.lostMeAt = t
-        return
-    end
+    if isMe then
+        local lostAt = S.lostMeAt or 0
 
-    if not isMe or wasMe or not S.wasMeTarget then
-        return
-    end
+        if lostAt > 0 then
+            local character = localPlayer.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+            local ball = getBall()
 
-    local ball = getBall()
-    local speed = getBallSpeed(ball)
-    local window = getTargetReturnWindow(speed)
-    local elapsed = t - S.lostMeAt
+            if hrp and hrp.Parent and ball and ball.Parent then
+                local speed = getBallSpeed(ball)
+                local window = getTargetReturnWindow(speed)
+                local elapsed = t - lostAt
 
-    if elapsed <= window then
-        local character = localPlayer.Character
-        local hrp = character and character:FindFirstChild("HumanoidRootPart")
-        local ctx = hrp and ball and getParryContext(t, hrp, ball)
+                if elapsed <= window then
+                    local ctx = getParryContext(t, hrp, ball)
+                    local activationRadius = getActivationRadius(ctx)
 
-        if ctx and ballInRange(hrp, ball, getActivationRadius(ctx)) then
-            activate(t)
+                    if ballInRange(hrp, ball, activationRadius) then
+                        activate(t)
+                    end
+                end
+            end
         end
+
+        S.wasMeTarget = true
+        S.lostMeAt = 0
+        return
     end
 
-    S.wasMeTarget = false
-    S.lostMeAt = 0
+    if S.wasMeTarget then
+        S.lostMeAt = t
+    end
 end
 
 -- teleport
@@ -434,7 +579,7 @@ function AutoClash.setup(deps)
     if not GameInfo
         or not Utils
         or not AutoParry
-        or type(AutoParry.computeParryRadius) ~= "function"
+        or type(AutoParry.isTargeted) ~= "function"
     then
         return false
     end
@@ -442,6 +587,8 @@ function AutoClash.setup(deps)
     Utils.setOnClashOn(function()
         return S.active
     end)
+
+    installResilienceHook()
 
     return true
 end
@@ -455,6 +602,11 @@ function AutoClash.evaluate(t, hr, ball, config)
     end
 
     S.enabled = true
+
+    if GameInfo.isGrace and GameInfo.isGrace() then
+        deactivate()
+        return
+    end
 
     local ctx = getParryContext(t, hr, ball)
 
@@ -510,6 +662,9 @@ function AutoClash.resetState()
     S.wasMeTarget = false
     S.lostMeAt = 0
     S.physDotEma = 0
+    RES.stack = 0
+    RES.lastHitboxAt = 0
+    RES.lastStackAt = 0
 end
 
 return AutoClash
