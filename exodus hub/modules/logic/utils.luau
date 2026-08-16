@@ -1,4 +1,4 @@
--- [[ Utils ]]
+--[[ Utils ]]
 
 -- services
 local Utils = {}
@@ -7,7 +7,7 @@ local ReplicatedStorageSvc = game:GetService("ReplicatedStorage")
 local RunServiceSvc        = game:GetService("RunService")
 
 -- metadata
-local SCRIPT_VERSION = "23.2"
+local SCRIPT_VERSION = "24.1"
 local SCRIPT_NAME = "Exodus Hub"
 local INTERNAL_NAME = "Exodus"
 local SCRIPT_AUTHOR = "ppzudo"
@@ -104,8 +104,6 @@ function Utils.getState()             return State end
 function Utils.getConfig()            return State.config end
 function Utils.getModuleURLs()        return State.moduleURLs end
 function Utils.isManualSpamActive()   return State.manualSpamActive end
-function Utils.spamRateMin()          return SPAM_RATE_MIN end
-function Utils.spamRateMax()          return SPAM_RATE_MAX end
 function Utils.normalizeSpamRate(value, fallback)
     local n = tonumber(value)
     if not n or n ~= n or n == math.huge or n == -math.huge then
@@ -121,14 +119,15 @@ end
 function Utils.setConfig(t)
     if type(t) ~= "table" then return end
     for k, v in pairs(t) do
-        State.config[k] = k == "CPS" and Utils.normalizeSpamRate(v, State.config.CPS) or v
+        if k == "CPS" or k == "CPF" then
+            State.config[k] = Utils.normalizeSpamRate(v, State.config[k])
+        else
+            State.config[k] = v
+        end
     end
     local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
     namespace.Config = State.config
     _G.Exodus = namespace
-    if type(t.ModuleURLs) == "table" then
-        Utils.setModuleURLs(t.ModuleURLs)
-    end
 end
 function Utils.setModuleURLs(t)
     if type(t) ~= "table" then return end
@@ -145,6 +144,7 @@ end
 function Utils.trackGlobal(c)     return track(State.connections, c) end
 function Utils.untrackGlobal(c)   return untrack(State.connections, c) end
 function Utils.trackCharacter(c)  return track(State.characterConnections, c) end
+function Utils.untrackCharacter(c) return untrack(State.characterConnections, c) end
 function Utils.disconnectGlobalConnections() disconnectAll(State.connections) end
 function Utils.disconnectCharacterConnections() disconnectAll(State.characterConnections) end
 
@@ -156,10 +156,7 @@ function Utils.getLocalPlayer()       return PlayersService.LocalPlayer end
 function Utils.now()                  return os.clock() end
 
 -- metadata
-
--- metadata api
 function Utils.name()         return SCRIPT_NAME end
-function Utils.internalName() return INTERNAL_NAME end
 function Utils.version()      return SCRIPT_VERSION end
 function Utils.author()       return SCRIPT_AUTHOR end
 
