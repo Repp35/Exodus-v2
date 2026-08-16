@@ -1,123 +1,153 @@
---[[ Spam ]]
+-- [[ Spam ]]
+
+local Spam = {}
+local Remote
+local Utils
+
+-- tuning
+local RATE_EPSILON = 1e-7
+local MAX_SCHEDULED_PER_TICK = 256
 
 -- state
-local Spam = {}
-local Remote, AutoClash, Utils
+local heartbeatConnection
+local generation = 0
+local pendingClicks = 0
+local lastMode
+local lastRate
+local wasActive = false
 
--- counters
-local _heartbeat
-local _cpsElapsed = 0
-local _cpsSent = 0
-local _cpfCredits = 0
-local _cpfSent = 0
-local _cpfGeneration = 0
-local _lastMode
-local _lastRate
-local RATE_EPSILON = 1e-7
-local MAX_CPF_SCHEDULE_PER_TICK = 4096
-
-local function invalidateCPF()
-    _cpfGeneration = _cpfGeneration + 1
-    _cpfCredits = 0
-    _cpfSent = 0
+-- helpers
+local function invalidate()
+    generation = generation + 1
+    pendingClicks = 0
 end
 
-local function cpfActive()
-    return Utils.isActive() and (Utils.isManualSpamActive() or (AutoClash and AutoClash.clashOn()))
+local function isActive()
+    return Utils.isActive() and Utils.isSpamActive()
 end
 
-local function scheduleCPF(rate, dt)
-    if rate <= 0 then
-        invalidateCPF()
+local function requestParry()
+    pcall(Remote.fireParry, 1)
+end
+
+local function schedule(clicks, dt, currentGeneration)
+    if clicks <= 0 then
         return
     end
-    _cpfCredits = _cpfCredits + rate
-    local target = math.floor(_cpfCredits + RATE_EPSILON)
-    local clicks = math.max(target - _cpfSent, 0)
-    if clicks <= 0 then return end
-    local scheduled = math.min(clicks, MAX_CPF_SCHEDULE_PER_TICK)
-    _cpfSent = _cpfSent + scheduled
-    local generation = _cpfGeneration
-    local spacing = dt / scheduled
-    for index = 1, scheduled do
+
+    local spacing = dt / clicks
+
+    for index = 1, clicks do
         local delay = spacing * (index - 0.5)
+
         task.delay(delay, function()
-            if generation ~= _cpfGeneration or not cpfActive() then return end
-            Remote.fireParry(1)
+            if currentGeneration == generation and isActive() then
+                requestParry()
+            end
         end)
     end
+end
+
+local function resetRateState()
+    pendingClicks = 0
+    lastMode = nil
+    lastRate = nil
 end
 
 -- runtime
 local function tick(dt)
-    local cfg = Utils.getConfig()
-    if type(cfg) ~= "table" then return end
-    if not Utils.isManualSpamActive() and not (AutoClash and AutoClash.clashOn()) then
-        if _lastMode == "CPF" then invalidateCPF() end
+    local config = Utils.getConfig()
+
+    if type(config) ~= "table" then
         return
     end
-    if type(dt) ~= "number" or dt <= 0 then return end
-    local mode = cfg.SpamRateMode == "CPS" and "CPS" or "CPF"
-    if mode ~= _lastMode then
-        _lastMode = mode
-        _cpsElapsed = 0
-        _cpsSent = 0
-        _lastRate = nil
-        invalidateCPF()
+
+    local active = isActive()
+
+    if not active then
+        if wasActive then
+            invalidate()
+        end
+
+        wasActive = false
+        return
     end
-    local rateKey = mode == "CPS" and "CPS" or "CPF"
+
+    wasActive = true
+
+    if type(dt) ~= "number" or dt <= 0 then
+        return
+    end
+
+    local mode = config.SpamRateMode == "CPS" and "CPS" or "CPF"
     local fallback = mode == "CPS" and 4 or 16
-    local rate = Utils.normalizeSpamRate(cfg[rateKey], fallback)
-    if cfg[rateKey] ~= rate then
-        Utils.setConfig({[rateKey] = rate})
+    local rateKey = mode
+    local rate = Utils.normalizeSpamRate(config[rateKey], fallback)
+
+    if config[rateKey] ~= rate then
+        Utils.setConfig({ [rateKey] = rate })
     end
-    local clicks
-    if mode == "CPS" then
-        if rate ~= _lastRate then
-            _lastRate = rate
-            _cpsElapsed = 0
-            _cpsSent = 0
-        end
-        _cpsElapsed = _cpsElapsed + dt
-        local target = math.floor(_cpsElapsed * rate + RATE_EPSILON)
-        clicks = math.max(target - _cpsSent, 0)
-        _cpsSent = _cpsSent + clicks
-    else
-        if rate ~= _lastRate then
-            _lastRate = rate
-            invalidateCPF()
-        end
-        scheduleCPF(rate, dt)
+
+    if mode ~= lastMode or rate ~= lastRate then
+        resetRateState()
+        lastMode = mode
+        lastRate = rate
+    end
+
+    local increment = mode == "CPS" and rate * dt or rate
+    pendingClicks = pendingClicks + increment
+
+    local clicks = math.floor(pendingClicks + RATE_EPSILON)
+
+    if clicks <= 0 then
         return
     end
-    for _ = 1, clicks do Remote.fireParry(1) end
+
+    clicks = math.min(clicks, MAX_SCHEDULED_PER_TICK)
+    pendingClicks = math.max(pendingClicks - clicks, 0)
+
+    schedule(clicks, dt, generation)
 end
 
 -- setup
 function Spam.setup(deps)
-    if type(deps) ~= "table" or not deps.Remote or not deps.AutoClash or not deps.Utils then
+    if type(deps) ~= "table"
+        or type(deps.Remote) ~= "table"
+        or type(deps.Remote.fireParry) ~= "function"
+        or type(deps.Utils) ~= "table"
+        or type(deps.Utils.isActive) ~= "function"
+        or type(deps.Utils.isSpamActive) ~= "function"
+        or type(deps.Utils.getConfig) ~= "function"
+        or type(deps.Utils.normalizeSpamRate) ~= "function"
+        or type(deps.Utils.setConfig) ~= "function"
+        or type(deps.Utils.getRunService) ~= "function"
+        or type(deps.Utils.trackGlobal) ~= "function"
+        or type(deps.Utils.untrackGlobal) ~= "function"
+    then
         return false
     end
+
+    if heartbeatConnection then
+        pcall(heartbeatConnection.Disconnect, heartbeatConnection)
+        deps.Utils.untrackGlobal(heartbeatConnection)
+        heartbeatConnection = nil
+    end
+
     Remote = deps.Remote
-    AutoClash = deps.AutoClash
     Utils = deps.Utils
     Spam.resetState()
-    if _heartbeat then
-        pcall(function()
-            _heartbeat:Disconnect()
-        end)
-    end
-    _heartbeat = Utils.getRunService().Heartbeat:Connect(tick)
-    Utils.trackGlobal(_heartbeat)
+
+    heartbeatConnection = Utils.getRunService().Heartbeat:Connect(tick)
+    Utils.trackGlobal(heartbeatConnection)
+
     return true
 end
 
 -- lifecycle
 function Spam.resetState()
-    _cpsElapsed = 0
-    _cpsSent = 0
-    _lastMode = nil
-    _lastRate = nil
-    invalidateCPF()
+    invalidate()
+    resetRateState()
+    wasActive = false
 end
+
 return Spam
