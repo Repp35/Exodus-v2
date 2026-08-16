@@ -12,9 +12,7 @@ local Tuning = {
     MIN_BALL_SPEED = 5,
 
     DEFLECT_RADIUS = 8.5,
-    RADIUS_SPEED_FLOOR = 14,
     RADIUS_CAP = 1000,
-    RADIUS_SPEED_REFERENCE = 200,
 
     PING_FLOOR = 0.030,
     PING_CAP = 0.150,
@@ -180,17 +178,10 @@ end
 
 -- radius
 local function computeParryRadius(speed, time)
-    speed = math.max(0, tonumber(speed) or 0)
+    speed = tonumber(speed) or 0
     time = tonumber(time) or now()
 
-    local speedFactor = math.clamp(
-        speed / Tuning.RADIUS_SPEED_REFERENCE,
-        0,
-        1
-    )
-
     local parryRadius = Tuning.DEFLECT_RADIUS
-        + (Tuning.RADIUS_SPEED_FLOOR - Tuning.DEFLECT_RADIUS) * speedFactor
         + getResilienceBonus(time)
 
     parryRadius = math.clamp(
