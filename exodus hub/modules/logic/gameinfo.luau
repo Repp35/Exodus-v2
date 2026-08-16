@@ -153,14 +153,20 @@ local function ballPosition(ball, time)
 end
 
 -- target
-local function getTargetAttribute()
-    local value = Workspace:GetAttribute("GameBallTarget")
-
+local function normalizeTargetId(value)
     if type(value) == "number" then
         return value
     end
 
-    return tonumber(value)
+    if type(value) == "string" then
+        return tonumber(value)
+    end
+
+    return nil
+end
+
+local function getTargetAttribute()
+    return normalizeTargetId(Workspace:GetAttribute("GameBallTarget"))
 end
 
 local function isTargeted(lastTarget)
@@ -173,7 +179,7 @@ local function isTargeted(lastTarget)
     local userId = player.UserId
 
     return State.target == userId
-        or tonumber(lastTarget) == userId
+        or normalizeTargetId(lastTarget) == userId
         or getTargetAttribute() == userId
 end
 
@@ -200,7 +206,7 @@ local function applySync(data)
     end
 
     if data.TargetPlayerID ~= nil then
-        State.target = tonumber(data.TargetPlayerID) or -1
+        State.target = normalizeTargetId(data.TargetPlayerID) or -1
     end
 
     State.lastSyncAt = time
