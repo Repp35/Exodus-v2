@@ -1,364 +1,239 @@
--- [[ AutoClash ]]
-
--- constants
+--[[ Auto Clash ]]
 local AutoClash = {}
-local GameInfo
-local Utils
-local AutoParry
+local GameInfo, Utils, AutoParry
 local heartbeatConnection
 local bindGeneration = 0
 
--- tuning
+-- constants
 local C = {
-	DET_RAD_MIN = 14,
-	DET_RAD_MAX = 32,
-	DET_RAD_SPD_REF = 120,
-	DET_DOT_EMA = 0.25,
-	DET_DOT_THRESH = 0.15,
-	DET_RADIUS_SLACK = 1.20,
-	TARGET_RETURN_MAX_LO = 0.110,
-	TARGET_RETURN_MIN_HI = 0.060,
-	TARGET_RETURN_SPD_LO = 60,
-	TARGET_RETURN_SPD_HI = 200,
-	INV_DIST_CAP = 25,
-	INV_APPROACH_SPD_MIN = 50,
-	INV_DOT_MIN = 0.35,
-	ACTIVE_LOCK = 0.080,
-	INACTIVE_LOCK = 0.080,
+    DET_RAD_MIN = 14, DET_RAD_MAX = 32, DET_RAD_SPD_REF = 120,
+    DET_DOT_EMA = 0.25, DET_DOT_THRESH = 0.15, DET_RADIUS_SLACK = 1.20,
+    TARGET_RETURN_MAX_LO = 0.110, TARGET_RETURN_MIN_HI = 0.060,
+    TARGET_RETURN_SPD_LO = 60, TARGET_RETURN_SPD_HI = 200,
+    SYNC_PANIC_RADIUS = 22, SYNC_PANIC_TIMP = 0.085, SYNC_PANIC_MAX_AGE = 0.20,
+    ACTIVE_LOCK = 0.080, INACTIVE_LOCK = 0.080,
 }
 
 -- state
 local S = {
-	enabled = false,
-	active = false,
-	activeAt = 0,
-	inactiveAt = 0,
-	detDotEma = 0,
-	detSignal = false,
-	lastTarget = -999,
-	lastTargetAt = 0,
-	wasMeTarget = false,
-	lostMeAt = 0,
-	teleportLockUntil = 0,
+    active = false, activeAt = 0, inactiveAt = 0, detDotEma = 0,
+    lastTarget = -999, wasMeTarget = false, lostMeAt = 0,
+    syncPanicPending = false, syncPanicAt = 0,
+    targetReturnPending = false, teleportLockUntil = 0,
 }
-local function now()
-	return Utils.now()
-end
-local function getLocalPlayer()
-	return Utils.getLocalPlayer()
-end
-local function getBall()
-	return GameInfo.getBall()
-end
+
+-- helpers
+local function now() return Utils.now() end
+local function getLocalPlayer() return Utils.getLocalPlayer() end
+local function getBall() return GameInfo.getBall() end
 local function getBallVelocity(ball)
-	if not ball or not ball.Parent then
-		return nil
-	end
-	local ok, velocity = pcall(function()
-		return ball.AssemblyLinearVelocity
-	end)
-	if not ok or typeof(velocity) ~= "Vector3" then
-		return nil
-	end
-	return velocity
+    if not ball or not ball.Parent then return nil end
+    local ok, velocity = pcall(function() return ball.AssemblyLinearVelocity end)
+    if not ok or typeof(velocity) ~= "Vector3" then return nil end
+    return velocity
 end
 local function getBallSpeed(ball)
-	local velocity = getBallVelocity(ball)
-	return velocity and velocity.Magnitude or 0
+    local velocity = getBallVelocity(ball)
+    return velocity and velocity.Magnitude or 0
 end
 local function lerpBySpeed(speed, speedLow, speedHigh, valueLow, valueHigh)
-	if speedHigh <= speedLow then
-		return valueLow
-	end
-	local alpha = math.clamp(
-		(speed - speedLow) / (speedHigh - speedLow),
-		0,
-		1
-	)
-	return valueLow + (valueHigh - valueLow) * alpha
+    if speedHigh <= speedLow then return valueLow end
+    local alpha = math.clamp((speed - speedLow) / (speedHigh - speedLow), 0, 1)
+    return valueLow + (valueHigh - valueLow) * alpha
 end
-local function resetDetector()
-	S.detDotEma = 0
-	S.detSignal = false
-end
+local function resetDetector() S.detDotEma = 0 end
 local function activate(t)
-	if S.active then
-		return false
-	end
-	if t - S.inactiveAt < C.INACTIVE_LOCK then
-		return false
-	end
-	S.active = true
-	S.activeAt = t
-	S.inactiveAt = 0
-	resetDetector()
-	return true
+    if S.active or t - S.inactiveAt < C.INACTIVE_LOCK then return false end
+    S.active, S.activeAt, S.inactiveAt = true, t, 0
+    S.syncPanicPending, S.syncPanicAt = false, 0
+    S.targetReturnPending, S.wasMeTarget, S.lostMeAt = false, false, 0
+    resetDetector()
+    return true
 end
 local function deactivate(t)
-	if not S.active then
-		return false
-	end
-	if t - S.activeAt < C.ACTIVE_LOCK then
-		return false
-	end
-	S.active = false
-	S.activeAt = 0
-	S.inactiveAt = t
-	resetDetector()
-	return true
+    if not S.active or t - S.activeAt < C.ACTIVE_LOCK then return false end
+    S.active, S.activeAt, S.inactiveAt = false, 0, t
+    S.syncPanicPending, S.syncPanicAt = false, 0
+    S.targetReturnPending = false
+    resetDetector()
+    return true
 end
 local function forceDeactivate(t)
-	if not S.active then
-		return false
-	end
-	S.active = false
-	S.activeAt = 0
-	S.inactiveAt = t
-	resetDetector()
-	return true
+    S.syncPanicPending, S.syncPanicAt = false, 0
+    S.targetReturnPending = false
+    if not S.active then return false end
+    S.active, S.activeAt, S.inactiveAt = false, 0, t
+    resetDetector()
+    return true
 end
 local function getDetectorRadius(speed)
-	local alpha = math.clamp(
-		speed / C.DET_RAD_SPD_REF,
-		0,
-		1
-	)
-	return C.DET_RAD_MIN
-		+ (C.DET_RAD_MAX - C.DET_RAD_MIN) * alpha
+    local alpha = math.clamp(speed / C.DET_RAD_SPD_REF, 0, 1)
+    return C.DET_RAD_MIN + (C.DET_RAD_MAX - C.DET_RAD_MIN) * alpha
+end
+local function getActivationRadius(speed, t)
+    if not AutoParry or type(AutoParry.getActivationRadius) ~= "function" then return 0 end
+    local ok, radius = pcall(AutoParry.getActivationRadius, speed, t)
+    return ok and type(radius) == "number" and radius >= 0 and radius or 0
+end
+local function activationMetrics(hr, ball, t)
+    local velocity = getBallVelocity(ball)
+    if not velocity or velocity.Magnitude <= 1 then return nil end
+    local distance = (hr.Position - ball.Position).Magnitude
+    local speed = velocity.Magnitude
+    local parryRadius = getActivationRadius(speed, t)
+    local tImp = math.max((distance - parryRadius) / speed, 0)
+    return { distance = distance, speed = speed, parryRadius = parryRadius, tImp = tImp }
+end
+local function getTargetReturnWindow(speed)
+    return lerpBySpeed(speed, C.TARGET_RETURN_SPD_LO, C.TARGET_RETURN_SPD_HI, C.TARGET_RETURN_MAX_LO, C.TARGET_RETURN_MIN_HI)
 end
 
--- detector
-local function tickDetector(hr, ball)
-	S.detSignal = false
-	if not (
-		hr
-		and hr.Parent
-		and ball
-		and ball.Parent
-	) then
-		S.detDotEma = 0
-		return false
-	end
-	local velocity = getBallVelocity(ball)
-	if not velocity or velocity.Magnitude <= 1 then
-		S.detDotEma = 0
-		return false
-	end
-	local speed = velocity.Magnitude
-	local offset = hr.Position - ball.Position
-	local distance = offset.Magnitude
-	if distance < 0.001 then
-		S.detDotEma = 0
-		return false
-	end
-	local radius = getDetectorRadius(speed)
-	local dot = velocity:Dot(offset.Unit)
-	if distance <= radius * C.DET_RADIUS_SLACK then
-		S.detDotEma =
-			S.detDotEma * (1 - C.DET_DOT_EMA)
-			+ dot * C.DET_DOT_EMA
-	else
-		S.detDotEma = 0
-	end
-	if distance <= radius
-		and S.detDotEma > C.DET_DOT_THRESH
-	then
-		S.detSignal = true
-	end
-	return S.detSignal
-end
-local function invisibleGate(hr, ball)
-	if not (
-		hr
-		and hr.Parent
-		and ball
-		and ball.Parent
-	) then
-		return false
-	end
-	local velocity = getBallVelocity(ball)
-	if not velocity then
-		return false
-	end
-	local speed = velocity.Magnitude
-	if speed < C.INV_APPROACH_SPD_MIN then
-		return false
-	end
-	local offset = hr.Position - ball.Position
-	local distance = offset.Magnitude
-	if distance > C.INV_DIST_CAP then
-		return false
-	end
-	if distance < 0.001 then
-		return true
-	end
-	local dot = velocity:Dot(offset.Unit)
-	return dot >= C.INV_DOT_MIN * speed
+-- physical return
+local function physicalReturn(hr, ball)
+    if not hr or not hr.Parent or not ball or not ball.Parent then
+        resetDetector()
+        return false
+    end
+    local velocity = getBallVelocity(ball)
+    if not velocity or velocity.Magnitude <= 1 then
+        resetDetector()
+        return false
+    end
+    local offset = hr.Position - ball.Position
+    local distance = offset.Magnitude
+    if distance < 0.001 then
+        resetDetector()
+        return false
+    end
+    local radius = getDetectorRadius(velocity.Magnitude)
+    if distance > radius * C.DET_RADIUS_SLACK then
+        resetDetector()
+        return false
+    end
+    local dot = velocity:Dot(offset.Unit)
+    S.detDotEma = S.detDotEma * (1 - C.DET_DOT_EMA) + dot * C.DET_DOT_EMA
+    return distance <= radius and S.detDotEma > C.DET_DOT_THRESH
 end
 
 -- activation
+local function syncPanic(t, metrics)
+    if not S.syncPanicPending or not metrics then return false end
+    if t - S.syncPanicAt > C.SYNC_PANIC_MAX_AGE then
+        S.syncPanicPending, S.syncPanicAt = false, 0
+        return false
+    end
+    if metrics.distance > C.SYNC_PANIC_RADIUS
+        or metrics.distance > metrics.parryRadius
+        or metrics.tImp > C.SYNC_PANIC_TIMP
+    then return false end
+    return "syncPanic"
+end
+local function targetReturn(t, metrics)
+    if not S.targetReturnPending then return false end
+    local elapsed = t - S.lostMeAt
+    if elapsed > getTargetReturnWindow(metrics and metrics.speed or 0) then
+        S.targetReturnPending, S.wasMeTarget, S.lostMeAt = false, false, 0
+        return false
+    end
+    if not metrics or metrics.distance > metrics.parryRadius then return false end
+    return "targetReturn"
+end
 local function shouldActivate(t, hr, ball)
-	if not (
-		hr
-		and hr.Parent
-		and ball
-		and ball.Parent
-	) then
-		return false
-	end
-	local targeted = AutoParry.isTargeted()
-	if not targeted then
-		return false
-	end
-	if tickDetector(hr, ball) then
-		return true
-	end
-	if invisibleGate(hr, ball) then
-		return true
-	end
-	return false
+    if not hr or not hr.Parent or not ball or not ball.Parent then return false end
+    if not AutoParry.isTargeted() then return false end
+    local metrics = activationMetrics(hr, ball, t)
+    local physicalReturnReady = physicalReturn(hr, ball)
+    if not metrics or metrics.distance > metrics.parryRadius then
+        resetDetector()
+        return false
+    end
+    return syncPanic(t, metrics) or targetReturn(t, metrics) or (physicalReturnReady and "physicalReturn" or false)
 end
-
--- deactivation
-local function shouldDeactivate(t, hr, ball)
-	if t < S.teleportLockUntil then
-		return true
-	end
-	return not (
-		hr
-		and hr.Parent
-		and ball
-		and ball.Parent
-	)
+local function shouldDeactivate(hr, ball)
+    return not hr or not hr.Parent or not ball or not ball.Parent
 end
-
--- evaluation
 local function evaluate(t, hr, ball, config)
-	local enabled =
-		config
-		and config.AutoClash ~= false
-		and not Utils.isManualSpamActive()
-	if not enabled then
-		S.enabled = false
-		forceDeactivate(now())
-		return
-	end
-	if GameInfo.isGrace() then
-		forceDeactivate(now())
-		return
-	end
-	S.enabled = true
-	if not hr or not hr.Parent then
-		forceDeactivate(now())
-		return
-	end
-	if not ball or not ball.Parent then
-		forceDeactivate(now())
-		return
-	end
-	if t < S.teleportLockUntil then
-		forceDeactivate(now())
-		return
-	end
-	if S.active then
-		if shouldDeactivate(t, hr, ball) then
-			deactivate(t)
-		end
-		return
-	end
-	if shouldActivate(t, hr, ball) then
-		activate(t)
-	end
-end
-local function getTargetReturnWindow(speed)
-	return lerpBySpeed(
-		speed,
-		C.TARGET_RETURN_SPD_LO,
-		C.TARGET_RETURN_SPD_HI,
-		C.TARGET_RETURN_MAX_LO,
-		C.TARGET_RETURN_MIN_HI
-	)
+    if not config or config.AutoClash == false or Utils.isManualSpamActive() then
+        forceDeactivate(t)
+        return
+    end
+    if GameInfo.isGrace() or not hr or not hr.Parent or not ball or not ball.Parent then
+        forceDeactivate(t)
+        return
+    end
+    if t < S.teleportLockUntil then
+        forceDeactivate(t)
+        return
+    end
+    if S.active then
+        if shouldDeactivate(hr, ball) then deactivate(t) end
+        return
+    end
+    local activation = shouldActivate(t, hr, ball)
+    if activation then activate(t) end
 end
 
 -- target
 local function onTarget(newTarget, t)
-	if type(newTarget) ~= "number" then
-		return
-	end
-	local previousTarget = S.lastTarget
-	local player = getLocalPlayer()
-	local userId = player and player.UserId
-	if not userId then
-		return
-	end
-	S.lastTarget = newTarget
-	S.lastTargetAt = t
-	local getState = AutoParry.getState
-	if type(getState) == "function" then
-		local state = getState()
-		if state then
-			state.armed = newTarget == userId
-		end
-	end
-	local isMe = newTarget == userId
-	local wasMe = previousTarget == userId
-	if wasMe and not isMe then
-		S.wasMeTarget = true
-		S.lostMeAt = t
-		return
-	end
-	if not isMe or wasMe or not S.wasMeTarget then
-		return
-	end
-	local ball = getBall()
-	local speed = getBallSpeed(ball)
-	local window = getTargetReturnWindow(speed)
-	local elapsed = t - S.lostMeAt
-	if elapsed <= window then
-		activate(t)
-	end
-	S.wasMeTarget = false
-	S.lostMeAt = 0
+    if type(newTarget) ~= "number" then return end
+    local player, previousTarget = getLocalPlayer(), S.lastTarget
+    local userId = player and player.UserId
+    if not userId then return end
+    S.lastTarget = newTarget
+    local getState = AutoParry.getState
+    if type(getState) == "function" then
+        local state = getState()
+        if type(state) == "table" then state.armed = newTarget == userId end
+    end
+    local isMe, wasMe = newTarget == userId, previousTarget == userId
+    if wasMe and not isMe then
+        S.wasMeTarget, S.lostMeAt = true, t
+        S.syncPanicPending, S.syncPanicAt = false, 0
+        S.targetReturnPending = false
+        return
+    end
+    if not isMe or wasMe then return end
+    if S.wasMeTarget then
+        S.targetReturnPending, S.syncPanicPending = true, false
+        S.syncPanicAt = 0
+    else
+        S.syncPanicPending, S.syncPanicAt = true, t
+        S.targetReturnPending = false
+    end
 end
 
 -- teleport
 local function onTeleport()
-	local t = now()
-	S.teleportLockUntil = t + 0.5
-	forceDeactivate(t)
+    local t = now()
+    S.syncPanicPending, S.syncPanicAt = false, 0
+    S.targetReturnPending = false
+    S.teleportLockUntil = t + 0.5
+    forceDeactivate(t)
 end
 
 -- lifecycle
 local function disconnectHeartbeat()
-    if heartbeatConnection then
-        pcall(function()
-            heartbeatConnection:Disconnect()
-        end)
-        heartbeatConnection = nil
-    end
+    local connection = heartbeatConnection
+    if not connection then return end
+    heartbeatConnection = nil
+    if Utils then Utils.untrackCharacter(connection) end
+    pcall(function() connection:Disconnect() end)
 end
 local function bindCharacter(character)
     bindGeneration = bindGeneration + 1
     local currentGeneration = bindGeneration
     disconnectHeartbeat()
-    if not (character and character.Parent) then
-        return false
-    end
-    local root = character:FindFirstChild("HumanoidRootPart")
-        or character:WaitForChild("HumanoidRootPart", 1)
-    if not (root and root.Parent) then
-        return false
-    end
+    if not character or not character.Parent then return false end
+    local root = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 1)
+    if not root or not root.Parent then return false end
     heartbeatConnection = Utils.getRunService().Heartbeat:Connect(function()
-        if currentGeneration ~= bindGeneration or not Utils.isActive() then
-            return
-        end
-        if not (character.Parent and root.Parent) then
+        if currentGeneration ~= bindGeneration or not Utils.isActive() then return end
+        if not character.Parent or not root.Parent then
             forceDeactivate(now())
             return
         end
-        local timestamp = now()
-        evaluate(timestamp, root, GameInfo.getBall(), Utils.getConfig())
+        local t = now()
+        evaluate(t, root, GameInfo.getBall(), Utils.getConfig())
     end)
     Utils.trackCharacter(heartbeatConnection)
     return true
@@ -366,32 +241,18 @@ end
 
 -- setup
 function AutoClash.setup(deps)
-	if type(deps) ~= "table" then
-		return false
-	end
-	GameInfo = deps.GameInfo
-	Utils = deps.Utils
-	AutoParry = deps.AutoParry
-	if not GameInfo or not Utils or not AutoParry then
-		return false
-	end
-	Utils.setOnClashOn(function()
-		return S.active
-	end)
+    if type(deps) ~= "table" or not deps.GameInfo or not deps.Utils or not deps.AutoParry then return false end
+    GameInfo, Utils, AutoParry = deps.GameInfo, deps.Utils, deps.AutoParry
+    AutoClash.resetState()
+    Utils.setOnClashOn(function() return S.active end)
     return true
 end
-function AutoClash.bindCharacter(character)
-    return bindCharacter(character)
-end
+function AutoClash.bindCharacter(character) return bindCharacter(character) end
 
 -- public
-function AutoClash.clashOn()
-	return S.active
-end
+function AutoClash.clashOn() return S.active end
 function AutoClash.onBallSync(data)
-    if typeof(data) ~= "table" then
-        return
-    end
+    if type(data) ~= "table" then return end
     if data.Teleported == true then
         onTeleport()
         return
@@ -401,16 +262,9 @@ end
 function AutoClash.resetState()
     bindGeneration = bindGeneration + 1
     disconnectHeartbeat()
-    S.enabled = false
-	S.active = false
-	S.activeAt = 0
-	S.inactiveAt = 0
-	S.detDotEma = 0
-	S.detSignal = false
-	S.lastTarget = -999
-	S.lastTargetAt = 0
-	S.wasMeTarget = false
-	S.lostMeAt = 0
-	S.teleportLockUntil = 0
+    S.active, S.activeAt, S.inactiveAt = false, 0, 0
+    S.detDotEma, S.lastTarget, S.wasMeTarget = 0, -999, false
+    S.lostMeAt, S.syncPanicPending, S.syncPanicAt = 0, false, 0
+    S.targetReturnPending, S.teleportLockUntil = false, 0
 end
 return AutoClash
