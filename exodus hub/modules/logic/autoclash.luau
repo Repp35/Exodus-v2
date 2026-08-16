@@ -9,22 +9,19 @@ local AutoParry
 local Remote
 
 -- tuning
-local RED_HOLD_MAX_LO = 0.50
-local RED_HOLD_MIN_HI = 0.25
-local RED_HOLD_SPD_LO = 60
-local RED_HOLD_SPD_HI = 200
+local RED_HOLD = 0.25
 local SPAM_INTERVAL = 0.05
 
-local TARGET_RETURN_MAX_LO = 0.250
-local TARGET_RETURN_MIN_HI = 0.180
+local TARGET_RETURN_MAX_LO = 0.280
+local TARGET_RETURN_MIN_HI = 0.170
 local TARGET_RETURN_SPD_LO = 60
 local TARGET_RETURN_SPD_HI = 200
 
-local PHYS_DOT_EMA = 0.20
-local PHYS_THRESH = 0.10
-local PHYS_RAD_SLACK = 1.35
-local ACT_RADIUS_MULT = 1.55
-local SYNC_TARGET_RADIUS_MULT = 1.30
+local PHYS_DOT_EMA = 0.25
+local PHYS_THRESH = 0.14
+local PHYS_RAD_SLACK = 1.22
+local ACT_RADIUS_MULT = 1.32
+local SYNC_TARGET_RADIUS_MULT = 1.05
 local DEACT_RADIUS_MULT = 1.15
 
 -- state
@@ -32,16 +29,12 @@ local S = {
     enabled = false,
     active = false,
     activeAt = 0,
-    inactiveAt = 0,
     lastValidAt = 0,
     lastTargetAt = 0,
     lastTargetId = nil,
     wasMeTarget = false,
     lostMeAt = 0,
     physDotEma = 0,
-    armed = false,
-    armedAt = 0,
-    armedExpiry = 0,
     bound = false,
     _lastFire = 0,
 }
@@ -232,20 +225,12 @@ local function getBallSpeed(ball)
     return velocity.Magnitude
 end
 
-local INACTIVE_COOLDOWN = 0.080
-local ARMED_EXPIRY      = 0.600
-
-local function tickPhysical(ctx, t)
+local function tickPhysical(ctx)
     local hr = ctx and ctx.hr
     local ball = ctx and ctx.ball
 
     if not (hr and hr.Parent and ball and ball.Parent) then
         S.physDotEma = 0
-        return false
-    end
-
-    -- cooldown pós-deactivate
-    if (t - S.inactiveAt) < INACTIVE_COOLDOWN then
         return false
     end
 
@@ -276,21 +261,6 @@ local function tickPhysical(ctx, t)
     local radius = getActivationRadius(ctx.parryRadius)
     local dot = velocity:Dot(offset.Unit)
 
-    -- gate armed: target return armou, esperando bola entrar no raio
-    if S.armed then
-        if (t - S.armedAt) >= ARMED_EXPIRY then
-            -- expirou sem a bola entrar
-            S.armed = false
-            S.armedAt = 0
-        elseif distance <= radius and dot > 0 then
-            -- bola entrou no raio com dot positivo: ativa
-            S.armed = false
-            S.armedAt = 0
-            S.physDotEma = 0
-            return true
-        end
-    end
-
     if distance <= radius * PHYS_RAD_SLACK then
         S.physDotEma = S.physDotEma * (1 - PHYS_DOT_EMA)
             + dot * PHYS_DOT_EMA
@@ -306,35 +276,12 @@ local function activate(t)
     S.active = true
     S.activeAt = t
     S.lastValidAt = t
-    S.armed = false
-    S.armedAt = 0
-    S.armedExpiry = 0
-    S.physDotEma = 0
 end
 
 local function deactivate()
     S.active = false
     S.activeAt = 0
     S.lastValidAt = 0
-    S.inactiveAt = now()
-    S.armed = false
-    S.armedAt = 0
-    S.armedExpiry = 0
-    S.physDotEma = 0
-    S.wasMeTarget = false
-    S.lostMeAt = 0
-end
-
-local function getRedHold(speed)
-    speed = speed or 0
-    if speed >= RED_HOLD_SPD_HI then
-        return RED_HOLD_MIN_HI
-    end
-    if speed <= RED_HOLD_SPD_LO then
-        return RED_HOLD_MAX_LO
-    end
-    local alpha = (speed - RED_HOLD_SPD_LO) / (RED_HOLD_SPD_HI - RED_HOLD_SPD_LO)
-    return RED_HOLD_MAX_LO + (RED_HOLD_MIN_HI - RED_HOLD_MAX_LO) * alpha
 end
 
 local function shouldDeactivate(t, ctx)
@@ -357,9 +304,8 @@ local function shouldDeactivate(t, ctx)
     end
 
     local lastValid = S.lastValidAt or S.activeAt or 0
-    local redHold = getRedHold(ctx.spd or 0)
 
-    return (t - lastValid) >= redHold
+    return (t - lastValid) >= RED_HOLD
 end
 
 -- target change
@@ -443,32 +389,30 @@ function AutoClash.onBallSync(data)
         local lostAt = S.lostMeAt or 0
 
         if lostAt > 0 then
-            local elapsed = t - lostAt
+            local character = localPlayer.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
             local ball = getBall()
-            local speed = getBallSpeed(ball)
-            local window = getTargetReturnWindow(speed)
 
-            if elapsed <= window then
-                local character = localPlayer.Character
-                local hrp = character and character:FindFirstChild("HumanoidRootPart")
+            if hrp and ball and ball.Parent then
+                local speed = getBallSpeed(ball)
+                local window = getTargetReturnWindow(speed)
+                local elapsed = t - lostAt
 
-                if hrp and ball and ball.Parent then
+                if elapsed <= window then
                     local baseRadius = computeParryRadius(speed, t)
+
                     if type(baseRadius) ~= "number" or baseRadius <= 0 then
                         baseRadius = 8
                     end
+
                     local activationRadius = baseRadius * ACT_RADIUS_MULT
-                    local okDist, distance = pcall(function()
+
+                    local okDistance, distance = pcall(function()
                         return (hrp.Position - ball.Position).Magnitude
                     end)
 
-                    if okDist and distance <= activationRadius then
-                        -- já está no raio: ativa direto
+                    if okDistance and distance <= activationRadius then
                         activate(t)
-                    else
-                        -- fora do raio: arma e espera bola entrar
-                        S.armed = true
-                        S.armedAt = t
                     end
                 end
             end
@@ -555,7 +499,7 @@ local function tickCharacter(dt)
         if shouldDeactivate(t, ctx) then
             deactivate()
         end
-    elseif tickPhysical(ctx, t) then
+    elseif tickPhysical(ctx) then
         activate(t)
     end
 
@@ -627,9 +571,6 @@ function AutoClash.resetState()
     S.wasMeTarget = false
     S.lostMeAt = 0
     S.physDotEma = 0
-    S.armed = false
-    S.armedAt = 0
-    S.inactiveAt = 0
     S._lastFire = 0
 
     deactivate()
@@ -735,7 +676,7 @@ function AutoClash.evaluate(t, hr, ball, config)
         if shouldDeactivate(t, ctx) then
             deactivate()
         end
-    elseif tickPhysical(ctx, t) then
+    elseif tickPhysical(ctx) then
         activate(t)
     end
 end
