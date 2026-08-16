@@ -9,7 +9,7 @@ local AutoParry
 local Remote
 
 -- tuning
-local RED_HOLD_MAX_LO = 0.30   -- bola lenta (60 spd): 300ms
+local RED_HOLD_MAX_LO = 0.37   -- bola lenta (60 spd): 300ms
 local RED_HOLD_MIN_HI = 0.12   -- bola rápida (200 spd): 120ms
 local RED_HOLD_SPD_LO = 60
 local RED_HOLD_SPD_HI = 200
