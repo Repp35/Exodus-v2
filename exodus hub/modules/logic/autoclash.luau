@@ -1,5 +1,3 @@
---[[ autoclah ]]
-
 -- parameters
 local AutoClash = {}
 local GameInfo, Utils, AutoParry
@@ -99,6 +97,16 @@ local function getActivationRadius(ctx)
     return radius * ACT_RADIUS_MULT
 end
 
+local function getDetectorRadius(ctx)
+    local radius = ctx and (ctx.detectRadius or ctx.parryRadius)
+
+    if type(radius) ~= "number" or radius <= 0 then
+        return 8
+    end
+
+    return radius * ACT_RADIUS_MULT
+end
+
 local function nearestInRange(myHRP, distance)
     if not (myHRP and type(distance) == "number" and distance > 0) then
         return false
@@ -159,7 +167,7 @@ end
 
 local function getParryContext(t, hr, ball)
     local speed = getSyncSpeed(ball, t)
-    local parryRadius = AutoParry.computeParryRadius(speed, t)
+    local parryRadius, detectRadius = AutoParry.computeParryRadius(speed, t)
 
     return {
         time = t,
@@ -167,6 +175,7 @@ local function getParryContext(t, hr, ball)
         ball = ball,
         targeted = GameInfo.isTargeted(S.lastTargetId),
         parryRadius = parryRadius,
+        detectRadius = detectRadius or parryRadius,
         sync = {Speed = speed},
         spd = speed,
     }
@@ -222,7 +231,7 @@ local function tickPhysical(ctx)
         return false
     end
 
-    local radius = getActivationRadius(ctx)
+    local radius = getDetectorRadius(ctx)
     local dot = velocity:Dot(offset.Unit)
 
     if distance <= radius * PHYS_RAD_SLACK then
