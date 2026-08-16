@@ -9,14 +9,14 @@ local AutoParry
 local Remote
 
 -- tuning
-local RED_HOLD_MAX_LO = 0.37   -- bola lenta (60 spd): 300ms
+local RED_HOLD_MAX_LO = 0.30   -- bola lenta (60 spd): 300ms
 local RED_HOLD_MIN_HI = 0.12   -- bola rápida (200 spd): 120ms
 local RED_HOLD_SPD_LO = 60
 local RED_HOLD_SPD_HI = 200
 local SPAM_INTERVAL = 0.05
 
-local TARGET_RETURN_MAX_LO = 0.300
-local TARGET_RETURN_MIN_HI = 0.200
+local TARGET_RETURN_MAX_LO = 0.380
+local TARGET_RETURN_MIN_HI = 0.250
 local TARGET_RETURN_SPD_LO = 60
 local TARGET_RETURN_SPD_HI = 200
 
