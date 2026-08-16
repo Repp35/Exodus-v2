@@ -1,181 +1,353 @@
---[[ GameInfo ]]
+-- [[ GameInfo ]]
 
--- services
 local GameInfo = {}
 local Utils
 local Players
 local Workspace
 
--- constants
+-- tuning
 local BALL_CACHE_TTL = 0.5
-local SYNC_FRESH_T = 1.0
+local SYNC_FRESH_TIME = 1.0
+local ABILITY_RETRY_TIME = 2.0
 
 -- state
-local _ball, _ballAt = nil, 0
-local _sync = {
-    Speed      = 0,
-    RealPos    = Vector3.new(0, 0, 0),
-    hasRealPos = false,
-    Target     = -999,
+local State = {
+    ball = nil,
+    ballAt = 0,
+    speed = 0,
+    realPosition = Vector3.new(0, 0, 0),
+    hasRealPosition = false,
+    target = -1,
     lastSyncAt = 0,
     positionAt = 0,
-    DeflectDir = Vector3.new(0, 0, 0),
-    Grace      = false,
+    deflectDirection = Vector3.new(0, 0, 0),
 }
 
+local deflectAbility
+local abilityAttempted = false
+local abilityCheckedAt = 0
+
+-- reset
+local function resetState()
+    State.ball = nil
+    State.ballAt = 0
+    State.speed = 0
+    State.realPosition = Vector3.new(0, 0, 0)
+    State.hasRealPosition = false
+    State.target = -1
+    State.lastSyncAt = 0
+    State.positionAt = 0
+    State.deflectDirection = Vector3.new(0, 0, 0)
+
+    deflectAbility = nil
+    abilityAttempted = false
+    abilityCheckedAt = 0
+end
+
 -- ball
+local function isBall(instance)
+    return instance
+        and instance.Parent
+        and instance:IsA("BasePart")
+        and instance.Name == "GameBall"
+end
+
+local function setBall(ball)
+    if isBall(ball) then
+        State.ball = ball
+        State.ballAt = Utils.now()
+    end
+end
+
+local function clearBall(ball)
+    if State.ball == ball then
+        State.ball = nil
+        State.ballAt = Utils.now()
+    end
+end
+
 local function getBall()
-    local t = Utils.now()
-    if _ball and _ball.Parent and (t - _ballAt) < BALL_CACHE_TTL then
-        return _ball
+    local time = Utils.now()
+
+    if isBall(State.ball) and time - State.ballAt < BALL_CACHE_TTL then
+        return State.ball
     end
-    local b = Workspace:FindFirstChild("GameBall", true)
-    if b and b.Parent and b:IsA("BasePart") then
-        _ball, _ballAt = b, t
-        return b
+
+    local ball = Workspace:FindFirstChild("GameBall", true)
+
+    if isBall(ball) then
+        setBall(ball)
+        return ball
     end
-    _ball, _ballAt = nil, t
+
+    State.ball = nil
+    State.ballAt = time
     return nil
-end
-local function setBall(b)
-    if not (b and b.Parent and b:IsA("BasePart")) then return end
-    _ball, _ballAt = b, Utils.now()
-end
-local function clearBallRef(b)
-    if b == _ball then
-        _ball, _ballAt = nil, Utils.now()
-    end
 end
 
 -- motion
-local function ballSpeed(ball, t)
-    if not (ball and ball.Parent and ball:IsA("BasePart")) then return 0 end
-    t = type(t) == "number" and t or Utils.now()
-    if (t - _sync.lastSyncAt) < SYNC_FRESH_T and _sync.Speed > 0 then
-        return _sync.Speed
+local function getAssemblyVelocity(ball)
+    local ok, velocity = pcall(function()
+        return ball.AssemblyLinearVelocity
+    end)
+
+    if ok and typeof(velocity) == "Vector3" then
+        return velocity
     end
-    local ok, av = pcall(function() return ball.AssemblyLinearVelocity end)
-    return (ok and typeof(av) == "Vector3") and av.Magnitude or 0
+
+    return Vector3.new(0, 0, 0)
 end
-local function ballPos(ball, t)
-    if not (ball and ball.Parent and ball:IsA("BasePart")) then return nil end
-    t = type(t) == "number" and t or Utils.now()
-    local positionAge = t - _sync.positionAt
-    if _sync.hasRealPos and positionAge >= 0 and positionAge < SYNC_FRESH_T then
-        local ok, av = pcall(function() return ball.AssemblyLinearVelocity end)
-        local direction = _sync.DeflectDir.Magnitude > 0.1 and _sync.DeflectDir.Unit
-            or (ok and typeof(av) == "Vector3" and av.Magnitude > 1 and av.Unit or nil)
-        if direction and _sync.Speed > 0 then
-            return _sync.RealPos + direction * (_sync.Speed * positionAge)
-        end
-        return _sync.RealPos
+
+local function ballSpeed(ball, time)
+    if not isBall(ball) then
+        return 0
     end
-    return ball.Position
+
+    time = type(time) == "number" and time or Utils.now()
+
+    if State.speed > 0
+        and time >= State.lastSyncAt
+        and time - State.lastSyncAt < SYNC_FRESH_TIME
+    then
+        return State.speed
+    end
+
+    return getAssemblyVelocity(ball).Magnitude
+end
+
+local function ballPosition(ball, time)
+    if not isBall(ball) then
+        return nil
+    end
+
+    time = type(time) == "number" and time or Utils.now()
+    local positionAge = time - State.positionAt
+
+    if State.hasRealPosition
+        and positionAge >= 0
+        and positionAge < SYNC_FRESH_TIME
+    then
+        local velocity = getAssemblyVelocity(ball)
+        local direction = State.deflectDirection
+
+        if direction.Magnitude <= 0.1 and velocity.Magnitude > 1 then
+            direction = velocity
+        end
+
+        if direction.Magnitude > 0.1 and State.speed > 0 then
+            return State.realPosition + direction.Unit * State.speed * positionAge
+        end
+
+        return State.realPosition
+    end
+
+    local ok, position = pcall(function()
+        return ball.Position
+    end)
+
+    if ok and typeof(position) == "Vector3" then
+        return position
+    end
+
+    return nil
 end
 
 -- target
+local function getTargetAttribute()
+    local value = Workspace:GetAttribute("GameBallTarget")
+
+    if type(value) == "number" then
+        return value
+    end
+
+    return tonumber(value)
+end
+
 local function isTargeted(lastTarget)
-    local localPlayer = Players.LocalPlayer
-    if not localPlayer then return false end
-    local uid = localPlayer.UserId
-    return _sync.Target == uid
-        or lastTarget == uid
-        or Workspace:GetAttribute("GameBallTarget") == uid
+    local player = Players.LocalPlayer
+
+    if not player then
+        return false
+    end
+
+    local userId = player.UserId
+
+    return State.target == userId
+        or tonumber(lastTarget) == userId
+        or getTargetAttribute() == userId
 end
 
 -- sync
-local function applySync(d)
-    if typeof(d) ~= "table" then return end
-    local t = Utils.now()
-    if type(d.Speed) == "number" and d.Speed >= 0 then _sync.Speed = d.Speed end
-    if typeof(d.RealPosition) == "Vector3" then
-        _sync.RealPos = d.RealPosition
-        _sync.hasRealPos = true
-        _sync.positionAt = t
+local function applySync(data)
+    if typeof(data) ~= "table" then
+        return false
     end
-    if typeof(d.DeflectDirection) == "Vector3" then
-        _sync.DeflectDir = d.DeflectDirection
+
+    local time = Utils.now()
+
+    if type(data.Speed) == "number" and data.Speed >= 0 then
+        State.speed = data.Speed
     end
-    if type(d.TargetPlayerID) == "number" then
-        local player = Utils.getLocalPlayer()
-        if player and _sync.Target ~= d.TargetPlayerID and d.TargetPlayerID == player.UserId then
-            _sync.Grace = false
-        end
-        _sync.Target = d.TargetPlayerID
+
+    if typeof(data.RealPosition) == "Vector3" then
+        State.realPosition = data.RealPosition
+        State.hasRealPosition = true
+        State.positionAt = time
     end
-    if type(d.Grace) == "boolean" then _sync.Grace = d.Grace end
-    _sync.lastSyncAt = t
+
+    if typeof(data.DeflectDirection) == "Vector3" then
+        State.deflectDirection = data.DeflectDirection
+    end
+
+    if data.TargetPlayerID ~= nil then
+        State.target = tonumber(data.TargetPlayerID) or -1
+    end
+
+    State.lastSyncAt = time
+    return true
 end
 
 -- ability
-local _deflectAbilityRef, _deflectAbilityTried, _deflectAbilityLastCheck = nil, false, 0
+local function locateDeflectAbility()
+    if deflectAbility and deflectAbility.Parent ~= nil then
+        return deflectAbility
+    end
 
-local function _ensureDeflectAbility()
-    if _deflectAbilityRef and _deflectAbilityRef.Parent ~= nil then
-        return _deflectAbilityRef
+    local time = Utils.now()
+
+    if abilityAttempted and time - abilityCheckedAt < ABILITY_RETRY_TIME then
+        return nil
     end
-    local t = Utils.now()
-    if _deflectAbilityTried and (t - _deflectAbilityLastCheck) < 2.0 then
-        return _deflectAbilityRef
-    end
-    _deflectAbilityTried, _deflectAbilityLastCheck = true, t
+
+    abilityAttempted = true
+    abilityCheckedAt = time
+
     pcall(function()
         local ts = Utils.getReplicatedStorage():FindFirstChild("TS")
-        if not ts then return end
-        local bm = ts:FindFirstChild("BindableManager")
-        if not bm then return end
-        local ok, BM = pcall(require, bm)
-        if not ok or not BM or not BM.GetFunction then return end
-        local getFn = BM:GetFunction("AbilityManager::GetAbility")
-        if not getFn then return end
-        for _, key in ipairs({"Deflect", "Block"}) do
-            local ok2, ref = pcall(function() return getFn:Invoke(key) end)
-            if ok2 and ref and type(ref.Cooldown) == "number" and type(ref.SetCooldown) == "function" then
-                _deflectAbilityRef = ref
+        local bindableManager = ts and ts:FindFirstChild("BindableManager")
+
+        if not bindableManager then
+            return
+        end
+
+        local ok, manager = pcall(require, bindableManager)
+
+        if not ok or type(manager) ~= "table" or type(manager.GetFunction) ~= "function" then
+            return
+        end
+
+        local getAbility = manager:GetFunction("AbilityManager::GetAbility")
+
+        if not getAbility or type(getAbility.Invoke) ~= "function" then
+            return
+        end
+
+        for _, name in ipairs({ "Deflect", "Block" }) do
+            local okAbility, ability = pcall(getAbility.Invoke, getAbility, name)
+
+            if okAbility
+                and ability
+                and type(ability.Cooldown) == "number"
+                and type(ability.SetCooldown) == "function"
+            then
+                deflectAbility = ability
                 return
             end
         end
     end)
-    return _deflectAbilityRef
+
+    return deflectAbility
 end
-local function getDeflectCD()
-    local ref = _ensureDeflectAbility()
-    if not ref then return 0 end
-    local ok, v = pcall(function() return ref.Cooldown end)
-    return (ok and type(v) == "number") and v or 0
+
+local function getDeflectCooldown()
+    local ability = locateDeflectAbility()
+
+    if not ability then
+        return 0
+    end
+
+    local ok, cooldown = pcall(function()
+        return ability.Cooldown
+    end)
+
+    if ok and type(cooldown) == "number" then
+        return cooldown
+    end
+
+    return 0
 end
 
 -- watcher
-local function installBallWatcher(trackFn)
-    if type(trackFn) ~= "function" then return false end
-    local gameFolder    = Workspace:WaitForChild("Game", 30)
-    local ballWatcher   = gameFolder and gameFolder:FindFirstChild("Ball")
-    if not ballWatcher then return false end
-    trackFn(ballWatcher.ChildAdded:Connect(function(c)
-        if c.Name == "GameBall" and c:IsA("BasePart") then setBall(c) end
+local function installBallWatcher(trackConnection)
+    if type(trackConnection) ~= "function" then
+        return false
+    end
+
+    local gameFolder = Workspace:WaitForChild("Game", 30)
+    local ballFolder = gameFolder and gameFolder:FindFirstChild("Ball")
+
+    if not ballFolder then
+        return false
+    end
+
+    trackConnection(ballFolder.ChildAdded:Connect(function(child)
+        if child.Name == "GameBall" and child:IsA("BasePart") then
+            setBall(child)
+        end
     end))
-    trackFn(ballWatcher.ChildRemoved:Connect(clearBallRef))
-    local existing = ballWatcher:FindFirstChild("GameBall")
-    if existing and existing:IsA("BasePart") then setBall(existing) end
+
+    trackConnection(ballFolder.ChildRemoved:Connect(clearBall))
+    setBall(ballFolder:FindFirstChild("GameBall"))
+
     return true
 end
 
 -- setup
 function GameInfo.setup(deps)
-    if type(deps) ~= "table" or not deps.Utils then
+    if type(deps) ~= "table"
+        or type(deps.Utils) ~= "table"
+        or type(deps.Utils.now) ~= "function"
+        or type(deps.Utils.getPlayers) ~= "function"
+        or type(deps.Utils.getReplicatedStorage) ~= "function"
+    then
         return false
     end
+
     Utils = deps.Utils
     Players = Utils.getPlayers()
     Workspace = game:GetService("Workspace")
+    resetState()
+
     return true
 end
-function GameInfo.getBall()          return getBall() end
-function GameInfo.ballSpeed(b, t)    return ballSpeed(b, t) end
-function GameInfo.ballPos(b, t)      return ballPos(b, t) end
-function GameInfo.isTargeted(lt)     return isTargeted(lt) end
-function GameInfo.applySync(d)       applySync(d) end
-function GameInfo.isGrace()          return _sync.Grace == true end
-function GameInfo.installBallWatcher(fn) return installBallWatcher(fn) end
-function GameInfo.getDeflectCD()     return getDeflectCD() end
+
+-- public api
+function GameInfo.getBall()
+    return getBall()
+end
+
+function GameInfo.ballSpeed(ball, time)
+    return ballSpeed(ball, time)
+end
+
+function GameInfo.ballPos(ball, time)
+    return ballPosition(ball, time)
+end
+
+function GameInfo.isTargeted(lastTarget)
+    return isTargeted(lastTarget)
+end
+
+function GameInfo.applySync(data)
+    return applySync(data)
+end
+
+function GameInfo.installBallWatcher(trackConnection)
+    return installBallWatcher(trackConnection)
+end
+
+function GameInfo.getDeflectCD()
+    return getDeflectCooldown()
+end
+
 return GameInfo
