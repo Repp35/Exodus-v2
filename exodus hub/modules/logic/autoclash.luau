@@ -16,19 +16,18 @@ local PHYS_RAD_SLACK = 1.22
 local ACT_RADIUS_MULT = 1.32
 local SYNC_TARGET_RADIUS_MULT = 1.05
 local DEACT_RADIUS_MULT = 1.15
-local TELEPORT_LOCK = 0.20
 
+-- state
 local S = {
     enabled = false,
     active = false,
     activeAt = 0,
     lastValidAt = 0,
     lastTargetAt = 0,
-    lastTargetId = -999,
+    lastTargetId = nil,
     wasMeTarget = false,
     lostMeAt = 0,
     physDotEma = 0,
-    teleportLockUntil = 0,
 }
 
 local heartbeatConnection
@@ -39,7 +38,7 @@ local function now()
     return Utils.now()
 end
 
-local function getLocalPlayer()
+local function getLP()
     return Utils.getLocalPlayer()
 end
 
@@ -47,9 +46,93 @@ local function getBall()
     return GameInfo.getBall()
 end
 
-local function getBallVelocity(ball)
-    if not (ball and ball.Parent) then
-        return nil
+local function getConfig()
+    return Utils.getConfig() or {}
+end
+
+local function uiEnabled()
+    local config = getConfig()
+    return type(config) == "table"
+        and config.AutoClash ~= false
+        and not Utils.isManualSpamActive()
+end
+
+local function isBallTargeted(ctx)
+    return ctx and ctx.targeted == true
+end
+
+local function ballInRange(hr, ball, distance)
+    if not (hr and ball) then
+        return false
+    end
+
+    if type(distance) ~= "number" or distance <= 0 then
+        return false
+    end
+
+    local ok, currentDistance = pcall(function()
+        return (hr.Position - ball.Position).Magnitude
+    end)
+
+    return ok
+        and typeof(currentDistance) == "number"
+        and currentDistance <= distance
+end
+
+local function getDeactivationRadius(ctx)
+    local radius = ctx and ctx.parryRadius
+
+    if type(radius) ~= "number" or radius <= 0 then
+        return 8
+    end
+
+    return radius * DEACT_RADIUS_MULT
+end
+
+local function getActivationRadius(ctx)
+    local radius = ctx and ctx.parryRadius
+
+    if type(radius) ~= "number" or radius <= 0 then
+        return 8
+    end
+
+    return radius * ACT_RADIUS_MULT
+end
+
+local function nearestInRange(myHRP, distance)
+    if not (myHRP and type(distance) == "number" and distance > 0) then
+        return false
+    end
+
+    local localPlayer = getLP()
+
+    for _, player in ipairs(Utils.getPlayers():GetPlayers()) do
+        if player ~= localPlayer then
+            local character = player.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+            if hrp then
+                local ok, currentDistance = pcall(function()
+                    return (myHRP.Position - hrp.Position).Magnitude
+                end)
+
+                if ok
+                    and typeof(currentDistance) == "number"
+                    and currentDistance <= distance
+                then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+-- context
+local function getBallSpeed(ball)
+    if not ball or not ball.Parent then
+        return 0
     end
 
     local ok, velocity = pcall(function()
@@ -57,13 +140,13 @@ local function getBallVelocity(ball)
     end)
 
     if not ok or typeof(velocity) ~= "Vector3" then
-        return nil
+        return 0
     end
 
-    return velocity
+    return velocity.Magnitude
 end
 
-local function getBallSpeed(ball, t)
+local function getSyncSpeed(ball, t)
     if GameInfo and type(GameInfo.ballSpeed) == "function" then
         local ok, speed = pcall(GameInfo.ballSpeed, ball, t)
         if ok and type(speed) == "number" and speed >= 0 then
@@ -71,52 +154,20 @@ local function getBallSpeed(ball, t)
         end
     end
 
-    local velocity = getBallVelocity(ball)
-    return velocity and velocity.Magnitude or 0
-end
-
-local function getParryRadius(speed, t)
-    return AutoParry.computeParryRadius(speed, t)
-end
-
-local function ballDistance(hr, ball)
-    if not (hr and hr.Parent and ball and ball.Parent) then
-        return nil
-    end
-
-    local ok, distance = pcall(function()
-        return (hr.Position - ball.Position).Magnitude
-    end)
-
-    return ok and type(distance) == "number" and distance or nil
-end
-
-local function ballInRange(hr, ball, distance)
-    local currentDistance = ballDistance(hr, ball)
-    return currentDistance ~= nil
-        and type(distance) == "number"
-        and distance > 0
-        and currentDistance <= distance
-end
-
-local function isBallTargeted()
-    if not GameInfo or type(GameInfo.isTargeted) ~= "function" then
-        return false
-    end
-
-    local ok, targeted = pcall(GameInfo.isTargeted, S.lastTargetId)
-    return ok and targeted == true
+    return getBallSpeed(ball)
 end
 
 local function getParryContext(t, hr, ball)
-    local speed = getBallSpeed(ball, t)
+    local speed = getSyncSpeed(ball, t)
+    local parryRadius = AutoParry.computeParryRadius(speed, t)
 
     return {
         time = t,
         hr = hr,
         ball = ball,
-        targeted = isBallTargeted(),
-        parryRadius = getParryRadius(speed, t),
+        targeted = GameInfo.isTargeted(S.lastTargetId),
+        parryRadius = parryRadius,
+        sync = {Speed = speed},
         spd = speed,
     }
 end
@@ -137,32 +188,6 @@ local function getTargetReturnWindow(speed)
         + (TARGET_RETURN_MIN_HI - TARGET_RETURN_MAX_LO) * alpha
 end
 
-local function nearestInRange(myHRP, distance)
-    if not (myHRP and myHRP.Parent and type(distance) == "number" and distance > 0) then
-        return false
-    end
-
-    local players = Utils.getPlayers()
-    local localPlayer = getLocalPlayer()
-    if not players then
-        return false
-    end
-
-    for _, player in ipairs(players:GetPlayers()) do
-        if player ~= localPlayer then
-            local character = player.Character
-            local hrp = character and character:FindFirstChild("HumanoidRootPart")
-            local currentDistance = ballDistance(myHRP, hrp)
-
-            if currentDistance and currentDistance <= distance then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
 -- detector
 local function tickPhysical(ctx)
     local hr = ctx and ctx.hr
@@ -173,24 +198,37 @@ local function tickPhysical(ctx)
         return false
     end
 
-    local velocity = getBallVelocity(ball)
-    if not velocity or velocity.Magnitude <= 1 then
+    local ok, velocity = pcall(function()
+        return ball.AssemblyLinearVelocity
+    end)
+
+    if not ok or typeof(velocity) ~= "Vector3" then
+        S.physDotEma = 0
+        return false
+    end
+
+    local speed = velocity.Magnitude
+
+    if speed <= 1 then
         S.physDotEma = 0
         return false
     end
 
     local offset = hr.Position - ball.Position
     local distance = offset.Magnitude
+
     if distance < 0.001 then
         S.physDotEma = 0
         return false
     end
 
-    local radius = getParryRadius(ctx.spd, ctx.time) * ACT_RADIUS_MULT
+    local radius = getActivationRadius(ctx)
     local dot = velocity:Dot(offset.Unit)
 
     if distance <= radius * PHYS_RAD_SLACK then
-        S.physDotEma = S.physDotEma * (1 - PHYS_DOT_EMA) + dot * PHYS_DOT_EMA
+        S.physDotEma =
+            S.physDotEma * (1 - PHYS_DOT_EMA)
+            + dot * PHYS_DOT_EMA
     else
         S.physDotEma = 0
     end
@@ -211,21 +249,17 @@ local function deactivate()
     S.lastValidAt = 0
 end
 
-local function forceDeactivate(t)
-    deactivate()
-    S.lastValidAt = t or 0
-end
-
 local function shouldDeactivate(t, ctx)
-    if not (ctx and ctx.hr and ctx.ball) then
+    if not (ctx.hr and ctx.ball) then
         return true
     end
 
-    if not ctx.targeted then
+    if not isBallTargeted(ctx) then
         return true
     end
 
-    local radius = ctx.parryRadius * DEACT_RADIUS_MULT
+    local radius = getDeactivationRadius(ctx)
+
     if not ballInRange(ctx.hr, ctx.ball, radius) then
         return true
     end
@@ -235,6 +269,7 @@ local function shouldDeactivate(t, ctx)
     end
 
     local lastValid = S.lastValidAt or S.activeAt or 0
+
     return (t - lastValid) >= RED_HOLD
 end
 
@@ -244,7 +279,8 @@ local function syncCloseActivationGate(t, targetId, previousTarget)
         return false
     end
 
-    local localPlayer = getLocalPlayer()
+    local localPlayer = getLP()
+
     if not localPlayer
         or targetId ~= localPlayer.UserId
         or previousTarget == targetId
@@ -255,12 +291,19 @@ local function syncCloseActivationGate(t, targetId, previousTarget)
     local character = localPlayer.Character
     local hrp = character and character:FindFirstChild("HumanoidRootPart")
     local ball = getBall()
+
     if not (hrp and hrp.Parent and ball and ball.Parent) then
         return false
     end
 
     local ctx = getParryContext(t, hrp, ball)
-    local radius = ctx.parryRadius * SYNC_TARGET_RADIUS_MULT
+    local radius = ctx and ctx.parryRadius
+
+    if type(radius) ~= "number" or radius <= 0 then
+        return false
+    end
+
+    radius = radius * SYNC_TARGET_RADIUS_MULT
 
     if not ballInRange(hrp, ball, radius) then
         return false
@@ -275,50 +318,54 @@ local function onTarget(targetId)
     local previousTarget = S.lastTargetId
 
     S.lastTargetAt = t
-    S.lastTargetId = type(targetId) == "number" and targetId or -999
-    syncCloseActivationGate(t, S.lastTargetId, previousTarget)
+    S.lastTargetId = targetId
+    syncCloseActivationGate(t, targetId, previousTarget)
 
-    local localPlayer = getLocalPlayer()
+    if type(targetId) ~= "number" then
+        return
+    end
+
+    local localPlayer = getLP()
+
     if not localPlayer then
         return
     end
 
-    local isMe = S.lastTargetId == localPlayer.UserId
-    if isMe then
-        local lostAt = S.lostMeAt or 0
+    local isMe = targetId == localPlayer.UserId
+    local wasMe = previousTarget == localPlayer.UserId
 
-        if lostAt > 0 then
-            local character = localPlayer.Character
-            local hrp = character and character:FindFirstChild("HumanoidRootPart")
-            local ball = getBall()
-
-            if hrp and hrp.Parent and ball and ball.Parent then
-                local speed = getBallSpeed(ball, t)
-                local window = getTargetReturnWindow(speed)
-                local elapsed = t - lostAt
-                local activationRadius = getParryRadius(speed, t) * ACT_RADIUS_MULT
-
-                if elapsed <= window and ballInRange(hrp, ball, activationRadius) then
-                    activate(t)
-                end
-            end
-        end
-
+    if wasMe and not isMe then
         S.wasMeTarget = true
-        S.lostMeAt = 0
+        S.lostMeAt = t
         return
     end
 
-    if S.wasMeTarget then
-        S.lostMeAt = t
+    if not isMe or wasMe or not S.wasMeTarget then
+        return
     end
+
+    local ball = getBall()
+    local speed = getBallSpeed(ball)
+    local window = getTargetReturnWindow(speed)
+    local elapsed = t - S.lostMeAt
+
+    if elapsed <= window then
+        local character = localPlayer.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        local ctx = hrp and ball and getParryContext(t, hrp, ball)
+
+        if ctx and ballInRange(hrp, ball, getActivationRadius(ctx)) then
+            activate(t)
+        end
+    end
+
+    S.wasMeTarget = false
+    S.lostMeAt = 0
 end
 
 -- teleport
 local function onTeleport()
-    local t = now()
-    S.teleportLockUntil = t + TELEPORT_LOCK
-    forceDeactivate(t)
+    deactivate()
 end
 
 -- character
@@ -336,7 +383,6 @@ local function bindCharacter(character)
     local currentGeneration = bindGeneration
 
     disconnectHeartbeat()
-    forceDeactivate(now())
 
     if not (character and character.Parent) then
         return false
@@ -344,6 +390,7 @@ local function bindCharacter(character)
 
     local root = character:FindFirstChild("HumanoidRootPart")
         or character:WaitForChild("HumanoidRootPart", 1)
+
     if not (root and root.Parent) then
         return false
     end
@@ -354,48 +401,11 @@ local function bindCharacter(character)
         end
 
         if not (character.Parent and root.Parent) then
-            forceDeactivate(now())
+            deactivate()
             return
         end
 
-        local t = now()
-        local config = Utils.getConfig()
-        local ctx = getParryContext(t, root, getBall())
-
-        if not config or config.AutoClash == false or Utils.isManualSpamActive() then
-            S.enabled = false
-            forceDeactivate(t)
-            return
-        end
-
-        if GameInfo.isGrace and GameInfo.isGrace() then
-            S.enabled = true
-            forceDeactivate(t)
-            return
-        end
-
-        if t < S.teleportLockUntil then
-            S.enabled = true
-            forceDeactivate(t)
-            return
-        end
-
-        S.enabled = true
-
-        if S.active then
-            if ctx.targeted
-                and ballInRange(ctx.hr, ctx.ball, ctx.parryRadius * DEACT_RADIUS_MULT)
-                and nearestInRange(ctx.hr, ctx.parryRadius * DEACT_RADIUS_MULT)
-            then
-                S.lastValidAt = t
-            end
-
-            if shouldDeactivate(t, ctx) then
-                deactivate()
-            end
-        elseif tickPhysical(ctx) then
-            activate(t)
-        end
+        AutoClash.evaluate(now(), root, getBall(), getConfig())
     end)
 
     Utils.trackCharacter(heartbeatConnection)
@@ -427,11 +437,40 @@ function AutoClash.setup(deps)
     return true
 end
 
+-- public
+function AutoClash.evaluate(t, hr, ball, config)
+    if not config or not uiEnabled() then
+        S.enabled = false
+        deactivate()
+        return
+    end
+
+    S.enabled = true
+
+    local ctx = getParryContext(t, hr, ball)
+
+    if S.active then
+        local radius = getDeactivationRadius(ctx)
+
+        if isBallTargeted(ctx)
+            and ballInRange(ctx.hr, ctx.ball, radius)
+            and nearestInRange(ctx.hr, radius)
+        then
+            S.lastValidAt = t
+        end
+
+        if shouldDeactivate(t, ctx) then
+            deactivate()
+        end
+    elseif tickPhysical(ctx) then
+        activate(t)
+    end
+end
+
 function AutoClash.bindCharacter(character)
     return bindCharacter(character)
 end
 
--- public
 function AutoClash.clashOn()
     return S.active
 end
@@ -446,9 +485,7 @@ function AutoClash.onBallSync(data)
         return
     end
 
-    if type(data.TargetPlayerID) == "number" then
-        onTarget(data.TargetPlayerID)
-    end
+    onTarget(data.TargetPlayerID)
 end
 
 function AutoClash.resetState()
@@ -460,11 +497,10 @@ function AutoClash.resetState()
     S.activeAt = 0
     S.lastValidAt = 0
     S.lastTargetAt = 0
-    S.lastTargetId = -999
+    S.lastTargetId = nil
     S.wasMeTarget = false
     S.lostMeAt = 0
     S.physDotEma = 0
-    S.teleportLockUntil = 0
 end
 
 return AutoClash
