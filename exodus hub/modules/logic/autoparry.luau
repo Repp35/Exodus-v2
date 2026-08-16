@@ -698,8 +698,4 @@ function AutoParry.isTargeted()
         return isTargeted()
 end
 
-function AutoParry.computeParryRadius(spd, t)
-        return computeParryRadius(spd, t)
-end
-
 return AutoParry
