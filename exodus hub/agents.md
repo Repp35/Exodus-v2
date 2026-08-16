@@ -40,7 +40,7 @@ errado, não decora o que está certo.
 
 ## Comentários
 
-- **Apenas** `-- [[ titulo ]]` no topo do módulo e `-- ── secao ──`
+- **Apenas** `-- [[ titulo ]]` no topo do módulo e `-- secao`
   separando blocos.
 - Zero inline. Zero decorativo. Zero "isso faz X".
 
