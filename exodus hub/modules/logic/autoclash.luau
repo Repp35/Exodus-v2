@@ -24,8 +24,8 @@ local C = {
     SYNC_PANIC_TIMP = 0.085,
     SYNC_PANIC_MAX_AGE = 0.20,
 
-    ACTIVE_LOCK = 0.080,
-    INACTIVE_LOCK = 0.080,
+    ACTIVE_LOCK = 0.000,
+    INACTIVE_LOCK = 0.000,
 
     DEACTIVATE_SLACK = 1.08,
     DEACT_HOLD = 0.170,
@@ -106,7 +106,7 @@ local function resetDetector()
 end
 
 local function activate(t)
-    if S.active or t - S.inactiveAt < C.INACTIVE_LOCK then
+    if S.active then
         return false
     end
 
@@ -128,7 +128,7 @@ local function activate(t)
 end
 
 local function deactivate(t)
-    if not S.active or t - S.activeAt < C.ACTIVE_LOCK then
+    if not S.active then
         return false
     end
 
