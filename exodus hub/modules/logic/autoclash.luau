@@ -28,7 +28,10 @@ local C = {
     INACTIVE_LOCK = 0.080,
 
     DEACTIVATE_SLACK = 1.10,
-    DEACTIVATE_OUT_TIME = 0.350,
+    DEACTIVATE_OUT_TIME_SPD_LO = 60,
+    DEACTIVATE_OUT_TIME_SPD_HI = 200,
+    DEACTIVATE_OUT_TIME_MAX = 0.700,
+    DEACTIVATE_OUT_TIME_MIN = 0.350,
 }
 
 -- state
@@ -332,6 +335,16 @@ local function shouldActivate(t, hr, ball)
 end
 
 -- deactivation
+local function getDeactivateOutTime(speed)
+    return lerpBySpeed(
+        speed,
+        C.DEACTIVATE_OUT_TIME_SPD_LO,
+        C.DEACTIVATE_OUT_TIME_SPD_HI,
+        C.DEACTIVATE_OUT_TIME_MAX,
+        C.DEACTIVATE_OUT_TIME_MIN
+    )
+end
+
 local function shouldDeactivate(t, hr, ball)
     if not hr
         or not hr.Parent
@@ -351,11 +364,12 @@ local function shouldDeactivate(t, hr, ball)
     local speed = velocity.Magnitude
     local parryRadius = getActivationRadius(speed, t)
     local deactRadius = parryRadius * C.DEACTIVATE_SLACK
+    local outTime = getDeactivateOutTime(speed)
 
     if distance > deactRadius then
         if S.outOfRangeSince == 0 then
             S.outOfRangeSince = t
-        elseif t - S.outOfRangeSince >= C.DEACTIVATE_OUT_TIME then
+        elseif t - S.outOfRangeSince >= outTime then
             S.outOfRangeSince = 0
             return true
         end
