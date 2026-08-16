@@ -9,11 +9,11 @@ local AutoParry
 local Remote
 
 -- tuning
-local RED_HOLD = 0.200
+local RED_HOLD = 0.25
 local SPAM_INTERVAL = 0.05
 
-local TARGET_RETURN_MAX_LO = 0.320
-local TARGET_RETURN_MIN_HI = 0.210
+local TARGET_RETURN_MAX_LO = 0.280
+local TARGET_RETURN_MIN_HI = 0.170
 local TARGET_RETURN_SPD_LO = 60
 local TARGET_RETURN_SPD_HI = 200
 
