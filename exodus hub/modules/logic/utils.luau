@@ -7,7 +7,7 @@ local ReplicatedStorageSvc = game:GetService("ReplicatedStorage")
 local RunServiceSvc        = game:GetService("RunService")
 
 -- metadata
-local SCRIPT_VERSION = "24.2"
+local SCRIPT_VERSION = "24.3"
 local SCRIPT_NAME = "Exodus Hub"
 local INTERNAL_NAME = "Exodus"
 local SCRIPT_AUTHOR = "ppzudo"
