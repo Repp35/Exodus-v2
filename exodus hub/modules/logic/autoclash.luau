@@ -12,11 +12,6 @@ local Remote
 local RED_HOLD = 0.25
 local SPAM_INTERVAL = 0.05
 
-local TARGET_RETURN_MAX_LO = 0.280
-local TARGET_RETURN_MIN_HI = 0.170
-local TARGET_RETURN_SPD_LO = 60
-local TARGET_RETURN_SPD_HI = 200
-
 local PHYS_DOT_EMA = 0.25
 local PHYS_THRESH = 0.14
 local PHYS_RAD_SLACK = 1.22
@@ -32,8 +27,6 @@ local S = {
     lastValidAt = 0,
     lastTargetAt = 0,
     lastTargetId = nil,
-    wasMeTarget = false,
-    lostMeAt = 0,
     physDotEma = 0,
     bound = false,
     _lastFire = 0,
@@ -193,38 +186,6 @@ local function getParryContext(t, hr, ball)
     }
 end
 
-local function getTargetReturnWindow(speed)
-    if speed >= TARGET_RETURN_SPD_HI then
-        return TARGET_RETURN_MIN_HI
-    end
-
-    if speed <= TARGET_RETURN_SPD_LO then
-        return TARGET_RETURN_MAX_LO
-    end
-
-    local alpha = (speed - TARGET_RETURN_SPD_LO)
-        / (TARGET_RETURN_SPD_HI - TARGET_RETURN_SPD_LO)
-
-    return TARGET_RETURN_MAX_LO
-        + (TARGET_RETURN_MIN_HI - TARGET_RETURN_MAX_LO) * alpha
-end
-
-local function getBallSpeed(ball)
-    if not ball or not ball.Parent then
-        return 0
-    end
-
-    local ok, velocity = pcall(function()
-        return ball.AssemblyLinearVelocity
-    end)
-
-    if not ok or typeof(velocity) ~= "Vector3" then
-        return 0
-    end
-
-    return velocity.Magnitude
-end
-
 local function tickPhysical(ctx)
     local hr = ctx and ctx.hr
     local ball = ctx and ctx.ball
@@ -309,17 +270,14 @@ local function shouldDeactivate(t, ctx)
 end
 
 -- target change
-local function syncCloseActivationGate(t, targetId, previousTarget)
+local function syncCloseActivationGate(t, targetId)
     if type(targetId) ~= "number" then
         return false
     end
 
     local localPlayer = getLP()
 
-    if not localPlayer
-        or targetId ~= localPlayer.UserId
-        or previousTarget == targetId
-    then
+    if not localPlayer or targetId ~= localPlayer.UserId then
         return false
     end
 
@@ -360,69 +318,16 @@ function AutoClash.onBallSync(data)
         return
     end
 
-    local newTarget = data.TargetPlayerID
+    local targetId = data.TargetPlayerID
 
-    if type(newTarget) ~= "number" then
-        if S.wasMeTarget and S.lostMeAt == 0 then
-            S.lostMeAt = t
-        end
-
+    if type(targetId) ~= "number" then
         return
     end
-
-    local previousTarget = S.lastTargetId
 
     S.lastTargetAt = t
-    S.lastTargetId = newTarget
+    S.lastTargetId = targetId
 
-    syncCloseActivationGate(t, newTarget, previousTarget)
-
-    local localPlayer = getLP()
-
-    if not localPlayer then
-        return
-    end
-
-    local isMe = newTarget == localPlayer.UserId
-
-    if isMe then
-        local lostAt = S.lostMeAt or 0
-
-        if lostAt > 0 then
-            local character = localPlayer.Character
-            local hrp = character and character:FindFirstChild("HumanoidRootPart")
-            local ball = getBall()
-
-            if hrp and ball and ball.Parent then
-                local speed = getBallSpeed(ball)
-                local window = getTargetReturnWindow(speed)
-                local elapsed = t - lostAt
-
-                if elapsed <= window then
-                    local baseRadius = computeParryRadius(speed, t)
-
-                    if type(baseRadius) ~= "number" or baseRadius <= 0 then
-                        baseRadius = 8
-                    end
-
-                    local activationRadius = baseRadius * ACT_RADIUS_MULT
-
-                    local okDistance, distance = pcall(function()
-                        return (hrp.Position - ball.Position).Magnitude
-                    end)
-
-                    if okDistance and distance <= activationRadius then
-                        activate(t)
-                    end
-                end
-            end
-        end
-
-        S.wasMeTarget = true
-        S.lostMeAt = 0
-    elseif S.wasMeTarget then
-        S.lostMeAt = t
-    end
+    syncCloseActivationGate(t, targetId)
 end
 
 -- fire parry
@@ -568,8 +473,6 @@ function AutoClash.resetState()
     S.enabled = false
     S.lastTargetAt = 0
     S.lastTargetId = nil
-    S.wasMeTarget = false
-    S.lostMeAt = 0
     S.physDotEma = 0
     S._lastFire = 0
 
