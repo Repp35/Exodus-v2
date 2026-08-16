@@ -1,27 +1,36 @@
 --[[ AutoClash ]]
--- Versao compativel com a interface do Exodus Hub
--- (ex-Astru AutoClash 2, portado para usar Remote/AutoParry/GameInfo/Utils do exodus)
+-- Porta do Astru AutoClash 2 para o ecossistema do Exodus Hub.
+-- O loader do Exodus faz dispatch centralizado:
+--   * AutoClash.setup({ GameInfo, Utils, AutoParry }) -> true
+--   * AutoClash.onBallSync(data) chamado a cada BallSyncData
+--   * AutoClash.bindCharacter(character) no spawn
+--   * AutoClash.resetState() / detachCharacter() no reset
+--   * AutoClash.clashOn() consultado pelo Spam
 
--- parameters
 local AutoClash = {}
-local Remote, AutoParry, GameInfo, Utils
+
+-- deps resolvidos via setup (sao upvalues, capturados no setup)
+local GameInfo
+local Utils
+local AutoParry
+local Remote -- resolvido em runtime via _G.Exodus.Modules.Remote
 
 -- tuning
-local RED_HOLD        = 0.25
-local SPAM_INTERVAL   = 0.05
+local RED_HOLD          = 0.25
+local SPAM_INTERVAL     = 0.05
 
 local TARGET_RETURN_MAX_LO = 0.280
 local TARGET_RETURN_MIN_HI = 0.170
 local TARGET_RETURN_SPD_LO = 60
 local TARGET_RETURN_SPD_HI = 200
 
-local PHYS_SPD_REF          = 120
-local PHYS_DOT_EMA          = 0.25
-local PHYS_THRESH           = 0.14
-local PHYS_RAD_SLACK        = 1.22
-local ACT_RADIUS_MULT       = 1.32
+local PHYS_SPD_REF            = 120
+local PHYS_DOT_EMA            = 0.25
+local PHYS_THRESH             = 0.14
+local PHYS_RAD_SLACK          = 1.22
+local ACT_RADIUS_MULT         = 1.32
 local SYNC_TARGET_RADIUS_MULT = 1.05
-local DEACT_RADIUS_MULT     = 1.15
+local DEACT_RADIUS_MULT       = 1.15
 
 -- radius tuning (espelha a curva do AutoParry do exodus)
 local DEFLECT_R   = 8.5
@@ -46,19 +55,18 @@ local S = {
     _lastFire      = 0,
 }
 
--- ping sampling (local, ja que o AutoParry do exodus nao expoe)
+-- ping sampling local
 local Stats = game:GetService("Stats")
-local _smoothPing = 0.060
-local _pingTimer  = 0
-local PING_SAMPLE = 1.5
-local PING_EMA    = 0.3
-
+local _smoothPing      = 0.060
+local _pingTimer       = 0
+local PING_SAMPLE      = 1.5
+local PING_EMA         = 0.3
 local _pingOneWayCached = 0.030
 local _pingOneWayStamp  = 0
 
 -- connections
-local _spamConn
-local _ballSyncConn
+local _tickConn
+local _setupDone = false
 
 -- helpers ---------------------------------------------------------------
 
@@ -94,9 +102,7 @@ local function computeParryRadius(spd, t)
     spd = tonumber(spd) or 0
     t = tonumber(t) or now()
     local spdFactor = math.clamp(spd / RAD_SPD_REF, 0, 1)
-    local parryRad =
-        DEFLECT_R
-        + (RAD_FLOOR - DEFLECT_R) * spdFactor
+    local parryRad = DEFLECT_R + (RAD_FLOOR - DEFLECT_R) * spdFactor
     return math.clamp(parryRad, DEFLECT_R, RAD_CAP)
 end
 
@@ -127,9 +133,7 @@ local function uiEnabled()
     return cfg.AutoClash == true
 end
 
-local function isBallTargeted(ctx)
-    if not ctx then return false end
-    if ctx.targeted ~= nil then return ctx.targeted == true end
+local function isBallTargeted()
     if AutoParry and type(AutoParry.isTargeted) == "function" then
         return AutoParry.isTargeted()
     end
@@ -145,16 +149,14 @@ local function ballInRange(hr, ball, distance)
     return ok and typeof(currentDistance) == "number" and currentDistance <= distance
 end
 
-local function getDeactivationRadius(ctx)
-    local radius = ctx and ctx.parryRadius
-    if type(radius) ~= "number" or radius <= 0 then return 8 end
-    return radius * DEACT_RADIUS_MULT
+local function getDeactivationRadius(parryRadius)
+    if type(parryRadius) ~= "number" or parryRadius <= 0 then return 8 end
+    return parryRadius * DEACT_RADIUS_MULT
 end
 
-local function getActivationRadius(ctx)
-    local radius = ctx and ctx.parryRadius
-    if type(radius) ~= "number" or radius <= 0 then return 8 end
-    return radius * ACT_RADIUS_MULT
+local function getActivationRadius(parryRadius)
+    if type(parryRadius) ~= "number" or parryRadius <= 0 then return 8 end
+    return parryRadius * ACT_RADIUS_MULT
 end
 
 local function nearestInRange(myHRP, distance)
@@ -179,25 +181,16 @@ local function nearestInRange(myHRP, distance)
     return false
 end
 
--- context ---------------------------------------------------------------
-
 local function getParryContext(t, hr, ball)
     local spd = 0
     if ball and GameInfo and type(GameInfo.ballSpeed) == "function" then
         spd = GameInfo.ballSpeed(ball, t) or 0
     end
-    local parryRadius = computeParryRadius(spd, t)
     return {
         time        = t,
         hr          = hr,
         ball        = ball,
-        targeted    = (function()
-            if AutoParry and type(AutoParry.isTargeted) == "function" then
-                return AutoParry.isTargeted()
-            end
-            return false
-        end)(),
-        parryRadius = parryRadius,
+        parryRadius = computeParryRadius(spd, t),
         spd         = spd,
     }
 end
@@ -231,7 +224,6 @@ local function tickPhysical(ctx)
         S.physDotEma = 0
         return false
     end
-
     local ok, velocity = pcall(function()
         return ball.AssemblyLinearVelocity
     end)
@@ -239,29 +231,24 @@ local function tickPhysical(ctx)
         S.physDotEma = 0
         return false
     end
-
     local speed = velocity.Magnitude
     if speed <= 1 then
         S.physDotEma = 0
         return false
     end
-
     local offset   = hr.Position - ball.Position
     local distance = offset.Magnitude
     if distance < 0.001 then
         S.physDotEma = 0
         return false
     end
-
-    local radius = getActivationRadius(ctx)
+    local radius = getActivationRadius(ctx.parryRadius)
     local dot    = velocity:Dot(offset.Unit)
-
     if distance <= radius * PHYS_RAD_SLACK then
         S.physDotEma = S.physDotEma * (1 - PHYS_DOT_EMA) + dot * PHYS_DOT_EMA
     else
         S.physDotEma = 0
     end
-
     return distance <= radius and S.physDotEma > PHYS_THRESH
 end
 
@@ -281,8 +268,8 @@ end
 
 local function shouldDeactivate(t, ctx)
     if not (ctx.hr and ctx.ball) then return true end
-    if not isBallTargeted(ctx) then return true end
-    local radius = getDeactivationRadius(ctx)
+    if not isBallTargeted() then return true end
+    local radius = getDeactivationRadius(ctx.parryRadius)
     if not ballInRange(ctx.hr, ctx.ball, radius) then return true end
     if not nearestInRange(ctx.hr, radius) then return true end
     local lastValid = S.lastValidAt or S.activeAt or 0
@@ -306,7 +293,7 @@ local function syncCloseActivationGate(t, targetId, previousTarget)
     if not (hrp and hrp.Parent and ball and ball.Parent) then return false end
 
     local ctx    = getParryContext(t, hrp, ball)
-    local radius = ctx and ctx.parryRadius
+    local radius = ctx.parryRadius
     if type(radius) ~= "number" or radius <= 0 then return false end
     radius = radius * SYNC_TARGET_RADIUS_MULT
     if not ballInRange(hrp, ball, radius) then return false end
@@ -315,7 +302,7 @@ local function syncCloseActivationGate(t, targetId, previousTarget)
     return true
 end
 
-local function onBallSyncData(data)
+function AutoClash.onBallSync(data)
     if typeof(data) ~= "table" then return end
     local t = now()
 
@@ -327,7 +314,6 @@ local function onBallSyncData(data)
 
     local newTarget = data.TargetPlayerID
     if type(newTarget) ~= "number" then
-        -- sem target util: trata como perda se antes era eu
         if S.wasMeTarget and S.lostMeAt == 0 then
             S.lostMeAt = t
         end
@@ -377,34 +363,25 @@ local function onBallSyncData(data)
     end
 end
 
--- spam loop -------------------------------------------------------------
+-- fire parry ------------------------------------------------------------
 
-local function startSpamLoop()
-    if _spamConn then return end
-    if not (Utils and type(Utils.getRunService) == "function") then return end
-    _spamConn = Utils.getRunService().Heartbeat:Connect(function()
-        if not uiEnabled() or not S.active or not Remote or type(Remote.fireParry) ~= "function" then
-            if S.active then deactivate() end
-            return
-        end
-        local t = now()
-        if t - S._lastFire < SPAM_INTERVAL then return end
-        pcall(function() Remote.fireParry(1) end)
-        S._lastFire = t
-    end)
-    if Utils and type(Utils.trackGlobal) == "function" then
-        Utils.trackGlobal(_spamConn)
+local function fireParry()
+    -- O loader nao passa Remote no setup do AutoClash; resolvemos
+    -- em runtime via _G.Exodus.Modules.Remote. Fallback: AutoParry.fire.
+    if not Remote then
+        local ex = type(_G.Exodus) == "table" and _G.Exodus.Modules
+        if type(ex) == "table" then Remote = ex.Remote end
     end
+    if Remote and type(Remote.fireParry) == "function" then
+        return Remote.fireParry(1)
+    end
+    if AutoParry and type(AutoParry.fire) == "function" then
+        return AutoParry.fire()
+    end
+    return false
 end
 
-local function stopSpamLoop()
-    if _spamConn then
-        pcall(function() _spamConn:Disconnect() end)
-        _spamConn = nil
-    end
-end
-
--- bind (per-character) --------------------------------------------------
+-- per-character tick ----------------------------------------------------
 
 local function tickCharacter(dt)
     _pingTimer = _pingTimer + dt
@@ -423,7 +400,9 @@ local function tickCharacter(dt)
 
     S.enabled = true
 
-    local character = getLP() and getLP().Character
+    local localPlayer = getLP()
+    if not localPlayer then return end
+    local character = localPlayer.Character
     if not character or not character.Parent then return end
     local hr = character:FindFirstChild("HumanoidRootPart")
     if not hr or not hr.Parent then return end
@@ -434,8 +413,8 @@ local function tickCharacter(dt)
     local ctx = getParryContext(t, hr, ball)
 
     if S.active then
-        local radius = getDeactivationRadius(ctx)
-        if isBallTargeted(ctx)
+        local radius = getDeactivationRadius(ctx.parryRadius)
+        if isBallTargeted()
             and ballInRange(ctx.hr, ctx.ball, radius)
             and nearestInRange(ctx.hr, radius)
         then
@@ -447,35 +426,41 @@ local function tickCharacter(dt)
     elseif tickPhysical(ctx) then
         activate(t)
     end
+
+    -- spam loop embutido: quando active, dispara Remote.fireParry(1)
+    -- respeitando o SPAM_INTERVAL. O Spam.luau usa o clashOn() para
+    -- saber se deve ou nao cuspir, mas como o nosso caso ja dispara
+    -- direto, mantemos um ritmo minimo aqui e o Spam cuida do ritmo
+    -- completo (CPF/CPS) quando o clashOn() retornar true.
+    if S.active then
+        if t - S._lastFire >= SPAM_INTERVAL then
+            pcall(fireParry)
+            S._lastFire = t
+        end
+    end
 end
 
-local function bindCharacter(character)
+-- bind (per-character) --------------------------------------------------
+
+function AutoClash.bindCharacter(character)
     if not (character and character.Parent) then return false end
     if not (Utils and type(Utils.getRunService) == "function") then return false end
 
     -- limpa o anterior, se houver
     AutoClash.detachCharacter()
 
-    S.bound      = true
-    S._lastFire  = 0
+    S.bound     = true
+    S._lastFire = 0
 
-    -- instala o heartbeat do tickCharacter
-    if not _spamConn then
-        _spamConn = Utils.getRunService().Heartbeat:Connect(tickCharacter)
-        if type(Utils.trackCharacter) == "function" then
-            Utils.trackCharacter(_spamConn)
-        elseif type(Utils.trackGlobal) == "function" then
-            Utils.trackGlobal(_spamConn)
-        end
-    end
-
-    -- instala o bindBallSync
-    if Remote and type(Remote.bindBallSync) == "function" then
-        Remote.bindBallSync(onBallSyncData)
+    _tickConn = Utils.getRunService().Heartbeat:Connect(tickCharacter)
+    if type(Utils.trackCharacter) == "function" then
+        Utils.trackCharacter(_tickConn)
+    elseif type(Utils.trackGlobal) == "function" then
+        Utils.trackGlobal(_tickConn)
     end
 
     -- registra o callback "clash on" para o Utils.isClashActive()
-    if Utils and type(Utils.setOnClashOn) == "function" then
+    if type(Utils.setOnClashOn) == "function" then
         Utils.setOnClashOn(function()
             return S.active
         end)
@@ -484,13 +469,15 @@ local function bindCharacter(character)
     return true
 end
 
-local function detachCharacter()
-    if _spamConn then
-        pcall(function() _spamConn:Disconnect() end)
+function AutoClash.detachCharacter()
+    if _tickConn then
+        pcall(function() _tickConn:Disconnect() end)
         if Utils and type(Utils.untrackGlobal) == "function" then
-            Utils.untrackGlobal(_spamConn)
+            Utils.untrackGlobal(_tickConn)
+        elseif Utils and type(Utils.untrackCharacter) == "function" then
+            Utils.untrackCharacter(_tickConn)
         end
-        _spamConn = nil
+        _tickConn = nil
     end
     S.bound = false
     deactivate()
@@ -499,7 +486,7 @@ local function detachCharacter()
     end
 end
 
-local function resetState()
+function AutoClash.resetState()
     S.enabled      = false
     S.lastTargetAt = 0
     S.lastTargetId = nil
@@ -513,18 +500,35 @@ end
 -- setup -----------------------------------------------------------------
 
 function AutoClash.setup(deps)
-    if type(deps) ~= "table"
-        or not deps.Remote
-        or not deps.AutoParry
-        or not deps.GameInfo
-        or not deps.Utils
-    then
+    if type(deps) ~= "table" then
+        if Utils and type(Utils.warn) == "function" then
+            Utils.warn("AutoClash.setup precisa de tabela de deps")
+        else
+            warn("[Exodus] AutoClash.setup precisa de tabela de deps")
+        end
         return false
     end
-    Remote   = deps.Remote
-    AutoParry = deps.AutoParry
-    GameInfo = deps.GameInfo
-    Utils    = deps.Utils
+
+    if deps.GameInfo  then GameInfo  = deps.GameInfo  end
+    if deps.Utils     then Utils     = deps.Utils     end
+    if deps.AutoParry then AutoParry = deps.AutoParry end
+    -- Remote nao vem no setup; resolvemos lazy em fireParry().
+
+    if not (GameInfo and Utils and AutoParry) then
+        local missing = {}
+        if not GameInfo  then missing[#missing + 1] = "GameInfo"  end
+        if not Utils     then missing[#missing + 1] = "Utils"     end
+        if not AutoParry then missing[#missing + 1] = "AutoParry" end
+        local msg = "AutoClash deps ausentes: " .. table.concat(missing, ", ")
+        if Utils and type(Utils.warn) == "function" then
+            Utils.warn(msg)
+        else
+            warn("[Exodus] " .. msg)
+        end
+        return false
+    end
+
+    _setupDone = true
     return true
 end
 
@@ -532,18 +536,6 @@ end
 
 function AutoClash.clashOn()
     return S.active == true
-end
-
-function AutoClash.bindCharacter(character)
-    return bindCharacter(character) and true or false
-end
-
-function AutoClash.resetState()
-    resetState()
-end
-
-function AutoClash.detachCharacter()
-    detachCharacter()
 end
 
 function AutoClash.getState()
@@ -557,7 +549,6 @@ end
 
 -- alias para os nomes do astru, caso algum caller use
 function AutoClash.evaluate(t, hr, ball, config)
-    -- Mantido apenas como hook de compat. O tick real acontece via bindCharacter.
     if not uiEnabled() then
         if S.enabled or S.active then
             S.enabled = false
@@ -569,8 +560,8 @@ function AutoClash.evaluate(t, hr, ball, config)
     if not (hr and hr.Parent) or not (ball and ball.Parent) then return end
     local ctx = getParryContext(t, hr, ball)
     if S.active then
-        local radius = getDeactivationRadius(ctx)
-        if isBallTargeted(ctx)
+        local radius = getDeactivationRadius(ctx.parryRadius)
+        if isBallTargeted()
             and ballInRange(ctx.hr, ctx.ball, radius)
             and nearestInRange(ctx.hr, radius)
         then
