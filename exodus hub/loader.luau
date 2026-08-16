@@ -1,4 +1,4 @@
--- [[ Loader ]]
+--[[ Loader ]]
 
 -- bootstrap
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
@@ -61,8 +61,6 @@ local function request(url, headers)
     end
     return nil, lastError or "Nenhum serviço HTTP disponível"
 end
-
--- modules
 
 -- module registry
 local function register(name, module)
@@ -236,19 +234,19 @@ local function bindRuntime(loaded, log)
     else
         log.info("Remote conectado ao BallSyncData")
     end
-    local maintenanceOk, maintenanceError = pcall(remote.startMaintenance, {
+    local maintenanceCallOk, maintenanceReady = pcall(remote.startMaintenance, {
         isActive = utils.isActive,
         onBallSync = onBallSync,
     })
-    if not maintenanceOk then
-        log.warn("manutenção do Remote falhou: " .. tostring(maintenanceError))
+    if not maintenanceCallOk or maintenanceReady ~= true then
+        log.warn("manutenção do Remote falhou: " .. tostring(maintenanceReady))
     else
         log.info("manutenção do Remote iniciada")
     end
     return {
         watcher = watcherReady == true,
         ballSync = syncReady == true,
-        maintenance = maintenanceOk,
+        maintenance = maintenanceCallOk and maintenanceReady == true,
     }
 end
 
