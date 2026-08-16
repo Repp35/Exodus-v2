@@ -1,4 +1,4 @@
--- [[ UI ]]
+--[[ UI ]]
 
 -- services
 local ExodusUI = {}
@@ -21,6 +21,7 @@ local UIState = {
     panelTween = nil,
     btnTween = nil,
 }
+local setSpam
 
 -- palette
 local C = {
@@ -36,7 +37,6 @@ local C = {
     subtext = Color3.fromRGB(140, 140, 200),
     border = Color3.fromRGB(55, 55, 100),
     btnBlue = Color3.fromRGB(45, 55, 130),
-    btnPurple = Color3.fromRGB(88, 28, 135),
     btnDark = Color3.fromRGB(30, 30, 65),
     toggleOn = Color3.fromRGB(139, 92, 246),
     toggleOff = Color3.fromRGB(45, 45, 80),
@@ -163,22 +163,22 @@ local function bindInput()
         local spamKey = config.SpamKeybind
         local mode = config.SpamMode == "Hold" and "Hold" or "Toggle"
         if isKey(input, panicKey) then
-            Utils.setManualSpamActive(false)
+            setSpam(false)
             if type(Controls.onPanic) == "function" then
                 safe(Controls.onPanic)
             end
         elseif isKey(input, spamKey) then
             if mode == "Hold" then
-                Utils.setManualSpamActive(true)
+                setSpam(true)
             else
-                Utils.setManualSpamActive(not Utils.isManualSpamActive())
+                setSpam(not UIState.spamOn)
             end
         end
     end))
     trackConn(UIS.InputEnded:Connect(function(input)
         local config = Utils.getConfig() or {}
         if config.SpamMode == "Hold" and isKey(input, config.SpamKeybind) then
-            Utils.setManualSpamActive(false)
+            setSpam(false)
         end
     end))
 end
@@ -376,7 +376,7 @@ local function showMini(v, visBtn)
 end
 
 -- spam ui
-local function setSpam(v)
+setSpam = function(v)
     UIState.spamOn = v
     Utils.setManualSpamActive(v)
     if not miniGui or not miniGui.Parent then
@@ -398,11 +398,9 @@ end
 local configPanel
 local PW, PH = 540, 380
 local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
-local INNER_PAD, CONTROL_GAP, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 12, 52, 68, 118
+local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 52, 68, 118
 local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
-local LEFT_STACK_H = CARD_H * 3 + CARD_GAP * 2
-local RIGHT_STACK_H = RATE_CARD_H + CARD_H + SPAM_CARD_H + CARD_GAP * 2
 
 -- card layout
 local function nextCardY(yPos, cardHeight)
@@ -435,6 +433,7 @@ local function cleanupUI()
     UIState.panelOpen = false
     UIState.spamOn = false
     UIState.clashBallOn = false
+    if Utils then Utils.setManualSpamActive(false) end
     UIState.panelTween = nil
     UIState.btnTween = nil
     UIState.btnIsDragging = function() return false end
@@ -703,54 +702,72 @@ end
 local function createRateSelector(yPos, parent)
     local f = cardFrame(yPos, RATE_CARD_H, parent)
     local config = Utils.getConfig()
-    config.CPS = Utils.normalizeSpamRate(config.CPS, 0)
+    config.CPS = Utils.normalizeSpamRate(config.CPS, 4)
+    config.CPF = Utils.normalizeSpamRate(config.CPF, 16)
+    config.SpamRateMode = config.SpamRateMode == "CPS" and "CPS" or "CPF"
     Utils.setConfig(config)
-    local rateMode = config.SpamRateMode == "CPS" and "CPS" or "CPF"
-    config.SpamRateMode = rateMode
-    Utils.setConfig(config)
-    cardLabel((rateMode == "CPF" and "CPF Spam") or "CPS Spam", f)
-    local rateLabel =
-        inst(
-        "TextLabel",
+
+    cardLabel("Taxa do Spam", f)
+
+    local currentMode = config.SpamRateMode
+    local modeTrack = inst(
+        "Frame",
         {
-            Size = UDim2.new(0, 36, 0, 30),
-            Position = UDim2.new(0, 14, 0, 28),
-            BackgroundTransparency = 1,
-            Text = rateMode .. ":",
-            TextColor3 = C.text,
-            TextSize = 13,
-            Font = Enum.Font.Gotham,
-            TextXAlignment = Enum.TextXAlignment.Left,
+            Size = UDim2.new(0, 116, 0, 28),
+            Position = UDim2.new(0, 12, 0, 32),
+            BackgroundColor3 = C.inputBg,
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
             ZIndex = 7,
             Parent = f
         }
     )
-    local rateInputWidth, rateModeWidth = 72, 34
-    local function rateModeColor(mode)
-        return mode == "CPS" and C.btnPurple or C.btnBlue
+    corner(modeTrack, 999)
+    stroke(modeTrack, C.border, 1)
+
+    local modeThumb = inst(
+        "Frame",
+        {
+            Size = UDim2.new(0, 54, 0, 24),
+            Position = currentMode == "CPS" and UDim2.new(0, 2, 0.5, -12) or UDim2.new(0, 60, 0.5, -12),
+            BackgroundColor3 = currentMode == "CPS" and C.accent or C.accentPink,
+            BorderSizePixel = 0,
+            ZIndex = 8,
+            Parent = modeTrack
+        }
+    )
+    corner(modeThumb, 999)
+    stroke(modeThumb, C.text, 1)
+
+    local modeButtons = {}
+    for index, mode in ipairs({"CPS", "CPF"}) do
+        local button = inst(
+            "TextButton",
+            {
+                Size = UDim2.new(0, 58, 1, 0),
+                Position = UDim2.new(0, (index - 1) * 58, 0, 0),
+                BackgroundTransparency = 1,
+                Text = mode,
+                TextColor3 = mode == currentMode and C.text or C.subtext,
+                TextSize = 12,
+                Font = Enum.Font.GothamBold,
+                ZIndex = 9,
+                Parent = modeTrack
+            }
+        )
+        modeButtons[mode] = button
     end
-    local modeBtn = makeBtn(rateMode, 52, 28, rateModeWidth, 30, f, rateModeColor(rateMode))
-    modeBtn.TextSize = 10
-    trackConn(modeBtn.Activated:Connect(
-        function()
-            local currentConfig = Utils.getConfig()
-            currentConfig.SpamRateMode = currentConfig.SpamRateMode == "CPS" and "CPF" or "CPS"
-            Utils.setConfig(currentConfig)
-            modeBtn.Text = currentConfig.SpamRateMode
-            rateLabel.Text = currentConfig.SpamRateMode .. ":"
-            twPlay(modeBtn, 0.24, {BackgroundColor3 = rateModeColor(currentConfig.SpamRateMode)}, EASE_SINE, DIR_INOUT)
-        end
-    ))
-    local inputBox =
-        inst(
+
+    local inputBox = inst(
         "TextBox",
         {
-            Size = UDim2.new(0, rateInputWidth, 0, 30),
-            Position = UDim2.new(1, -82, 0, 28),
+            Size = UDim2.new(0, 62, 0, 30),
+            Position = UDim2.new(1, -74, 0, 31),
             BackgroundColor3 = C.inputBg,
             BackgroundTransparency = 0.1,
-            Text = tostring(config.CPS),
-            PlaceholderText = "0-5B",
+            Text = tostring(config[currentMode]),
+            PlaceholderText = "Taxa",
+            ClearTextOnFocus = false,
             TextColor3 = C.text,
             TextSize = 13,
             Font = Enum.Font.GothamBold,
@@ -760,30 +777,53 @@ local function createRateSelector(yPos, parent)
     )
     corner(inputBox, 8)
     local inputStroke = stroke(inputBox, C.border, 1)
-    trackConn(inputBox.Focused:Connect(
-        function()
-            twPlay(inputStroke, 0.15, {Color = C.accent})
+
+    local function paintRateMode(animated)
+        local isCPS = currentMode == "CPS"
+        local targetPosition = isCPS and UDim2.new(0, 2, 0.5, -12) or UDim2.new(0, 60, 0.5, -12)
+        local duration = animated and 0.32 or 0
+        twPlay(modeThumb, duration, {
+            Position = targetPosition,
+            BackgroundColor3 = isCPS and C.accent or C.accentPink
+        }, EASE_BACK, DIR_OUT)
+        for mode, button in pairs(modeButtons) do
+            twPlay(button, animated and 0.2 or 0, {
+                TextColor3 = mode == currentMode and C.text or C.subtext
+            }, EASE_SINE, DIR_INOUT)
         end
-    ))
-    trackConn(inputBox.FocusLost:Connect(
-        function()
-            twPlay(inputStroke, 0.15, {Color = C.border})
+    end
+
+    local function selectRateMode(mode)
+        if mode ~= "CPS" and mode ~= "CPF" or currentMode == mode then
+            return
         end
-    ))
-    trackConn(inputBox.FocusLost:Connect(
-        function()
-            local v = tonumber(inputBox.Text)
-            local currentConfig = Utils.getConfig()
-            if v then
-                local normalized = Utils.normalizeSpamRate(v, currentConfig.CPS)
-                currentConfig.CPS, currentConfig.CustomCPS = normalized, true
-                Utils.setConfig(currentConfig)
-                inputBox.Text = tostring(normalized)
-            else
-                inputBox.Text = tostring(Utils.normalizeSpamRate(currentConfig.CPS, 0))
-            end
-        end
-    ))
+        currentMode = mode
+        config.SpamRateMode = mode
+        inputBox.Text = tostring(config[mode])
+        Utils.setConfig(config)
+        paintRateMode(true)
+    end
+
+    for mode, button in pairs(modeButtons) do
+        trackConn(button.Activated:Connect(function()
+            selectRateMode(mode)
+        end))
+    end
+
+    trackConn(inputBox.Focused:Connect(function()
+        twPlay(inputStroke, 0.15, {Color = C.accent})
+    end))
+    trackConn(inputBox.FocusLost:Connect(function()
+        twPlay(inputStroke, 0.15, {Color = C.border})
+        local value = tonumber(inputBox.Text)
+        local key = currentMode
+        local fallback = config[key]
+        local normalized = Utils.normalizeSpamRate(value, fallback)
+        config[key] = normalized
+        Utils.setConfig(config)
+        inputBox.Text = tostring(normalized)
+    end))
+
     return nextCardY(yPos, RATE_CARD_H)
 end
 local function createKeybindSelector(yPos, parent)
@@ -1055,20 +1095,11 @@ function ExodusUI.setup(deps)
         }
     )
     corner(miniGui, 14)
-    local miniGlow =
-        inst(
-        "Frame",
-        {
-            Size = UDim2.new(1, 8, 1, 8),
-            Position = UDim2.new(0, -4, 0, -4),
-            BackgroundColor3 = C.accent,
-            BackgroundTransparency = 0.92,
-            BorderSizePixel = 0,
-            ZIndex = 14,
-            Parent = miniGui
-        }
-    )
-    corner(miniGlow, 18)
+    corner(inst("Frame", {
+        Size = UDim2.new(1, 8, 1, 8), Position = UDim2.new(0, -4, 0, -4),
+        BackgroundColor3 = C.accent, BackgroundTransparency = 0.92,
+        BorderSizePixel = 0, ZIndex = 14, Parent = miniGui
+    }), 18)
     registerFlow(stroke(miniGui, C.accent, 1.5))
     local miniTitleBar =
         inst(
@@ -1095,19 +1126,11 @@ function ExodusUI.setup(deps)
             Parent = miniTitleBar
         }
     )
-    local miniAccent =
-        inst(
-        "Frame",
-        {
-            Size = UDim2.new(0.5, 0, 0, 2),
-            Position = UDim2.new(0.25, 0, 0, 0),
-            BackgroundColor3 = C.accentPink,
-            BorderSizePixel = 0,
-            ZIndex = 17,
-            Parent = miniTitleBar
-        }
-    )
-    corner(miniAccent, 1)
+    corner(inst("Frame", {
+        Size = UDim2.new(0.5, 0, 0, 2), Position = UDim2.new(0.25, 0, 0, 0),
+        BackgroundColor3 = C.accentPink, BorderSizePixel = 0,
+        ZIndex = 17, Parent = miniTitleBar
+    }), 1)
     inst(
         "TextLabel",
         {
