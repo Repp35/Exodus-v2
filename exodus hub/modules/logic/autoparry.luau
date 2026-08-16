@@ -12,7 +12,7 @@ local P = {
 
         DEFLECT_R = 8.5,
         RAD_FLOOR = 14,
-        RAD_CAP = 30,
+        RAD_CAP = 1000,
 
         PING_FLOOR = 0.030,
         PING_CAP = 0.150,
@@ -696,6 +696,13 @@ end
 
 function AutoParry.isTargeted()
         return isTargeted()
+end
+
+-- exposed for cross-module synergy (e.g. AutoClash)
+-- Retorna o raio de parry (parryRad, detectRad) ja considerando
+-- speed, ping e RES.stack. Mesma logica que o AutoParry usa internamente.
+function AutoParry.getParryRadius(spd, t)
+        return computeParryRadius(spd, t)
 end
 
 return AutoParry
