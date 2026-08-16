@@ -1,4 +1,4 @@
---[[ UI ]]
+-- [[ UI ]]
 
 -- services
 local ExodusUI = {}
@@ -22,6 +22,17 @@ local UIState = {
     btnTween = nil,
 }
 local setSpam
+local screenGui
+local floatingButton
+local clashBall
+local miniGui
+local configPanel
+local particleLayer
+local titleBar
+local closeButton
+local colLeft
+local colRight
+local killBtn
 
 -- palette
 local C = {
@@ -113,6 +124,10 @@ end
 local function viewport()
     local currentCamera = workspace.CurrentCamera or Camera
     return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
+end
+
+local function setConfigValue(key, value)
+    Utils.setConfig({ [key] = value })
 end
 
 -- connections
@@ -283,8 +298,6 @@ local function startFlowingLoop(gui)
         end
     )
 end
-local screenGui
-local floatingButton
 local BTN_SIZE = 56
 
 -- floating button
@@ -296,7 +309,6 @@ local function btnPos()
     end
     return UDim2.new(1, -70, 0.5, -28)
 end
-local clashBall
 local CLASH_SIZE = 64
 local OFFSCREEN_X = -CLASH_SIZE - 40
 local autoClashTrack, autoClashThumb
@@ -326,9 +338,7 @@ local function syncAutoClashToggle()
 end
 local function setClashBall(v, silent)
     UIState.clashBallOn = v
-    local config = Utils.getConfig()
-    config.AutoClash = v
-    Utils.setConfig(config)
+    setConfigValue("AutoClash", v)
     if silent then
         return
     end
@@ -342,9 +352,8 @@ local function setClashBall(v, silent)
     )
 end
 local function showClashBall(v)
+    setConfigValue("ClashBallVisible", v)
     local config = Utils.getConfig()
-    config.ClashBallVisible = v
-    Utils.setConfig(config)
     local clashX = config.ClashBallX or 14
     local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
     twPlay(
@@ -355,7 +364,6 @@ local function showClashBall(v)
         DIR_OUT
     )
 end
-local miniGui
 local MINI_W, MINI_H = 120, 90
 local function showMini(v, visBtn)
     local config = Utils.getConfig()
@@ -395,7 +403,6 @@ setSpam = function(v)
         )
     end
 end
-local configPanel
 local PW, PH = 540, 380
 local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
 local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 52, 68, 118
@@ -416,7 +423,6 @@ local function panelPos()
     end
     return UDim2.new(0.5, -PW / 2, 0.5, -PH / 2)
 end
-local particleLayer
 local PARTICLE_COLORS = {
     Color3.fromRGB(85, 90, 140),
     Color3.fromRGB(110, 95, 150),
@@ -433,7 +439,10 @@ local function cleanupUI()
     UIState.panelOpen = false
     UIState.spamOn = false
     UIState.clashBallOn = false
-    if Utils then Utils.setManualSpamActive(false) end
+    if Utils then
+        Utils.setManualSpamActive(false)
+        Utils.setAutoSpamActive(false)
+    end
     UIState.panelTween = nil
     UIState.btnTween = nil
     UIState.btnIsDragging = function() return false end
@@ -495,12 +504,6 @@ local function spawnParticle()
         end
     )
 end
-local titleBar
-local closeButton
-local colLeft
-local colRight
-local killBtn
-
 -- cards
 local function cardFrame(yPos, h, parent)
     local f =
@@ -685,8 +688,7 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
             function()
                 state = not state
                 if configKey then
-                    config[configKey] = state
-                    Utils.setConfig(config)
+                    setConfigValue(configKey, state)
                 end
                 setVisual(state)
                 if onAfter then
@@ -705,7 +707,9 @@ local function createRateSelector(yPos, parent)
     config.CPS = Utils.normalizeSpamRate(config.CPS, 4)
     config.CPF = Utils.normalizeSpamRate(config.CPF, 16)
     config.SpamRateMode = config.SpamRateMode == "CPS" and "CPS" or "CPF"
-    Utils.setConfig(config)
+    setConfigValue("CPS", config.CPS)
+    setConfigValue("CPF", config.CPF)
+    setConfigValue("SpamRateMode", config.SpamRateMode)
 
     cardLabel("Taxa do Spam", f)
 
@@ -797,10 +801,12 @@ local function createRateSelector(yPos, parent)
         if mode ~= "CPS" and mode ~= "CPF" or currentMode == mode then
             return
         end
+
         currentMode = mode
         config.SpamRateMode = mode
         inputBox.Text = tostring(config[mode])
-        Utils.setConfig(config)
+        setConfigValue("SpamRateMode", mode)
+
         paintRateMode(true)
     end
 
@@ -819,8 +825,7 @@ local function createRateSelector(yPos, parent)
         local key = currentMode
         local fallback = config[key]
         local normalized = Utils.normalizeSpamRate(value, fallback)
-        config[key] = normalized
-        Utils.setConfig(config)
+        setConfigValue(key, normalized)
         inputBox.Text = tostring(normalized)
     end))
 
@@ -849,9 +854,7 @@ local function createKeybindSelector(yPos, parent)
     bindKeyCapture(
         kbBtn,
         function(keyCode)
-            local currentConfig = Utils.getConfig()
-            currentConfig.Keybind = keyCode
-            Utils.setConfig(currentConfig)
+            setConfigValue("Keybind", keyCode)
             kbBtn.Text = keyCode.Name
             twPlay(kbBtn, 0.18, {BackgroundColor3 = C.btnBlue}, EASE_BACK)
         end
@@ -874,9 +877,7 @@ local function createSpamCard(yPos, parent)
     bindKeyCapture(
         kbBtn,
         function(keyCode)
-            local currentConfig = Utils.getConfig()
-            currentConfig.SpamKeybind = keyCode
-            Utils.setConfig(currentConfig)
+            setConfigValue("SpamKeybind", keyCode)
             kbBtn.Text = keyCode.Name
             twPlay(kbBtn, 0.18, {BackgroundColor3 = C.btnBlue}, EASE_BACK)
         end
@@ -888,8 +889,9 @@ local function createSpamCard(yPos, parent)
     trackConn(modeBtn.Activated:Connect(
         function()
             local currentConfig = Utils.getConfig()
-            currentConfig.SpamMode = (currentConfig.SpamMode == "Toggle") and "Hold" or "Toggle"
-            Utils.setConfig(currentConfig)
+            local nextMode = currentConfig.SpamMode == "Toggle" and "Hold" or "Toggle"
+            setConfigValue("SpamMode", nextMode)
+            currentConfig.SpamMode = nextMode
             modeBtn.Text = currentConfig.SpamMode
             twPlay(modeBtn, 0.18, {BackgroundColor3 = modeColor(currentConfig.SpamMode)}, EASE_BACK)
             if currentConfig.SpamMode == "Toggle" and Utils.isManualSpamActive() then
@@ -959,7 +961,19 @@ end
 
 -- setup
 function ExodusUI.setup(deps)
-    if type(deps) ~= "table" or not deps.Utils then
+    if type(deps) ~= "table"
+        or type(deps.Utils) ~= "table"
+        or type(deps.Utils.getConfig) ~= "function"
+        or type(deps.Utils.setConfig) ~= "function"
+        or type(deps.Utils.normalizeSpamRate) ~= "function"
+        or type(deps.Utils.isManualSpamActive) ~= "function"
+        or type(deps.Utils.setManualSpamActive) ~= "function"
+        or type(deps.Utils.setAutoSpamActive) ~= "function"
+        or type(deps.Utils.stop) ~= "function"
+        or type(deps.Utils.name) ~= "function"
+        or type(deps.Utils.version) ~= "function"
+        or type(deps.Utils.author) ~= "function"
+    then
         return false
     end
     Utils = deps.Utils
@@ -1049,10 +1063,9 @@ function ExodusUI.setup(deps)
         floatingButton,
         floatingButton,
         function()
-            local currentConfig = Utils.getConfig()
-            currentConfig.BtnX = floatingButton.Position.X.Offset
-            currentConfig.BtnY = floatingButton.Position.Y.Offset
-            Utils.setConfig(currentConfig)
+                                setConfigValue("BtnX", floatingButton.Position.X.Offset)
+                    setConfigValue("BtnY", floatingButton.Position.Y.Offset)
+
         end
     )
     trackConn(floatingButton.Activated:Connect(
@@ -1067,10 +1080,8 @@ function ExodusUI.setup(deps)
         clashBall,
         clashBall,
         function()
-            local currentConfig = Utils.getConfig()
-            currentConfig.ClashBallX = clashBall.Position.X.Offset
-            currentConfig.ClashBallY = clashBall.Position.Y.Offset
-            Utils.setConfig(currentConfig)
+            setConfigValue("ClashBallX", clashBall.Position.X.Offset)
+            setConfigValue("ClashBallY", clashBall.Position.Y.Offset)
         end
     )
     trackConn(clashBall.Activated:Connect(
@@ -1174,10 +1185,8 @@ function ExodusUI.setup(deps)
         miniTitleBar,
         miniGui,
         function()
-            local currentConfig = Utils.getConfig()
-            currentConfig.MiniX = miniGui.Position.X.Offset
-            currentConfig.MiniY = miniGui.Position.Y.Offset
-            Utils.setConfig(currentConfig)
+            setConfigValue("MiniX", miniGui.Position.X.Offset)
+            setConfigValue("MiniY", miniGui.Position.Y.Offset)
         end
     )
     configPanel =
@@ -1235,10 +1244,8 @@ function ExodusUI.setup(deps)
         titleBar,
         configPanel,
         function()
-            local currentConfig = Utils.getConfig()
-            currentConfig.PanelX = configPanel.Position.X.Offset
-            currentConfig.PanelY = configPanel.Position.Y.Offset
-            Utils.setConfig(currentConfig)
+            setConfigValue("PanelX", configPanel.Position.X.Offset)
+            setConfigValue("PanelY", configPanel.Position.Y.Offset)
         end
     )
     local titleGroup =
@@ -1353,7 +1360,6 @@ function ExodusUI.setup(deps)
     trackConn(killBtn.Activated:Connect(
         function()
             Utils.stop()
-            cleanupUI()
         end
     ))
     local yL = 4
@@ -1364,10 +1370,10 @@ function ExodusUI.setup(deps)
         local track, thumb, setVisual = makeToggle(f, config.AutoClash)
         autoClashTrack, autoClashThumb = track, thumb
         trackConn(inst("TextButton", {Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", ZIndex = 9, Parent = f}).Activated:Connect(function()
-            config.AutoClash = not config.AutoClash
-            Utils.setConfig(config)
-            setVisual(config.AutoClash)
-            setClashBall(config.AutoClash, true)
+            local nextValue = not UIState.clashBallOn
+            setConfigValue("AutoClash", nextValue)
+            setClashBall(nextValue, true)
+            setVisual(nextValue)
             paintClashBall()
         end))
         return y + CARD_H + CARD_GAP
