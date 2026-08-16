@@ -15,8 +15,8 @@ local C = {
     DET_DOT_THRESH = 0.15,
     DET_RADIUS_SLACK = 1.20,
 
-    TARGET_RETURN_MAX_LO = 0.110,
-    TARGET_RETURN_MIN_HI = 0.060,
+    TARGET_RETURN_MAX_LO = 0.280,
+    TARGET_RETURN_MIN_HI = 0.170,
     TARGET_RETURN_SPD_LO = 60,
     TARGET_RETURN_SPD_HI = 200,
 
@@ -24,17 +24,12 @@ local C = {
     SYNC_PANIC_TIMP = 0.085,
     SYNC_PANIC_MAX_AGE = 0.20,
 
-    ACTIVE_LOCK = 0.300,
-    INACTIVE_LOCK = 0.000,
+    ACTIVE_LOCK = 0.080,
+    INACTIVE_LOCK = 0.080,
 
-    DEACTIVATE_SLACK = 1.10,
-    DEACTIVATE_OUT_TIME_SPD_LO = 60,
-    DEACTIVATE_OUT_TIME_SPD_HI = 200,
-    DEACTIVATE_OUT_TIME_MAX = 0.700,
-    DEACTIVATE_OUT_TIME_MIN = 0.350,
-
-    -- debug
-    DEBUG = false,
+    DEACTIVATE_SLACK = 1.08,
+    DEACT_HOLD = 0.170,
+    DEACTIVATE_OUT_TIME = 0.350,
 }
 
 -- state
@@ -44,6 +39,7 @@ local S = {
     inactiveAt = 0,
 
     detDotEma = 0,
+    lastValidAt = 0,
     lastTarget = -999,
     wasMeTarget = false,
     lostMeAt = 0,
@@ -53,6 +49,7 @@ local S = {
 
     targetReturnPending = false,
     teleportLockUntil = 0,
+
     outOfRangeSince = 0,
 }
 
@@ -109,13 +106,14 @@ local function resetDetector()
 end
 
 local function activate(t)
-    if S.active then
+    if S.active or t - S.inactiveAt < C.INACTIVE_LOCK then
         return false
     end
 
     S.active = true
     S.activeAt = t
     S.inactiveAt = 0
+    S.lastValidAt = t
 
     S.syncPanicPending = false
     S.syncPanicAt = 0
@@ -149,32 +147,6 @@ local function deactivate(t)
 end
 
 local function forceDeactivate(t)
-    S.syncPanicPending = false
-    S.syncPanicAt = 0
-    S.targetReturnPending = false
-    S.outOfRangeSince = 0
-
-    if not S.active then
-        return false
-    end
-
-    -- respect ACTIVE_LOCK so the AutoParry always sees S.active=true
-    -- for at least ACTIVE_LOCK seconds after activation
-    if t - S.activeAt < C.ACTIVE_LOCK then
-        return false
-    end
-
-    S.active = false
-    S.activeAt = 0
-    S.inactiveAt = t
-
-    resetDetector()
-
-    return true
-end
-
--- hard shutdown for explicit user actions (toggle off, etc) — no ACTIVE_LOCK
-local function hardDeactivate(t)
     S.syncPanicPending = false
     S.syncPanicAt = 0
     S.targetReturnPending = false
@@ -276,17 +248,10 @@ local function physicalReturn(hr, ball)
         return false
     end
 
-    local speed = velocity.Magnitude
-    local parryRadius = getActivationRadius(speed, now())
+    local radius = getDetectorRadius(velocity.Magnitude)
 
-    -- if parryRadius isn't available for any reason, fall back to a sane default
-    if parryRadius <= 0 then
-        parryRadius = getDetectorRadius(speed)
-    end
-
-    -- if we're outside the parry radius the caller already rejected this,
-    -- so don't bother accumulating dot; just bail
-    if distance > parryRadius then
+    if distance > radius * C.DET_RADIUS_SLACK then
+        resetDetector()
         return false
     end
 
@@ -296,7 +261,8 @@ local function physicalReturn(hr, ball)
         S.detDotEma * (1 - C.DET_DOT_EMA)
         + dot * C.DET_DOT_EMA
 
-    return S.detDotEma > C.DET_DOT_THRESH
+    return distance <= radius
+        and S.detDotEma > C.DET_DOT_THRESH
 end
 
 -- activation
@@ -356,52 +322,29 @@ local function shouldActivate(t, hr, ball)
     end
 
     local metrics = activationMetrics(hr, ball, t)
-
-    if not metrics then
-        resetDetector()
-        return false
-    end
-
-    -- sync panic and target return must be checked even when far,
-    -- they exist exactly to fire before the ball enters parry radius
-    local panicResult = syncPanic(t, metrics)
-    if panicResult then
-        return panicResult
-    end
-
-    local returnResult = targetReturn(t, metrics)
-    if returnResult then
-        return returnResult
-    end
-
-    -- physical return only makes sense inside the parry radius
-    if metrics.distance > metrics.parryRadius then
-        resetDetector()
-        return false
-    end
-
     local physicalReturnReady = physicalReturn(hr, ball)
 
-    return physicalReturnReady and "physicalReturn" or false
+    if not metrics or metrics.distance > metrics.parryRadius then
+        resetDetector()
+        return false
+    end
+
+    return syncPanic(t, metrics)
+        or targetReturn(t, metrics)
+        or (physicalReturnReady and "physicalReturn" or false)
 end
 
--- deactivation
-local function getDeactivateOutTime(speed)
-    return lerpBySpeed(
-        speed,
-        C.DEACTIVATE_OUT_TIME_SPD_LO,
-        C.DEACTIVATE_OUT_TIME_SPD_HI,
-        C.DEACTIVATE_OUT_TIME_MAX,
-        C.DEACTIVATE_OUT_TIME_MIN
-    )
-end
-
+-- deactivation (astru-style: hold-based)
 local function shouldDeactivate(t, hr, ball)
     if not hr
         or not hr.Parent
         or not ball
         or not ball.Parent
     then
+        return true
+    end
+
+    if not AutoParry.isTargeted() then
         return true
     end
 
@@ -415,47 +358,64 @@ local function shouldDeactivate(t, hr, ball)
     local speed = velocity.Magnitude
     local parryRadius = getActivationRadius(speed, t)
     local deactRadius = parryRadius * C.DEACTIVATE_SLACK
-    local outTime = getDeactivateOutTime(speed)
 
-    if distance > deactRadius then
-        if S.outOfRangeSince == 0 then
-            S.outOfRangeSince = t
-        elseif t - S.outOfRangeSince >= outTime then
-            S.outOfRangeSince = 0
-            return true
-        end
-    else
-        S.outOfRangeSince = 0
+    if distance <= deactRadius then
+        return false
     end
 
-    return false
+    -- saiu do range: só desativa se passou DEACT_HOLD desde a última vez válido
+    local lastValid = S.lastValidAt > 0 and S.lastValidAt or S.activeAt
+    return (t - lastValid) >= C.DEACT_HOLD
 end
 
 local function evaluate(t, hr, ball, config)
     if not config
         or config.AutoClash == false
+        or Utils.isManualSpamActive()
     then
-        hardDeactivate(t)
+        forceDeactivate(t)
         return
     end
 
-    if not hr
+    if GameInfo.isGrace()
+        or not hr
         or not hr.Parent
         or not ball
         or not ball.Parent
     then
+        forceDeactivate(t)
+        return
+    end
+
+    if t < S.teleportLockUntil then
+        forceDeactivate(t)
         return
     end
 
     if S.active then
+        -- renova lastValidAt enquanto tudo OK (astru-style)
+        if AutoParry.isTargeted() then
+            local velocity = getBallVelocity(ball)
+
+            if velocity and velocity.Magnitude > 1 then
+                local distance = (hr.Position - ball.Position).Magnitude
+                local parryRadius = getActivationRadius(velocity.Magnitude, t)
+                local deactRadius = parryRadius * C.DEACTIVATE_SLACK
+
+                if distance <= deactRadius then
+                    S.lastValidAt = t
+                end
+            end
+        end
+
         if shouldDeactivate(t, hr, ball) then
             deactivate(t)
         end
+
         return
     end
 
-    local reason = shouldActivate(t, hr, ball)
-    if reason then
+    if shouldActivate(t, hr, ball) then
         activate(t)
     end
 end
@@ -476,12 +436,13 @@ local function onTarget(newTarget, t)
 
     S.lastTarget = newTarget
 
-    -- update AutoParry armed state so isTargeted() reflects the latest sync
     local getState = AutoParry.getState
+
     if type(getState) == "function" then
-        local ok, state = pcall(getState)
-        if ok and type(state) == "table" then
-            state.armed = (newTarget == userId)
+        local state = getState()
+
+        if type(state) == "table" then
+            state.armed = newTarget == userId
         end
     end
 
@@ -500,10 +461,6 @@ local function onTarget(newTarget, t)
     if not isMe or wasMe then
         return
     end
-
-    -- becoming the target again: clear stale deactivation lock and re-arm
-    S.inactiveAt = 0
-    resetDetector()
 
     if S.wasMeTarget then
         S.targetReturnPending = true
