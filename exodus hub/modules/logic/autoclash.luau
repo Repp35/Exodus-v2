@@ -244,6 +244,7 @@ local function tickPhysical(ctx, t)
         return false
     end
 
+    -- cooldown pós-deactivate
     if (t - S.inactiveAt) < INACTIVE_COOLDOWN then
         return false
     end
@@ -275,11 +276,14 @@ local function tickPhysical(ctx, t)
     local radius = getActivationRadius(ctx.parryRadius)
     local dot = velocity:Dot(offset.Unit)
 
+    -- gate armed: target return armou, esperando bola entrar no raio
     if S.armed then
         if (t - S.armedAt) >= ARMED_EXPIRY then
+            -- expirou sem a bola entrar
             S.armed = false
             S.armedAt = 0
         elseif distance <= radius and dot > 0 then
+            -- bola entrou no raio com dot positivo: ativa
             S.armed = false
             S.armedAt = 0
             S.physDotEma = 0
@@ -334,17 +338,10 @@ local function getRedHold(speed)
 end
 
 local function shouldDeactivate(t, ctx)
-    -- panic: sem hr ou bola, desativa sempre
     if not (ctx.hr and ctx.ball) then
         return true
     end
 
-    -- hold mínimo: nenhum gate dispara antes de 80ms
-    if (t - S.activeAt) < 0.080 then
-        return false
-    end
-
-    -- gates normais só depois do hold
     if not isBallTargeted() then
         return true
     end
@@ -352,6 +349,10 @@ local function shouldDeactivate(t, ctx)
     local radius = getDeactivationRadius(ctx.parryRadius)
 
     if not ballInRange(ctx.hr, ctx.ball, radius) then
+        return true
+    end
+
+    if not nearestInRange(ctx.hr, radius) then
         return true
     end
 
@@ -442,35 +443,32 @@ function AutoClash.onBallSync(data)
         local lostAt = S.lostMeAt or 0
 
         if lostAt > 0 then
-            local character = localPlayer.Character
-            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+            local elapsed = t - lostAt
             local ball = getBall()
+            local speed = getBallSpeed(ball)
+            local window = getTargetReturnWindow(speed)
 
-            if hrp and ball and ball.Parent then
-                local speed = getBallSpeed(ball)
-                local window = getTargetReturnWindow(speed)
-                local elapsed = t - lostAt
+            if elapsed <= window then
+                local character = localPlayer.Character
+                local hrp = character and character:FindFirstChild("HumanoidRootPart")
 
-                if elapsed <= window then
+                if hrp and ball and ball.Parent then
                     local baseRadius = computeParryRadius(speed, t)
-
                     if type(baseRadius) ~= "number" or baseRadius <= 0 then
                         baseRadius = 8
                     end
-
                     local activationRadius = baseRadius * ACT_RADIUS_MULT
-
-                    local okDistance, distance = pcall(function()
+                    local okDist, distance = pcall(function()
                         return (hrp.Position - ball.Position).Magnitude
                     end)
 
-                    if okDistance then
-                        if distance <= activationRadius then
-                            activate(t)
-                        else
-                            S.armed = true
-                            S.armedAt = t
-                        end
+                    if okDist and distance <= activationRadius then
+                        -- já está no raio: ativa direto
+                        activate(t)
+                    else
+                        -- fora do raio: arma e espera bola entrar
+                        S.armed = true
+                        S.armedAt = t
                     end
                 end
             end
