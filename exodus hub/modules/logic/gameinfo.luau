@@ -1,4 +1,4 @@
--- [[ GameInfo ]]
+--[[ GameInfo ]]
 
 -- services
 local GameInfo = {}
@@ -110,7 +110,6 @@ end
 -- ability
 local _deflectAbilityRef, _deflectAbilityTried, _deflectAbilityLastCheck = nil, false, 0
 
--- ability
 local function _ensureDeflectAbility()
     if _deflectAbilityRef and _deflectAbilityRef.Parent ~= nil then
         return _deflectAbilityRef
@@ -160,8 +159,6 @@ local function installBallWatcher(trackFn)
     if existing and existing:IsA("BasePart") then setBall(existing) end
     return true
 end
-
--- public
 
 -- setup
 function GameInfo.setup(deps)
