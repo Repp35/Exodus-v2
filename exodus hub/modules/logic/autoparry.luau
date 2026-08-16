@@ -228,7 +228,15 @@ local function onBallSync(data)
         return
     end
 
-    local targetId = tonumber(data.TargetPlayerID) or -1
+    local targetId
+
+    if type(data.TargetPlayerID) == "number" then
+        targetId = data.TargetPlayerID
+    elseif type(data.TargetPlayerID) == "string" then
+        targetId = tonumber(data.TargetPlayerID) or -1
+    else
+        targetId = -1
+    end
 
     if targetId == Runtime.lastTarget then
         return
