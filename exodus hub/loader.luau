@@ -12,6 +12,7 @@ local HttpService = game:GetService("HttpService")
 local REPOSITORY = "Repp35/Exodus-v2"
 local BRANCH = "main"
 local PROJECT_PATH = "exodus%20hub/"
+local LOCAL_ROOT = "Exodus-v2"
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local MODULE_ORDER = {
     "Config",
@@ -62,6 +63,64 @@ local function request(url, headers)
         lastError = tostring(responseBody)
     end
     return nil, lastError or "Nenhum serviço HTTP disponível"
+end
+
+-- local fallback
+local function localBaseName(path)
+    return string.match(path, "[^\\/]+$") or path
+end
+local function findLocalModule(name)
+    if type(listfiles) ~= "function"
+        or type(isfile) ~= "function"
+        or type(isfolder) ~= "function"
+        or type(readfile) ~= "function"
+    then
+        return nil, "APIs de filesystem do executor indisponíveis"
+    end
+    local target = string.lower(name .. ".luau")
+    local matches = {}
+    local visited = {}
+    local function walk(folder, depth)
+        if depth > 32 or visited[folder] then
+            return
+        end
+        visited[folder] = true
+        local listOk, entries = pcall(listfiles, folder)
+        if not listOk or type(entries) ~= "table" then
+            return
+        end
+        for _, entry in ipairs(entries) do
+            if type(entry) == "string" then
+                local fileOk, fileExists = pcall(isfile, entry)
+                if fileOk and fileExists then
+                    if string.lower(localBaseName(entry)) == target then
+                        matches[#matches + 1] = entry
+                    end
+                else
+                    local folderOk, folderExists = pcall(isfolder, entry)
+                    if folderOk and folderExists then
+                        walk(entry, depth + 1)
+                    end
+                end
+            end
+        end
+    end
+    local rootOk, rootExists = pcall(isfolder, LOCAL_ROOT)
+    if not rootOk or not rootExists then
+        return nil, "pasta local " .. LOCAL_ROOT .. " indisponível"
+    end
+    walk(LOCAL_ROOT, 0)
+    if #matches == 0 then
+        return nil, name .. ".luau não encontrado em " .. LOCAL_ROOT
+    end
+    if #matches > 1 then
+        return nil, name .. ".luau ambíguo: " .. tostring(#matches) .. " arquivos encontrados"
+    end
+    local readOk, source = pcall(readfile, matches[1])
+    if not readOk or type(source) ~= "string" or source == "" then
+        return nil, "falha ao ler " .. matches[1]
+    end
+    return source, matches[1]
 end
 
 -- registry
@@ -162,27 +221,40 @@ local function buildURLs(version)
 end
 local function loadModule(name, url)
     local source, fetchError = request(url)
-    if not source then
-        return nil, fetchError
+    if source then
+        local module, compileError = compile(name, source)
+        if module then
+            return register(name, module), nil, "github"
+        end
+        fetchError = compileError
     end
-    local module, compileError = compile(name, source)
-    if not module then
-        return nil, compileError
+    local localSource, localPath = findLocalModule(name)
+    if localSource then
+        local module, compileError = compile(name .. " [local]", localSource)
+        if module then
+            return register(name, module), nil, "local"
+        end
+        return nil, "GitHub: " .. tostring(fetchError)
+            .. "; local: " .. tostring(compileError)
     end
-    return register(name, module)
+    return nil, "GitHub: " .. tostring(fetchError)
+        .. "; local: " .. tostring(localPath)
 end
 local function loadModules(urls, log)
     local loaded = {}
     for _, name in ipairs(MODULE_ORDER) do
         if name ~= "Utils" then
-            local module, loadError = loadModule(name, urls[name])
+            local module, loadError, source = loadModule(name, urls[name])
             if not module then
                 local message = ("%s falhou: %s"):format(name, tostring(loadError))
                 log.warn(message)
                 return nil, message
             end
             loaded[name] = module
-            log.info(("%s carregado"):format(name))
+            log.info(("%s carregado%s"):format(
+                name,
+                source == "local" and " localmente" or ""
+            ))
         end
     end
     loaded.Utils = log
@@ -310,7 +382,7 @@ end
 
 -- interface
 local function loadInterface(url, utils, controls)
-    local interface, loadError = loadModule("UI", url)
+    local interface, loadError, source = loadModule("UI", url)
     if not interface then
         utils.warn("Exodus UI falhou: " .. tostring(loadError))
         return false
@@ -327,7 +399,7 @@ local function loadInterface(url, utils, controls)
         utils.warn("Exodus UI falhou ao inicializar: " .. tostring(setupError))
         return false
     end
-    utils.info("Exodus UI carregada")
+    utils.info(source == "local" and "Exodus UI carregada localmente" or "Exodus UI carregada")
     return true
 end
 
