@@ -1,11 +1,18 @@
 -- [[ Loader ]]
 
 local function bootstrapPrint(message)
-    local text = "[Exodus Bootstrap] " .. tostring(message)
+    local text = tostring(message)
+    local essential = text == "loader.luau iniciado"
+        or text == "hub inicializado com sucesso"
+        or string.find(text, "^ERRO no ponto de entrada:") ~= nil
+    if not essential then
+        return
+    end
+    local output = "[Exodus] " .. text
     if type(print) == "function" then
-        pcall(print, text)
+        pcall(print, output)
     elseif type(warn) == "function" then
-        pcall(warn, text)
+        pcall(warn, output)
     end
 end
 bootstrapPrint("loader.luau iniciado")
@@ -532,6 +539,14 @@ function Loader.start()
     end
     bootstrapPrint("utils carregado; iniciando o restante")
     utils.start()
+    if type(utils.log) == "function" then
+        local originalLog = utils.log
+        utils.log = function(level, message)
+            if level == "warn" then
+                return originalLog(level, message)
+            end
+        end
+    end
     utils.setLifecyclePhase("loading")
     Exodus.Utils = utils
     Exodus.State = utils.getStateSnapshot()
@@ -630,9 +645,6 @@ local function startSafely()
         bootstrapPrint("ERRO no ponto de entrada: " .. message)
         Loader.lastError = message
         Exodus.StartError = message
-        if type(warn) == "function" then
-            pcall(warn, "[Exodus] loader falhou: " .. message)
-        end
         return false
     end
     Loader.lastError = nil
