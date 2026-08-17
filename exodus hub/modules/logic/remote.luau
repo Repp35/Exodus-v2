@@ -11,46 +11,21 @@ local ballSyncRemote
 local maintenanceGeneration = 0
 local remoteState = "uninitialized"
 local HttpService = game:GetService("HttpService")
-
--- storage
 local STORAGE_SCHEMA = 1
-local STORAGE_FOLDER = "Exodus Hub"
 local STORAGE_FILE = "deflect_remotes.json"
-local STORAGE_PATH = STORAGE_FOLDER .. "/" .. STORAGE_FILE
 local Storage = {
     initialized = false,
     available = false,
     writeBlocked = false,
+    flushQueued = false,
+    path = STORAGE_FILE,
     captures = {},
     lastWriteAt = 0,
     lastError = nil,
     errorReported = false,
 }
-local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
-local HookState = type(namespace.RemoteHooks) == "table" and namespace.RemoteHooks or {
-    installed = false,
-    register = nil,
-}
-namespace.RemoteHooks = HookState
-_G.Exodus = namespace
 
--- helpers
-local function isAlive(remote)
-    return remote
-        and typeof(remote) == "Instance"
-        and remote:IsA("RemoteEvent")
-        and remote.Parent ~= nil
-end
-local function clearParryRemote(remote)
-    if parryRemote == remote and not isAlive(remote) then
-        local hadRemote = parryRemote ~= nil
-        parryRemote = nil
-        parryInitialized = false
-        if hadRemote then
-            remoteState = "lost"
-        end
-    end
-end
+-- storage
 local function reportStorageError(message)
     Storage.lastError = tostring(message)
     if not Storage.errorReported
@@ -173,13 +148,13 @@ local function writeStorage()
     local encodeOk, body = pcall(HttpService.JSONEncode, HttpService, document)
     if not encodeOk or type(body) ~= "string" then
         Storage.writeBlocked = true
-        reportStorageError("falha ao codificar " .. STORAGE_PATH)
+        reportStorageError("falha ao codificar " .. Storage.path)
         return false
     end
-    local writeOk, writeResult = pcall(writefile, STORAGE_PATH, body)
+    local writeOk, writeResult = pcall(writefile, Storage.path, body)
     if not writeOk or writeResult == false then
         Storage.writeBlocked = true
-        reportStorageError(writeResult or ("falha ao gravar " .. STORAGE_PATH))
+        reportStorageError(writeResult or ("falha ao gravar " .. Storage.path))
         return false
     end
     Storage.lastWriteAt = os.time()
@@ -191,28 +166,20 @@ local function initializeStorage()
         return Storage.available
     end
     Storage.initialized = true
-    if type(makefolder) ~= "function"
-        or type(isfolder) ~= "function"
-        or type(isfile) ~= "function"
+    local folderOk, folderPath = Utils.ensureDataFolder()
+    if not folderOk then
+        reportStorageError(folderPath)
+        return false
+    end
+    Storage.path = folderPath .. "/" .. STORAGE_FILE
+    if type(isfile) ~= "function"
         or type(readfile) ~= "function"
         or type(writefile) ~= "function"
     then
-        reportStorageError("APIs de filesystem do executor indisponíveis")
+        reportStorageError("APIs de arquivo do executor indisponíveis")
         return false
     end
-    local folderOk, folderExists = pcall(isfolder, STORAGE_FOLDER)
-    if not folderOk then
-        reportStorageError(folderExists)
-        return false
-    end
-    if not folderExists then
-        local makeOk, makeError = pcall(makefolder, STORAGE_FOLDER)
-        if not makeOk then
-            reportStorageError(makeError or ("falha ao criar " .. STORAGE_FOLDER))
-            return false
-        end
-    end
-    local fileOk, fileExists = pcall(isfile, STORAGE_PATH)
+    local fileOk, fileExists = pcall(isfile, Storage.path)
     if not fileOk then
         reportStorageError(fileExists)
         return false
@@ -220,7 +187,7 @@ local function initializeStorage()
     local body = ""
     if fileExists then
         local readOk
-        readOk, body = pcall(readfile, STORAGE_PATH)
+        readOk, body = pcall(readfile, Storage.path)
         if not readOk then
             reportStorageError(body)
             return false
@@ -232,7 +199,7 @@ local function initializeStorage()
                 or document.schema ~= STORAGE_SCHEMA
                 or type(document.captures) ~= "table"
             then
-                reportStorageError(STORAGE_PATH .. " possui JSON inválido ou schema incompatível")
+                reportStorageError(Storage.path .. " possui JSON inválido ou schema incompatível")
                 return false
             end
             for _, capture in ipairs(document.captures) do
@@ -293,6 +260,41 @@ local function captureRemote(remote)
     end)
     if not ok then
         reportStorageError(errorMessage)
+    end
+end
+local function getStorageStatus()
+    return {
+        schema = STORAGE_SCHEMA,
+        available = Storage.available == true,
+        path = Storage.path,
+        captures = #Storage.captures,
+        lastWriteAt = Storage.lastWriteAt,
+        lastError = Storage.lastError,
+    }
+end
+local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
+local HookState = type(namespace.RemoteHooks) == "table" and namespace.RemoteHooks or {
+    installed = false,
+    register = nil,
+}
+namespace.RemoteHooks = HookState
+_G.Exodus = namespace
+
+-- helpers
+local function isAlive(remote)
+    return remote
+        and typeof(remote) == "Instance"
+        and remote:IsA("RemoteEvent")
+        and remote.Parent ~= nil
+end
+local function clearParryRemote(remote)
+    if parryRemote == remote and not isAlive(remote) then
+        local hadRemote = parryRemote ~= nil
+        parryRemote = nil
+        parryInitialized = false
+        if hadRemote then
+            remoteState = "lost"
+        end
     end
 end
 local function registerRemote(remote)
@@ -400,6 +402,7 @@ function Remote.setup(deps)
         or type(deps.Utils.apiVersion) ~= "function"
         or type(deps.Utils.trackGlobal) ~= "function"
         or type(deps.Utils.untrackGlobal) ~= "function"
+        or type(deps.Utils.ensureDataFolder) ~= "function"
         or type(deps.Utils.warn) ~= "function"
     then
         return false
@@ -489,14 +492,7 @@ function Remote.getStatus()
         hasBallSync = ballSyncConnection ~= nil
             and ballSyncConnection.Connected == true
             and ballSyncRemote ~= nil,
-        storage = {
-            schema = STORAGE_SCHEMA,
-            available = Storage.available == true,
-            path = STORAGE_PATH,
-            captures = #Storage.captures,
-            lastWriteAt = Storage.lastWriteAt,
-            lastError = Storage.lastError,
-        },
+        storage = getStorageStatus(),
     }
 end
 
