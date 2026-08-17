@@ -125,7 +125,6 @@ local function viewport()
     local currentCamera = workspace.CurrentCamera or Camera
     return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
 end
-
 local function setConfigValue(key, value)
     Utils.setConfig({ [key] = value })
 end
@@ -441,7 +440,6 @@ local function cleanupUI()
     UIState.clashBallOn = false
     if Utils then
         Utils.setManualSpamActive(false)
-        Utils.setAutoSpamActive(false)
     end
     UIState.panelTween = nil
     UIState.btnTween = nil
@@ -504,6 +502,7 @@ local function spawnParticle()
         end
     )
 end
+
 -- cards
 local function cardFrame(yPos, h, parent)
     local f =
@@ -710,9 +709,7 @@ local function createRateSelector(yPos, parent)
     setConfigValue("CPS", config.CPS)
     setConfigValue("CPF", config.CPF)
     setConfigValue("SpamRateMode", config.SpamRateMode)
-
     cardLabel("Taxa do Spam", f)
-
     local currentMode = config.SpamRateMode
     local modeTrack = inst(
         "Frame",
@@ -728,7 +725,6 @@ local function createRateSelector(yPos, parent)
     )
     corner(modeTrack, 999)
     stroke(modeTrack, C.border, 1)
-
     local modeThumb = inst(
         "Frame",
         {
@@ -742,7 +738,6 @@ local function createRateSelector(yPos, parent)
     )
     corner(modeThumb, 999)
     stroke(modeThumb, C.text, 1)
-
     local modeButtons = {}
     for index, mode in ipairs({"CPS", "CPF"}) do
         local button = inst(
@@ -761,7 +756,6 @@ local function createRateSelector(yPos, parent)
         )
         modeButtons[mode] = button
     end
-
     local inputBox = inst(
         "TextBox",
         {
@@ -781,7 +775,6 @@ local function createRateSelector(yPos, parent)
     )
     corner(inputBox, 8)
     local inputStroke = stroke(inputBox, C.border, 1)
-
     local function paintRateMode(animated)
         local isCPS = currentMode == "CPS"
         local targetPosition = isCPS and UDim2.new(0, 2, 0.5, -12) or UDim2.new(0, 60, 0.5, -12)
@@ -796,26 +789,21 @@ local function createRateSelector(yPos, parent)
             }, EASE_SINE, DIR_INOUT)
         end
     end
-
     local function selectRateMode(mode)
         if mode ~= "CPS" and mode ~= "CPF" or currentMode == mode then
             return
         end
-
         currentMode = mode
         config.SpamRateMode = mode
         inputBox.Text = tostring(config[mode])
         setConfigValue("SpamRateMode", mode)
-
         paintRateMode(true)
     end
-
     for mode, button in pairs(modeButtons) do
         trackConn(button.Activated:Connect(function()
             selectRateMode(mode)
         end))
     end
-
     trackConn(inputBox.Focused:Connect(function()
         twPlay(inputStroke, 0.15, {Color = C.accent})
     end))
@@ -828,7 +816,6 @@ local function createRateSelector(yPos, parent)
         setConfigValue(key, normalized)
         inputBox.Text = tostring(normalized)
     end))
-
     return nextCardY(yPos, RATE_CARD_H)
 end
 local function createKeybindSelector(yPos, parent)
@@ -968,7 +955,6 @@ function ExodusUI.setup(deps)
         or type(deps.Utils.normalizeSpamRate) ~= "function"
         or type(deps.Utils.isManualSpamActive) ~= "function"
         or type(deps.Utils.setManualSpamActive) ~= "function"
-        or type(deps.Utils.setAutoSpamActive) ~= "function"
         or type(deps.Utils.stop) ~= "function"
         or type(deps.Utils.name) ~= "function"
         or type(deps.Utils.version) ~= "function"
@@ -1065,7 +1051,6 @@ function ExodusUI.setup(deps)
         function()
                                 setConfigValue("BtnX", floatingButton.Position.X.Offset)
                     setConfigValue("BtnY", floatingButton.Position.Y.Offset)
-
         end
     )
     trackConn(floatingButton.Activated:Connect(
@@ -1392,4 +1377,5 @@ function ExodusUI.setup(deps)
     setSpam(Utils.isManualSpamActive())
     return true
 end
+
 return ExodusUI
