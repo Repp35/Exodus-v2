@@ -9,7 +9,7 @@ local RunServiceService = game:GetService("RunService")
 local WorkspaceService = game:GetService("Workspace")
 
 -- metadata
-local SCRIPT_VERSION = "26.6"
+local SCRIPT_VERSION = "26.9"
 local API_VERSION = 1
 local SCRIPT_NAME = "Exodus Hub"
 local INTERNAL_NAME = "Exodus"
@@ -19,6 +19,7 @@ local SCRIPT_AUTHOR = "ppzudo"
 local SPAM_RATE_MIN = 0
 local SPAM_RATE_MAX = 5000000000
 local MAX_DIAGNOSTIC_ENTRIES = 32
+local DATA_FOLDER = "Exodus Hub"
 local function isValidConfigValue(key, value)
     if key == "AutoParry"
         or key == "AutoClash"
@@ -65,7 +66,6 @@ local State = {
         transitions = {},
     },
 }
-
 -- helpers
 local function disconnectAll(list)
     for index = #list, 1, -1 do
@@ -172,6 +172,27 @@ local function recordError(source, message)
         table.remove(State.diagnostics.errors, 1)
     end
     updateNamespace()
+end
+
+-- filesystem
+local function ensureDataFolder()
+    if type(makefolder) ~= "function" or type(isfolder) ~= "function" then
+        return false, "APIs de pasta do executor indisponíveis"
+    end
+    local folderOk, folderExists = pcall(isfolder, DATA_FOLDER)
+    if not folderOk then
+        return false, tostring(folderExists)
+    end
+    if not folderExists then
+        local makeOk, makeError = pcall(makefolder, DATA_FOLDER)
+        if not makeOk then
+            return false, tostring(makeError or ("falha ao criar " .. DATA_FOLDER))
+        end
+    end
+    return true, DATA_FOLDER
+end
+function Utils.ensureDataFolder()
+    return ensureDataFolder()
 end
 
 -- lifecycle
