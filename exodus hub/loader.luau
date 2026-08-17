@@ -1,5 +1,15 @@
 -- [[ Loader ]]
 
+local function bootstrapPrint(message)
+    local text = "[Exodus Bootstrap] " .. tostring(message)
+    if type(print) == "function" then
+        pcall(print, text)
+    elseif type(warn) == "function" then
+        pcall(warn, text)
+    end
+end
+bootstrapPrint("loader.luau iniciado")
+
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 Exodus.Modules = Modules
@@ -12,57 +22,118 @@ local HttpService = game:GetService("HttpService")
 local REPOSITORY = "Repp35/Exodus-v2"
 local BRANCH = "main"
 local PROJECT_PATH = "exodus%20hub/"
-local LOCAL_ROOT = "Exodus-v2"
+local LOCAL_ROOTS = { "Exodus-v2", "exodus hub", "Exodus Hub" }
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local MODULE_ORDER = {
-    "Config",
-    "Utils",
-    "GameInfo",
-    "Remote",
-    "AutoParry",
-    "AutoClash",
-    "Spam",
-    "Character",
+    "config",
+    "utils",
+    "gameinfo",
+    "remote",
+    "autoparry",
+    "autoclash",
+    "spam",
+    "character",
 }
 
 -- http
+local function getGlobalEnvironment()
+    if type(getgenv) == "function" then
+        local ok, environment = pcall(getgenv)
+        if ok and type(environment) == "table" then
+            return environment
+        end
+    end
+    return _G
+end
+local function getRequestFunction()
+    local environment = getGlobalEnvironment()
+    local synApi = type(environment.syn) == "table" and environment.syn or nil
+    local fluxusApi = type(environment.fluxus) == "table" and environment.fluxus or nil
+    local candidates = {
+        environment.request,
+        environment.http_request,
+        synApi and synApi.request,
+        fluxusApi and fluxusApi.request,
+    }
+    for _, candidate in ipairs(candidates) do
+        if type(candidate) == "function" then
+            return candidate
+        end
+    end
+    return nil
+end
+local function isRetryableHttp(message)
+    local statusCode = tonumber(string.match(tostring(message), "HTTP%s+(%d+)"))
+    return statusCode == 408
+        or statusCode == 425
+        or statusCode == 429
+        or (statusCode and statusCode >= 500 and statusCode <= 599)
+end
+local function waitBeforeRetry(attempt)
+    if type(task) == "table" and type(task.wait) == "function" then
+        local delays = { 0.25, 0.75, 1.5 }
+        task.wait(delays[attempt] or delays[#delays])
+    end
+end
 local function request(url, headers)
     if type(url) ~= "string" or url == "" then
         return nil, "URL inválida"
     end
     local lastError
-    if type(_G.request) == "function" then
-        local ok, responseBody = pcall(function()
-            local response = _G.request({
-                Url = url,
-                Method = "GET",
-                Headers = headers,
-            })
-            if type(response) ~= "table" or type(response.Body) ~= "string" then
-                error("Resposta HTTP inválida")
+    local requestFunction = getRequestFunction()
+    bootstrapPrint("baixando: " .. url)
+    for attempt = 1, 3 do
+        bootstrapPrint(("tentativa HTTP %d: %s"):format(attempt, url))
+        if requestFunction then
+            local ok, responseBody = pcall(function()
+                local response = requestFunction({
+                    Url = url,
+                    Method = "GET",
+                    Headers = headers,
+                })
+                if type(response) ~= "table" then
+                    error("Resposta HTTP inválida")
+                end
+                local statusCode = tonumber(response.StatusCode or response.status_code)
+                if statusCode and statusCode >= 400 then
+                    error("HTTP " .. tostring(statusCode))
+                end
+                local body = response.Body or response.body or response.ResponseBody
+                if type(body) ~= "string" or body == "" then
+                    error("Corpo HTTP vazio ou inválido")
+                end
+                return body
+            end)
+            if ok and type(responseBody) == "string" and responseBody ~= "" then
+                bootstrapPrint(("HTTP OK via request: %d bytes"):format(#responseBody))
+                return responseBody
             end
-            if type(response.StatusCode) == "number"
-                and response.StatusCode ~= 200
-            then
-                error("HTTP " .. tostring(response.StatusCode))
+            lastError = tostring(responseBody)
+            bootstrapPrint("request falhou: " .. lastError)
+        end
+        local httpGet
+        local httpGetOk = pcall(function()
+            httpGet = game.HttpGet
+        end)
+        if httpGetOk and type(httpGet) == "function" then
+            local ok, responseBody = pcall(function()
+                return game:HttpGet(url)
+            end)
+            if ok and type(responseBody) == "string" and responseBody ~= "" then
+                bootstrapPrint(("HTTP OK via game:HttpGet: %d bytes"):format(#responseBody))
+                return responseBody
             end
-            return response.Body
-        end)
-        if ok and type(responseBody) == "string" and responseBody ~= "" then
-            return responseBody
+            lastError = tostring(responseBody)
+            bootstrapPrint("game:HttpGet falhou: " .. lastError)
         end
-        lastError = tostring(responseBody)
-    end
-    if type(game.HttpGet) == "function" then
-        local ok, responseBody = pcall(function()
-            return game:HttpGet(url)
-        end)
-        if ok and type(responseBody) == "string" and responseBody ~= "" then
-            return responseBody
+        if not isRetryableHttp(lastError) then
+            break
         end
-        lastError = tostring(responseBody)
+        waitBeforeRetry(attempt)
     end
-    return nil, lastError or "Nenhum serviço HTTP disponível"
+    local message = lastError or "Nenhum serviço HTTP disponível"
+    bootstrapPrint("download falhou definitivamente: " .. message)
+    return nil, message
 end
 
 -- local fallback
@@ -105,13 +176,20 @@ local function findLocalModule(name)
             end
         end
     end
-    local rootOk, rootExists = pcall(isfolder, LOCAL_ROOT)
-    if not rootOk or not rootExists then
-        return nil, "pasta local " .. LOCAL_ROOT .. " indisponível"
+    local availableRoots = {}
+    for _, root in ipairs(LOCAL_ROOTS) do
+        local rootOk, rootExists = pcall(isfolder, root)
+        if rootOk and rootExists then
+            availableRoots[#availableRoots + 1] = root
+            walk(root, 0)
+            if #matches > 0 then
+                break
+            end
+        end
     end
-    walk(LOCAL_ROOT, 0)
     if #matches == 0 then
-        return nil, name .. ".luau não encontrado em " .. LOCAL_ROOT
+        return nil, name .. ".luau não encontrado; pastas verificadas: "
+            .. table.concat(availableRoots, ", ")
     end
     if #matches > 1 then
         return nil, name .. ".luau ambíguo: " .. tostring(#matches) .. " arquivos encontrados"
@@ -132,7 +210,7 @@ local function clearRegistry()
     for _, name in ipairs(MODULE_ORDER) do
         Modules[name] = nil
     end
-    Modules.UI = nil
+    Modules.ui = nil
     Modules.Loader = Loader
     Exodus.Utils = nil
     Exodus.State = nil
@@ -145,10 +223,10 @@ local function clearRegistry()
     Exodus.Started = false
 end
 local function stopPreviousRuntime()
-    if type(Modules.Remote) == "table"
-        and type(Modules.Remote.stopMaintenance) == "function"
+    if type(Modules.remote) == "table"
+        and type(Modules.remote.stopMaintenance) == "function"
     then
-        pcall(Modules.Remote.stopMaintenance)
+        pcall(Modules.remote.stopMaintenance)
     end
     local stopped = false
     if type(_G.ExodusStop) == "function" then
@@ -162,20 +240,30 @@ end
 
 -- compiler
 local function compile(name, source)
+    bootstrapPrint("loadstring: " .. name)
     if type(loadstring) ~= "function" then
-        return nil, "loadstring não está disponível neste ambiente"
+        local message = "loadstring não está disponível neste ambiente"
+        bootstrapPrint("ERRO: " .. message)
+        return nil, message
     end
     local chunk, compileError = loadstring(source, name)
     if not chunk then
-        return nil, tostring(compileError)
+        local message = tostring(compileError)
+        bootstrapPrint("ERRO ao compilar " .. name .. ": " .. message)
+        return nil, message
     end
     local ok, module = pcall(chunk)
     if not ok then
-        return nil, tostring(module)
+        local message = tostring(module)
+        bootstrapPrint("ERRO ao executar " .. name .. ": " .. message)
+        return nil, message
     end
     if type(module) ~= "table" then
-        return nil, "o módulo não retornou uma tabela"
+        local message = "o módulo não retornou uma tabela"
+        bootstrapPrint("ERRO em " .. name .. ": " .. message)
+        return nil, message
     end
+    bootstrapPrint("OK: " .. name .. " executado por loadstring")
     return module
 end
 
@@ -208,18 +296,19 @@ local function buildURLs(version)
         .. PROJECT_PATH
         .. "modules/"
     return {
-        Config = root .. "front/config.luau",
-        Utils = root .. "logic/utils.luau",
-        GameInfo = root .. "logic/gameinfo.luau",
-        Remote = root .. "logic/remote.luau",
-        AutoParry = root .. "logic/autoparry.luau",
-        AutoClash = root .. "logic/autoclash.luau",
-        Spam = root .. "logic/spam.luau",
-        Character = root .. "logic/character.luau",
-        UI = root .. "front/ui.luau",
+        config = root .. "front/config.luau",
+        utils = root .. "logic/utils.luau",
+        gameinfo = root .. "logic/gameinfo.luau",
+        remote = root .. "logic/remote.luau",
+        autoparry = root .. "logic/autoparry.luau",
+        autoclash = root .. "logic/autoclash.luau",
+        spam = root .. "logic/spam.luau",
+        character = root .. "logic/character.luau",
+        ui = root .. "front/ui.luau",
     }
 end
 local function loadModule(name, url)
+    bootstrapPrint(("módulo %s | URL %s"):format(name, tostring(url)))
     local source, fetchError = request(url)
     if source then
         local module, compileError = compile(name, source)
@@ -228,6 +317,7 @@ local function loadModule(name, url)
         end
         fetchError = compileError
     end
+    bootstrapPrint("fallback local para " .. name .. ": " .. tostring(fetchError))
     local localSource, localPath = findLocalModule(name)
     if localSource then
         local module, compileError = compile(name .. " [local]", localSource)
@@ -243,7 +333,7 @@ end
 local function loadModules(urls, log)
     local loaded = {}
     for _, name in ipairs(MODULE_ORDER) do
-        if name ~= "Utils" then
+        if name ~= "utils" then
             local module, loadError, source = loadModule(name, urls[name])
             if not module then
                 local message = ("%s falhou: %s"):format(name, tostring(loadError))
@@ -257,36 +347,36 @@ local function loadModules(urls, log)
             ))
         end
     end
-    loaded.Utils = log
+    loaded.utils = log
     return loaded
 end
 
 -- setup
 local function initializeModules(loaded, log)
     local setupOrder = {
-        { "Remote", { Utils = loaded.Utils } },
-        { "GameInfo", { Utils = loaded.Utils } },
+        { "remote", { Utils = loaded.utils } },
+        { "gameinfo", { Utils = loaded.utils } },
         {
-            "AutoParry",
+            "autoparry",
             {
-                Remote = loaded.Remote,
-                GameInfo = loaded.GameInfo,
-                Utils = loaded.Utils,
+                Remote = loaded.remote,
+                GameInfo = loaded.gameinfo,
+                Utils = loaded.utils,
             },
         },
         {
-            "Spam",
+            "spam",
             {
-                Remote = loaded.Remote,
-                Utils = loaded.Utils,
+                Remote = loaded.remote,
+                Utils = loaded.utils,
             },
         },
         {
-            "Character",
+            "character",
             {
-                AutoParry = loaded.AutoParry,
-                Spam = loaded.Spam,
-                Utils = loaded.Utils,
+                AutoParry = loaded.autoparry,
+                Spam = loaded.spam,
+                Utils = loaded.utils,
             },
         },
     }
@@ -316,14 +406,14 @@ end
 
 -- runtime
 local function bindRuntime(loaded, log)
-    local utils = loaded.Utils
-    local gameInfo = loaded.GameInfo
-    local remote = loaded.Remote
+    local utils = loaded.utils
+    local gameInfo = loaded.gameinfo
+    local remote = loaded.remote
     if type(gameInfo.applySync) ~= "function"
         or type(gameInfo.installBallWatcher) ~= "function"
         or type(remote.bindBallSync) ~= "function"
         or type(remote.startMaintenance) ~= "function"
-        or type(loaded.AutoParry.onBallSync) ~= "function"
+        or type(loaded.autoparry.onBallSync) ~= "function"
     then
         return nil, "contrato de runtime incompleto"
     end
@@ -340,7 +430,7 @@ local function bindRuntime(loaded, log)
     end
     local function onBallSync(data)
         callSync("GameInfo", gameInfo.applySync, data)
-        callSync("AutoParry", loaded.AutoParry.onBallSync, data)
+        callSync("AutoParry", loaded.autoparry.onBallSync, data)
     end
     local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
     if watcherReady then
@@ -382,7 +472,7 @@ end
 
 -- interface
 local function loadInterface(url, utils, controls)
-    local interface, loadError, source = loadModule("UI", url)
+    local interface, loadError, source = loadModule("ui", url)
     if not interface then
         utils.warn("Exodus UI falhou: " .. tostring(loadError))
         return false
@@ -404,27 +494,56 @@ local function loadInterface(url, utils, controls)
 end
 
 -- start
+local function waitForLocalPlayer(timeout)
+    local ok, players = pcall(game.GetService, game, "Players")
+    if not ok or not players then
+        return false, "serviço Players indisponível"
+    end
+    local deadline = os.clock() + (tonumber(timeout) or 10)
+    repeat
+        local playerOk, player = pcall(function()
+            return players.LocalPlayer
+        end)
+        if playerOk and player then
+            return true
+        end
+        if type(task) ~= "table" or type(task.wait) ~= "function" then
+            break
+        end
+        task.wait()
+    until os.clock() >= deadline
+    return false, "LocalPlayer indisponível após esperar " .. tostring(timeout or 10) .. "s"
+end
 function Loader.start()
+    bootstrapPrint("inicialização do hub iniciada")
     stopPreviousRuntime()
     clearRegistry()
+    local playerReady, playerError = waitForLocalPlayer(10)
+    if not playerReady then
+        return false, playerError
+    end
     local version = latestVersion()
+    bootstrapPrint("versão remota: " .. tostring(version))
     local urls = buildURLs(version)
-    local utils, utilsError = loadModule("Utils", urls.Utils)
+    local utils, utilsError = loadModule("utils", urls.utils)
     if not utils then
+        bootstrapPrint("ERRO fatal ao carregar utils: " .. tostring(utilsError))
         return false, utilsError
     end
+    bootstrapPrint("utils carregado; iniciando o restante")
     utils.start()
     utils.setLifecyclePhase("loading")
     Exodus.Utils = utils
     Exodus.State = utils.getStateSnapshot()
     local loaded, loadError = loadModules(urls, utils)
     if not loaded then
+        bootstrapPrint("ERRO ao carregar módulos: " .. tostring(loadError))
         utils.recordError("Loader", loadError or utilsError or "falha ao carregar módulos")
         utils.stop()
         return false
     end
     Exodus.Context = loaded
-    local defaultsOk, defaults = pcall(loaded.Config.defaults)
+    local defaultsOk, defaults = pcall(loaded.config.defaults)
     if not defaultsOk or type(defaults) ~= "table" then
         local message = "Config.defaults falhou: " .. tostring(defaults)
         utils.warn(message)
@@ -432,7 +551,7 @@ function Loader.start()
         utils.stop()
         return false
     end
-    local configCallOk, configValid, configReason = pcall(loaded.Config.validate, defaults)
+    local configCallOk, configValid, configReason = pcall(loaded.config.validate, defaults)
     if not configCallOk or configValid ~= true then
         local message = "Config.validate falhou: "
             .. tostring(configCallOk and configReason or configValid)
@@ -470,25 +589,57 @@ function Loader.start()
         return false
     end
     Exodus.Runtime = runtime
-    _G.ExodusOnBurst = loaded.AutoParry.fire
-    local uiReady = loadInterface(urls.UI, utils, {
+    _G.ExodusOnBurst = loaded.autoparry.fire
+    bootstrapPrint("módulos inicializados; carregando UI")
+    local uiReady = loadInterface(urls.ui, utils, {
         onPanic = function()
-            loaded.AutoParry.resetState()
+            loaded.autoparry.resetState()
             utils.setManualSpamActive(false)
             utils.setAutoSpamActive(false)
         end,
     })
     Exodus.UIReady = uiReady == true
-    Exodus.UI = Modules.UI
+    Exodus.UI = Modules.ui
     utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
     Exodus.Started = true
     Exodus.Version = utils.version()
-    utils.info(("%s %s inicializado"):format(utils.name(), utils.version()))
+    utils.info(('%s %s inicializado'):format(utils.name(), utils.version()))
+    bootstrapPrint("hub inicializado com sucesso")
     return true
 end
 Exodus.Loader = Loader
 Modules.Loader = Loader
-local started = Loader.start()
+local function startSafely()
+    local ok, started, startError = xpcall(
+        Loader.start,
+        function(errorValue)
+            return tostring(errorValue)
+        end
+    )
+    if not ok then
+        startError = started
+        started = false
+    end
+    if started ~= true then
+        local diagnostics = type(Exodus.Diagnostics) == "table" and Exodus.Diagnostics or nil
+        local lastError = diagnostics and diagnostics.lastError
+        local diagnosticMessage = lastError
+            and ((tostring(lastError.source) .. ": " .. tostring(lastError.message)))
+            or nil
+        local message = tostring(startError or diagnosticMessage or "falha desconhecida ao iniciar")
+        bootstrapPrint("ERRO no ponto de entrada: " .. message)
+        Loader.lastError = message
+        Exodus.StartError = message
+        if type(warn) == "function" then
+            pcall(warn, "[Exodus] loader falhou: " .. message)
+        end
+        return false
+    end
+    Loader.lastError = nil
+    Exodus.StartError = nil
+    return true
+end
+local started = startSafely()
 Exodus.Started = started == true
 
 return Loader
