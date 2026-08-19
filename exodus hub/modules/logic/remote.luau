@@ -1,4 +1,6 @@
 -- [[ Remote ]]
+-- Versão SEM __index hook (só __namecall)
+-- O __index hook em game estava interferindo com engine (camera, spectate, render)
 
 local Remote = {}
 local Utils
@@ -26,7 +28,7 @@ local function payloadFor(flag)
     return value
 end
 
--- register (igual ao certo: não auto-detecta, só registra o que for passado)
+-- register (igual ao certo)
 local function RegisterRemote(remote)
     if not isAlive(remote) then
         return
@@ -36,10 +38,9 @@ local function RegisterRemote(remote)
     end
 end
 
--- hooks (idêntico ao certo)
+-- hooks (SÓ __namecall, sem __index, com early-exit quando achar parry)
 local _hooked = false
 local _oldNamecall
-local _oldIndex
 
 local function installHooks()
     if _hooked then return true end
@@ -52,9 +53,14 @@ local function installHooks()
     local ok = pcall(function()
         _oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
             local method = getnamecallmethod()
-            local args = { ... }
+
+            -- early exit rápido se já tem parry remote
+            if parryRemote or method ~= "FireServer" then
+                return _oldNamecall(self, ...)
+            end
 
             if not checkcaller() and (method == "FireServer" or method == "fireServer") then
+                local args = { ... }
                 local isPayload = false
 
                 if args[1] then
@@ -64,29 +70,14 @@ local function installHooks()
                     end
                 end
 
-                if isPayload or self.Name == "RemoteEvent" then
+                -- só captura RE_*. (filtra 99% dos remotes errados)
+                local name = self.Name
+                if isPayload and (name == "RemoteEvent" or string.sub(name, 1, 3) == "RE_") then
                     RegisterRemote(self)
                 end
             end
 
             return _oldNamecall(self, ...)
-        end)
-
-        _oldIndex = hookmetamethod(game, "__index", function(self, key)
-            if not checkcaller()
-                and (key == "FireServer" or key == "fireServer")
-                and typeof(self) == "Instance"
-                and self:IsA("RemoteEvent") then
-
-                if self.Name == "RemoteEvent"
-                    or (self.Parent and string.find(self.Parent.Name, "Remote")) then
-                    task.spawn(function()
-                        RegisterRemote(self)
-                    end)
-                end
-            end
-
-            return _oldIndex(self, key)
         end)
     end)
     if ok then
@@ -114,7 +105,7 @@ local function disconnectBallSync()
     ballSyncRemote = nil
 end
 
--- setup (API do errado)
+-- setup
 function Remote.setup(deps)
     if type(deps) ~= "table"
         or type(deps.Utils) ~= "table"
