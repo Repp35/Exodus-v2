@@ -298,19 +298,13 @@ local function clearParryRemote(remote)
     end
 end
 local function registerRemote(remote)
-    if not isAlive(remote) then
+    if not isAlive(remote) or parryRemote then
         return
     end
-    captureRemote(remote)
-    if not isAlive(parryRemote) then
-        clearParryRemote(parryRemote)
-    end
-    if not parryRemote then
-        parryRemote = remote
-        remoteState = "captured"
-        if Utils and type(Utils.recordTransition) == "function" then
-            Utils.recordTransition("Remote", "hooked", "captured", "remote_captured")
-        end
+    parryRemote = remote
+    remoteState = "captured"
+    if Utils and type(Utils.recordTransition) == "function" then
+        Utils.recordTransition("Remote", "hooked", "captured", "remote_captured")
     end
 end
 local function payloadFor(flag)
@@ -408,13 +402,13 @@ function Remote.setup(deps)
         return false
     end
     Utils = deps.Utils
-    initializeStorage()
     remoteState = "hooked"
     HookState.register = registerRemote
     if not installHooks() then
         HookState.register = nil
-        Utils.warn("hooks do Remote indisponíveis")
-        return false
+        remoteState = "hooks_unavailable"
+        Utils.warn("hooks do Remote indisponíveis; captura automática desativada")
+        return true
     end
     return true
 end
