@@ -1,176 +1,41 @@
 -- [[ Remote ]]
--- Versão SEM __index hook (só __namecall)
--- O __index hook em game estava interferindo com engine (camera, spectate, render)
+-- Stub vazio — sem hooks, sem captura
+-- Só mantém a API pra não quebrar o resto do código
 
 local Remote = {}
 local Utils
 
 -- state
-local parryRemote
+local parryRemote = nil
 local parryMode = "buffer"
 local parryInitialized = false
-local ballSyncConnection
-local ballSyncRemote
+local ballSyncConnection = nil
+local ballSyncRemote = nil
 
 -- helpers
-local function isAlive(remote)
-    return remote
-        and typeof(remote) == "Instance"
-        and remote:IsA("RemoteEvent")
-        and remote.Parent ~= nil
-end
-
-local function payloadFor(flag)
-    local value = flag == 2 and "\x02" or "\x01"
-    if type(buffer) == "table" and type(buffer.fromstring) == "function" then
-        return buffer.fromstring(value)
-    end
-    return value
-end
-
--- register (igual ao certo)
-local function RegisterRemote(remote)
-    if not isAlive(remote) then
-        return
-    end
-    if not parryRemote then
-        parryRemote = remote
-    end
-end
-
--- hooks (SÓ __namecall, sem __index, com early-exit quando achar parry)
-local _hooked = false
-local _oldNamecall
-
-local function installHooks()
-    if _hooked then return true end
-    if type(hookmetamethod) ~= "function"
-        or type(getnamecallmethod) ~= "function"
-        or type(checkcaller) ~= "function"
-    then
-        return false
-    end
-    local ok = pcall(function()
-        _oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-            local method = getnamecallmethod()
-
-            -- early exit rápido se já tem parry remote
-            if parryRemote or method ~= "FireServer" then
-                return _oldNamecall(self, ...)
-            end
-
-            if not checkcaller() and (method == "FireServer" or method == "fireServer") then
-                local args = { ... }
-                local isPayload = false
-
-                if args[1] then
-                    if typeof(args[1]) == "buffer"
-                        or (typeof(args[1]) == "string" and (string.find(args[1], "\x01") or string.find(args[1], "\x02"))) then
-                        isPayload = true
-                    end
-                end
-
-                -- só captura RE_*. (filtra 99% dos remotes errados)
-                local name = self.Name
-                if isPayload and (name == "RemoteEvent" or string.sub(name, 1, 3) == "RE_") then
-                    RegisterRemote(self)
-                end
-            end
-
-            return _oldNamecall(self, ...)
-        end)
-    end)
-    if ok then
-        _hooked = true
-    end
-    return _hooked == true
-end
-
--- sync
-local function locateBallSync()
-    local remotes = Utils.getReplicatedStorage():FindFirstChild("Remotes")
-    local candidate = remotes and remotes:FindFirstChild("BallSyncData")
-    if candidate and candidate:IsA("RemoteEvent") then
-        return candidate
-    end
-    return nil
-end
-
-local function disconnectBallSync()
-    if ballSyncConnection then
-        pcall(ballSyncConnection.Disconnect, ballSyncConnection)
-        Utils.untrackGlobal(ballSyncConnection)
-    end
-    ballSyncConnection = nil
-    ballSyncRemote = nil
-end
+local function noop() end
 
 -- setup
 function Remote.setup(deps)
-    if type(deps) ~= "table"
-        or type(deps.Utils) ~= "table"
-        or type(deps.Utils.getReplicatedStorage) ~= "function"
-        or type(deps.Utils.apiVersion) ~= "function"
-        or type(deps.Utils.trackGlobal) ~= "function"
-        or type(deps.Utils.untrackGlobal) ~= "function"
-        or type(deps.Utils.warn) ~= "function"
-    then
+    if type(deps) ~= "table" or type(deps.Utils) ~= "table" then
         return false
     end
     Utils = deps.Utils
-    if not installHooks() then
-        Utils.warn("hooks do Remote indisponíveis; captura automática desativada")
-        return true
-    end
     return true
 end
 
 -- parry api
 function Remote.fireParry(flag)
-    if not isAlive(parryRemote) then
-        parryRemote = nil
-        parryInitialized = false
-        if Utils and type(Utils.recordError) == "function" then
-            Utils.recordError("Remote", "parry Remote indisponível")
-        end
-        return false
-    end
-    local ok, errorMessage = pcall(function()
-        parryRemote:FireServer(payloadFor(flag))
-    end)
-    if not ok then
-        if Utils and type(Utils.recordError) == "function" then
-            Utils.recordError("Remote", errorMessage)
-        end
-        return false
-    end
-    return true
+    return false
 end
 
 function Remote.initParry()
-    if not isAlive(parryRemote) then
-        parryRemote = nil
-        parryInitialized = false
-        return false
-    end
-    if parryInitialized then
-        return true
-    end
-    local ok, errorMessage = pcall(function()
-        parryRemote:FireServer(payloadFor(2))
-    end)
-    if not ok and Utils and type(Utils.recordError) == "function" then
-        Utils.recordError("Remote", errorMessage)
-    end
-    parryInitialized = ok
-    return ok
+    parryInitialized = false
+    return false
 end
 
 function Remote.getRemote()
-    if not isAlive(parryRemote) then
-        parryRemote = nil
-    end
-    return parryRemote
+    return nil
 end
 
 function Remote.getMode()
@@ -183,7 +48,7 @@ function Remote.invalidateRemote()
 end
 
 function Remote.setRemote(remote, mode)
-    if not isAlive(remote) then
+    if not remote or typeof(remote) ~= "Instance" or not remote:IsA("RemoteEvent") then
         return false
     end
     parryRemote = remote
@@ -193,84 +58,27 @@ function Remote.setRemote(remote, mode)
 end
 
 function Remote.getStatus()
-    local remote = Remote.getRemote()
     return {
-        schema = Utils.apiVersion(),
-        state = remote and (parryInitialized and "ready" or "captured") or (_hooked and "hooked" or "uninitialized"),
-        initialized = parryInitialized == true,
+        schema = Utils and type(Utils.apiVersion) == "function" and Utils.apiVersion() or 1,
+        state = "disabled",
+        initialized = false,
         mode = parryMode,
-        hasBallSync = ballSyncConnection ~= nil
-            and ballSyncConnection.Connected == true
-            and ballSyncRemote ~= nil,
+        hasBallSync = false,
     }
 end
 
 -- sync api
 function Remote.bindBallSync(handler)
-    if type(handler) ~= "function" then
-        return false
-    end
-    local candidate = locateBallSync()
-    if not candidate then
-        disconnectBallSync()
-        if Utils and type(Utils.recordError) == "function" then
-            Utils.recordError("Remote", "BallSyncData indisponível")
-        end
-        return false
-    end
-    if ballSyncConnection
-        and ballSyncConnection.Connected
-        and ballSyncRemote == candidate
-    then
-        return true
-    end
-    disconnectBallSync()
-    local ok, connection = pcall(function()
-        return candidate.OnClientEvent:Connect(handler)
-    end)
-    if not ok or not connection then
-        if Utils and type(Utils.recordError) == "function" then
-            Utils.recordError("Remote", "falha ao conectar BallSyncData")
-        end
-        return false
-    end
-    ballSyncConnection = connection
-    ballSyncRemote = candidate
-    Utils.trackGlobal(connection)
-    return true
+    return false
 end
 
 function Remote.stopMaintenance()
-    disconnectBallSync()
+    ballSyncConnection = nil
+    ballSyncRemote = nil
 end
 
 function Remote.startMaintenance(options)
-    options = type(options) == "table" and options or {}
-    local isActive = options.isActive
-    local onBallSync = options.onBallSync
-    if type(isActive) ~= "function" then
-        if Utils and type(Utils.recordError) == "function" then
-            Utils.recordError("Remote", "manutenção sem isActive")
-        end
-        return false
-    end
-    task.spawn(function()
-        while true do
-            local activeOk, active = pcall(isActive)
-            if not activeOk or not active then
-                break
-            end
-            local remote = Remote.getRemote()
-            if remote then
-                Remote.initParry()
-            end
-            if type(onBallSync) == "function" then
-                Remote.bindBallSync(onBallSync)
-            end
-            task.wait(remote and 3 or 1)
-        end
-    end)
-    return true
+    return false
 end
 
 return Remote
