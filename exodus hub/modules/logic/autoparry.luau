@@ -8,7 +8,6 @@ local Utils
 -- tuning
 local Tuning = {
     FIRE_LOCK_TIME = 0.080,
-    FIRE_TIMEOUT = 2.0,
     MIN_BALL_SPEED = 5,
     DEFLECT_RADIUS = 8.5,
     RADIUS_CAP = 1000,
@@ -47,8 +46,7 @@ local ParryState = {
     armed = false,
     armedBall = nil,
     armedAt = 0,
-    fired = false,
-    firedAt = 0,
+    firedForTarget = -1,
 }
 local Resilience = {
     stack = 0,
@@ -106,8 +104,6 @@ local function disconnectConnections()
 end
 local function clearRuntimeCycle()
     clearArmedState()
-    ParryState.fired = false
-    ParryState.firedAt = 0
     Runtime.parryRadius = 0
 end
 local function samplePing()
@@ -225,7 +221,6 @@ local function onBallSync(data)
     local time = now()
     if data.Teleported == true then
         Runtime.teleportLockUntil = time + 0.20
-        ParryState.fired = false
         clearArmedState()
         return
     end
@@ -244,7 +239,7 @@ local function onBallSync(data)
     local previousTarget = Runtime.lastTarget
     Runtime.lastTarget = targetId
     if targetId == Runtime.localUserId and previousTarget ~= Runtime.localUserId then
-        ParryState.fired = false
+        ParryState.firedForTarget = -1
     end
 end
 
@@ -372,10 +367,15 @@ local function bindCharacter(character)
             setPhase("waiting", "snapshot_invalid")
             return
         end
-        local ball = snapshot.ball
+        if ParryState.firedForTarget == Runtime.lastTarget
+            and Runtime.lastTarget ~= -1
+        then
+            setPhase("cooldown", "fired_for_target")
+            return
+        end
         if ParryState.armed then
-            local sameBall = ball == ParryState.armedBall
-            local validBall = ball and ball.Parent and sameBall
+            local sameBall = snapshot.ball == ParryState.armedBall
+            local validBall = snapshot.ball and snapshot.ball.Parent and sameBall
             if not (validBall and snapshot.targeted == true) then
                 clearArmedState()
                 setPhase("waiting", "armed_context_invalid")
@@ -383,21 +383,14 @@ local function bindCharacter(character)
                 setPhase("cooldown", "deflect_cooldown")
                 return
             else
-                local canRetry = not ParryState.fired
-                    or timeNow - ParryState.firedAt >= Tuning.FIRE_TIMEOUT
-                if canRetry then
-                    if requestParry() then
-                        ParryState.fired = true
-                        ParryState.firedAt = timeNow
-                    else
-                        ParryState.fired = false
-                    end
+                if requestParry() then
+                    ParryState.firedForTarget = Runtime.lastTarget
                 end
                 clearArmedState()
                 return
             end
         end
-        if not (ball and ball.Parent) or snapshot.targeted ~= true then
+        if not (snapshot.ball and snapshot.ball.Parent) or snapshot.targeted ~= true then
             setPhase("waiting", "ball_or_target_invalid")
             return
         end
@@ -436,29 +429,13 @@ local function bindCharacter(character)
         end
         if GameInfo.getDeflectCD() > 0 then
             ParryState.armed = true
-            ParryState.armedBall = ball
+            ParryState.armedBall = snapshot.ball
             ParryState.armedAt = timeNow
             setPhase("armed", "awaiting_deflect_cooldown")
             return
         end
-        if ParryState.fired then
-            local elapsed = timeNow - ParryState.firedAt
-            if elapsed < Tuning.FIRE_LOCK_TIME then
-                setPhase("cooldown", "fire_lock")
-                return
-            end
-            if elapsed < Tuning.FIRE_TIMEOUT then
-                setPhase("cooldown", "fire_timeout")
-                return
-            end
-            ParryState.fired = false
-            setPhase("waiting", "fire_retry_window")
-        end
         if requestParry() then
-            ParryState.fired = true
-            ParryState.firedAt = timeNow
-        else
-            ParryState.fired = false
+            ParryState.firedForTarget = Runtime.lastTarget
         end
     end)
     Runtime.connections[#Runtime.connections + 1] = heartbeatConnection
@@ -478,6 +455,7 @@ end
 -- lifecycle
 local function resetState()
     clearRuntimeCycle()
+    ParryState.firedForTarget = -1
     Resilience.stack = 0
     Resilience.lastFireBall = nil
     Resilience.lastFireAt = 0
@@ -567,7 +545,7 @@ function AutoParry.getStatus()
         phase = Runtime.phase,
         bound = Runtime.bound == true,
         armed = ParryState.armed == true,
-        fired = ParryState.fired == true,
+        firedForTarget = ParryState.firedForTarget,
         resilienceStack = Resilience.stack,
         parryRadius = Runtime.parryRadius,
         additionalWindow = Runtime.additionalWindow,
