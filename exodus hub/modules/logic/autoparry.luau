@@ -339,6 +339,9 @@ local function bindCharacter(character)
     if generation ~= Runtime.generation or not (root and root.Parent) then
         return false
     end
+    local getConfig = Utils.getConfig
+    local isSpamActive = Utils.isSpamActive
+    local isFiniteNumber = Utils.isFiniteNumber
     local heartbeatConnection = Utils.getRunService().Heartbeat:Connect(function(dt)
         if generation ~= Runtime.generation then
             return
@@ -346,21 +349,24 @@ local function bindCharacter(character)
         if not (character.Parent and root.Parent) then
             return
         end
-        local config = Utils.getConfig()
-        if config.AutoParry ~= true
-            or now() < Runtime.teleportLockUntil
-        then
+        local config = getConfig()
+        if config.AutoParry ~= true then
             clearRuntimeCycle()
             setPhase("waiting", "disabled_or_locked")
             return
         end
-        if Utils.isSpamActive() then
+        local timeNow = now()
+        if timeNow < Runtime.teleportLockUntil then
+            clearRuntimeCycle()
+            setPhase("waiting", "disabled_or_locked")
+            return
+        end
+        if isSpamActive() then
             clearRuntimeCycle()
             setPhase("waiting", "spam_active")
             return
         end
-        local timeNow = now()
-        local frameDelta = Utils.isFiniteNumber(dt) and math.max(0, dt) or 0
+        local frameDelta = isFiniteNumber(dt) and math.max(0, dt) or 0
         tickResilience(timeNow)
         Runtime.pingTimer = Runtime.pingTimer + frameDelta
         if Runtime.pingTimer >= PING_SAMPLE_INTERVAL then
