@@ -53,19 +53,24 @@ local function requestParry()
     Scheduler.lastError = nil
     return true
 end
-local function schedule(clicks, dt, currentGeneration)
+local function schedule(clicks, dt, currentGeneration, startTime)
     if clicks <= 0 then
         return
     end
     local spacing = dt / clicks
-    for index = 1, clicks do
-        local delay = spacing * (index - 0.5)
-        task.delay(delay, function()
-            if currentGeneration == generation and isActive() then
-                requestParry()
+    task.spawn(function()
+        for index = 1, clicks do
+            local targetTime = startTime + spacing * (index - 0.5)
+            local remaining = targetTime - Utils.now()
+            if remaining > 0 then
+                task.wait(remaining)
             end
-        end)
-    end
+            if currentGeneration ~= generation or not isActive() then
+                return
+            end
+            requestParry()
+        end
+    end)
 end
 local function resetRateState()
     pendingClicks = 0
@@ -128,7 +133,7 @@ local function tick(dt)
     end
     clicks = math.min(clicks, MAX_SCHEDULED_PER_TICK)
     pendingClicks = math.max(pendingClicks - clicks, 0)
-    schedule(clicks, dt, generation)
+    schedule(clicks, dt, generation, Utils.now())
 end
 
 -- setup
