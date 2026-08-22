@@ -7,6 +7,7 @@ local Utils
 local parryRemote
 local parryRemoteSource
 local parryInitialized = false
+local fallbackAttempted = false
 local ballSyncConnection
 local ballSyncRemote
 local maintenanceGeneration = 0
@@ -25,6 +26,7 @@ local Storage = {
     lastError = nil,
     errorReported = false,
 }
+local CapturedRemotes = setmetatable({}, { __mode = "k" })
 
 -- storage
 local function reportStorageError(message)
@@ -227,41 +229,47 @@ local function queueStorageWrite()
     end)
 end
 local function captureRemote(remote)
-    local ok, errorMessage = pcall(function()
-        if not initializeStorage() then
-            return
-        end
-        local parent
-        local parentOk = pcall(function()
-            parent = remote.Parent
-        end)
-        local remoteInfo = safeInstanceInfo(remote)
-        if not remoteInfo then
-            return
-        end
-        local capture = {
-            id = #Storage.captures + 1,
-            capturedAt = os.time(),
-            source = "remote_hook",
-            name = remoteInfo.name,
-            className = remoteInfo.className,
-            fullName = remoteInfo.fullName,
-            parent = parentOk and safeInstanceInfo(parent) or nil,
-            ancestry = safeAncestry(remote),
-            attributes = safeAttributes(remote),
-            requirements = {
-                className = "RemoteEvent",
-                methods = { "FireServer" },
-                events = { "OnClientEvent" },
-                payloadFlags = { 1, 2 },
-            },
-        }
-        Storage.captures[#Storage.captures + 1] = capture
-        queueStorageWrite()
-    end)
-    if not ok then
-        reportStorageError(errorMessage)
+    if CapturedRemotes[remote] then
+        return
     end
+    CapturedRemotes[remote] = true
+    task.spawn(function()
+        local ok, errorMessage = pcall(function()
+            if not initializeStorage() then
+                return
+            end
+            local parent
+            local parentOk = pcall(function()
+                parent = remote.Parent
+            end)
+            local remoteInfo = safeInstanceInfo(remote)
+            if not remoteInfo then
+                return
+            end
+            local capture = {
+                id = #Storage.captures + 1,
+                capturedAt = os.time(),
+                source = "remote_hook",
+                name = remoteInfo.name,
+                className = remoteInfo.className,
+                fullName = remoteInfo.fullName,
+                parent = parentOk and safeInstanceInfo(parent) or nil,
+                ancestry = safeAncestry(remote),
+                attributes = safeAttributes(remote),
+                requirements = {
+                    className = "RemoteEvent",
+                    methods = { "FireServer" },
+                    events = { "OnClientEvent" },
+                    payloadFlags = { 1, 2 },
+                },
+            }
+            Storage.captures[#Storage.captures + 1] = capture
+            queueStorageWrite()
+        end)
+        if not ok then
+            reportStorageError(errorMessage)
+        end
+    end)
 end
 local function getStorageStatus()
     return {
@@ -303,23 +311,20 @@ local function registerRemote(remote)
     if not isAlive(remote) then
         return
     end
-    captureRemote(remote)
-    if not isAlive(parryRemote) then
+    if isAlive(parryRemote) then
+        if parryRemote == remote or parryRemoteSource ~= "feio4" then
+            return
+        end
+    else
         clearParryRemote(parryRemote)
     end
-    local shouldAssign = false
-    if not parryRemote then
-        shouldAssign = true
-    elseif parryRemoteSource == "feio4" then
-        shouldAssign = true
-    end
-    if shouldAssign then
-        parryRemote = remote
-        parryRemoteSource = "hook"
-        remoteState = "captured"
-        if Utils and type(Utils.recordTransition) == "function" then
-            Utils.recordTransition("Remote", "hooked", "captured", "remote_captured")
-        end
+    captureRemote(remote)
+    parryRemote = remote
+    parryRemoteSource = "hook"
+    parryInitialized = false
+    remoteState = "captured"
+    if Utils and type(Utils.recordTransition) == "function" then
+        Utils.recordTransition("Remote", "hooked", "captured", "remote_captured")
     end
 end
 
@@ -333,6 +338,10 @@ function Remote.resolveParryRemote()
     if isAlive(parryRemote) then
         return parryRemote
     end
+    if fallbackAttempted then
+        return nil
+    end
+    fallbackAttempted = true
 
     parryRemote = nil
     parryRemoteSource = nil
@@ -421,12 +430,14 @@ local function installHooks()
         local oldNamecall
         oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
             local method = getnamecallmethod()
-            local args = { ... }
-            if not checkcaller() and (method == "FireServer" or method == "fireServer") then
+            if not checkcaller()
+                and (method == "FireServer" or method == "fireServer")
+            then
+                local firstArgument = select(1, ...)
                 local isPayload = false
-                if args[1] then
-                    if typeof(args[1]) == "buffer"
-                        or (typeof(args[1]) == "string" and (string.find(args[1], "\x01") or string.find(args[1], "\x02")))
+                if firstArgument then
+                    if typeof(firstArgument) == "buffer"
+                        or (typeof(firstArgument) == "string" and (string.find(firstArgument, "\x01") or string.find(firstArgument, "\x02")))
                     then
                         isPayload = true
                     end
@@ -495,6 +506,7 @@ function Remote.setup(deps)
         return false
     end
     Utils = deps.Utils
+    fallbackAttempted = false
     initializeStorage()
     remoteState = "hooked"
     HookState.register = registerRemote
