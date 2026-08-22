@@ -94,7 +94,7 @@ end
 local function resolveTime(time)
     return Utils.isFiniteNumber(time) and time or Utils.now()
 end
-local function ballSpeed(ball, time)
+local function ballSpeed(ball, time, velocity)
     if not isBall(ball) then
         return 0
     end
@@ -105,9 +105,9 @@ local function ballSpeed(ball, time)
     then
         return State.speed
     end
-    return getAssemblyVelocity(ball).Magnitude
+    return (velocity or getAssemblyVelocity(ball)).Magnitude
 end
-local function ballPosition(ball, time)
+local function ballPosition(ball, time, velocity)
     if not isBall(ball) then
         return nil
     end
@@ -117,7 +117,7 @@ local function ballPosition(ball, time)
         and positionAge >= 0
         and positionAge < SYNC_FRESH_TIME
     then
-        local velocity = getAssemblyVelocity(ball)
+        velocity = velocity or getAssemblyVelocity(ball)
         local direction = State.deflectDirection
         if direction.Magnitude <= 0.1 and velocity.Magnitude > 1 then
             direction = velocity
@@ -164,9 +164,9 @@ local function getSnapshot(lastTarget, time)
     time = resolveTime(time)
     local ball = getBall()
     local ballValid = ball ~= nil and ball.Parent ~= nil
-    local rawSpeed = ballSpeed(ball, time)
-    local rawPosition = ballPosition(ball, time)
     local rawVelocity = ballValid and getAssemblyVelocity(ball) or nil
+    local rawSpeed = ballSpeed(ball, time, rawVelocity)
+    local rawPosition = ballPosition(ball, time, rawVelocity)
     local validPosition = ballValid and rawPosition ~= nil
     local rawSyncAge = State.lastSyncAt > 0
         and math.max(0, time - State.lastSyncAt)
