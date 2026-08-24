@@ -1,17 +1,20 @@
--- [[ Spam Scheduler ]]
+-- [[ Spam ]]
 
 local Spam = {}
-
+local Remote
 local Utils
 
 -- tuning
 local RATE_EPSILON = 1e-7
-local TARGET_FPS = 60
+local REFERENCE_FPS = 60
 
 -- state
 local heartbeatConnection
+local schedulerThread
 local generation = 0
-local accumulator = 0
+local pendingClicks = 0
+local scheduledTimes = {}
+local scheduledHead = 1
 local lastMode
 local lastRate
 local wasActive = false
@@ -20,13 +23,15 @@ local Scheduler = {
     phase = "stopped",
     lastRequestAt = 0,
     lastError = nil,
-    totalScheduled = 0,
 }
 
 -- helpers
 local function invalidate(reason)
     generation = generation + 1
-    accumulator = 0
+
+    pendingClicks = 0
+    scheduledTimes = {}
+    scheduledHead = 1
 
     Scheduler.phase = "stopped"
 
@@ -43,91 +48,141 @@ local function invalidate(reason)
     end
 end
 
-local function resetRateState()
-    accumulator = 0
-    lastMode = nil
-    lastRate = nil
+local function isActive()
+    return Utils.isActive() and Utils.isSpamActive()
 end
 
-local function calculateActions(rate, dt)
-    if type(rate) ~= "number"
-        or type(dt) ~= "number"
-        or rate ~= rate
-        or dt ~= dt
-        or rate <= 0
-        or dt <= 0
-        or rate == math.huge
-        or dt == math.huge
-        or dt == -math.huge
-    then
-        return 0
+local function requestParry()
+    local ok, result = pcall(Remote.fireParry, 1)
+
+    Scheduler.lastRequestAt = Utils.now()
+
+    if not ok then
+        Scheduler.lastError = tostring(result)
+
+        if type(Utils.recordError) == "function" then
+            Utils.recordError("Spam", result)
+        end
+
+        return false
     end
 
-    accumulator = accumulator + rate * dt
+    if result == false then
+        Scheduler.lastError =
+            "Remote.fireParry retornou false"
 
-    local actions = math.floor(
-        accumulator + RATE_EPSILON
-    )
+        if type(Utils.recordError) == "function" then
+            Utils.recordError(
+                "Spam",
+                Scheduler.lastError
+            )
+        end
 
-    accumulator = accumulator - actions
+        return false
+    end
 
-    return actions
+    Scheduler.lastError = nil
+
+    return true
 end
 
-local function dispatch(actions, dt, currentGeneration)
-    if actions <= 0 then
+-- Adiciona ações à fila temporal.
+--
+-- Cada ação recebe um timestamp próprio.
+-- Isso evita criar vários task.spawn competindo
+-- entre si ao mesmo tempo.
+local function schedule(clicks, dt, startTime, currentGeneration)
+    if clicks <= 0 then
         return
     end
 
-    if currentGeneration ~= generation then
-        return
-    end
+    local spacing = dt / clicks
 
-    -- Distribuição uniforme dentro do intervalo.
-    --
-    -- Exemplo:
-    -- 1 ação -> 50%
-    -- 2 ações -> 25%, 75%
-    -- 3 ações -> 16.67%, 50%, 83.33%
-    --
-    -- A função aqui é deliberadamente neutra:
-    -- ela informa quando cada ação deveria ocorrer,
-    -- sem disparar um Remote de jogo.
-
-    local spacing = dt / actions
-
-    for index = 1, actions do
+    for index = 1, clicks do
         if currentGeneration ~= generation then
             return
         end
 
-        local offset = spacing * (index - 0.5)
+        local targetTime =
+            startTime
+            + spacing * (index - 0.5)
 
-        Scheduler.totalScheduled =
-            Scheduler.totalScheduled + 1
+        scheduledTimes[#scheduledTimes + 1] =
+            targetTime
+    end
+end
 
-        if type(Spam.onScheduled) == "function" then
-            Spam.onScheduled(
-                index,
-                actions,
-                offset,
-                spacing
-            )
+-- Worker único do scheduler.
+--
+-- Existe somente uma rotina consumindo a fila,
+-- portanto diferentes Heartbeats não criam
+-- vários grupos de parries simultâneos.
+local function schedulerWorker(currentGeneration)
+    while currentGeneration == generation do
+        if not isActive() then
+            return
+        end
+
+        local targetTime =
+            scheduledTimes[scheduledHead]
+
+        if targetTime == nil then
+            task.wait()
+            continue
+        end
+
+        local now = Utils.now()
+        local remaining = targetTime - now
+
+        if remaining > 0 then
+            task.wait(remaining)
+        else
+            scheduledHead = scheduledHead + 1
+
+            requestParry()
+        end
+
+        -- Limpeza periódica da fila consumida.
+        if scheduledHead > 128
+            and scheduledHead > (#scheduledTimes / 2)
+        then
+            local newQueue = {}
+
+            for index = scheduledHead, #scheduledTimes do
+                newQueue[#newQueue + 1] =
+                    scheduledTimes[index]
+            end
+
+            scheduledTimes = newQueue
+            scheduledHead = 1
         end
     end
 end
 
--- runtime
-local function tick(dt)
-    if type(dt) ~= "number"
-        or dt ~= dt
-        or dt <= 0
-        or dt == math.huge
-        or dt == -math.huge
-    then
+local function ensureScheduler()
+    if schedulerThread then
         return
     end
 
+    local currentGeneration = generation
+
+    schedulerThread = task.spawn(function()
+        schedulerWorker(currentGeneration)
+        schedulerThread = nil
+    end)
+end
+
+local function resetRateState()
+    pendingClicks = 0
+    scheduledTimes = {}
+    scheduledHead = 1
+
+    lastMode = nil
+    lastRate = nil
+end
+
+-- runtime
+local function tick(dt)
     local config = Utils.getConfig()
 
     if type(config) ~= "table" then
@@ -137,12 +192,11 @@ local function tick(dt)
                 "configuração indisponível"
             )
         end
+
         return
     end
 
-    local active =
-        Utils.isActive()
-        and Utils.isSpamActive()
+    local active = isActive()
 
     if not active then
         if wasActive then
@@ -168,6 +222,15 @@ local function tick(dt)
 
     wasActive = true
 
+    if type(dt) ~= "number"
+        or dt ~= dt
+        or dt == math.huge
+        or dt == -math.huge
+        or dt <= 0
+    then
+        return
+    end
+
     local mode =
         config.SpamRateMode == "CPS"
         and "CPS"
@@ -176,7 +239,7 @@ local function tick(dt)
     local fallback =
         mode == "CPS"
         and 4
-        or 60
+        or 1
 
     local rateKey = mode
 
@@ -201,51 +264,80 @@ local function tick(dt)
         lastRate = rate
     end
 
-    -- CPF:
-    -- rate = ações por frame de referência.
+    -- ============================================
+    -- RATE CONVERSION
+    -- ============================================
     --
-    -- Para a referência de 60 FPS:
-    -- CPF 60 = 60 ações/s.
+    -- CPF:
+    --
+    -- 1 CPF = 1 click por frame a 60 FPS
+    -- 2 CPF = 2 clicks por frame a 60 FPS
+    -- 0.5 CPF = 30 clicks/s
+    --
+    -- Portanto:
+    --
+    -- CPF -> CPS = CPF * 60
     --
     -- CPS:
-    -- rate = ações por segundo.
     --
-    -- Ambos acabam convertidos para:
-    -- ações = taxa * tempo decorrido.
-
+    -- permanece diretamente como clicks/segundo.
+    --
     local ratePerSecond
 
     if mode == "CPF" then
-        ratePerSecond = rate
+        ratePerSecond = rate * REFERENCE_FPS
     else
         ratePerSecond = rate
     end
 
-    local actions =
-        calculateActions(
-            ratePerSecond,
-            dt
+    -- Acumulador temporal.
+    --
+    -- Não existe limite artificial.
+    pendingClicks =
+        pendingClicks
+        + ratePerSecond * dt
+
+    local clicks =
+        math.floor(
+            pendingClicks + RATE_EPSILON
         )
 
-    if actions <= 0 then
+    if clicks <= 0 then
+        ensureScheduler()
         return
     end
 
-    local currentGeneration = generation
-    local frameStart = Utils.now()
+    pendingClicks =
+        pendingClicks - clicks
 
-    dispatch(
-        actions,
+    -- Distribui todas as ações desse intervalo.
+    --
+    -- Exemplo:
+    -- 60 FPS + 1 CPF:
+    --   1 ação dentro de cada frame.
+    --
+    -- 30 FPS + 1 CPF:
+    --   2 ações dentro de cada frame,
+    --   separadas por metade do frame.
+    --
+    -- 60 CPS:
+    --   1 ação por aproximadamente 16.67 ms.
+    --
+    schedule(
+        clicks,
         dt,
-        currentGeneration
+        Utils.now(),
+        generation
     )
 
-    Scheduler.lastRequestAt = frameStart
+    ensureScheduler()
 end
 
 -- setup
 function Spam.setup(deps)
     if type(deps) ~= "table"
+        or type(deps.Remote) ~= "table"
+        or type(deps.Remote.fireParry) ~= "function"
         or type(deps.Utils) ~= "table"
         or type(deps.Utils.isActive) ~= "function"
         or type(deps.Utils.apiVersion) ~= "function"
@@ -269,14 +361,14 @@ function Spam.setup(deps)
             heartbeatConnection
         )
 
-        pcall(
-            deps.Utils.untrackGlobal,
+        deps.Utils.untrackGlobal(
             heartbeatConnection
         )
 
         heartbeatConnection = nil
     end
 
+    Remote = deps.Remote
     Utils = deps.Utils
 
     Spam.resetState()
@@ -286,7 +378,9 @@ function Spam.setup(deps)
         .Heartbeat
         :Connect(tick)
 
-    Utils.trackGlobal(heartbeatConnection)
+    Utils.trackGlobal(
+        heartbeatConnection
+    )
 
     return true
 end
@@ -302,16 +396,11 @@ function Spam.resetState()
     Scheduler.phase = "stopped"
     Scheduler.lastRequestAt = 0
     Scheduler.lastError = nil
-    Scheduler.totalScheduled = 0
 end
 
 function Spam.getStatus()
     return {
-        schema =
-            Utils
-            and Utils.apiVersion
-            and Utils.apiVersion()
-            or nil,
+        schema = Utils.apiVersion(),
 
         phase =
             Scheduler.phase == "running"
@@ -324,11 +413,16 @@ function Spam.getStatus()
         lastError =
             Scheduler.lastError,
 
-        totalScheduled =
-            Scheduler.totalScheduled,
+        pendingClicks =
+            pendingClicks,
 
-        accumulator =
-            accumulator,
+        queuedClicks =
+            math.max(
+                #scheduledTimes
+                - scheduledHead
+                + 1,
+                0
+            ),
 
         mode =
             lastMode,
