@@ -11,6 +11,14 @@ local Tuning = {
     ACTIVATION_RADIUS_MULT = 1.30,
     DEACTIVATION_RADIUS_MULT = 1.05,
     MIN_BALL_SPEED = 5,
+    SPD_LOW = 60,
+    SPD_HIGH = 200,
+    TARGET_RETURN_MAX_LO = 0.230,
+    TARGET_RETURN_MIN_HI = 0.140,
+    -- dot-away (deactivation by velocity direction)
+    DOT_AWAY_WINDOW_MULT = 1.4,
+    DOT_AWAY_EMA_ALPHA = 0.15,
+    DOT_AWAY_THRESHOLD = 0, -- dot <= threshold counts as "away"
 }
 
 -- state
@@ -27,6 +35,11 @@ local Runtime = {
     connections = {},
     lastTarget = -1,
     boundRoot = nil,
+    wasMyTarget = false,
+    lastNotMyTargetAt = 0,
+    -- dot-away state
+    dotEma = 0,
+    dotAwaySince = 0,
 }
 
 -- gates
@@ -54,6 +67,48 @@ end
 
 local function getParryRadius(speed, time)
     return AutoParry.getParryRadius(speed, time) or 0
+end
+
+local function getDotAwayWindow(speed)
+    local speedRatio = math.clamp(
+        (speed - Tuning.SPD_LOW) / (Tuning.SPD_HIGH - Tuning.SPD_LOW),
+        0,
+        1
+    )
+    local returnWindow = Tuning.TARGET_RETURN_MAX_LO
+        - (Tuning.TARGET_RETURN_MAX_LO - Tuning.TARGET_RETURN_MIN_HI) * speedRatio
+    return returnWindow * Tuning.DOT_AWAY_WINDOW_MULT
+end
+
+local function updateDotEma(velocity, ballPosition, rootPosition)
+    if not velocity then
+        return
+    end
+    local toMe = rootPosition - ballPosition
+    local dist = toMe.Magnitude
+    if dist <= 0 then
+        return
+    end
+    local direction = toMe.Unit
+    local dot = velocity:Dot(direction)
+    local alpha = Tuning.DOT_AWAY_EMA_ALPHA
+    Runtime.dotEma = Runtime.dotEma * (1 - alpha) + dot * alpha
+end
+
+local function checkDotAwayDeactivation(time, distance)
+    if Runtime.dotEma <= Tuning.DOT_AWAY_THRESHOLD and distance > Runtime.deactivationRadius then
+        if Runtime.dotAwaySince == 0 then
+            Runtime.dotAwaySince = time
+            return false
+        end
+        local window = getDotAwayWindow(Runtime.lastSpeed or 0)
+        if time - Runtime.dotAwaySince >= window then
+            return true
+        end
+    else
+        Runtime.dotAwaySince = 0
+    end
+    return false
 end
 
 local function runGates(gateList, time, snapshot, ctx)
@@ -120,6 +175,13 @@ local function evaluateClash(time, snapshot)
 
     if Runtime.active then
         if distance <= Runtime.deactivationRadius then
+            Runtime.dotAwaySince = 0
+            return
+        end
+        Runtime.lastSpeed = speed
+        updateDotEma(snapshot.velocity, ballPosition, rootPosition)
+        if checkDotAwayDeactivation(time, distance) then
+            setActive(false, "dot_away")
             return
         end
         local gateIndex = runGates(DeactivationGates, time, snapshot, {
@@ -145,6 +207,32 @@ local function evaluateClash(time, snapshot)
     if distance > Runtime.activationRadius then
         setPhase("waiting", "outside_activation_radius")
         return
+    end
+
+    local currentTarget = snapshot.targetId
+    if type(currentTarget) ~= "number" then
+        setPhase("waiting", "no_target")
+        return
+    end
+
+    local targetIsMe = (currentTarget == Runtime.localUserId)
+    if targetIsMe then
+        if Runtime.wasMyTarget and Runtime.lastNotMyTargetAt > 0 then
+            local speedRatio = math.clamp(
+                (speed - Tuning.SPD_LOW) / (Tuning.SPD_HIGH - Tuning.SPD_LOW),
+                0,
+                1
+            )
+            local returnWindow = Tuning.TARGET_RETURN_MAX_LO
+                - (Tuning.TARGET_RETURN_MAX_LO - Tuning.TARGET_RETURN_MIN_HI) * speedRatio
+            if time - Runtime.lastNotMyTargetAt <= returnWindow then
+                setActive(true, "target_returned")
+                return
+            end
+        end
+        Runtime.wasMyTarget = true
+    else
+        Runtime.lastNotMyTargetAt = time
     end
 
     local gateIndex = runGates(ActivationGates, time, snapshot, {
@@ -173,12 +261,15 @@ local function bindCharacter(character)
     Runtime.generation = Runtime.generation + 1
     local generation = Runtime.generation
     setPhase("detached", "rebind_start")
+    setActive(false, "rebind_start")
     disconnectConnections()
-    Runtime.active = false
     Runtime.parryRadius = 0
     Runtime.activationRadius = 0
     Runtime.deactivationRadius = 0
     Runtime.boundRoot = nil
+    Runtime.dotEma = 0
+    Runtime.dotAwaySince = 0
+    Runtime.lastSpeed = 0
     if not (character and character.Parent) then
         return false
     end
@@ -209,7 +300,11 @@ local function bindCharacter(character)
         local time = Utils.now()
         local snapshot = GameInfo.getSnapshot(Runtime.lastTarget, time)
         if not GameInfo.isSnapshotValid(snapshot, time) then
+            setActive(false, "snapshot_invalid")
             return
+        end
+        if type(snapshot.targetId) == "number" then
+            Runtime.lastTarget = snapshot.targetId
         end
         evaluateClash(time, snapshot)
     end)
@@ -266,6 +361,11 @@ function AutoClash.setup(deps)
     Runtime.connections = {}
     Runtime.lastTarget = -1
     Runtime.boundRoot = nil
+    Runtime.wasMyTarget = false
+    Runtime.lastNotMyTargetAt = 0
+    Runtime.dotEma = 0
+    Runtime.dotAwaySince = 0
+    Runtime.lastSpeed = 0
     return true
 end
 
@@ -345,4 +445,3 @@ function AutoClash.getStatus()
 end
 
 return AutoClash
-
