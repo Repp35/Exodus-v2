@@ -1,191 +1,105 @@
--- [[ Spam ]]
+-- [[ Scheduler ]]
+-- CPF e CPS usando o mesmo acumulador temporal.
 
-local Spam = {}
-local Remote
-local Utils
+local Scheduler = {}
 
--- tuning
-local RATE_EPSILON = 1e-7
-local MAX_SCHEDULED_PER_TICK = 256
+local EPSILON = 1e-7
+local TARGET_FPS = 60
 
--- state
-local heartbeatConnection
+local accumulator = 0
 local generation = 0
-local pendingClicks = 0
-local lastMode
-local lastRate
-local wasActive = false
-local Scheduler = {
-    phase = "stopped",
-    lastRequestAt = 0,
-    lastError = nil,
-}
 
--- helpers
-local function invalidate(reason)
-    generation = generation + 1
-    pendingClicks = 0
-    Scheduler.phase = "stopped"
-    if Utils and type(Utils.recordTransition) == "function" and wasActive then
-        Utils.recordTransition("Spam", "running", "stopped", reason or "invalidated")
-    end
-end
-local function isActive()
-    return Utils.isActive() and Utils.isSpamActive()
-end
-local function requestParry()
-    local ok, result = pcall(Remote.fireParry, 1)
-    Scheduler.lastRequestAt = Utils.now()
-    if not ok then
-        Scheduler.lastError = tostring(result)
-        if type(Utils.recordError) == "function" then
-            Utils.recordError("Spam", result)
-        end
-        return false
-    end
-    if result == false then
-        Scheduler.lastError = "Remote.fireParry retornou false"
-        if type(Utils.recordError) == "function" then
-            Utils.recordError("Spam", Scheduler.lastError)
-        end
-        return false
-    end
-    Scheduler.lastError = nil
-    return true
-end
-local function schedule(clicks, dt, currentGeneration, startTime)
-    if clicks <= 0 then
-        return
-    end
-    local spacing = dt / clicks
-    task.spawn(function()
-        for index = 1, clicks do
-            local targetTime = startTime + spacing * (index - 0.5)
-            local remaining = targetTime - Utils.now()
-            if remaining > 0 then
-                task.wait(remaining)
-            end
-            if currentGeneration ~= generation or not isActive() then
-                return
-            end
-            requestParry()
-        end
-    end)
-end
-local function resetRateState()
-    pendingClicks = 0
-    lastMode = nil
-    lastRate = nil
+local function reset()
+    generation += 1
+    accumulator = 0
 end
 
--- runtime
-local function tick(dt)
-    local config = Utils.getConfig()
-    if type(config) ~= "table" then
-        if type(Utils.recordError) == "function" then
-            Utils.recordError("Spam", "configuração indisponível")
-        end
-        return
-    end
-    local active = isActive()
-    if not active then
-        if wasActive then
-            invalidate("spam_disabled")
-        end
-        wasActive = false
-        return
-    end
-    if not wasActive then
-        Scheduler.phase = "running"
-        if type(Utils.recordTransition) == "function" then
-            Utils.recordTransition("Spam", "stopped", "running", "spam_enabled")
-        end
-    end
-    wasActive = true
-    if type(dt) ~= "number"
-        or dt ~= dt
-        or dt == math.huge
-        or dt == -math.huge
+local function addRate(rate, dt)
+    if type(rate) ~= "number"
+        or type(dt) ~= "number"
+        or rate <= 0
         or dt <= 0
+        or rate ~= rate
+        or dt ~= dt
+        or rate == math.huge
+        or dt == math.huge
     then
-        return
+        return 0
     end
-    local mode = config.SpamRateMode == "CPS" and "CPS" or "CPF"
-    local fallback = mode == "CPS" and 4 or 16
-    local rateKey = mode
-    local rate = Utils.normalizeSpamRate(config[rateKey], fallback)
-    if config[rateKey] ~= rate then
-        Utils.setConfig({ [rateKey] = rate })
-    end
-    if mode ~= lastMode or rate ~= lastRate then
-        resetRateState()
-        lastMode = mode
-        lastRate = rate
-    end
-    local increment = mode == "CPS" and rate * dt or rate
-    pendingClicks = math.min(
-        pendingClicks + increment,
-        MAX_SCHEDULED_PER_TICK
-    )
-    local clicks = math.floor(pendingClicks + RATE_EPSILON)
-    if clicks <= 0 then
-        return
-    end
-    clicks = math.min(clicks, MAX_SCHEDULED_PER_TICK)
-    pendingClicks = math.max(pendingClicks - clicks, 0)
-    schedule(clicks, dt, generation, Utils.now())
+
+    accumulator += rate * dt
+
+    local count = math.floor(accumulator + EPSILON)
+    accumulator -= count
+
+    return count
 end
 
--- setup
-function Spam.setup(deps)
-    if type(deps) ~= "table"
-        or type(deps.Remote) ~= "table"
-        or type(deps.Remote.fireParry) ~= "function"
-        or type(deps.Utils) ~= "table"
-        or type(deps.Utils.isActive) ~= "function"
-        or type(deps.Utils.apiVersion) ~= "function"
-        or type(deps.Utils.isSpamActive) ~= "function"
-        or type(deps.Utils.getConfig) ~= "function"
-        or type(deps.Utils.normalizeSpamRate) ~= "function"
-        or type(deps.Utils.setConfig) ~= "function"
-        or type(deps.Utils.getRunService) ~= "function"
-        or type(deps.Utils.now) ~= "function"
-        or type(deps.Utils.recordTransition) ~= "function"
-        or type(deps.Utils.recordError) ~= "function"
-        or type(deps.Utils.trackGlobal) ~= "function"
-        or type(deps.Utils.untrackGlobal) ~= "function"
-    then
-        return false
-    end
-    if heartbeatConnection then
-        pcall(heartbeatConnection.Disconnect, heartbeatConnection)
-        deps.Utils.untrackGlobal(heartbeatConnection)
-        heartbeatConnection = nil
-    end
-    Remote = deps.Remote
-    Utils = deps.Utils
-    Spam.resetState()
-    heartbeatConnection = Utils.getRunService().Heartbeat:Connect(tick)
-    Utils.trackGlobal(heartbeatConnection)
-    return true
+-- CPF:
+-- 1 CPF = 1 ação por frame a 60 FPS.
+-- Portanto:
+-- 60 CPF = 60 ações/s
+-- 30 CPF = 30 ações/s
+-- etc.
+local function stepCPF(cpf, dt)
+    return addRate(cpf, dt)
 end
 
--- lifecycle
-function Spam.resetState()
-    invalidate("reset")
-    resetRateState()
-    wasActive = false
-    Scheduler.phase = "stopped"
-    Scheduler.lastRequestAt = 0
-    Scheduler.lastError = nil
-end
-function Spam.getStatus()
-    return {
-        schema = Utils.apiVersion(),
-        phase = Scheduler.phase == "running" and "running" or "stopped",
-        lastRequestAt = Scheduler.lastRequestAt,
-        lastError = Scheduler.lastError,
-    }
+-- CPS:
+-- X CPS = X ações por segundo.
+local function stepCPS(cps, dt)
+    return addRate(cps, dt)
 end
 
-return Spam
+-- Distribui N ações uniformemente no intervalo.
+--
+-- callback(index, total, normalizedPosition)
+--
+-- normalizedPosition fica entre 0 e 1 e representa
+-- onde a ação deveria ficar dentro daquele intervalo.
+local function distribute(total, callback)
+    if total <= 0 or type(callback) ~= "function" then
+        return 0
+    end
+
+    local currentGeneration = generation
+
+    for index = 1, total do
+        if currentGeneration ~= generation then
+            break
+        end
+
+        local position = (index - 0.5) / total
+
+        callback(index, total, position)
+    end
+
+    return total
+end
+
+function Scheduler.step(mode, rate, dt, callback)
+    local count
+
+    if mode == "CPS" then
+        count = stepCPS(rate, dt)
+    else
+        count = stepCPF(rate, dt)
+    end
+
+    return distribute(count, callback)
+end
+
+function Scheduler.reset()
+    reset()
+end
+
+function Scheduler.invalidate()
+    generation += 1
+    accumulator = 0
+end
+
+function Scheduler.getAccumulator()
+    return accumulator
+end
+
+return Scheduler
