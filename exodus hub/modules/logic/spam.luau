@@ -103,7 +103,7 @@ function Spam.setup(deps)
         or type(deps.Remote.fireParry) ~= "function"
         or type(deps.Utils) ~= "table"
     then
-        return false
+        return false, "dependência ausente: Remote.fireParry ou Utils"
     end
 
     if heartbeatConnection then
