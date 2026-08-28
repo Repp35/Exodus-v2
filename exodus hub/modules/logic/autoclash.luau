@@ -9,8 +9,8 @@ local Utils
 local Tuning = {
     ACT_RAD_FACTOR = 1.40,
 
-    TARGET_RETURN_MAX_LO = 0.170,
-    TARGET_RETURN_MIN_HI = 0.090,
+    TARGET_RETURN_MAX_LO = 0.185,
+    TARGET_RETURN_MIN_HI = 0.100,
 
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
@@ -18,6 +18,8 @@ local Tuning = {
     DET_RAD_MIN = 10,
     DET_RAD_MAX = 25,
     DET_DIST_DELTA = 0.5,
+    DET_DOT_EMA = 0.35,
+    DET_DOT_THRESHOLD = 0.14,
 
     DET_RETURN_MAX_LO = 0.220,
     DET_RETURN_MIN_HI = 0.100,
@@ -53,7 +55,8 @@ local Runtime = {
     detEnterAt = 0,
     detExitAt = 0,
     detMinDist = 0,
-    lastReturnAt = 0,
+    detDotEma = 0,
+    detWasComing = false,
 }
 
 -- helpers
@@ -229,6 +232,8 @@ local function resetDetector()
     Runtime.detEnterAt = 0
     Runtime.detExitAt = 0
     Runtime.detMinDist = 0
+    Runtime.detDotEma = 0
+    Runtime.detWasComing = false
 end
 
 local function ballInRange(hr, position, distance)
@@ -342,7 +347,9 @@ local function tickReturnDetector(
         return false
     end
 
-    if velocity.Magnitude <= 1 then
+    local velocitySpeed = velocity.Magnitude
+
+    if velocitySpeed <= 1 then
         resetDetector()
         return false
     end
@@ -358,8 +365,18 @@ local function tickReturnDetector(
     local detectorRadius =
         getDetectorRadius(speed)
 
+    local rawDot =
+        velocity:Dot(offset.Unit)
+
+    Runtime.detDotEma =
+        Runtime.detDotEma
+            * (1 - Tuning.DET_DOT_EMA)
+            + rawDot
+                * Tuning.DET_DOT_EMA
+
     local coming =
-        velocity:Dot(offset.Unit) > 0
+        Runtime.detDotEma
+            > Tuning.DET_DOT_THRESHOLD
 
     if distance > detectorRadius * 1.2 then
         resetDetector()
@@ -382,6 +399,7 @@ local function tickReturnDetector(
             Runtime.detMinDist = distance
         end
 
+        Runtime.detWasComing = coming
         return false
     end
 
@@ -392,14 +410,14 @@ local function tickReturnDetector(
                 distance
             )
 
-        if distance
-            > Runtime.detMinDist
-                + Tuning.DET_DIST_DELTA
+        if Runtime.detWasComing
+            and not coming
         then
             Runtime.detPhase = "EXITED"
             Runtime.detExitAt = t
         end
 
+        Runtime.detWasComing = coming
         return false
     end
 
@@ -411,10 +429,10 @@ local function tickReturnDetector(
             getDetectorReturnWindow(speed)
 
         local returned =
-            distance
+            coming
+            and distance
                 <= Runtime.detMinDist
                     + Tuning.DET_DIST_DELTA
-            and coming
 
         if returned then
             Runtime.detPhase = "INSIDE"
@@ -425,9 +443,12 @@ local function tickReturnDetector(
                 and distance <= activationRadius
             then
                 Runtime.lastReturnAt = t
+                Runtime.detWasComing = coming
                 return true
             end
         end
+
+        Runtime.detWasComing = coming
     end
 
     return false
@@ -968,12 +989,6 @@ function AutoClash.onBallSync(data)
             == Runtime.localUserId
 
         if isMe then
-            if not Runtime.wasMeTarget
-                and Runtime.lostMeAt > 0
-            then
-                Runtime.lastTargetAt = t
-            end
-
             Runtime.wasMeTarget = true
         else
             if Runtime.wasMeTarget then
