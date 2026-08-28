@@ -632,4 +632,9 @@ function Remote.startMaintenance(options)
     return true
 end
 
+Remote.__contract = {
+    requires = { Utils = "utils" },
+    ballSync = true,  -- é o ponto de entrada (bindBallSync / startMaintenance)
+}
+
 return Remote
