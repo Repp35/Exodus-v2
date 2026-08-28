@@ -14,14 +14,14 @@ local Tuning = {
     DET_RETURN_MIN_HI = 0.090,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
-    DEACT_RETURN_MARGIN = 0.060,
     DET_RAD_MIN = 10,
     DET_RAD_MAX = 25,
     DET_DIST_DELTA = 0.5,
     DET_DOT_EMA = 0.35,
     DET_DOT_THRESHOLD = 0.14,
     DET_TIMEOUT = 0.8,
-    DEACT_RADIUS_MULT = 1.08,
+    DEACT_WINDOW_FACTOR = 2.2,
+    DEACT_GUARD_TIME = 0.080,
 }
 
 -- state
@@ -34,7 +34,6 @@ local Runtime = {
     lastDeactivatedAt = 0,
     parryRadius = 0,
     activationRadius = 0,
-    deactivationRadius = 0,
     connections = {},
     lastTarget = -1,
     localUserId = nil,
@@ -186,6 +185,11 @@ local function getDetectorReturnWindow(speed)
         Tuning.DET_RETURN_MAX_LO,
         Tuning.DET_RETURN_MIN_HI
     )
+end
+
+local function getDeactivationWindow(speed)
+    return getTargetReturnWindow(speed)
+        * Tuning.DEACT_WINDOW_FACTOR
 end
 
 local function getDetectorRadius(speed)
@@ -393,19 +397,27 @@ end
 
 -- deactivation
 local function shouldDeactivate(t)
-    local activationWindow =
-        Runtime.activationReturnWindow
-    if type(activationWindow) ~= "number"
-        or activationWindow <= 0
+    if Runtime.lostMeAt <= 0 then
+        return false
+    end
+    if Runtime.lostMeAt
+        <= Runtime.lastActivatedAt
     then
         return false
     end
-    local deactivateWindow =
-        activationWindow
-            + Tuning.DEACT_RETURN_MARGIN
-    return (
-        t - Runtime.lastReturnAt
-    ) > deactivateWindow
+    local sinceActivation =
+        t - Runtime.lastActivatedAt
+    if sinceActivation
+        < Tuning.DEACT_GUARD_TIME
+    then
+        return false
+    end
+    local sinceLeft =
+        t - Runtime.lostMeAt
+    return sinceLeft
+        > getDeactivationWindow(
+            Runtime.lastSpeed
+        )
 end
 
 -- main evaluation (com os gates do script 2 adaptados)
@@ -428,15 +440,13 @@ local function evaluateClash(time, snapshot)
     Runtime.activationRadius =
         parryRadius
             * Tuning.ACT_RAD_FACTOR
-    Runtime.deactivationRadius =
-        parryRadius
-            * Tuning.DEACT_RADIUS_MULT
     if Runtime.active then
         if shouldDeactivate(time) then
             setActive(
                 false,
-                "should_deactivate"
+                "target_lost_timeout"
             )
+            Runtime.lostMeAt = 0
         end
         return
     end
