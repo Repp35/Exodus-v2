@@ -8,8 +8,8 @@ local Utils
 -- tuning
 local Tuning = {
     ACT_RAD_FACTOR = 1.40,
-    TARGET_RETURN_MAX_LO = 0.110,
-    TARGET_RETURN_MIN_HI = 0.060,
+    TARGET_RETURN_MAX_LO = 0.149,
+    TARGET_RETURN_MIN_HI = 0.081,
     DET_RETURN_FACTOR = 2.0,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
