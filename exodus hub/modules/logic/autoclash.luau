@@ -10,6 +10,7 @@ local Tuning = {
     ACT_RAD_FACTOR = 1.40,
     TARGET_RETURN_MAX_LO = 0.149,
     TARGET_RETURN_MIN_HI = 0.081,
+    PING_COMPENSATION_FACTOR = 0.3,
     DET_RETURN_FACTOR = 2.0,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
@@ -175,7 +176,8 @@ local function getTargetReturnWindow(speed)
         speed,
         Tuning.TARGET_RETURN_MAX_LO,
         Tuning.TARGET_RETURN_MIN_HI
-    )
+    ) + AutoParry.getPingOneWay()
+        * Tuning.PING_COMPENSATION_FACTOR
 end
 
 local function getDetectorReturnWindow(speed)
@@ -628,6 +630,8 @@ function AutoClash.setup(deps)
     if type(deps) ~= "table"
         or type(deps.AutoParry) ~= "table"
         or type(deps.AutoParry.getParryRadius)
+            ~= "function"
+        or type(deps.AutoParry.getPingOneWay)
             ~= "function"
         or type(deps.GameInfo) ~= "table"
         or type(deps.GameInfo.getSnapshot)
