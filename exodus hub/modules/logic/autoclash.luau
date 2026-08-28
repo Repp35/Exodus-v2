@@ -9,8 +9,11 @@ local Utils
 local Tuning = {
     ACT_RAD_FACTOR = 1.40,
 
-    TARGET_RETURN_MAX_LO = 0.185,
+    TARGET_RETURN_MAX_LO = 0.200,
     TARGET_RETURN_MIN_HI = 0.100,
+
+    DET_RETURN_MAX_LO = 0.235,
+    DET_RETURN_MIN_HI = 0.100,
 
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
@@ -20,9 +23,6 @@ local Tuning = {
     DET_DIST_DELTA = 0.5,
     DET_DOT_EMA = 0.35,
     DET_DOT_THRESHOLD = 0.14,
-
-    DET_RETURN_MAX_LO = 0.220,
-    DET_RETURN_MIN_HI = 0.100,
     DET_TIMEOUT = 0.8,
 
     RED_HOLD = 0.210,
