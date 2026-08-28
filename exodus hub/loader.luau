@@ -42,6 +42,15 @@ local MODULE_ORDER = {
     "character",
 }
 
+-- contrato por m贸dulo: cada m贸dulo declara o pr贸prio via __contract.
+-- campos:
+--   requires      : deps injetadas no setup(deps). chaves = nomes l贸gicos, valores = chaves em `loaded`.
+--   onBallSync    : se true, o m贸dulo recebe BallSyncData automaticamente (precisa exportar onBallSync).
+--   ballSync      : se true, o m贸dulo 茅 fornecedor de BallSyncData (ex: remote, gameinfo).
+--   bindCharacter : se true, recebe bindCharacter(character) ao spawnar (precisa exportar bind+detach).
+-- o loader auto-descobre via __contract 鈥� adicionar m贸dulo novo 茅 s贸 (1) nome em MODULE_ORDER
+-- e (2) __contract exportado no pr贸prio m贸dulo.
+
 -- http
 local function getGlobalEnvironment()
     if type(getgenv) == "function" then
@@ -84,7 +93,7 @@ local function waitBeforeRetry(attempt)
 end
 local function request(url, headers)
     if type(url) ~= "string" or url == "" then
-        return nil, "URL inválida"
+        return nil, "URL inv谩lida"
     end
     local lastError
     local requestFunction = getRequestFunction()
@@ -99,7 +108,7 @@ local function request(url, headers)
                     Headers = headers,
                 })
                 if type(response) ~= "table" then
-                    error("Resposta HTTP inválida")
+                    error("Resposta HTTP inv谩lida")
                 end
                 local statusCode = tonumber(response.StatusCode or response.status_code)
                 if statusCode and statusCode >= 400 then
@@ -107,7 +116,7 @@ local function request(url, headers)
                 end
                 local body = response.Body or response.body or response.ResponseBody
                 if type(body) ~= "string" or body == "" then
-                    error("Corpo HTTP vazio ou inválido")
+                    error("Corpo HTTP vazio ou inv谩lido")
                 end
                 return body
             end)
@@ -138,7 +147,7 @@ local function request(url, headers)
         end
         waitBeforeRetry(attempt)
     end
-    local message = lastError or "Nenhum serviço HTTP disponível"
+    local message = lastError or "Nenhum servi莽o HTTP dispon铆vel"
     bootstrapPrint("download falhou definitivamente: " .. message)
     return nil, message
 end
@@ -153,7 +162,7 @@ local function findLocalModule(name)
         or type(isfolder) ~= "function"
         or type(readfile) ~= "function"
     then
-        return nil, "APIs de filesystem do executor indisponíveis"
+        return nil, "APIs de filesystem do executor indispon铆veis"
     end
     local target = string.lower(name .. ".luau")
     local matches = {}
@@ -195,11 +204,11 @@ local function findLocalModule(name)
         end
     end
     if #matches == 0 then
-        return nil, name .. ".luau não encontrado; pastas verificadas: "
+        return nil, name .. ".luau n茫o encontrado; pastas verificadas: "
             .. table.concat(availableRoots, ", ")
     end
     if #matches > 1 then
-        return nil, name .. ".luau ambíguo: " .. tostring(#matches) .. " arquivos encontrados"
+        return nil, name .. ".luau amb铆guo: " .. tostring(#matches) .. " arquivos encontrados"
     end
     local readOk, source = pcall(readfile, matches[1])
     if not readOk or type(source) ~= "string" or source == "" then
@@ -249,7 +258,7 @@ end
 local function compile(name, source)
     bootstrapPrint("loadstring: " .. name)
     if type(loadstring) ~= "function" then
-        local message = "loadstring não está disponível neste ambiente"
+        local message = "loadstring n茫o est谩 dispon铆vel neste ambiente"
         bootstrapPrint("ERRO: " .. message)
         return nil, message
     end
@@ -266,7 +275,7 @@ local function compile(name, source)
         return nil, message
     end
     if type(module) ~= "table" then
-        local message = "o módulo não retornou uma tabela"
+        local message = "o m贸dulo n茫o retornou uma tabela"
         bootstrapPrint("ERRO em " .. name .. ": " .. message)
         return nil, message
     end
@@ -315,7 +324,7 @@ local function buildURLs(version)
     }
 end
 local function loadModule(name, url)
-    bootstrapPrint(("módulo %s | URL %s"):format(name, tostring(url)))
+    bootstrapPrint(("m贸dulo %s | URL %s"):format(name, tostring(url)))
     local source, fetchError = request(url)
     if source then
         local module, compileError = compile(name, source)
@@ -359,54 +368,74 @@ local function loadModules(urls, log)
 end
 
 -- setup
+local function resolveDeps(loaded, requires)
+    local deps = {}
+    if type(requires) ~= "table" then
+        return deps
+    end
+    for depName, sourceKey in pairs(requires) do
+        deps[depName] = loaded[sourceKey]
+    end
+    return deps
+end
+
+local function contractOf(module)
+    if type(module) ~= "table" then
+        return {}
+    end
+    return module.__contract or {}
+end
+
+local function collectCharacterBinds(loaded)
+    local binds = {}
+    for name, module in pairs(loaded) do
+        if name ~= "utils" and type(module) == "table" then
+            local contract = contractOf(module)
+            if contract.bindCharacter == true
+                and type(module.bindCharacter) == "function"
+                and type(module.detachCharacter) == "function"
+            then
+                binds[#binds + 1] = {
+                    name = name,
+                    bind = module.bindCharacter,
+                    detach = module.detachCharacter,
+                }
+            end
+        end
+    end
+    return binds
+end
+
 local function initializeModules(loaded, log)
-    local setupOrder = {
-        { "remote", { Utils = loaded.utils } },
-        { "gameinfo", { Utils = loaded.utils } },
-        {
-            "autoparry",
-            {
-                Remote = loaded.remote,
-                GameInfo = loaded.gameinfo,
-                Utils = loaded.utils,
-            },
-        },
-        {
-            "spam",
-            {
-                Remote = loaded.remote,
-                Utils = loaded.utils,
-            },
-        },
-        {
-            "character",
-            {
-                AutoParry = loaded.autoparry,
-                Spam = loaded.spam,
-                Utils = loaded.utils,
-            },
-        },
-    }
-    for _, entry in ipairs(setupOrder) do
-        local name = entry[1]
-        local module = loaded[name]
-        if type(module) ~= "table" or type(module.setup) ~= "function" then
-            log.warn(name .. " não possui setup")
-            if type(log.recordError) == "function" then
-                log.recordError("Loader", name .. " não possui setup")
+    -- descobre todos os binds de personagem uma vez e injeta no deps do character
+    local characterBinds = collectCharacterBinds(loaded)
+    log.info(("%d m贸dulos com bind de personagem"):format(#characterBinds))
+    for _, name in ipairs(MODULE_ORDER) do
+        if name ~= "utils" and name ~= "config" then
+            local module = loaded[name]
+            if type(module) ~= "table" or type(module.setup) ~= "function" then
+                log.warn(name .. " n茫o possui setup")
+                if type(log.recordError) == "function" then
+                    log.recordError("Loader", name .. " n茫o possui setup")
+                end
+                return false
             end
-            return false
-        end
-        local ok, initialized = pcall(module.setup, entry[2])
-        if not ok or initialized ~= true then
-            log.warn(("%s falhou ao inicializar: %s")
-                :format(name, tostring(initialized)))
-            if type(log.recordError) == "function" then
-                log.recordError("Loader", name .. " falhou: " .. tostring(initialized))
+            local contract = contractOf(module)
+            local deps = resolveDeps(loaded, contract.requires)
+            if name == "character" then
+                deps.characterBinds = characterBinds
             end
-            return false
+            local ok, initialized = pcall(module.setup, deps)
+            if not ok or initialized ~= true then
+                log.warn(("%s falhou ao inicializar: %s")
+                    :format(name, tostring(initialized)))
+                if type(log.recordError) == "function" then
+                    log.recordError("Loader", name .. " falhou: " .. tostring(initialized))
+                end
+                return false
+            end
+            log.info(name .. " inicializado")
         end
-        log.info(name .. " inicializado")
     end
     return true
 end
@@ -416,13 +445,27 @@ local function bindRuntime(loaded, log)
     local utils = loaded.utils
     local gameInfo = loaded.gameinfo
     local remote = loaded.remote
-    if type(gameInfo.applySync) ~= "function"
+    if type(gameInfo) ~= "table"
+        or type(gameInfo.applySync) ~= "function"
         or type(gameInfo.installBallWatcher) ~= "function"
+        or type(remote) ~= "table"
         or type(remote.bindBallSync) ~= "function"
         or type(remote.startMaintenance) ~= "function"
-        or type(loaded.autoparry.onBallSync) ~= "function"
     then
         return nil, "contrato de runtime incompleto"
+    end
+    -- descobre automaticamente todos os m贸dulos com onBallSync via __contract
+    local ballSyncSubscribers = {}
+    for name, module in pairs(loaded) do
+        if name ~= "utils" and type(module) == "table" then
+            local contract = contractOf(module)
+            if contract.onBallSync == true and type(module.onBallSync) == "function" then
+                ballSyncSubscribers[#ballSyncSubscribers + 1] = {
+                    name = name,
+                    handler = module.onBallSync,
+                }
+            end
+        end
     end
     local function callSync(name, handler, data)
         local ok, result = pcall(handler, data)
@@ -437,24 +480,27 @@ local function bindRuntime(loaded, log)
     end
     local function onBallSync(data)
         callSync("GameInfo", gameInfo.applySync, data)
-        callSync("AutoParry", loaded.autoparry.onBallSync, data)
+        for _, sub in ipairs(ballSyncSubscribers) do
+            callSync(sub.name, sub.handler, data)
+        end
     end
     local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
     if watcherReady then
-        log.info("GameInfo conectado à bola")
+        log.info("GameInfo conectado 脿 bola")
     else
-        log.warn("GameInfo não encontrou o observador da bola")
+        log.warn("GameInfo n茫o encontrou o observador da bola")
         if type(log.recordError) == "function" then
-            log.recordError("GameInfo", "observador da bola indisponível")
+            log.recordError("GameInfo", "observador da bola indispon铆vel")
         end
     end
     local syncReady = remote.bindBallSync(onBallSync)
     if syncReady then
         log.info("Remote conectado ao BallSyncData")
+        log.info(("%d assinantes de BallSync"):format(#ballSyncSubscribers))
     else
-        log.warn("Remote BallSyncData indisponível")
+        log.warn("Remote BallSyncData indispon铆vel")
         if type(log.recordError) == "function" then
-            log.recordError("Remote", "BallSyncData indisponível")
+            log.recordError("Remote", "BallSyncData indispon铆vel")
         end
     end
     local maintenanceOk, maintenanceReady = pcall(remote.startMaintenance, {
@@ -462,18 +508,19 @@ local function bindRuntime(loaded, log)
         onBallSync = onBallSync,
     })
     if not maintenanceOk or maintenanceReady ~= true then
-        local message = "manutenção do Remote falhou: " .. tostring(maintenanceReady)
+        local message = "manuten莽茫o do Remote falhou: " .. tostring(maintenanceReady)
         log.warn(message)
         if type(log.recordError) == "function" then
             log.recordError("Remote", message)
         end
     else
-        log.info("manutenção do Remote iniciada")
+        log.info("manuten莽茫o do Remote iniciada")
     end
     return {
         watcher = watcherReady == true,
         ballSync = syncReady == true,
         maintenance = maintenanceOk and maintenanceReady == true,
+        ballSyncSubscribers = #ballSyncSubscribers,
     }
 end
 
@@ -485,7 +532,7 @@ local function loadInterface(url, utils, controls)
         return false
     end
     if type(interface.setup) ~= "function" then
-        utils.warn("Exodus UI não possui setup")
+        utils.warn("Exodus UI n茫o possui setup")
         return false
     end
     local ok, setupError = pcall(interface.setup, {
@@ -504,7 +551,7 @@ end
 local function waitForLocalPlayer(timeout)
     local ok, players = pcall(game.GetService, game, "Players")
     if not ok or not players then
-        return false, "serviço Players indisponível"
+        return false, "servi莽o Players indispon铆vel"
     end
     local deadline = os.clock() + (tonumber(timeout) or 10)
     repeat
@@ -519,10 +566,10 @@ local function waitForLocalPlayer(timeout)
         end
         task.wait()
     until os.clock() >= deadline
-    return false, "LocalPlayer indisponível após esperar " .. tostring(timeout or 10) .. "s"
+    return false, "LocalPlayer indispon铆vel ap贸s esperar " .. tostring(timeout or 10) .. "s"
 end
 function Loader.start()
-    bootstrapPrint("inicialização do hub iniciada")
+    bootstrapPrint("inicializa莽茫o do hub iniciada")
     stopPreviousRuntime()
     clearRegistry()
     local playerReady, playerError = waitForLocalPlayer(10)
@@ -530,7 +577,7 @@ function Loader.start()
         return false, playerError
     end
     local version = latestVersion()
-    bootstrapPrint("versão remota: " .. tostring(version))
+    bootstrapPrint("vers茫o remota: " .. tostring(version))
     local urls = buildURLs(version)
     local utils, utilsError = loadModule("utils", urls.utils)
     if not utils then
@@ -552,8 +599,8 @@ function Loader.start()
     Exodus.State = utils.getStateSnapshot()
     local loaded, loadError = loadModules(urls, utils)
     if not loaded then
-        bootstrapPrint("ERRO ao carregar módulos: " .. tostring(loadError))
-        utils.recordError("Loader", loadError or utilsError or "falha ao carregar módulos")
+        bootstrapPrint("ERRO ao carregar m贸dulos: " .. tostring(loadError))
+        utils.recordError("Loader", loadError or utilsError or "falha ao carregar m贸dulos")
         utils.stop()
         return false
     end
@@ -577,7 +624,7 @@ function Loader.start()
     end
     utils.setLifecyclePhase("configuring")
     if not utils.setConfig(defaults) or not utils.setModuleURLs(urls) then
-        utils.recordError("Loader", "falha ao aplicar configuração inicial")
+        utils.recordError("Loader", "falha ao aplicar configura莽茫o inicial")
         utils.stop()
         return false
     end
@@ -585,12 +632,12 @@ function Loader.start()
     Exodus.ModuleURLs = utils.getModuleURLsSnapshot()
     utils.setLifecyclePhase("initializing")
     if not initializeModules(loaded, utils) then
-        utils.recordError("Loader", "falha na inicialização dos módulos")
+        utils.recordError("Loader", "falha na inicializa莽茫o dos m贸dulos")
         utils.stop()
         return false
     end
     if not utils.setDiagnosticsModules(loaded) then
-        utils.recordError("Loader", "falha ao registrar diagnóstico dos módulos")
+        utils.recordError("Loader", "falha ao registrar diagn贸stico dos m贸dulos")
         utils.stop()
         return false
     end
@@ -605,7 +652,7 @@ function Loader.start()
     end
     Exodus.Runtime = runtime
     _G.ExodusOnBurst = loaded.autoparry.fire
-    bootstrapPrint("módulos inicializados; carregando UI")
+    bootstrapPrint("m贸dulos inicializados; carregando UI")
     local uiReady = loadInterface(urls.ui, utils, {
         onPanic = function()
             loaded.autoparry.resetState()
