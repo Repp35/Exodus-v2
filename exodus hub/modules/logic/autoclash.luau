@@ -3,7 +3,6 @@
 local AutoClash = {}
 local AutoParry
 local GameInfo
-local Spam
 local Utils
 
 -- tuning
@@ -93,16 +92,16 @@ local function setActive(nextActive, reason)
     if nextActive then
         Runtime.lastActivatedAt = time
         Runtime.lastValidAt = time
-        local ok, err = pcall(Spam.setActive, true)
+        local ok, err = pcall(Utils.setAutoSpamActive, true)
         if not ok then
-            pcall(Utils.recordError, "AutoClash", "Spam.setActive(true): " .. tostring(err))
+            pcall(Utils.recordError, "AutoClash", "Utils.setAutoSpamActive(true): " .. tostring(err))
         end
         setPhase("active", reason)
     else
         Runtime.lastDeactivatedAt = time
-        local ok, err = pcall(Spam.setActive, false)
+        local ok, err = pcall(Utils.setAutoSpamActive, false)
         if not ok then
-            pcall(Utils.recordError, "AutoClash", "Spam.setActive(false): " .. tostring(err))
+            pcall(Utils.recordError, "AutoClash", "Utils.setAutoSpamActive(false): " .. tostring(err))
         end
         setPhase("idle", reason)
     end
@@ -353,8 +352,6 @@ function AutoClash.setup(deps)
         or type(deps.GameInfo) ~= "table"
         or type(deps.GameInfo.getSnapshot) ~= "function"
         or type(deps.GameInfo.isSnapshotValid) ~= "function"
-        or type(deps.Spam) ~= "table"
-        or type(deps.Spam.setActive) ~= "function"
         or type(deps.Utils) ~= "table"
         or type(deps.Utils.now) ~= "function"
         or type(deps.Utils.apiVersion) ~= "function"
@@ -364,6 +361,7 @@ function AutoClash.setup(deps)
         or type(deps.Utils.untrackCharacter) ~= "function"
         or type(deps.Utils.isActive) ~= "function"
         or type(deps.Utils.isManualSpamActive) ~= "function"
+        or type(deps.Utils.setAutoSpamActive) ~= "function"
         or type(deps.Utils.recordTransition) ~= "function"
     then
         return false
@@ -371,7 +369,6 @@ function AutoClash.setup(deps)
 
     AutoParry = deps.AutoParry
     GameInfo = deps.GameInfo
-    Spam = deps.Spam
     Utils = deps.Utils
 
     local player = Utils.getLocalPlayer()
@@ -420,7 +417,6 @@ function AutoClash.teardown()
     setActive(false, "teardown")
     AutoParry = nil
     GameInfo = nil
-    Spam = nil
     Utils = nil
 end
 
@@ -479,5 +475,15 @@ function AutoClash.getStatus()
         lastTarget = Runtime.lastTarget,
     }
 end
+
+AutoClash.__contract = {
+    requires = {
+        AutoParry = "autoparry",
+        GameInfo = "gameinfo",
+        Utils = "utils",
+    },
+    onBallSync = true,
+    bindCharacter = true,
+}
 
 return AutoClash
