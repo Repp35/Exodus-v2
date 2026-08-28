@@ -581,4 +581,14 @@ function AutoParry.getStatus()
     }
 end
 
+AutoParry.__contract = {
+    requires = {
+        Remote = "remote",
+        GameInfo = "gameinfo",
+        Utils = "utils",
+    },
+    onBallSync = true,
+    bindCharacter = true,
+}
+
 return AutoParry
