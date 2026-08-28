@@ -454,7 +454,7 @@ function Remote.setup(deps)
         or type(deps.Utils.ensureDataFolder) ~= "function"
         or type(deps.Utils.warn) ~= "function"
     then
-        return false
+        return false, "dependência ausente: Utils ou API de armazenamento/conexões"
     end
     
     Utils = deps.Utils
@@ -469,7 +469,7 @@ function Remote.setup(deps)
         local fallback = Remote.resolveParryRemote()
         if not isAlive(fallback) then
             Utils.warn("fallback feio-4 também falhou em capturar parry Remote")
-            return false
+            return false, "hooks e fallback não conseguiram capturar o Remote de parry"
         end
     end
     return true
