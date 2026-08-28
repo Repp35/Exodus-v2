@@ -6,18 +6,20 @@ local GameInfo
 local Spam
 local Utils
 
--- tuning
+-- tuning (baseado no script 2)
 local Tuning = {
-    ACTIVATION_RADIUS_MULT = 1.30,
-    DEACTIVATION_RADIUS_MULT = 1.05,
-    MIN_BALL_SPEED = 5,
-    SPD_LOW = 60,
-    SPD_HIGH = 200,
+    RED_HOLD = 0.210,
+    SPAM_INTERVAL = 0.05,
     TARGET_RETURN_MAX_LO = 0.230,
     TARGET_RETURN_MIN_HI = 0.140,
-    DOT_AWAY_WINDOW_MULT = 1.4,
-    DOT_AWAY_EMA_ALPHA = 0.15,
-    DOT_AWAY_THRESHOLD = 0,
+    TARGET_RETURN_SPD_LO = 60,
+    TARGET_RETURN_SPD_HI = 200,
+    PHYS_SPD_REF = 120,
+    PHYS_DOT_EMA = 0.25,
+    PHYS_THRESH = 0.14,
+    PHYS_RAD_SLACK = 1.22,
+    ACT_RADIUS_MULT = 1.33,
+    DEACT_RADIUS_MULT = 1.08,
 }
 
 -- state
@@ -35,10 +37,13 @@ local Runtime = {
     lastTarget = -1,
     localUserId = nil,
     boundRoot = nil,
-    wasMyTarget = false,
-    lastNotMyTargetAt = 0,
-    dotEma = 0,
-    dotAwaySince = 0,
+    -- Variáveis de estado do script 2
+    lastValidAt = 0,
+    lastTargetAt = 0,
+    lastTargetId = nil,
+    wasMeTarget = false,
+    lostMeAt = 0,
+    physDotEma = 0,
     lastSpeed = 0,
 }
 
@@ -69,53 +74,13 @@ end
 
 local function getParryRadius(speed, time)
     if not AutoParry or type(AutoParry.getParryRadius) ~= "function" then
-        return 0
+        return 8
     end
     local ok, radius = pcall(AutoParry.getParryRadius, speed, time)
     if not ok or type(radius) ~= "number" or radius < 0 then
-        return 0
+        return 8
     end
     return radius
-end
-
-local function getReturnWindow(speed)
-    local speedRatio = math.clamp(
-        (speed - Tuning.SPD_LOW) / (Tuning.SPD_HIGH - Tuning.SPD_LOW),
-        0,
-        1
-    )
-    return Tuning.TARGET_RETURN_MAX_LO
-        - (Tuning.TARGET_RETURN_MAX_LO - Tuning.TARGET_RETURN_MIN_HI) * speedRatio
-end
-
-local function updateDotEma(velocity, ballPosition, rootPosition)
-    if typeof(velocity) ~= "Vector3" then
-        return
-    end
-    local toMe = rootPosition - ballPosition
-    if toMe.Magnitude <= 0.001 then
-        return
-    end
-    local dot = velocity:Dot(toMe.Unit)
-    local alpha = Tuning.DOT_AWAY_EMA_ALPHA
-    Runtime.dotEma = Runtime.dotEma * (1 - alpha) + dot * alpha
-end
-
-local function checkDotAwayDeactivation(time, distance)
-    if distance <= Runtime.deactivationRadius then
-        Runtime.dotAwaySince = 0
-        return false
-    end
-    if Runtime.dotEma > Tuning.DOT_AWAY_THRESHOLD then
-        Runtime.dotAwaySince = 0
-        return false
-    end
-    if Runtime.dotAwaySince == 0 then
-        Runtime.dotAwaySince = time
-        return false
-    end
-    local window = getReturnWindow(Runtime.lastSpeed) * Tuning.DOT_AWAY_WINDOW_MULT
-    return time - Runtime.dotAwaySince >= window
 end
 
 local function setActive(nextActive, reason)
@@ -127,6 +92,7 @@ local function setActive(nextActive, reason)
     local time = Utils.now()
     if nextActive then
         Runtime.lastActivatedAt = time
+        Runtime.lastValidAt = time
         local ok, err = pcall(Spam.setActive, true)
         if not ok then
             pcall(Utils.recordError, "AutoClash", "Spam.setActive(true): " .. tostring(err))
@@ -142,7 +108,105 @@ local function setActive(nextActive, reason)
     end
 end
 
--- main
+-- helpers lógicos do script 2 adaptados
+local function getTargetReturnWindow(speed)
+    if speed >= Tuning.TARGET_RETURN_SPD_HI then
+        return Tuning.TARGET_RETURN_MIN_HI
+    end
+    if speed <= Tuning.TARGET_RETURN_SPD_LO then
+        return Tuning.TARGET_RETURN_MAX_LO
+    end
+    local alpha = (speed - Tuning.TARGET_RETURN_SPD_LO)
+        / (Tuning.TARGET_RETURN_SPD_HI - Tuning.TARGET_RETURN_SPD_LO)
+    return Tuning.TARGET_RETURN_MAX_LO
+        + (Tuning.TARGET_RETURN_MIN_HI - Tuning.TARGET_RETURN_MAX_LO) * alpha
+end
+
+local function ballInRange(hr, ball, distance)
+    if not (hr and ball) then
+        return false
+    end
+    if type(distance) ~= "number" or distance <= 0 then
+        return false
+    end
+    local ok, currentDistance = pcall(function()
+        return (hr.Position - ball.Position).Magnitude
+    end)
+    return ok and typeof(currentDistance) == "number" and currentDistance <= distance
+end
+
+local function nearestInRange(myHRP, distance)
+    if not (myHRP and type(distance) == "number" and distance > 0) then
+        return false
+    end
+    local localPlayer = Utils.getLocalPlayer()
+    for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
+        if player ~= localPlayer then
+            local character = player.Character
+            local hrp = character and character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                local ok, currentDistance = pcall(function()
+                    return (myHRP.Position - hrp.Position).Magnitude
+                end)
+                if ok and typeof(currentDistance) == "number" and currentDistance <= distance then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function tickPhysical(ctx, hr, ball, speed, activationRadius)
+    if not (hr and hr.Parent and ball and ball.Parent) then
+        Runtime.physDotEma = 0
+        return false
+    end
+    local ok, velocity = pcall(function()
+        return ball.AssemblyLinearVelocity
+    end)
+    if not ok or typeof(velocity) ~= "Vector3" then
+        Runtime.physDotEma = 0
+        return false
+    end
+    local ballSpeed = velocity.Magnitude
+    if ballSpeed <= 1 then
+        Runtime.physDotEma = 0
+        return false
+    end
+    local offset = hr.Position - ball.Position
+    local distance = offset.Magnitude
+    if distance < 0.001 then
+        Runtime.physDotEma = 0
+        return false
+    end
+    local dot = velocity:Dot(offset.Unit)
+    if distance <= activationRadius * Tuning.PHYS_RAD_SLACK then
+        Runtime.physDotEma = Runtime.physDotEma * (1 - Tuning.PHYS_DOT_EMA) + dot * Tuning.PHYS_DOT_EMA
+    else
+        Runtime.physDotEma = 0
+    end
+    return distance <= activationRadius and Runtime.physDotEma > Tuning.PHYS_THRESH
+end
+
+local function shouldDeactivate(t, hr, ball, deactivationRadius, isTargeted)
+    if not (hr and ball) then
+        return true
+    end
+    if not isTargeted then
+        return true
+    end
+    if not ballInRange(hr, ball, deactivationRadius) then
+        return true
+    end
+    if not nearestInRange(hr, deactivationRadius) then
+        return true
+    end
+    local lastValid = Runtime.lastValidAt or Runtime.lastActivatedAt or 0
+    return (t - lastValid) >= Tuning.RED_HOLD
+end
+
+-- main evaluation (com os gates do script 2)
 local function evaluateClash(time, snapshot)
     local root = Runtime.boundRoot
     if not (root and root.Parent) then
@@ -156,68 +220,31 @@ local function evaluateClash(time, snapshot)
         return
     end
 
-    local ballPosition = snapshot.position
-    if typeof(ballPosition) ~= "Vector3" then
-        setPhase("waiting", "position_unavailable")
-        return
-    end
-
     local speed = tonumber(snapshot.speed) or 0
     local parryRadius = getParryRadius(speed, time)
     Runtime.parryRadius = parryRadius
-    Runtime.activationRadius = parryRadius * Tuning.ACTIVATION_RADIUS_MULT
-    Runtime.deactivationRadius = parryRadius * Tuning.DEACTIVATION_RADIUS_MULT
-
-    local rootPosition = root.Position
-    local distance = (rootPosition - ballPosition).Magnitude
-
+    Runtime.activationRadius = parryRadius * Tuning.ACT_RADIUS_MULT
+    Runtime.deactivationRadius = parryRadius * Tuning.DEACT_RADIUS_MULT
     Runtime.lastSpeed = speed
-    updateDotEma(snapshot.velocity, ballPosition, rootPosition)
+
+    local isTargeted = snapshot.targetId == Runtime.localUserId
 
     if Runtime.active then
-        if checkDotAwayDeactivation(time, distance) then
-            setActive(false, "dot_away")
-        end
-        return
-    end
-
-    if distance > Runtime.activationRadius then
-        Runtime.wasMyTarget = false
-        Runtime.lastNotMyTargetAt = time
-        setPhase("waiting", "outside_activation_radius")
-        return
-    end
-
-    local currentTarget = snapshot.targetId
-    if type(currentTarget) ~= "number" then
-        setPhase("waiting", "no_target")
-        return
-    end
-
-    local targetIsMe = currentTarget == Runtime.localUserId
-
-    if targetIsMe then
-        local returned = Runtime.wasMyTarget == false
-            and Runtime.lastNotMyTargetAt > 0
-            and time - Runtime.lastNotMyTargetAt <= getReturnWindow(speed)
-
-        Runtime.wasMyTarget = true
-
-        if returned or Runtime.lastNotMyTargetAt == 0 then
-            setActive(true, returned and "target_returned" or "should_activate")
-            return
+        if ballInRange(root, ball, Runtime.deactivationRadius)
+            and nearestInRange(root, Runtime.deactivationRadius)
+            and isTargeted
+        then
+            Runtime.lastValidAt = time
         end
 
-        if Runtime.wasMyTarget then
-            setActive(true, "should_activate")
-            return
+        if shouldDeactivate(time, root, ball, Runtime.deactivationRadius, isTargeted) then
+            setActive(false, "should_deactivate")
         end
     else
-        Runtime.wasMyTarget = false
-        Runtime.lastNotMyTargetAt = time
+        if tickPhysical(snapshot, root, ball, speed, Runtime.activationRadius) then
+            setActive(true, "tick_physical")
+        end
     end
-
-    setPhase("waiting", "should_not_activate")
 end
 
 -- character runtime
@@ -233,11 +260,13 @@ local function bindCharacter(character)
     Runtime.activationRadius = 0
     Runtime.deactivationRadius = 0
     Runtime.boundRoot = nil
-    Runtime.dotEma = 0
-    Runtime.dotAwaySince = 0
+    Runtime.lastValidAt = 0
+    Runtime.lastTargetAt = 0
+    Runtime.lastTargetId = nil
+    Runtime.wasMeTarget = false
+    Runtime.lostMeAt = 0
+    Runtime.physDotEma = 0
     Runtime.lastSpeed = 0
-    Runtime.wasMyTarget = false
-    Runtime.lastNotMyTargetAt = 0
 
     if not (character and character.Parent) then
         return false
@@ -360,10 +389,12 @@ function AutoClash.setup(deps)
     Runtime.connections = {}
     Runtime.lastTarget = -1
     Runtime.boundRoot = nil
-    Runtime.wasMyTarget = false
-    Runtime.lastNotMyTargetAt = 0
-    Runtime.dotEma = 0
-    Runtime.dotAwaySince = 0
+    Runtime.lastValidAt = 0
+    Runtime.lastTargetAt = 0
+    Runtime.lastTargetId = nil
+    Runtime.wasMeTarget = false
+    Runtime.lostMeAt = 0
+    Runtime.physDotEma = 0
     Runtime.lastSpeed = 0
 
     return true
@@ -402,9 +433,30 @@ function AutoClash.onBallSync(data)
 
     if type(target) == "number" then
         Runtime.lastTarget = target
+        Runtime.lastTargetId = target
     elseif type(target) == "string" then
         local parsed = tonumber(target)
         Runtime.lastTarget = parsed or -1
+        Runtime.lastTargetId = Runtime.lastTarget
+    end
+
+    local t = Utils.now()
+    Runtime.lastTargetAt = t
+
+    if type(Runtime.lastTargetId) == "number" and Runtime.localUserId then
+        local isMe = Runtime.lastTargetId == Runtime.localUserId
+        if isMe then
+            if Runtime.lostMeAt > 0 and (t - Runtime.lostMeAt) <= getTargetReturnWindow(Runtime.lastSpeed) then
+                -- Lógica de retorno de alvo caso precise interagir via callback de rede
+            end
+            Runtime.wasMeTarget = true
+            Runtime.lostMeAt = 0
+        else
+            if Runtime.wasMeTarget then
+                Runtime.lostMeAt = t
+            end
+            Runtime.wasMeTarget = false
+        end
     end
 end
 
