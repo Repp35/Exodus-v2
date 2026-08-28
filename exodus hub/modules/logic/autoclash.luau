@@ -9,10 +9,10 @@ local Utils
 local Tuning = {
     ACT_RAD_FACTOR = 1.40,
 
-    TARGET_RETURN_MAX_LO = 0.200,
+    TARGET_RETURN_MAX_LO = 0.185,
     TARGET_RETURN_MIN_HI = 0.100,
 
-    DET_RETURN_MAX_LO = 0.235,
+    DET_RETURN_MAX_LO = 0.220,
     DET_RETURN_MIN_HI = 0.100,
 
     RETURN_SPD_LO = 60,
