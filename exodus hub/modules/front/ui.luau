@@ -277,7 +277,7 @@ end
 local function startFlowingLoop(gui)
     _spawn(
         function()
-            local STEP = 0.005
+            local STEP = 0.04
             while gui.Parent do
                 for off = 0, 1, STEP do
                     if not gui.Parent then
@@ -291,7 +291,7 @@ local function startFlowingLoop(gui)
                             table.remove(flowingGradients, i)
                         end
                     end
-                    _wait(0.03)
+                    _wait(0.05)
                 end
             end
         end
@@ -706,9 +706,11 @@ local function createRateSelector(yPos, parent)
     config.CPS = Utils.normalizeSpamRate(config.CPS, 4)
     config.CPF = Utils.normalizeSpamRate(config.CPF, 16)
     config.SpamRateMode = config.SpamRateMode == "CPS" and "CPS" or "CPF"
-    setConfigValue("CPS", config.CPS)
-    setConfigValue("CPF", config.CPF)
-    setConfigValue("SpamRateMode", config.SpamRateMode)
+    Utils.setConfig({
+        CPS = config.CPS,
+        CPF = config.CPF,
+        SpamRateMode = config.SpamRateMode,
+    })
     cardLabel("Taxa do Spam", f)
     local currentMode = config.SpamRateMode
     local modeTrack = inst(
