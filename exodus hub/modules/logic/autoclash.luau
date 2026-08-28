@@ -6,7 +6,7 @@ local GameInfo
 local Spam
 local Utils
 
--- tuning (baseado no script 2)
+-- tuning
 local Tuning = {
     RED_HOLD = 0.210,
     SPAM_INTERVAL = 0.05,
