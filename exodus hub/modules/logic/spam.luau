@@ -150,4 +150,11 @@ function Spam.getStatus()
     }
 end
 
+Spam.__contract = {
+    requires = {
+        Remote = "remote",
+        Utils = "utils",
+    },
+}
+
 return Spam
