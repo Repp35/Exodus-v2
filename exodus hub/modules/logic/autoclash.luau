@@ -122,6 +122,30 @@ local function getTargetReturnWindow(speed)
         + (Tuning.TARGET_RETURN_MIN_HI - Tuning.TARGET_RETURN_MAX_LO) * alpha
 end
 
+local function triggerClash(reason)
+    if not Utils or not Utils.getConfig
+        or Utils.getConfig().AutoClash ~= true
+        or not Runtime.bound
+    then
+        Runtime.lastGate = "clash_disabled_or_unbound"
+        return
+    end
+    if Runtime.active then
+        Runtime.lastGate = "clash_already_active"
+        return
+    end
+
+    local generation = Runtime.generation
+    Runtime.lastGate = "target_return"
+    setActive(true, reason or "target_return")
+
+    task.delay(Tuning.SPAM_INTERVAL, function()
+        if generation == Runtime.generation then
+            setActive(false, "clash_window_end")
+        end
+    end)
+end
+
 local function ballInRange(hr, position, distance)
     if not (hr and position) then
         return false
@@ -277,25 +301,17 @@ local function evaluateClash(time, snapshot)
     Runtime.lastSpeed = speed
 
     local position = snapshotPosition(snapshot, ball)
-    local isTargeted = snapshot.targetId == Runtime.localUserId
+    local isTargeted = snapshot.targeted == true
 
     if Runtime.active then
-        if ballInRange(root, position, Runtime.deactivationRadius)
-            and nearestInRange(root, Runtime.deactivationRadius)
-            and isTargeted
-        then
-            Runtime.lastValidAt = time
-        end
-
-        if shouldDeactivate(time, root, position, Runtime.deactivationRadius, isTargeted) then
-            Runtime.lastGate = "should_deactivate"
-            setActive(false, "should_deactivate")
-        end
-    else
-        if tickPhysical(snapshot, root, ball, speed, Runtime.activationRadius) then
-            setActive(true, "tick_physical")
-        end
+        Runtime.lastValidAt = time
+        return
     end
+
+    -- A ativação não é física nem baseada em proximidade. O clash é
+    -- disparado exclusivamente por onBallSync quando o alvo retorna ao
+    -- jogador dentro da janela temporal calculada.
+    Runtime.lastGate = isTargeted and "awaiting_target_return" or "target_not_returned"
 end
 
 -- character runtime
@@ -493,6 +509,8 @@ function AutoClash.onBallSync(data)
         local parsed = tonumber(target)
         Runtime.lastTarget = parsed or -1
         Runtime.lastTargetId = Runtime.lastTarget
+    else
+        return
     end
 
     local t = Utils.now()
@@ -501,8 +519,10 @@ function AutoClash.onBallSync(data)
     if type(Runtime.lastTargetId) == "number" and Runtime.localUserId then
         local isMe = Runtime.lastTargetId == Runtime.localUserId
         if isMe then
-            if Runtime.lostMeAt > 0 and (t - Runtime.lostMeAt) <= getTargetReturnWindow(Runtime.lastSpeed) then
-                -- Lógica de retorno de alvo caso precise interagir via callback de rede
+            local returnedInWindow = Runtime.lostMeAt > 0
+                and (t - Runtime.lostMeAt) <= getTargetReturnWindow(Runtime.lastSpeed)
+            if returnedInWindow then
+                triggerClash("target_return")
             end
             Runtime.wasMeTarget = true
             Runtime.lostMeAt = 0
