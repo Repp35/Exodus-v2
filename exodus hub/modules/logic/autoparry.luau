@@ -543,7 +543,11 @@ end
 function AutoParry.fire()
     return requestParry()
 end
-function AutoParry.bindParry(character)
+-- exportado como bindCharacter: o character.lua descobre módulos com
+-- `module.bindCharacter` via __contract.bindCharacter. Se for exportado
+-- com outro nome, o autoparry nunca é bindado e fica silenciosamente
+-- inativo (Runtime.bound = false pra sempre). Não renomear.
+function AutoParry.bindCharacter(character)
     return bindCharacter(character)
 end
 function AutoParry.resetState()
