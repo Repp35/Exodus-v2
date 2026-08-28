@@ -5,6 +5,7 @@ local function bootstrapPrint(message)
     local essential = text == "loader.luau iniciado"
         or text == "hub inicializado com sucesso"
         or string.find(text, "^ERRO no ponto de entrada:") ~= nil
+        or string.find(text, "^[%w_]+ não foi carregado:") ~= nil
     if not essential then
         return
     end
@@ -431,7 +432,7 @@ local function initializeModules(loaded, log)
                 if type(log.recordError) == "function" then
                     log.recordError("Loader", name .. " n茫o possui setup")
                 end
-                return false
+                return false, name .. " não possui setup()"
             end
             local contract = contractOf(module)
             local deps = resolveDeps(loaded, contract.requires)
@@ -445,7 +446,10 @@ local function initializeModules(loaded, log)
                 if type(log.recordError) == "function" then
                     log.recordError("Loader", name .. " falhou: " .. tostring(initialized))
                 end
-                return false
+                return false, ("%s.setup falhou: %s"):format(
+                    name,
+                    tostring(initialized or "motivo não informado pelo módulo")
+                )
             end
             log.info(name .. " inicializado")
         end
@@ -612,10 +616,11 @@ function Loader.start()
     Exodus.State = utils.getStateSnapshot()
     local loaded, loadError = loadModules(urls, utils)
     if not loaded then
-        bootstrapPrint("ERRO ao carregar m贸dulos: " .. tostring(loadError))
-        utils.recordError("Loader", loadError or utilsError or "falha ao carregar m贸dulos")
+        local message = loadError or utilsError or "motivo não informado"
+        bootstrapPrint("ERRO ao carregar módulos: " .. tostring(message))
+        utils.recordError("Loader", tostring(message))
         utils.stop()
-        return false
+        return false, tostring(message)
     end
     Exodus.Context = loaded
     local defaultsOk, defaults = pcall(loaded.config.defaults)
@@ -624,7 +629,7 @@ function Loader.start()
         utils.warn(message)
         utils.recordError("Config", message)
         utils.stop()
-        return false
+        return false, message
     end
     local configCallOk, configValid, configReason = pcall(loaded.config.validate, defaults)
     if not configCallOk or configValid ~= true then
@@ -633,26 +638,35 @@ function Loader.start()
         utils.warn(message)
         utils.recordError("Config", message)
         utils.stop()
-        return false
+        return false, message
     end
     utils.setLifecyclePhase("configuring")
-    if not utils.setConfig(defaults) or not utils.setModuleURLs(urls) then
-        utils.recordError("Loader", "falha ao aplicar configura莽茫o inicial")
+    if not utils.setConfig(defaults) then
+        local message = "Utils.setConfig rejeitou a configuração inicial"
+        utils.recordError("Loader", message)
         utils.stop()
-        return false
+        return false, message
+    end
+    if not utils.setModuleURLs(urls) then
+        local message = "Utils.setModuleURLs rejeitou as URLs dos módulos"
+        utils.recordError("Loader", message)
+        utils.stop()
+        return false, message
     end
     Exodus.Config = utils.getConfigSnapshot()
     Exodus.ModuleURLs = utils.getModuleURLsSnapshot()
     utils.setLifecyclePhase("initializing")
-    if not initializeModules(loaded, utils) then
-        utils.recordError("Loader", "falha na inicializa莽茫o dos m贸dulos")
+    local modulesReady, modulesError = initializeModules(loaded, utils)
+    if not modulesReady then
+        local message = modulesError or "motivo não informado pelo módulo"
+        utils.recordError("Loader", message)
         utils.stop()
-        return false
+        return false, message
     end
     if not utils.setDiagnosticsModules(loaded) then
         utils.recordError("Loader", "falha ao registrar diagn贸stico dos m贸dulos")
         utils.stop()
-        return false
+        return false, "falha ao registrar diagnóstico dos módulos"
     end
     utils.setLifecyclePhase("binding")
     local runtimeOk, runtime = pcall(bindRuntime, loaded, utils)
@@ -661,7 +675,7 @@ function Loader.start()
         utils.warn(message)
         utils.recordError("Runtime", message)
         utils.stop()
-        return false
+        return false, message
     end
     Exodus.Runtime = runtime
     _G.ExodusOnBurst = loaded.autoparry.fire
@@ -684,11 +698,33 @@ function Loader.start()
 end
 Exodus.Loader = Loader
 Modules.Loader = Loader
+local function formatLoadFailure(message)
+    message = tostring(message or "motivo não informado")
+    local moduleName, reason = string.match(
+        message,
+        "^([%w_]+)%.setup falhou:%s*(.*)$"
+    )
+    if not moduleName then
+        moduleName, reason = string.match(
+            message,
+            "^([%w_]+) falhou:%s*(.*)$"
+        )
+    end
+    if moduleName then
+        return moduleName .. " não foi carregado: "
+            .. (reason ~= "" and reason or "motivo não informado")
+    end
+    return "loader não foi carregado: " .. message
+end
 local function startSafely()
     local ok, started, startError = xpcall(
         Loader.start,
         function(errorValue)
-            return tostring(errorValue)
+            local message = tostring(errorValue)
+            if type(debug) == "table" and type(debug.traceback) == "function" then
+                return debug.traceback(message, 2)
+            end
+            return message
         end
     )
     if not ok then
@@ -702,9 +738,10 @@ local function startSafely()
             and ((tostring(lastError.source) .. ": " .. tostring(lastError.message)))
             or nil
         local message = tostring(startError or diagnosticMessage or "falha desconhecida ao iniciar")
-        bootstrapPrint("ERRO no ponto de entrada: " .. message)
-        Loader.lastError = message
-        Exodus.StartError = message
+        local formattedMessage = formatLoadFailure(message)
+        bootstrapPrint(formattedMessage)
+        Loader.lastError = formattedMessage
+        Exodus.StartError = formattedMessage
         return false
     end
     Loader.lastError = nil
