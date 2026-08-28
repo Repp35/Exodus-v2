@@ -660,7 +660,7 @@ function AutoClash.setup(deps)
         or type(deps.Utils.recordTransition)
             ~= "function"
     then
-        return false
+        return false, "dependência ausente: AutoParry, GameInfo ou uma API obrigatória de Utils"
     end
     AutoParry = deps.AutoParry
     GameInfo = deps.GameInfo
