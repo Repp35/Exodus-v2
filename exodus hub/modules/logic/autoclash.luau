@@ -44,6 +44,7 @@ local Runtime = {
     lostMeAt = 0,
     physDotEma = 0,
     lastSpeed = 0,
+    lastGate = "none",
 }
 
 -- helpers
@@ -121,17 +122,45 @@ local function getTargetReturnWindow(speed)
         + (Tuning.TARGET_RETURN_MIN_HI - Tuning.TARGET_RETURN_MAX_LO) * alpha
 end
 
-local function ballInRange(hr, ball, distance)
-    if not (hr and ball) then
+local function ballInRange(hr, position, distance)
+    if not (hr and position) then
         return false
     end
-    if type(distance) ~= "number" or distance <= 0 then
+    if typeof(position) ~= "Vector3"
+        or type(distance) ~= "number"
+        or distance <= 0
+    then
         return false
     end
     local ok, currentDistance = pcall(function()
-        return (hr.Position - ball.Position).Magnitude
+        return (hr.Position - position).Magnitude
     end)
     return ok and typeof(currentDistance) == "number" and currentDistance <= distance
+end
+
+local function snapshotPosition(snapshot, ball)
+    if type(snapshot) == "table" and typeof(snapshot.position) == "Vector3" then
+        return snapshot.position
+    end
+    local ok, position = pcall(function()
+        return ball and ball.Position
+    end)
+    return ok and typeof(position) == "Vector3" and position or nil
+end
+
+local function snapshotVelocity(snapshot, ball)
+    if type(snapshot) == "table" and typeof(snapshot.velocity) == "Vector3"
+        and snapshot.velocity.Magnitude > 1
+    then
+        return snapshot.velocity
+    end
+    local ok, velocity = pcall(function()
+        return ball and ball.AssemblyLinearVelocity
+    end)
+    if ok and typeof(velocity) == "Vector3" and velocity.Magnitude > 1 then
+        return velocity
+    end
+    return nil
 end
 
 local function nearestInRange(myHRP, distance)
@@ -156,46 +185,67 @@ local function nearestInRange(myHRP, distance)
     return false
 end
 
-local function tickPhysical(ctx, hr, ball, speed, activationRadius)
+local function tickPhysical(snapshot, hr, ball, speed, activationRadius)
     if not (hr and hr.Parent and ball and ball.Parent) then
         Runtime.physDotEma = 0
+        Runtime.lastGate = "physical_context_invalid"
         return false
     end
-    local ok, velocity = pcall(function()
-        return ball.AssemblyLinearVelocity
-    end)
-    if not ok or typeof(velocity) ~= "Vector3" then
+
+    local position = snapshotPosition(snapshot, ball)
+    if not position then
         Runtime.physDotEma = 0
+        Runtime.lastGate = "position_unavailable"
         return false
     end
-    local ballSpeed = velocity.Magnitude
-    if ballSpeed <= 1 then
-        Runtime.physDotEma = 0
-        return false
-    end
-    local offset = hr.Position - ball.Position
+
+    local offset = hr.Position - position
     local distance = offset.Magnitude
     if distance < 0.001 then
         Runtime.physDotEma = 0
+        Runtime.lastGate = "distance_zero"
         return false
     end
-    local dot = velocity:Dot(offset.Unit)
+
+    local velocity = snapshotVelocity(snapshot, ball)
+    local dot
+    if velocity then
+        dot = velocity:Dot(offset.Unit)
+    else
+        dot = tonumber(snapshot and snapshot.approachingSpeed) or 0
+        if dot <= 0 and snapshot and snapshot.targeted == true then
+            -- BallSync pode fornecer velocidade/posição confiáveis enquanto a
+            -- AssemblyLinearVelocity local ainda está zerada. Nesse caso o
+            -- alvo confirmado é a única direção segura disponível.
+            dot = math.max(tonumber(speed) or 0, 1)
+        end
+    end
+
+    local effectiveSpeed = math.max(tonumber(speed) or 0, velocity and velocity.Magnitude or 0)
+    if effectiveSpeed <= 1 or dot <= Tuning.PHYS_THRESH then
+        Runtime.physDotEma = 0
+        Runtime.lastGate = "not_approaching"
+        return false
+    end
+
     if distance <= activationRadius * Tuning.PHYS_RAD_SLACK then
         Runtime.physDotEma = Runtime.physDotEma * (1 - Tuning.PHYS_DOT_EMA) + dot * Tuning.PHYS_DOT_EMA
     else
         Runtime.physDotEma = 0
     end
-    return distance <= activationRadius and Runtime.physDotEma > Tuning.PHYS_THRESH
+    local activated = distance <= activationRadius and Runtime.physDotEma > Tuning.PHYS_THRESH
+    Runtime.lastGate = activated and "physical_or_sync_inbound" or "outside_activation_radius"
+    return activated
 end
 
-local function shouldDeactivate(t, hr, ball, deactivationRadius, isTargeted)
-    if not (hr and ball) then
+local function shouldDeactivate(t, hr, position, deactivationRadius, isTargeted)
+    if not (hr and position) then
         return true
     end
     if not isTargeted then
         return true
     end
-    if not ballInRange(hr, ball, deactivationRadius) then
+    if not ballInRange(hr, position, deactivationRadius) then
         return true
     end
     if not nearestInRange(hr, deactivationRadius) then
@@ -226,17 +276,19 @@ local function evaluateClash(time, snapshot)
     Runtime.deactivationRadius = parryRadius * Tuning.DEACT_RADIUS_MULT
     Runtime.lastSpeed = speed
 
+    local position = snapshotPosition(snapshot, ball)
     local isTargeted = snapshot.targetId == Runtime.localUserId
 
     if Runtime.active then
-        if ballInRange(root, ball, Runtime.deactivationRadius)
+        if ballInRange(root, position, Runtime.deactivationRadius)
             and nearestInRange(root, Runtime.deactivationRadius)
             and isTargeted
         then
             Runtime.lastValidAt = time
         end
 
-        if shouldDeactivate(time, root, ball, Runtime.deactivationRadius, isTargeted) then
+        if shouldDeactivate(time, root, position, Runtime.deactivationRadius, isTargeted) then
+            Runtime.lastGate = "should_deactivate"
             setActive(false, "should_deactivate")
         end
     else
@@ -266,6 +318,7 @@ local function bindCharacter(character)
     Runtime.lostMeAt = 0
     Runtime.physDotEma = 0
     Runtime.lastSpeed = 0
+    Runtime.lastGate = "waiting_for_character"
 
     if not (character and character.Parent) then
         return false
@@ -288,20 +341,24 @@ local function bindCharacter(character)
 
         local ok, err = xpcall(function()
             if not (character.Parent and root.Parent) then
+                Runtime.lastGate = "character_dead"
                 setActive(false, "character_dead")
                 return
             end
 
             if Utils.isManualSpamActive() then
+                Runtime.lastGate = "manual_spam_active"
                 return
             end
 
             if not Utils.isActive() then
+                Runtime.lastGate = "hub_inactive"
                 setActive(false, "hub_inactive")
                 return
             end
 
             if Utils.getConfig().AutoClash ~= true then
+                Runtime.lastGate = "config_disabled"
                 setActive(false, "config_disabled")
                 return
             end
@@ -310,6 +367,7 @@ local function bindCharacter(character)
             local snapshot = GameInfo.getSnapshot(Runtime.lastTarget, time)
 
             if not GameInfo.isSnapshotValid(snapshot, time) then
+                Runtime.lastGate = "snapshot_invalid"
                 setActive(false, "snapshot_invalid")
                 return
             end
@@ -393,6 +451,7 @@ function AutoClash.setup(deps)
     Runtime.lostMeAt = 0
     Runtime.physDotEma = 0
     Runtime.lastSpeed = 0
+    Runtime.lastGate = "none"
 
     return true
 end
@@ -473,6 +532,7 @@ function AutoClash.getStatus()
         lastDeactivatedAt = Runtime.lastDeactivatedAt,
         localUserId = Runtime.localUserId,
         lastTarget = Runtime.lastTarget,
+        lastGate = Runtime.lastGate,
     }
 end
 
