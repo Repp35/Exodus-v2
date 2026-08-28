@@ -59,4 +59,6 @@ function Config.validate(config)
     return true
 end
 
+Config.__contract = { requires = {} }
+
 return Config
