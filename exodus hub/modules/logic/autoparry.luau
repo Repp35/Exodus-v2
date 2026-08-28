@@ -546,7 +546,7 @@ function AutoParry.fire()
 end
 -- exportado como bindCharacter: o character.lua descobre módulos com
 -- `module.bindCharacter` via __contract.bindCharacter. Se for exportado
--- com outro nome, o autoparry nunca é bindado e fica silenciosamente
+-- com outro nome, o autoparry nunca será bindado e fica silenciosamente
 -- inativo (Runtime.bound = false pra sempre). Não renomear.
 function AutoParry.bindCharacter(character)
     return bindCharacter(character)
@@ -571,6 +571,9 @@ function AutoParry.getParryRadius(speed, time)
         Runtime.additionalWindow
     )
     return detectionRadius
+end
+function AutoParry.getPingOneWay()
+    return getPingOneWay(now())
 end
 function AutoParry.getStatus()
     return {
