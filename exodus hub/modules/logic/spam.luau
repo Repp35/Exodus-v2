@@ -1,18 +1,22 @@
--- [[ Spam ]]
+-- [[ spam ]]
 
 local Spam = {}
 
 local Remote
 local Utils
 
+local pcall = pcall
+local math_max = math.max
+local now = os.clock
+
 -- tuning
-local EMA = 0.08
+local MAX_REQUESTS_PER_TICK = 10
 
 -- state
 local heartbeatConnection
 local generation = 0
-local _fps
 local wasActive = false
+local acumulador = 0
 
 local Scheduler = {
     phase = "stopped",
@@ -24,178 +28,83 @@ local Scheduler = {
 local function invalidate(reason)
     generation = generation + 1
     Scheduler.phase = "stopped"
+    acumulador = 0
 
-    if Utils
-        and type(Utils.recordTransition) == "function"
-        and wasActive
-    then
-        Utils.recordTransition(
-            "Spam",
-            "running",
-            "stopped",
-            reason or "invalidated"
-        )
+    if Utils and type(Utils.recordTransition) == "function" and wasActive then
+        Utils.recordTransition("Spam", "running", "stopped", reason or "invalidated")
     end
 end
 
 local function isActive()
-    return Utils.isActive()
-        and Utils.isSpamActive()
+    return Utils.isActive and Utils.isSpamActive and Utils.isActive() and Utils.isSpamActive()
 end
 
 local function requestParry()
-    local ok, result = pcall(
-        Remote.fireParry,
-        1
-    )
+    local ok, result = pcall(Remote.fireParry, 1)
 
-    Scheduler.lastRequestAt = Utils.now()
+    Scheduler.lastRequestAt = Utils.now and Utils.now() or now()
 
-    if not ok then
-        Scheduler.lastError = tostring(result)
-
+    if not ok or result == false then
+        Scheduler.lastError = not ok and tostring(result) or "Remote.fireParry retornou false"
         if type(Utils.recordError) == "function" then
-            Utils.recordError(
-                "Spam",
-                result
-            )
+            Utils.recordError("Spam", Scheduler.lastError)
         end
-
-        return false
-    end
-
-    if result == false then
-        Scheduler.lastError =
-            "Remote.fireParry retornou false"
-
-        if type(Utils.recordError) == "function" then
-            Utils.recordError(
-                "Spam",
-                Scheduler.lastError
-            )
-        end
-
         return false
     end
 
     Scheduler.lastError = nil
-
     return true
 end
 
 -- runtime
 local function tick(dt)
-    local config = Utils.getConfig()
-
-    if type(config) ~= "table" then
-        if type(Utils.recordError) == "function" then
-            Utils.recordError(
-                "Spam",
-                "configuração indisponível"
-            )
-        end
-
+    if typeof(dt) ~= "number" or dt <= 0 or dt ~= dt or dt == math.huge then
         return
     end
 
     if not isActive() then
-        if wasActive then
-            invalidate("spam_disabled")
-        end
-
+        if wasActive then invalidate("spam_disabled") end
         wasActive = false
         return
     end
 
     if not wasActive then
         Scheduler.phase = "running"
-
         if type(Utils.recordTransition) == "function" then
-            Utils.recordTransition(
-                "Spam",
-                "stopped",
-                "running",
-                "spam_enabled"
-            )
+            Utils.recordTransition("Spam", "stopped", "running", "spam_enabled")
         end
     end
-
     wasActive = true
 
-    if type(dt) ~= "number"
-        or dt <= 0
-        or dt ~= dt
-        or dt == math.huge
-        or dt == -math.huge
-    then
-        return
+    local config = Utils.getConfig and Utils.getConfig()
+    local cps = 1
+    if type(config) == "table" then
+        cps = tonumber(config.CPS) or 1
     end
 
-    -- FPS smoothing
-    local fpsNow = 1 / dt
+    -- Cálculo Real de CPS (Clicks Per Second)
+    local intervaloEntreClicks = 1 / math_max(cps, 1)
 
-    _fps =
-        _fps
-        and (
-            _fps
-            + (fpsNow - _fps) * EMA
-        )
-        or fpsNow
+    acumulador = acumulador + dt
 
-    local fps =
-        math.max(
-            _fps or fpsNow,
-            1
-        )
-
-    -- [[ Spam Rate ]]
-    --
-    -- A lógica é baseada no scheduler antigo:
-    --
-    -- FPS >= 60:
-    --     mantém a quantidade configurada por frame.
-    --
-    -- FPS < 60:
-    --     aumenta a quantidade por frame para
-    --     compensar a perda de FPS.
-    --
-    -- Exemplo com CPS = 1:
-    --
-    -- 60 FPS -> 1 click/frame
-    -- 30 FPS -> 2 clicks/frame
-    -- 20 FPS -> 3 clicks/frame
-    --
-    -- Em FPS acima de 60, não reduz a quantidade.
-    local rate =
-        math.max(
-            tonumber(config.CPS) or 1,
-            1
-        )
-
-    local clicks =
-        rate
-        * math.max(60, fps)
-        / fps
-
-    local wholeClicks =
-        math.floor(clicks)
-
-    if wholeClicks <= 0 then
-        return
+    -- Trava ampla de acumulador para evitar picos pós-freeze
+    if acumulador > 0.1 then
+        acumulador = 0.1
     end
 
     local currentGeneration = generation
+    local requests = 0
 
-    -- Mantém todos os disparos deste tick
-    -- pertencendo à mesma geração.
-    for index = 1, wholeClicks do
-        if currentGeneration ~= generation
-            or not isActive()
-        then
+    -- Execução com limite de disparos por tick
+    while acumulador >= intervaloEntreClicks and requests < MAX_REQUESTS_PER_TICK do
+        if currentGeneration ~= generation or not isActive() then
             return
         end
 
-        requestParry()
+        requests = requests + 1
+        task.spawn(requestParry)
+
+        acumulador = acumulador - intervaloEntreClicks
     end
 end
 
@@ -205,31 +114,15 @@ function Spam.setup(deps)
         or type(deps.Remote) ~= "table"
         or type(deps.Remote.fireParry) ~= "function"
         or type(deps.Utils) ~= "table"
-        or type(deps.Utils.isActive) ~= "function"
-        or type(deps.Utils.apiVersion) ~= "function"
-        or type(deps.Utils.isSpamActive) ~= "function"
-        or type(deps.Utils.getConfig) ~= "function"
-        or type(deps.Utils.getRunService) ~= "function"
-        or type(deps.Utils.now) ~= "function"
-        or type(deps.Utils.recordTransition) ~= "function"
-        or type(deps.Utils.recordError) ~= "function"
-        or type(deps.Utils.trackGlobal) ~= "function"
-        or type(deps.Utils.untrackGlobal) ~= "function"
     then
         return false
     end
 
     if heartbeatConnection then
-        pcall(
-            heartbeatConnection.Disconnect,
-            heartbeatConnection
-        )
-
-        pcall(
-            deps.Utils.untrackGlobal,
-            heartbeatConnection
-        )
-
+        pcall(heartbeatConnection.Disconnect, heartbeatConnection)
+        if type(deps.Utils.untrackGlobal) == "function" then
+            pcall(deps.Utils.untrackGlobal, heartbeatConnection)
+        end
         heartbeatConnection = nil
     end
 
@@ -238,14 +131,14 @@ function Spam.setup(deps)
 
     Spam.resetState()
 
-    heartbeatConnection =
-        Utils.getRunService()
-        .Heartbeat
-        :Connect(tick)
+    local RunService = Utils.getRunService and Utils.getRunService() or game:GetService("RunService")
+    
+    local signal = RunService.RenderStepped or RunService.Heartbeat
+    heartbeatConnection = signal:Connect(tick)
 
-    Utils.trackGlobal(
-        heartbeatConnection
-    )
+    if type(Utils.trackGlobal) == "function" then
+        Utils.trackGlobal(heartbeatConnection)
+    end
 
     return true
 end
@@ -253,10 +146,8 @@ end
 -- lifecycle
 function Spam.resetState()
     invalidate("reset")
-
-    _fps = nil
     wasActive = false
-
+    acumulador = 0
     Scheduler.phase = "stopped"
     Scheduler.lastRequestAt = 0
     Scheduler.lastError = nil
@@ -264,21 +155,10 @@ end
 
 function Spam.getStatus()
     return {
-        schema = Utils.apiVersion(),
-
-        phase =
-            Scheduler.phase == "running"
-            and "running"
-            or "stopped",
-
-        lastRequestAt =
-            Scheduler.lastRequestAt,
-
-        lastError =
-            Scheduler.lastError,
-
-        fps =
-            _fps,
+        schema = Utils.apiVersion and Utils.apiVersion() or 1,
+        phase = Scheduler.phase == "running" and "running" or "stopped",
+        lastRequestAt = Scheduler.lastRequestAt,
+        lastError = Scheduler.lastError,
     }
 end
 
