@@ -131,7 +131,7 @@ function Character.setup(deps)
         or type(deps.Spam.resetState) ~= "function"
         or type(deps.characterBinds) ~= "table"
     then
-        return false
+        return false, "dependência ausente: Utils, Spam ou characterBinds"
     end
     Utils = deps.Utils
     Spam = deps.Spam
@@ -140,7 +140,7 @@ function Character.setup(deps)
     if not player then
         Utils.recordError("Character", "LocalPlayer indisponível")
         setPhase("invalid", "player_unavailable")
-        return false
+        return false, "Players.LocalPlayer indisponível"
     end
     if characterAddedConnection then
         Utils.untrackGlobal(characterAddedConnection)
