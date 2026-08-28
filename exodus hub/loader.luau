@@ -391,15 +391,28 @@ local function collectCharacterBinds(loaded)
     for name, module in pairs(loaded) do
         if name ~= "utils" and type(module) == "table" then
             local contract = contractOf(module)
-            if contract.bindCharacter == true
-                and type(module.bindCharacter) == "function"
-                and type(module.detachCharacter) == "function"
-            then
+            local hasBindFlag = contract.bindCharacter == true
+            local hasBindFn = type(module.bindCharacter) == "function"
+            local hasDetachFn = type(module.detachCharacter) == "function"
+            if hasBindFlag and hasBindFn and hasDetachFn then
                 binds[#binds + 1] = {
                     name = name,
                     bind = module.bindCharacter,
                     detach = module.detachCharacter,
                 }
+            elseif hasBindFlag and not hasBindFn then
+                -- Diagn贸stico: o m贸dulo declara que quer bind de personagem
+                -- mas n茫o exporta a fun莽茫o com o nome certo. Sem isso o
+                -- m贸dulo fica silenciosamente inativo (nunca 茅 chamado no
+                -- spawn do character). Logado como erro pra aparecer nos
+                -- diagnostics em _G.Exodus.Diagnostics.
+                if type(loaded.utils) == "table" and type(loaded.utils.recordError) == "function" then
+                    loaded.utils.recordError(
+                        "Loader",
+                        ("%s declara bindCharacter no contrato mas n茫o exporta m贸dulo.bindCharacter(): o m贸dulo nunca ser谩 vinculado ao personagem")
+                            :format(name)
+                    )
+                end
             end
         end
     end
