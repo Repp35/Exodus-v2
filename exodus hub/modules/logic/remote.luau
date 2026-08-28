@@ -16,6 +16,7 @@ local remoteState = "uninitialized"
 local HttpService = game:GetService("HttpService")
 local STORAGE_SCHEMA = 1
 local STORAGE_FILE = "deflect_remotes.json"
+local MAX_CAPTURED_REMOTES = 128
 
 local Storage = {
     initialized = false,
@@ -180,7 +181,9 @@ local function initializeStorage()
                 reportStorageError(Storage.path .. " possui JSON inválido ou schema incompatível")
                 return false
             end
-            for _, capture in ipairs(document.captures) do
+            local firstCapture = math.max(1, #document.captures - MAX_CAPTURED_REMOTES + 1)
+            for index = firstCapture, #document.captures do
+                local capture = document.captures[index]
                 if type(capture) == "table" then
                     Storage.captures[#Storage.captures + 1] = capture
                 end
@@ -233,6 +236,9 @@ local function captureRemote(remote)
                     payloadFlags = { 1, 2 },
                 },
             }
+            if #Storage.captures >= MAX_CAPTURED_REMOTES then
+                table.remove(Storage.captures, 1)
+            end
             Storage.captures[#Storage.captures + 1] = capture
             queueStorageWrite()
         end)
@@ -404,7 +410,7 @@ local function installHooks()
             if not checkcaller() and (key == "FireServer" or key == "fireServer") and typeof(self) == "Instance" and self.ClassName == "RemoteEvent" then
                 if self.Name == "RemoteEvent" or (self.Parent and string.find(self.Parent.Name, "Remote")) then
                     if type(HookState.register) == "function" then
-                        task.spawn(HookState.register, self)
+                        HookState.register(self)
                     end
                 end
             end
