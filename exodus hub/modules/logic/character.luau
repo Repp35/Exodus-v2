@@ -2,8 +2,8 @@
 
 local Character = {}
 local Utils
-local AutoParry
 local Spam
+local characterBinds = {}
 
 -- state
 local generation = 0
@@ -21,16 +21,27 @@ local function setPhase(nextPhase, reason)
         Utils.recordTransition("Character", previous, nextPhase, reason)
     end
 end
+
+local function detachAllBinds()
+    for index = #characterBinds, 1, -1 do
+        pcall(characterBinds[index].detach)
+    end
+end
+
 local function resetModules()
-    pcall(AutoParry.detachCharacter)
-    pcall(Spam.resetState)
+    detachAllBinds()
+    if Spam and type(Spam.resetState) == "function" then
+        pcall(Spam.resetState)
+    end
     Utils.setManualSpamActive(false)
     Utils.setAutoSpamActive(false)
 end
+
 local function disconnectCharacterRuntime()
     Utils.disconnectCharacterConnections()
     resetModules()
 end
+
 local function bind(character, currentGeneration)
     setPhase("binding", "character_bind_start")
     if currentGeneration ~= generation then
@@ -48,18 +59,22 @@ local function bind(character, currentGeneration)
         setPhase("invalid", "root_unavailable")
         return
     end
-    local parryOk, parryBound = pcall(AutoParry.bindParry, character)
-    if not parryOk or parryBound ~= true then
-        local message = "AutoParry não vinculou o personagem: " .. tostring(parryBound)
-        Utils.warn(message)
-        if type(Utils.recordError) == "function" then
-            Utils.recordError("Character", message)
+    for _, entry in ipairs(characterBinds) do
+        local ok, result = pcall(entry.bind, character)
+        if not ok or result ~= true then
+            local message = ("%s não vinculou o personagem: %s")
+                :format(entry.name, tostring(result))
+            Utils.warn(message)
+            if type(Utils.recordError) == "function" then
+                Utils.recordError("Character", message)
+            end
+            setPhase("invalid", "bind_failed")
+            return
         end
-        setPhase("invalid", "parry_bind_failed")
-        return
     end
     setPhase("bound", "character_bound")
 end
+
 local function setupCharacter(character)
     if not character then
         return
@@ -112,17 +127,15 @@ function Character.setup(deps)
         or type(deps.Utils.warn) ~= "function"
         or type(deps.Utils.recordTransition) ~= "function"
         or type(deps.Utils.recordError) ~= "function"
-        or type(deps.AutoParry) ~= "table"
-        or type(deps.AutoParry.bindParry) ~= "function"
-        or type(deps.AutoParry.detachCharacter) ~= "function"
         or type(deps.Spam) ~= "table"
         or type(deps.Spam.resetState) ~= "function"
+        or type(deps.characterBinds) ~= "table"
     then
         return false
     end
     Utils = deps.Utils
-    AutoParry = deps.AutoParry
     Spam = deps.Spam
+    characterBinds = deps.characterBinds
     local player = Utils.getLocalPlayer()
     if not player then
         Utils.recordError("Character", "LocalPlayer indisponível")
@@ -142,5 +155,12 @@ function Character.setup(deps)
     end
     return true
 end
+
+Character.__contract = {
+    requires = {
+        Spam = "spam",
+        Utils = "utils",
+    },
+}
 
 return Character
