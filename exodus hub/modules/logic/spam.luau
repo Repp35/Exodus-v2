@@ -9,9 +9,6 @@ local pcall = pcall
 local math_max = math.max
 local now = os.clock
 
--- tuning
-local MAX_REQUESTS_PER_TICK = 10
-
 -- state
 local heartbeatConnection
 local generation = 0
@@ -82,26 +79,17 @@ local function tick(dt)
         cps = tonumber(config.CPS) or 1
     end
 
-    -- Cálculo Real de CPS (Clicks Per Second)
     local intervaloEntreClicks = 1 / math_max(cps, 1)
 
     acumulador = acumulador + dt
 
-    -- Trava ampla de acumulador para evitar picos pós-freeze
-    if acumulador > 0.1 then
-        acumulador = 0.1
-    end
-
     local currentGeneration = generation
-    local requests = 0
 
-    -- Execução com limite de disparos por tick
-    while acumulador >= intervaloEntreClicks and requests < MAX_REQUESTS_PER_TICK do
+    while acumulador >= intervaloEntreClicks do
         if currentGeneration ~= generation or not isActive() then
             return
         end
 
-        requests = requests + 1
         task.spawn(requestParry)
 
         acumulador = acumulador - intervaloEntreClicks
