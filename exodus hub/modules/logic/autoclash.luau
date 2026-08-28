@@ -214,76 +214,6 @@ local function resetDetector()
     Runtime.detWasComing = false
 end
 
-local function ballInRange(hr, position, distance)
-    if not (hr and position) then
-        return false
-    end
-    if typeof(position) ~= "Vector3"
-        or type(distance) ~= "number"
-        or distance <= 0
-    then
-        return false
-    end
-    local ok, currentDistance = pcall(function()
-        return (hr.Position - position).Magnitude
-    end)
-    return ok
-        and typeof(currentDistance) == "number"
-        and currentDistance <= distance
-end
-
-local function snapshotPosition(snapshot, ball)
-    if type(snapshot) == "table"
-        and typeof(snapshot.position) == "Vector3"
-    then
-        return snapshot.position
-    end
-    local ok, position = pcall(function()
-        return ball and ball.Position
-    end)
-    return ok
-        and typeof(position) == "Vector3"
-        and position
-        or nil
-end
-
-local function nearestInRange(myHRP, distance)
-    if not (
-        myHRP
-        and type(distance) == "number"
-        and distance > 0
-    ) then
-        return false
-    end
-    local localPlayer = Utils.getLocalPlayer()
-    for _, player in ipairs(
-        game:GetService("Players"):GetPlayers()
-    ) do
-        if player ~= localPlayer then
-            local character = player.Character
-            local hrp = character
-                and character:FindFirstChild(
-                    "HumanoidRootPart"
-                )
-            if hrp then
-                local ok, currentDistance = pcall(function()
-                    return (
-                        myHRP.Position
-                            - hrp.Position
-                    ).Magnitude
-                end)
-                if ok
-                    and typeof(currentDistance) == "number"
-                    and currentDistance <= distance
-                then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
 -- return detector
 local function tickReturnDetector(
     t,
@@ -501,11 +431,6 @@ local function evaluateClash(time, snapshot)
     Runtime.deactivationRadius =
         parryRadius
             * Tuning.DEACT_RADIUS_MULT
-    local position =
-        snapshotPosition(
-            snapshot,
-            ball
-        )
     if Runtime.active then
         if shouldDeactivate(time) then
             setActive(
