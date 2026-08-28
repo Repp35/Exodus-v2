@@ -379,13 +379,14 @@ local function bindCharacter(character)
             return
         end
         local ball = snapshot.ball
+        local deflectCooldown = GameInfo.getDeflectCD()
         if ParryState.armed then
             local sameBall = ball == ParryState.armedBall
             local validBall = ball and ball.Parent and sameBall
             if not (validBall and snapshot.targeted == true) then
                 clearArmedState()
                 setPhase("waiting", "armed_context_invalid")
-            elseif GameInfo.getDeflectCD() > 0 then
+            elseif deflectCooldown > 0 then
                 setPhase("cooldown", "deflect_cooldown")
                 return
             else
@@ -440,7 +441,7 @@ local function bindCharacter(character)
             setPhase("waiting", "outside_early_window")
             return
         end
-        if GameInfo.getDeflectCD() > 0 then
+        if deflectCooldown > 0 then
             ParryState.armed = true
             ParryState.armedBall = ball
             ParryState.armedAt = timeNow
