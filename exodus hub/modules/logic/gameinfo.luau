@@ -402,4 +402,9 @@ function GameInfo.getDeflectCD()
     return getDeflectCooldown()
 end
 
+GameInfo.__contract = {
+    requires = { Utils = "utils" },
+    ballSync = true,  -- expõe applySync pro pipeline
+}
+
 return GameInfo
