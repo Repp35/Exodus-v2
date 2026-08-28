@@ -8,16 +8,10 @@ local Utils
 -- tuning
 local Tuning = {
     RED_HOLD = 0.210,
-    SPAM_INTERVAL = 0.05,
     TARGET_RETURN_MAX_LO = 0.230,
     TARGET_RETURN_MIN_HI = 0.140,
     TARGET_RETURN_SPD_LO = 60,
     TARGET_RETURN_SPD_HI = 200,
-    PHYS_SPD_REF = 120,
-    PHYS_DOT_EMA = 0.25,
-    PHYS_THRESH = 0.14,
-    PHYS_RAD_SLACK = 1.22,
-    ACT_RADIUS_MULT = 1.33,
     DEACT_RADIUS_MULT = 1.08,
 }
 
@@ -30,19 +24,15 @@ local Runtime = {
     lastActivatedAt = 0,
     lastDeactivatedAt = 0,
     parryRadius = 0,
-    activationRadius = 0,
     deactivationRadius = 0,
     connections = {},
     lastTarget = -1,
     localUserId = nil,
     boundRoot = nil,
-    -- Variáveis de estado do script 2
-    lastValidAt = 0,
     lastTargetAt = 0,
     lastTargetId = nil,
     wasMeTarget = false,
     lostMeAt = 0,
-    physDotEma = 0,
     lastSpeed = 0,
     lastGate = "none",
 }
@@ -92,7 +82,6 @@ local function setActive(nextActive, reason)
     local time = Utils.now()
     if nextActive then
         Runtime.lastActivatedAt = time
-        Runtime.lastValidAt = time
         local ok, err = pcall(Utils.setAutoSpamActive, true)
         if not ok then
             pcall(Utils.recordError, "AutoClash", "Utils.setAutoSpamActive(true): " .. tostring(err))
@@ -122,30 +111,6 @@ local function getTargetReturnWindow(speed)
         + (Tuning.TARGET_RETURN_MIN_HI - Tuning.TARGET_RETURN_MAX_LO) * alpha
 end
 
-local function triggerClash(reason)
-    if not Utils or not Utils.getConfig
-        or Utils.getConfig().AutoClash ~= true
-        or not Runtime.bound
-    then
-        Runtime.lastGate = "clash_disabled_or_unbound"
-        return
-    end
-    if Runtime.active then
-        Runtime.lastGate = "clash_already_active"
-        return
-    end
-
-    local generation = Runtime.generation
-    Runtime.lastGate = "target_return"
-    setActive(true, reason or "target_return")
-
-    task.delay(Tuning.SPAM_INTERVAL, function()
-        if generation == Runtime.generation then
-            setActive(false, "clash_window_end")
-        end
-    end)
-end
-
 local function ballInRange(hr, position, distance)
     if not (hr and position) then
         return false
@@ -172,21 +137,6 @@ local function snapshotPosition(snapshot, ball)
     return ok and typeof(position) == "Vector3" and position or nil
 end
 
-local function snapshotVelocity(snapshot, ball)
-    if type(snapshot) == "table" and typeof(snapshot.velocity) == "Vector3"
-        and snapshot.velocity.Magnitude > 1
-    then
-        return snapshot.velocity
-    end
-    local ok, velocity = pcall(function()
-        return ball and ball.AssemblyLinearVelocity
-    end)
-    if ok and typeof(velocity) == "Vector3" and velocity.Magnitude > 1 then
-        return velocity
-    end
-    return nil
-end
-
 local function nearestInRange(myHRP, distance)
     if not (myHRP and type(distance) == "number" and distance > 0) then
         return false
@@ -209,109 +159,104 @@ local function nearestInRange(myHRP, distance)
     return false
 end
 
-local function tickPhysical(snapshot, hr, ball, speed, activationRadius)
-    if not (hr and hr.Parent and ball and ball.Parent) then
-        Runtime.physDotEma = 0
-        Runtime.lastGate = "physical_context_invalid"
+local function shouldActivate(t, snapshot)
+    if type(snapshot) ~= "table" then
+        Runtime.lastGate = "snapshot_invalid"
         return false
     end
 
-    local position = snapshotPosition(snapshot, ball)
-    if not position then
-        Runtime.physDotEma = 0
-        Runtime.lastGate = "position_unavailable"
+    local targetId = snapshot.targetId
+
+    if type(targetId) ~= "number" or not Runtime.localUserId then
+        Runtime.lastGate = "target_unavailable"
         return false
     end
 
-    local offset = hr.Position - position
-    local distance = offset.Magnitude
-    if distance < 0.001 then
-        Runtime.physDotEma = 0
-        Runtime.lastGate = "distance_zero"
+    if targetId ~= Runtime.localUserId then
+        Runtime.lastGate = "target_not_me"
         return false
     end
 
-    local velocity = snapshotVelocity(snapshot, ball)
-    local dot
-    if velocity then
-        dot = velocity:Dot(offset.Unit)
-    else
-        dot = tonumber(snapshot and snapshot.approachingSpeed) or 0
-        if dot <= 0 and snapshot and snapshot.targeted == true then
-            -- BallSync pode fornecer velocidade/posição confiáveis enquanto a
-            -- AssemblyLinearVelocity local ainda está zerada. Nesse caso o
-            -- alvo confirmado é a única direção segura disponível.
-            dot = math.max(tonumber(speed) or 0, 1)
-        end
-    end
-
-    local effectiveSpeed = math.max(tonumber(speed) or 0, velocity and velocity.Magnitude or 0)
-    if effectiveSpeed <= 1 or dot <= Tuning.PHYS_THRESH then
-        Runtime.physDotEma = 0
-        Runtime.lastGate = "not_approaching"
+    if Runtime.lostMeAt <= 0 then
+        Runtime.lastGate = "target_return_not_detected"
         return false
     end
 
-    if distance <= activationRadius * Tuning.PHYS_RAD_SLACK then
-        Runtime.physDotEma = Runtime.physDotEma * (1 - Tuning.PHYS_DOT_EMA) + dot * Tuning.PHYS_DOT_EMA
-    else
-        Runtime.physDotEma = 0
+    local elapsed = t - Runtime.lostMeAt
+    local window = getTargetReturnWindow(Runtime.lastSpeed)
+
+    if elapsed < 0 or elapsed > window then
+        Runtime.lastGate = "target_return_expired"
+        return false
     end
-    local activated = distance <= activationRadius and Runtime.physDotEma > Tuning.PHYS_THRESH
-    Runtime.lastGate = activated and "physical_or_sync_inbound" or "outside_activation_radius"
-    return activated
+
+    Runtime.lastGate = "target_return"
+    return true
 end
 
 local function shouldDeactivate(t, hr, position, deactivationRadius, isTargeted)
     if not (hr and position) then
+        Runtime.lastGate = "deactivation_context_invalid"
         return true
     end
     if not isTargeted then
+        Runtime.lastGate = "target_lost"
         return true
     end
     if not ballInRange(hr, position, deactivationRadius) then
+        Runtime.lastGate = "outside_deactivation_radius"
         return true
     end
     if not nearestInRange(hr, deactivationRadius) then
+        Runtime.lastGate = "no_nearby_target"
         return true
     end
-    local lastValid = Runtime.lastValidAt or Runtime.lastActivatedAt or 0
-    return (t - lastValid) >= Tuning.RED_HOLD
+    local lastValid = Runtime.lastActivatedAt or 0
+    if (t - lastValid) >= Tuning.RED_HOLD then
+        Runtime.lastGate = "red_hold_expired"
+        return true
+    end
+    Runtime.lastGate = "deactivation_hold"
+    return false
 end
 
 -- main evaluation (com os gates do script 2)
 local function evaluateClash(time, snapshot)
     local root = Runtime.boundRoot
     if not (root and root.Parent) then
-        setActive(false, "character_dead")
+        Runtime.lastGate = "character_dead"
         return
     end
 
     local ball = snapshot.ball
-    if not (ball and ball.Parent) then
-        setActive(false, "ball_gone")
-        return
-    end
-
+    local position = snapshotPosition(snapshot, ball)
     local speed = tonumber(snapshot.speed) or 0
-    local parryRadius = getParryRadius(speed, time)
-    Runtime.parryRadius = parryRadius
-    Runtime.activationRadius = parryRadius * Tuning.ACT_RADIUS_MULT
-    Runtime.deactivationRadius = parryRadius * Tuning.DEACT_RADIUS_MULT
+
     Runtime.lastSpeed = speed
 
-    local position = snapshotPosition(snapshot, ball)
+    local parryRadius = getParryRadius(speed, time)
+    Runtime.parryRadius = parryRadius
+    Runtime.deactivationRadius = parryRadius * Tuning.DEACT_RADIUS_MULT
+
     local isTargeted = snapshot.targeted == true
 
     if Runtime.active then
-        Runtime.lastValidAt = time
+        if shouldDeactivate(
+            time,
+            root,
+            position,
+            Runtime.deactivationRadius,
+            isTargeted
+        ) then
+            setActive(false, "should_deactivate")
+        end
         return
     end
 
-    -- A ativação não é física nem baseada em proximidade. O clash é
-    -- disparado exclusivamente por onBallSync quando o alvo retorna ao
-    -- jogador dentro da janela temporal calculada.
-    Runtime.lastGate = isTargeted and "awaiting_target_return" or "target_not_returned"
+    if shouldActivate(time, snapshot) then
+        setActive(true, "should_activate")
+        Runtime.lostMeAt = 0
+    end
 end
 
 -- character runtime
@@ -324,15 +269,12 @@ local function bindCharacter(character)
     disconnectConnections()
 
     Runtime.parryRadius = 0
-    Runtime.activationRadius = 0
     Runtime.deactivationRadius = 0
     Runtime.boundRoot = nil
-    Runtime.lastValidAt = 0
     Runtime.lastTargetAt = 0
     Runtime.lastTargetId = nil
     Runtime.wasMeTarget = false
     Runtime.lostMeAt = 0
-    Runtime.physDotEma = 0
     Runtime.lastSpeed = 0
     Runtime.lastGate = "waiting_for_character"
 
@@ -358,7 +300,6 @@ local function bindCharacter(character)
         local ok, err = xpcall(function()
             if not (character.Parent and root.Parent) then
                 Runtime.lastGate = "character_dead"
-                setActive(false, "character_dead")
                 return
             end
 
@@ -369,13 +310,17 @@ local function bindCharacter(character)
 
             if not Utils.isActive() then
                 Runtime.lastGate = "hub_inactive"
-                setActive(false, "hub_inactive")
+                if Runtime.active then
+                    setActive(false, "hub_inactive")
+                end
                 return
             end
 
             if Utils.getConfig().AutoClash ~= true then
                 Runtime.lastGate = "config_disabled"
-                setActive(false, "config_disabled")
+                if Runtime.active then
+                    setActive(false, "hub_disabled")
+                end
                 return
             end
 
@@ -384,7 +329,6 @@ local function bindCharacter(character)
 
             if not GameInfo.isSnapshotValid(snapshot, time) then
                 Runtime.lastGate = "snapshot_invalid"
-                setActive(false, "snapshot_invalid")
                 return
             end
 
@@ -406,7 +350,9 @@ local function bindCharacter(character)
     local ancestryConnection = character.AncestryChanged:Connect(function(_, parent)
         if not parent then
             Runtime.generation = Runtime.generation + 1
-            setActive(false, "character_removed")
+            Runtime.bound = false
+            Runtime.boundRoot = nil
+            disconnectConnections()
         end
     end)
 
@@ -455,17 +401,14 @@ function AutoClash.setup(deps)
     Runtime.lastActivatedAt = 0
     Runtime.lastDeactivatedAt = 0
     Runtime.parryRadius = 0
-    Runtime.activationRadius = 0
     Runtime.deactivationRadius = 0
     Runtime.connections = {}
     Runtime.lastTarget = -1
     Runtime.boundRoot = nil
-    Runtime.lastValidAt = 0
     Runtime.lastTargetAt = 0
     Runtime.lastTargetId = nil
     Runtime.wasMeTarget = false
     Runtime.lostMeAt = 0
-    Runtime.physDotEma = 0
     Runtime.lastSpeed = 0
     Runtime.lastGate = "none"
 
@@ -481,7 +424,10 @@ function AutoClash.detachCharacter()
     Runtime.bound = false
     Runtime.boundRoot = nil
     disconnectConnections()
-    setActive(false, "detach")
+
+    if Runtime.active then
+        setActive(false, "detach")
+    end
 end
 
 function AutoClash.teardown()
@@ -489,7 +435,11 @@ function AutoClash.teardown()
     Runtime.bound = false
     Runtime.boundRoot = nil
     disconnectConnections()
-    setActive(false, "teardown")
+
+    if Runtime.active then
+        setActive(false, "teardown")
+    end
+
     AutoParry = nil
     GameInfo = nil
     Utils = nil
@@ -518,14 +468,9 @@ function AutoClash.onBallSync(data)
 
     if type(Runtime.lastTargetId) == "number" and Runtime.localUserId then
         local isMe = Runtime.lastTargetId == Runtime.localUserId
+
         if isMe then
-            local returnedInWindow = Runtime.lostMeAt > 0
-                and (t - Runtime.lostMeAt) <= getTargetReturnWindow(Runtime.lastSpeed)
-            if returnedInWindow then
-                triggerClash("target_return")
-            end
             Runtime.wasMeTarget = true
-            Runtime.lostMeAt = 0
         else
             if Runtime.wasMeTarget then
                 Runtime.lostMeAt = t
@@ -546,7 +491,6 @@ function AutoClash.getStatus()
         bound = Runtime.bound == true,
         active = Runtime.active == true,
         parryRadius = Runtime.parryRadius,
-        activationRadius = Runtime.activationRadius,
         deactivationRadius = Runtime.deactivationRadius,
         lastActivatedAt = Runtime.lastActivatedAt,
         lastDeactivatedAt = Runtime.lastDeactivatedAt,
