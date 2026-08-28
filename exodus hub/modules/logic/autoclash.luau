@@ -8,10 +8,9 @@ local Utils
 -- tuning
 local Tuning = {
     ACT_RAD_FACTOR = 1.40,
-    TARGET_RETURN_MAX_LO = 0.170,
-    TARGET_RETURN_MIN_HI = 0.090,
-    DET_RETURN_MAX_LO = 0.200,
-    DET_RETURN_MIN_HI = 0.090,
+    TARGET_RETURN_MAX_LO = 0.110,
+    TARGET_RETURN_MIN_HI = 0.060,
+    DET_RETURN_FACTOR = 2.0,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
     DET_RAD_MIN = 10,
@@ -180,11 +179,8 @@ local function getTargetReturnWindow(speed)
 end
 
 local function getDetectorReturnWindow(speed)
-    return lerpBySpeed(
-        speed,
-        Tuning.DET_RETURN_MAX_LO,
-        Tuning.DET_RETURN_MIN_HI
-    )
+    return getTargetReturnWindow(speed)
+        * Tuning.DET_RETURN_FACTOR
 end
 
 local function getDeactivationWindow(speed)
