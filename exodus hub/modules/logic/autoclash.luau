@@ -8,8 +8,8 @@ local Utils
 -- tuning
 local Tuning = {
     ACT_RAD_FACTOR = 1.40,
-    TARGET_RETURN_MAX_LO = 0.149,
-    TARGET_RETURN_MIN_HI = 0.081,
+    TARGET_RETURN_MAX_LO = 0.170,
+    TARGET_RETURN_MIN_HI = 0.090,
     PING_COMPENSATION_FACTOR = 0.3,
     DET_RETURN_FACTOR = 2.0,
     RETURN_SPD_LO = 60,
@@ -20,8 +20,9 @@ local Tuning = {
     DET_DOT_EMA = 0.35,
     DET_DOT_THRESHOLD = 0.14,
     DET_TIMEOUT = 0.8,
-    DEACT_WINDOW_FACTOR = 2.2,
+    DEACT_WINDOW_FACTOR = 1.8,
     DEACT_GUARD_TIME = 0.080,
+    PROXIMITY_GATE_FACTOR = 0.60,
 }
 
 -- state
@@ -190,6 +191,34 @@ local function getDeactivationWindow(speed)
         * Tuning.DEACT_WINDOW_FACTOR
 end
 
+local function checkProximityGate(snapshot)
+    if snapshot.targeted ~= true then
+        return false
+    end
+    local position = snapshot.position
+    local root = Runtime.boundRoot
+    if not (
+        position
+        and root
+        and root.Parent
+    ) then
+        return false
+    end
+    local ok, rootPos = pcall(function()
+        return root.Position
+    end)
+    if not ok
+        or typeof(rootPos) ~= "Vector3"
+    then
+        return false
+    end
+    local distance =
+        (rootPos - position).Magnitude
+    return distance
+        <= Runtime.parryRadius
+            * Tuning.PROXIMITY_GATE_FACTOR
+end
+
 local function getDetectorRadius(speed)
     local alpha = math.clamp(
         (speed - Tuning.RETURN_SPD_LO)
@@ -331,6 +360,10 @@ end
 
 -- activation
 local function shouldActivate(t, snapshot)
+    if checkProximityGate(snapshot) then
+        Runtime.lastGate = "proximity"
+        return true
+    end
     if type(snapshot) ~= "table" then
         Runtime.lastGate = "snapshot_invalid"
         return false
