@@ -21,7 +21,7 @@ local Tuning = {
     DET_DOT_THRESHOLD = 0.14,
     DET_TIMEOUT = 0.8,
     DEACT_WINDOW_FACTOR = 2.2,      -- fallback (lostMeAt)
-    DEACT_PHYSICAL_FACTOR = 3.0,    -- gate físico
+    DEACT_PHYSICAL_FACTOR = 2.5,    -- gate físico
     DEACT_GUARD_TIME = 0.080,
     PROXIMITY_GATE_FACTOR = 0.60,
     MIN_EVAL_INTERVAL = 1 / 120,
@@ -433,71 +433,61 @@ end
 
 -- deactivation
 local function shouldDeactivate(t, snapshot)
-    -- fallback: sem bola válida, usa lostMeAt original
     local ball = snapshot and snapshot.ball
     local position = snapshot and snapshot.position
     local root = Runtime.boundRoot
-    if not (
-        ball and ball.Parent
-        and position
-        and root and root.Parent
-    ) then
-        if Runtime.lostMeAt <= 0 then
-            return false
+    if not (root and root.Parent) then
+        return false
+    end
+
+    -- gate físico
+    local physicalFired = false
+    if ball and ball.Parent and position then
+        local ok, rootPos = pcall(function()
+            return root.Position
+        end)
+        if ok and typeof(rootPos) == "Vector3" then
+            local distance =
+                (rootPos - position).Magnitude
+            local inRadius =
+                distance <= Runtime.parryRadius
+            local approaching =
+                type(snapshot.approachingSpeed) == "number"
+                and snapshot.approachingSpeed > 0
+            if inRadius or approaching then
+                Runtime.deactOutAt = 0
+            else
+                if Runtime.deactOutAt <= 0 then
+                    Runtime.deactOutAt = t
+                end
+                local elapsed = t - Runtime.deactOutAt
+                physicalFired = elapsed
+                    > getTargetReturnWindow(Runtime.lastSpeed)
+                        * Tuning.DEACT_PHYSICAL_FACTOR
+            end
         end
-        if Runtime.lostMeAt
-            <= Runtime.lastActivatedAt
-        then
-            return false
-        end
+    end
+
+    -- fallback (lostMeAt)
+    local fallbackFired = false
+    if Runtime.lostMeAt > 0
+        and Runtime.lostMeAt > Runtime.lastActivatedAt
+    then
         local sinceActivation =
             t - Runtime.lastActivatedAt
-        if sinceActivation
-            < Tuning.DEACT_GUARD_TIME
-        then
-            return false
+        if sinceActivation >= Tuning.DEACT_GUARD_TIME then
+            local pingCompensation =
+                AutoParry.getPingOneWay()
+                    * Tuning.PING_COMPENSATION_FACTOR
+            local sinceLeft =
+                t - Runtime.lostMeAt
+                    + pingCompensation
+            fallbackFired = sinceLeft
+                > getDeactivationWindow(Runtime.lastSpeed)
         end
-        local pingCompensation =
-            AutoParry.getPingOneWay()
-                * Tuning.PING_COMPENSATION_FACTOR
-        local sinceLeft =
-            t - Runtime.lostMeAt
-                + pingCompensation
-        return sinceLeft
-            > getDeactivationWindow(
-                Runtime.lastSpeed
-            )
     end
-    -- gate físico: fora do raio E dot negativo
-    local ok, rootPos = pcall(function()
-        return root.Position
-    end)
-    if not ok
-        or typeof(rootPos) ~= "Vector3"
-    then
-        Runtime.deactOutAt = 0
-        return false
-    end
-    local distance =
-        (rootPos - position).Magnitude
-    local inRadius =
-        distance <= Runtime.parryRadius
-    local approaching =
-        type(snapshot.approachingSpeed) == "number"
-        and snapshot.approachingSpeed > 0
-    if inRadius or approaching then
-        -- bola dentro do raio ou vindo: reseta contador
-        Runtime.deactOutAt = 0
-        return false
-    end
-    -- bola fora e indo embora: incrementa contador
-    if Runtime.deactOutAt <= 0 then
-        Runtime.deactOutAt = t
-    end
-    local elapsed = t - Runtime.deactOutAt
-    return elapsed
-        > getTargetReturnWindow(Runtime.lastSpeed)
-            * Tuning.DEACT_PHYSICAL_FACTOR
+
+    return physicalFired or fallbackFired
 end
 
 -- main evaluation (com os gates do script 2 adaptados)
