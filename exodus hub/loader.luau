@@ -17,7 +17,6 @@ local function bootstrapPrint(message)
     end
 end
 bootstrapPrint("loader.luau iniciado")
-
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 Exodus.Modules = Modules
@@ -42,15 +41,6 @@ local MODULE_ORDER = {
     "spam",
     "character",
 }
-
--- contrato por m贸dulo: cada m贸dulo declara o pr贸prio via __contract.
--- campos:
---   requires      : deps injetadas no setup(deps). chaves = nomes l贸gicos, valores = chaves em `loaded`.
---   onBallSync    : se true, o m贸dulo recebe BallSyncData automaticamente (precisa exportar onBallSync).
---   ballSync      : se true, o m贸dulo 茅 fornecedor de BallSyncData (ex: remote, gameinfo).
---   bindCharacter : se true, recebe bindCharacter(character) ao spawnar (precisa exportar bind+detach).
--- o loader auto-descobre via __contract 鈥� adicionar m贸dulo novo 茅 s贸 (1) nome em MODULE_ORDER
--- e (2) __contract exportado no pr贸prio m贸dulo.
 
 -- http
 local function getGlobalEnvironment()
@@ -379,17 +369,16 @@ local function resolveDeps(loaded, requires)
     end
     return deps
 end
-
 local function contractOf(module)
     if type(module) ~= "table" then
         return {}
     end
     return module.__contract or {}
 end
-
 local function collectCharacterBinds(loaded)
     local binds = {}
-    for name, module in pairs(loaded) do
+    for _, name in ipairs(MODULE_ORDER) do
+        local module = loaded[name]
         if name ~= "utils" and type(module) == "table" then
             local contract = contractOf(module)
             local hasBindFlag = contract.bindCharacter == true
@@ -402,15 +391,10 @@ local function collectCharacterBinds(loaded)
                     detach = module.detachCharacter,
                 }
             elseif hasBindFlag and not hasBindFn then
-                -- Diagn贸stico: o m贸dulo declara que quer bind de personagem
-                -- mas n茫o exporta a fun莽茫o com o nome certo. Sem isso o
-                -- m贸dulo fica silenciosamente inativo (nunca 茅 chamado no
-                -- spawn do character). Logado como erro pra aparecer nos
-                -- diagnostics em _G.Exodus.Diagnostics.
                 if type(loaded.utils) == "table" and type(loaded.utils.recordError) == "function" then
                     loaded.utils.recordError(
                         "Loader",
-                        ("%s declara bindCharacter no contrato mas n茫o exporta m贸dulo.bindCharacter(): o m贸dulo nunca ser谩 vinculado ao personagem")
+                        ("%s declara bindCharacter no contrato mas não exporta módulo.bindCharacter(): o módulo nunca será vinculado ao personagem")
                             :format(name)
                     )
                 end
@@ -419,9 +403,7 @@ local function collectCharacterBinds(loaded)
     end
     return binds
 end
-
 local function initializeModules(loaded, log)
-    -- descobre todos os binds de personagem uma vez e injeta no deps do character
     local characterBinds = collectCharacterBinds(loaded)
     log.info(("%d m贸dulos com bind de personagem"):format(#characterBinds))
     for _, name in ipairs(MODULE_ORDER) do
@@ -471,9 +453,9 @@ local function bindRuntime(loaded, log)
     then
         return nil, "contrato de runtime incompleto"
     end
-    -- descobre automaticamente todos os m贸dulos com onBallSync via __contract
     local ballSyncSubscribers = {}
-    for name, module in pairs(loaded) do
+    for _, name in ipairs(MODULE_ORDER) do
+        local module = loaded[name]
         if name ~= "utils" and type(module) == "table" then
             local contract = contractOf(module)
             if contract.onBallSync == true and type(module.onBallSync) == "function" then
@@ -750,5 +732,4 @@ local function startSafely()
 end
 local started = startSafely()
 Exodus.Started = started == true
-
 return Loader
