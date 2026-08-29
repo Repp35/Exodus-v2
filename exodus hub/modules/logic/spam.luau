@@ -12,6 +12,10 @@ local heartbeatConnection
 local generation = 0
 local wasActive = false
 local acumulador = 0
+local cpfFps
+local lastMode
+local lastRate
+local EMA = 0.08
 local Scheduler = {
     phase = "stopped",
     lastRequestAt = 0,
@@ -23,6 +27,9 @@ local function invalidate(reason)
     generation = generation + 1
     Scheduler.phase = "stopped"
     acumulador = 0
+    cpfFps = nil
+    lastMode = nil
+    lastRate = nil
     if Utils and type(Utils.recordTransition) == "function" and wasActive then
         Utils.recordTransition("Spam", "running", "stopped", reason or "invalidated")
     end
@@ -43,6 +50,23 @@ local function requestParry()
     Scheduler.lastError = nil
     return true
 end
+local function scheduleCPF(rate, dt)
+    if rate <= 0 then
+        return
+    end
+    local fpsNow = 1 / dt
+    if not cpfFps then
+        cpfFps = fpsNow
+    else
+        cpfFps = cpfFps + (fpsNow - cpfFps) * EMA
+    end
+    local fps = math_max(cpfFps, 1)
+    local clicks = rate * math_max(60, fps) / fps
+    local scheduled = math.floor(clicks)
+    for _ = 1, scheduled do
+        requestParry()
+    end
+end
 
 -- runtime
 local function tick(dt)
@@ -62,13 +86,29 @@ local function tick(dt)
     end
     wasActive = true
     local config = Utils.getConfig and Utils.getConfig()
-    local rate = 1
-    if type(config) == "table" then
-        if config.SpamRateMode == "CPF" then
-            rate = (tonumber(config.CPF) or 1) * 60
-        else
-            rate = tonumber(config.CPS) or 1
+    local mode = type(config) == "table" and config.SpamRateMode == "CPF" and "CPF" or "CPS"
+    local rateKey = mode == "CPF" and "CPF" or "CPS"
+    local rate = type(config) == "table" and tonumber(config[rateKey]) or nil
+    rate = math_max(rate or 1, 0)
+    if mode ~= lastMode then
+        lastMode = mode
+        acumulador = 0
+        lastRate = nil
+        cpfCredits = 0
+        cpfSent = 0
+    end
+    if mode == "CPF" then
+        if rate ~= lastRate then
+            lastRate = rate
+            cpfCredits = 0
+            cpfSent = 0
         end
+        scheduleCPF(rate, dt)
+        return
+    end
+    if rate ~= lastRate then
+        lastRate = rate
+        acumulador = 0
     end
     local intervaloEntreClicks = 1 / math_max(rate, 1)
     acumulador = acumulador + dt
@@ -115,6 +155,9 @@ function Spam.resetState()
     invalidate("reset")
     wasActive = false
     acumulador = 0
+    cpfFps = nil
+    lastMode = nil
+    lastRate = nil
     Scheduler.phase = "stopped"
     Scheduler.lastRequestAt = 0
     Scheduler.lastError = nil
