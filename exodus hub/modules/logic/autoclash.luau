@@ -20,7 +20,8 @@ local Tuning = {
     DET_DOT_EMA = 0.35,
     DET_DOT_THRESHOLD = 0.14,
     DET_TIMEOUT = 0.8,
-    DEACT_WINDOW_FACTOR = 2.2,
+    DEACT_WINDOW_FACTOR = 2.2,      -- fallback (lostMeAt)
+    DEACT_PHYSICAL_FACTOR = 3.0,    -- gate físico
     DEACT_GUARD_TIME = 0.080,
     PROXIMITY_GATE_FACTOR = 0.60,
     MIN_EVAL_INTERVAL = 1 / 120,
@@ -495,9 +496,8 @@ local function shouldDeactivate(t, snapshot)
     end
     local elapsed = t - Runtime.deactOutAt
     return elapsed
-        > getDeactivationWindow(
-            Runtime.lastSpeed
-        )
+        > getTargetReturnWindow(Runtime.lastSpeed)
+            * Tuning.DEACT_PHYSICAL_FACTOR
 end
 
 -- main evaluation (com os gates do script 2 adaptados)
