@@ -8,8 +8,8 @@ local Utils
 -- tuning
 local Tuning = {
     ACT_RAD_FACTOR = 1.40,
-    TARGET_RETURN_MAX_LO = 0.170,
-    TARGET_RETURN_MIN_HI = 0.090,
+    TARGET_RETURN_MAX_LO = 0.155,
+    TARGET_RETURN_MIN_HI = 0.083,
     PING_COMPENSATION_FACTOR = 0.3,
     DET_RETURN_FACTOR = 2.0,
     RETURN_SPD_LO = 60,
@@ -20,7 +20,7 @@ local Tuning = {
     DET_DOT_EMA = 0.35,
     DET_DOT_THRESHOLD = 0.14,
     DET_TIMEOUT = 0.8,
-    DEACT_WINDOW_FACTOR = 1.8,
+    DEACT_WINDOW_FACTOR = 2.2,
     DEACT_GUARD_TIME = 0.080,
     PROXIMITY_GATE_FACTOR = 0.60,
     MIN_EVAL_INTERVAL = 1 / 120,
@@ -44,6 +44,7 @@ local Runtime = {
     lastTargetId = nil,
     wasMeTarget = false,
     lostMeAt = 0,
+    deactOutAt = 0,
     lastSpeed = 0,
     lastGate = "none",
     activationReturnWindow = 0,
@@ -430,25 +431,70 @@ local function shouldActivate(t, snapshot)
 end
 
 -- deactivation
-local function shouldDeactivate(t)
-    if Runtime.lostMeAt <= 0 then
-        return false
+local function shouldDeactivate(t, snapshot)
+    -- fallback: sem bola válida, usa lostMeAt original
+    local ball = snapshot and snapshot.ball
+    local position = snapshot and snapshot.position
+    local root = Runtime.boundRoot
+    if not (
+        ball and ball.Parent
+        and position
+        and root and root.Parent
+    ) then
+        if Runtime.lostMeAt <= 0 then
+            return false
+        end
+        if Runtime.lostMeAt
+            <= Runtime.lastActivatedAt
+        then
+            return false
+        end
+        local sinceActivation =
+            t - Runtime.lastActivatedAt
+        if sinceActivation
+            < Tuning.DEACT_GUARD_TIME
+        then
+            return false
+        end
+        local pingCompensation =
+            AutoParry.getPingOneWay()
+                * Tuning.PING_COMPENSATION_FACTOR
+        local sinceLeft =
+            t - Runtime.lostMeAt
+                + pingCompensation
+        return sinceLeft
+            > getDeactivationWindow(
+                Runtime.lastSpeed
+            )
     end
-    if Runtime.lostMeAt
-        <= Runtime.lastActivatedAt
+    -- gate físico: fora do raio E dot negativo
+    local ok, rootPos = pcall(function()
+        return root.Position
+    end)
+    if not ok
+        or typeof(rootPos) ~= "Vector3"
     then
+        Runtime.deactOutAt = 0
         return false
     end
-    local sinceActivation =
-        t - Runtime.lastActivatedAt
-    if sinceActivation
-        < Tuning.DEACT_GUARD_TIME
-    then
+    local distance =
+        (rootPos - position).Magnitude
+    local inRadius =
+        distance <= Runtime.parryRadius
+    local approaching =
+        type(snapshot.approachingSpeed) == "number"
+        and snapshot.approachingSpeed > 0
+    if inRadius or approaching then
+        -- bola dentro do raio ou vindo: reseta contador
+        Runtime.deactOutAt = 0
         return false
     end
-    local sinceLeft =
-        t - Runtime.lostMeAt
-    return sinceLeft
+    -- bola fora e indo embora: incrementa contador
+    if Runtime.deactOutAt <= 0 then
+        Runtime.deactOutAt = t
+    end
+    local elapsed = t - Runtime.deactOutAt
+    return elapsed
         > getDeactivationWindow(
             Runtime.lastSpeed
         )
@@ -475,12 +521,13 @@ local function evaluateClash(time, snapshot)
         parryRadius
             * Tuning.ACT_RAD_FACTOR
     if Runtime.active then
-        if shouldDeactivate(time) then
+        if shouldDeactivate(time, snapshot) then
             setActive(
                 false,
                 "target_lost_timeout"
             )
             Runtime.lostMeAt = 0
+            Runtime.deactOutAt = 0
         end
         return
     end
@@ -520,6 +567,7 @@ local function bindCharacter(character)
     Runtime.lastTargetId = nil
     Runtime.wasMeTarget = false
     Runtime.lostMeAt = 0
+    Runtime.deactOutAt = 0
     Runtime.lastSpeed = 0
     Runtime.lastGate =
         "waiting_for_character"
@@ -730,6 +778,7 @@ function AutoClash.setup(deps)
     Runtime.lastTargetId = nil
     Runtime.wasMeTarget = false
     Runtime.lostMeAt = 0
+    Runtime.deactOutAt = 0
     Runtime.lastSpeed = 0
     Runtime.lastGate = "none"
     Runtime.activationReturnWindow = 0
