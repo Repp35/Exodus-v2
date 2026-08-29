@@ -21,13 +21,11 @@ local function setPhase(nextPhase, reason)
         Utils.recordTransition("Character", previous, nextPhase, reason)
     end
 end
-
 local function detachAllBinds()
     for index = #characterBinds, 1, -1 do
         pcall(characterBinds[index].detach)
     end
 end
-
 local function resetModules()
     detachAllBinds()
     if Spam and type(Spam.resetState) == "function" then
@@ -36,12 +34,10 @@ local function resetModules()
     Utils.setManualSpamActive(false)
     Utils.setAutoSpamActive(false)
 end
-
 local function disconnectCharacterRuntime()
     Utils.disconnectCharacterConnections()
     resetModules()
 end
-
 local function bind(character, currentGeneration)
     setPhase("binding", "character_bind_start")
     if currentGeneration ~= generation then
@@ -56,10 +52,12 @@ local function bind(character, currentGeneration)
         return
     end
     if not root or not root.Parent or not Utils.isActive() then
+        Utils.disconnectCharacterConnections()
         setPhase("invalid", "root_unavailable")
         return
     end
-    for _, entry in ipairs(characterBinds) do
+    local boundCount = 0
+    for index, entry in ipairs(characterBinds) do
         local ok, result = pcall(entry.bind, character)
         if not ok or result ~= true then
             local message = ("%s não vinculou o personagem: %s")
@@ -68,13 +66,19 @@ local function bind(character, currentGeneration)
             if type(Utils.recordError) == "function" then
                 Utils.recordError("Character", message)
             end
+            for detachIndex = boundCount, 1, -1 do
+                pcall(characterBinds[detachIndex].detach)
+            end
+            Utils.disconnectCharacterConnections()
+            Utils.setManualSpamActive(false)
+            Utils.setAutoSpamActive(false)
             setPhase("invalid", "bind_failed")
             return
         end
+        boundCount = index
     end
     setPhase("bound", "character_bound")
 end
-
 local function setupCharacter(character)
     if not character then
         return
@@ -155,12 +159,10 @@ function Character.setup(deps)
     end
     return true
 end
-
 Character.__contract = {
     requires = {
         Spam = "spam",
         Utils = "utils",
     },
 }
-
 return Character
