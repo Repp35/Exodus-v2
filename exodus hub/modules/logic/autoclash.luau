@@ -6,776 +6,432 @@ local GameInfo
 local Utils
 
 -- tuning
-local Tuning = {
+local T = {
     ACT_RAD_FACTOR = 1.40,
-    TARGET_RETURN_MAX_LO = 0.155,
-    TARGET_RETURN_MIN_HI = 0.083,
-    PING_COMPENSATION_FACTOR = 0.3,
-    DET_RETURN_FACTOR = 2.0,
+    PROX_FACTOR = 0.60,
+    RETURN_WIN_LO = 0.155,
+    RETURN_WIN_HI = 0.083,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
-    DET_RAD_MIN = 10,
-    DET_RAD_MAX = 25,
-    DET_DIST_DELTA = 0.5,
+    DET_FACTOR = 2.0,
+    DEACT_PHYS = 2.5,
+    DEACT_FALLBACK = 2.2,
+    PING_FACTOR = 0.3,
     DET_DOT_EMA = 0.35,
     DET_DOT_THRESHOLD = 0.14,
     DET_TIMEOUT = 0.8,
-    DEACT_WINDOW_FACTOR = 2.2,      -- fallback (lostMeAt)
-    DEACT_PHYSICAL_FACTOR = 2.5,    -- gate físico
-    DEACT_GUARD_TIME = 0.080,
-    PROXIMITY_GATE_FACTOR = 0.60,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
--- state
-local Runtime = {
+-- runtime
+local R = {
     generation = 0,
     bound = false,
     active = false,
     phase = "detached",
-    lastActivatedAt = 0,
-    lastDeactivatedAt = 0,
-    parryRadius = 0,
-    activationRadius = 0,
-    connections = {},
-    lastTarget = -1,
-    localUserId = nil,
     boundRoot = nil,
-    lastTargetAt = 0,
-    lastTargetId = nil,
-    wasMeTarget = false,
-    lostMeAt = 0,
-    deactOutAt = 0,
+    localUserId = nil,
+    lastTarget = -1,
     lastSpeed = 0,
-    lastGate = "none",
-    activationReturnWindow = 0,
-    lastReturnAt = 0,
+    parryRadius = 0,
+    actRadius = 0,
+    lostMeAt = 0,
+    wasMeTarget = false,
+    deactOutAt = 0,
     detPhase = "IDLE",
-    detEnterAt = 0,
     detExitAt = 0,
     detMinDist = 0,
     detDotEma = 0,
-    detWasComing = false,
     lastEvalAt = 0,
+    connections = {},
+    lastGate = "none",
 }
 
 -- helpers
+local function lerp(speed, lo, hi, spdLo, spdHi)
+    if spdHi <= spdLo then
+        return lo
+    end
+    local alpha = math.clamp((speed - spdLo) / (spdHi - spdLo), 0, 1)
+    return lo + (hi - lo) * alpha
+end
+
+local function returnWindow(speed)
+    local base = lerp(speed, T.RETURN_WIN_LO, T.RETURN_WIN_HI, T.RETURN_SPD_LO, T.RETURN_SPD_HI)
+    local ping = AutoParry.getPingOneWay() * T.PING_FACTOR
+    return base + ping
+end
+
+local function detectorWindow(speed)
+    return returnWindow(speed) * T.DET_FACTOR
+end
+
+local function deactWindow(speed)
+    return returnWindow(speed) * T.DEACT_FALLBACK
+end
+
+local function deactPhysWindow(speed)
+    return returnWindow(speed) * T.DEACT_PHYS
+end
+
 local function setPhase(phase, reason)
-    if Runtime.phase == phase then
+    if R.phase == phase then
         return
     end
-    local previous = Runtime.phase
-    Runtime.phase = phase
-    if Utils then
-        pcall(
-            Utils.recordTransition,
-            "AutoClash",
-            previous,
-            phase,
-            reason or "phase_change"
-        )
-    end
+    local previous = R.phase
+    R.phase = phase
+    pcall(Utils.recordTransition, "AutoClash", previous, phase or "phase_change")
 end
 
-local function disconnectConnections()
-    for index = #Runtime.connections, 1, -1 do
-        local connection = Runtime.connections[index]
-        Runtime.connections[index] = nil
-        if Utils then
-            pcall(Utils.untrackCharacter, connection)
-        end
-        if connection
-            and type(connection.Disconnect) == "function"
-        then
-            pcall(connection.Disconnect, connection)
-        end
-    end
-end
-
-local function getParryRadius(speed, time)
-    if not AutoParry
-        or type(AutoParry.getParryRadius) ~= "function"
-    then
-        return 8
-    end
-    local ok, radius = pcall(
-        AutoParry.getParryRadius,
-        speed,
-        time
-    )
-    if not ok
-        or type(radius) ~= "number"
-        or radius < 0
-    then
-        return 8
-    end
-    return radius
-end
-
-local function setActive(nextActive, reason)
-    nextActive = nextActive == true
-    if Runtime.active == nextActive then
+local function setActive(active, reason)
+    active = active == true
+    if R.active == active then
         return
     end
-    Runtime.active = nextActive
-    local time = Utils.now()
-    if nextActive then
-        Runtime.lastActivatedAt = time
-        local ok, err = pcall(
-            Utils.setAutoSpamActive,
-            true
-        )
-        if not ok then
-            pcall(
-                Utils.recordError,
-                "AutoClash",
-                "Utils.setAutoSpamActive(true): "
-                    .. tostring(err)
-            )
-        end
+    R.active = active
+    if active then
+        pcall(Utils.setAutoSpamActive, true)
         setPhase("active", reason)
     else
-        Runtime.lastDeactivatedAt = time
-        local ok, err = pcall(
-            Utils.setAutoSpamActive,
-            false
-        )
-        if not ok then
-            pcall(
-                Utils.recordError,
-                "AutoClash",
-                "Utils.setAutoSpamActive(false): "
-                    .. tostring(err)
-            )
-        end
+        pcall(Utils.setAutoSpamActive, false)
         setPhase("idle", reason)
     end
 end
 
--- helpers lógicos do script 2 adaptados
-local function lerpBySpeed(
-    speed,
-    valueLow,
-    valueHigh
-)
-    if Tuning.RETURN_SPD_HI
-        <= Tuning.RETURN_SPD_LO
-    then
-        return valueLow
+local function disconnectConnections()
+    for i = #R.connections, 1, -1 do
+        local conn = R.connections[i]
+        R.connections[i] = nil
+        pcall(Utils.untrackCharacter, conn)
+        pcall(function()
+            conn:Disconnect()
+        end)
     end
-    local alpha = math.clamp(
-        (speed - Tuning.RETURN_SPD_LO)
-            / (
-                Tuning.RETURN_SPD_HI
-                    - Tuning.RETURN_SPD_LO
-            ),
-        0,
-        1
-    )
-    return valueLow
-        + (valueHigh - valueLow) * alpha
 end
 
-local function getTargetReturnWindow(speed)
-    return lerpBySpeed(
-        speed,
-        Tuning.TARGET_RETURN_MAX_LO,
-        Tuning.TARGET_RETURN_MIN_HI
-    ) + AutoParry.getPingOneWay()
-        * Tuning.PING_COMPENSATION_FACTOR
-end
-
-local function getDetectorReturnWindow(speed)
-    return getTargetReturnWindow(speed)
-        * Tuning.DET_RETURN_FACTOR
-end
-
-local function getDeactivationWindow(speed)
-    return getTargetReturnWindow(speed)
-        * Tuning.DEACT_WINDOW_FACTOR
-end
-
-local function checkProximityGate(snapshot)
-    if type(snapshot) ~= "table"
-        or snapshot.targeted ~= true
-    then
+-- activation
+local function proximityGate(snapshot)
+    if not (snapshot and snapshot.targeted == true) then
         return false
     end
-    local approaching =
-        type(snapshot.approachingSpeed) == "number"
-        and snapshot.approachingSpeed > 0
+    local approaching = type(snapshot.approachingSpeed) == "number" and snapshot.approachingSpeed > 0
+    if not approaching then
+        return false
+    end
     local position = snapshot.position
-    local root = Runtime.boundRoot
-    if not (
-        position
-        and root
-        and root.Parent
-    ) then
+    if not position then
+        return false
+    end
+    local root = R.boundRoot
+    if not (root and root.Parent) then
         return false
     end
     local ok, rootPos = pcall(function()
         return root.Position
     end)
-    if not ok
-        or typeof(rootPos) ~= "Vector3"
-    then
+    if not (ok and typeof(rootPos) == "Vector3") then
         return false
     end
-    local distance =
-        (rootPos - position).Magnitude
-    return distance
-        <= Runtime.parryRadius
-            * Tuning.PROXIMITY_GATE_FACTOR
-        and approaching
+    local distance = (rootPos - position).Magnitude
+    return distance <= R.parryRadius * T.PROX_FACTOR
 end
 
-local function getDetectorRadius(speed)
-    local alpha = math.clamp(
-        (speed - Tuning.RETURN_SPD_LO)
-            / (
-                Tuning.RETURN_SPD_HI
-                    - Tuning.RETURN_SPD_LO
-            ),
-        0,
-        1
-    )
-    return Tuning.DET_RAD_MIN
-        + (
-            Tuning.DET_RAD_MAX
-                - Tuning.DET_RAD_MIN
-        ) * alpha
+local function targetReturnGate(t, snapshot)
+    if R.lostMeAt <= 0 then
+        return false
+    end
+    if not (snapshot and snapshot.targeted == true) then
+        return false
+    end
+    local elapsed = t - R.lostMeAt
+    local window = returnWindow(R.lastSpeed)
+    return elapsed >= 0 and elapsed <= window
 end
 
 local function resetDetector()
-    Runtime.detPhase = "IDLE"
-    Runtime.detEnterAt = 0
-    Runtime.detExitAt = 0
-    Runtime.detMinDist = 0
-    Runtime.detDotEma = 0
-    Runtime.detWasComing = false
+    R.detPhase = "IDLE"
+    R.detExitAt = 0
+    R.detMinDist = 0
+    R.detDotEma = 0
 end
 
--- return detector
-local function tickReturnDetector(
-    t,
-    hr,
-    ball,
-    activationRadius,
-    speed
-)
-    if not (
-        hr
-        and hr.Parent
-        and ball
-        and ball.Parent
-    ) then
+local function detectorGate(t, snapshot)
+    local ball = snapshot and snapshot.ball
+    local root = R.boundRoot
+    if not (ball and ball.Parent and root and root.Parent) then
         resetDetector()
         return false
     end
-    local velocity
-    local ok = pcall(function()
-        velocity = ball.AssemblyLinearVelocity
+    local ok, velocity = pcall(function()
+        return ball.AssemblyLinearVelocity
     end)
-    if not ok
-        or typeof(velocity) ~= "Vector3"
-    then
+    if not (ok and typeof(velocity) == "Vector3") then
         resetDetector()
         return false
     end
-    local velocitySpeed = velocity.Magnitude
-    if velocitySpeed <= 1 then
+    if velocity.Magnitude <= 1 then
         resetDetector()
         return false
     end
-    local offset = hr.Position - ball.Position
+    local offset = root.Position - ball.Position
     local distance = offset.Magnitude
     if distance <= 0.001 then
         resetDetector()
         return false
     end
-    local detectorRadius =
-        getDetectorRadius(speed)
-    local rawDot =
-        velocity:Dot(offset.Unit)
-    Runtime.detDotEma =
-        Runtime.detDotEma
-            * (1 - Tuning.DET_DOT_EMA)
-            + rawDot
-                * Tuning.DET_DOT_EMA
-    local coming =
-        Runtime.detDotEma
-            > Tuning.DET_DOT_THRESHOLD
-    if distance > detectorRadius * 1.2 then
-        resetDetector()
+    local rawDot = velocity:Dot(offset.Unit)
+    R.detDotEma = R.detDotEma * (1 - T.DET_DOT_EMA) + rawDot * T.DET_DOT_EMA
+    local coming = R.detDotEma > T.DET_DOT_THRESHOLD
+    if R.detPhase == "IDLE" then
+        if coming and distance <= R.actRadius then
+            R.detPhase = "INSIDE"
+            R.detMinDist = distance
+        end
         return false
     end
-    if Runtime.detPhase == "EXITED"
-        and t - Runtime.detExitAt
-            > Tuning.DET_TIMEOUT
-    then
-        resetDetector()
-    end
-    if Runtime.detPhase == "IDLE" then
-        if distance <= detectorRadius
-            and coming
-        then
-            Runtime.detPhase = "INSIDE"
-            Runtime.detEnterAt = t
-            Runtime.detMinDist = distance
+    if R.detPhase == "INSIDE" then
+        R.detMinDist = math.min(R.detMinDist, distance)
+        if not coming then
+            R.detPhase = "EXITED"
+            R.detExitAt = t
         end
-        Runtime.detWasComing = coming
         return false
     end
-    if Runtime.detPhase == "INSIDE" then
-        Runtime.detMinDist =
-            math.min(
-                Runtime.detMinDist,
-                distance
-            )
-        if Runtime.detWasComing
-            and not coming
-        then
-            Runtime.detPhase = "EXITED"
-            Runtime.detExitAt = t
+    if R.detPhase == "EXITED" then
+        if t - R.detExitAt > T.DET_TIMEOUT then
+            resetDetector()
+            return false
         end
-        Runtime.detWasComing = coming
+        local elapsed = t - R.detExitAt
+        local window = detectorWindow(R.lastSpeed)
+        local returned = coming and distance <= R.detMinDist + 0.5
+        if returned and elapsed <= window and distance <= R.actRadius then
+            R.detPhase = "INSIDE"
+            R.detMinDist = distance
+            return true
+        end
         return false
-    end
-    if Runtime.detPhase == "EXITED" then
-        local elapsed =
-            t - Runtime.detExitAt
-        local window =
-            getDetectorReturnWindow(speed)
-        local returned =
-            coming
-            and distance
-                <= Runtime.detMinDist
-                    + Tuning.DET_DIST_DELTA
-        if returned then
-            Runtime.detPhase = "INSIDE"
-            Runtime.detEnterAt = t
-            Runtime.detMinDist = distance
-            if elapsed <= window
-                and distance <= activationRadius
-            then
-                Runtime.lastReturnAt = t
-                Runtime.detWasComing = coming
-                return true
-            end
-        end
-        Runtime.detWasComing = coming
     end
     return false
 end
 
--- activation
 local function shouldActivate(t, snapshot)
-    if checkProximityGate(snapshot) then
-        Runtime.lastGate = "proximity"
+    if not (snapshot and snapshot.ball and snapshot.ball.Parent) then
+        return false
+    end
+    if not (R.boundRoot and R.boundRoot.Parent) then
+        return false
+    end
+    R.lastSpeed = tonumber(snapshot.speed) or 0
+    R.parryRadius = AutoParry.getParryRadius(R.lastSpeed, t) or 8
+    R.actRadius = R.parryRadius * T.ACT_RAD_FACTOR
+    if proximityGate(snapshot) then
+        R.lastGate = "proximity"
         return true
     end
-    if type(snapshot) ~= "table" then
-        Runtime.lastGate = "snapshot_invalid"
-        return false
-    end
-    local ball = snapshot.ball
-    if not (ball and ball.Parent) then
-        Runtime.lastGate = "ball_invalid"
-        return false
-    end
-    local root = Runtime.boundRoot
-    if not (root and root.Parent) then
-        Runtime.lastGate = "character_invalid"
-        return false
-    end
-    local speed =
-        tonumber(snapshot.speed) or 0
-    Runtime.lastSpeed = speed
-    local activationRadius = Runtime.activationRadius
-    local isTargeted =
-        snapshot.targeted == true
-    if isTargeted
-        and Runtime.lostMeAt > 0
-    then
-        local elapsed =
-            t - Runtime.lostMeAt
-        local window =
-            getTargetReturnWindow(speed)
-        if elapsed >= 0
-            and elapsed <= window
-        then
-            Runtime.lastGate =
-                "target_return"
-            Runtime.activationReturnWindow =
-                window
-            return true
-        end
-    end
-    if tickReturnDetector(
-        t,
-        root,
-        ball,
-        activationRadius,
-        speed
-    ) then
-        Runtime.lastGate =
-            "detector_return"
-        Runtime.activationReturnWindow =
-            getDetectorReturnWindow(speed)
+    if targetReturnGate(t, snapshot) then
+        R.lastGate = "target_return"
         return true
     end
-    Runtime.lastGate =
-        isTargeted
-        and "awaiting_activation_gate"
-        or "target_not_me"
+    if detectorGate(t, snapshot) then
+        R.lastGate = "detector_return"
+        return true
+    end
+    R.lastGate = snapshot.targeted == true and "awaiting_gate" or "target_not_me"
     return false
 end
 
 -- deactivation
-local function shouldDeactivate(t, snapshot)
+local function physicalGate(t, snapshot)
     local ball = snapshot and snapshot.ball
     local position = snapshot and snapshot.position
-    local root = Runtime.boundRoot
-    if not (root and root.Parent) then
+    local root = R.boundRoot
+    if not (ball and ball.Parent and position and root and root.Parent) then
+        R.deactOutAt = 0
         return false
     end
-
-    -- gate físico
-    local physicalFired = false
-    if ball and ball.Parent and position then
-        local ok, rootPos = pcall(function()
-            return root.Position
-        end)
-        if ok and typeof(rootPos) == "Vector3" then
-            local distance =
-                (rootPos - position).Magnitude
-            local inRadius =
-                distance <= Runtime.parryRadius
-            local approaching =
-                type(snapshot.approachingSpeed) == "number"
-                and snapshot.approachingSpeed > 0
-            if inRadius or approaching then
-                Runtime.deactOutAt = 0
-            else
-                if Runtime.deactOutAt <= 0 then
-                    Runtime.deactOutAt = t
-                end
-                local elapsed = t - Runtime.deactOutAt
-                physicalFired = elapsed
-                    > getTargetReturnWindow(Runtime.lastSpeed)
-                        * Tuning.DEACT_PHYSICAL_FACTOR
-            end
-        end
+    local ok, rootPos = pcall(function()
+        return root.Position
+    end)
+    if not (ok and typeof(rootPos) == "Vector3") then
+        R.deactOutAt = 0
+        return false
     end
-
-    -- fallback (lostMeAt)
-    local fallbackFired = false
-    if Runtime.lostMeAt > 0
-        and Runtime.lostMeAt > Runtime.lastActivatedAt
-    then
-        local sinceActivation =
-            t - Runtime.lastActivatedAt
-        if sinceActivation >= Tuning.DEACT_GUARD_TIME then
-            local pingCompensation =
-                AutoParry.getPingOneWay()
-                    * Tuning.PING_COMPENSATION_FACTOR
-            local sinceLeft =
-                t - Runtime.lostMeAt
-                    + pingCompensation
-            fallbackFired = sinceLeft
-                > getDeactivationWindow(Runtime.lastSpeed)
-        end
+    local distance = (rootPos - position).Magnitude
+    local inRadius = distance <= R.parryRadius
+    local approaching = type(snapshot.approachingSpeed) == "number" and snapshot.approachingSpeed > 0
+    if inRadius or approaching then
+        R.deactOutAt = 0
+        return false
     end
+    if R.deactOutAt <= 0 then
+        R.deactOutAt = t
+    end
+    local elapsed = t - R.deactOutAt
+    return elapsed > deactPhysWindow(R.lastSpeed)
+end
 
+local function fallbackGate(t)
+    if R.lostMeAt <= 0 then
+        return false
+    end
+    local elapsed = t - R.lostMeAt
+    return elapsed > deactWindow(R.lastSpeed)
+end
+
+local function shouldDeactivate(t, snapshot)
+    local physicalFired = physicalGate(t, snapshot)
+    local fallbackFired = fallbackGate(t)
     return physicalFired or fallbackFired
 end
 
--- main evaluation (com os gates do script 2 adaptados)
+-- main evaluation
 local function evaluateClash(time, snapshot)
-    local root = Runtime.boundRoot
+    local root = R.boundRoot
     if not (root and root.Parent) then
         return
     end
-    local ball = snapshot.ball
-    if not (ball and ball.Parent) then
+    if not (snapshot and snapshot.ball and snapshot.ball.Parent) then
         return
     end
-    local speed =
-        tonumber(snapshot.speed) or 0
-    Runtime.lastSpeed = speed
-    local parryRadius =
-        getParryRadius(speed, time)
-    Runtime.parryRadius =
-        parryRadius
-    Runtime.activationRadius =
-        parryRadius
-            * Tuning.ACT_RAD_FACTOR
-    if Runtime.active then
+    if R.active then
         if shouldDeactivate(time, snapshot) then
-            setActive(
-                false,
-                "target_lost_timeout"
-            )
-            Runtime.lostMeAt = 0
-            Runtime.deactOutAt = 0
+            setActive(false, "deactivated")
+            R.lostMeAt = 0
+            R.deactOutAt = 0
         end
         return
     end
-    if shouldActivate(
-        time,
-        snapshot
-    ) then
-        Runtime.lastReturnAt = time
-        setActive(
-            true,
-            "should_activate"
-        )
-        Runtime.lostMeAt = 0
+    if shouldActivate(time, snapshot) then
+        setActive(true, "activated")
+        R.lostMeAt = 0
     end
 end
 
 -- character runtime
 local function bindCharacter(character)
-    Runtime.generation =
-        Runtime.generation + 1
-    local generation =
-        Runtime.generation
-    setActive(
-        false,
-        "rebind_start"
-    )
-    setPhase(
-        "detached",
-        "rebind_start"
-    )
+    R.generation = R.generation + 1
+    local generation = R.generation
+    setActive(false, "rebind")
+    setPhase("detached", "rebind")
     disconnectConnections()
-    Runtime.parryRadius = 0
-    Runtime.activationRadius = 0
-    Runtime.deactivationRadius = 0
-    Runtime.boundRoot = nil
-    Runtime.lastTargetAt = 0
-    Runtime.lastTargetId = nil
-    Runtime.wasMeTarget = false
-    Runtime.lostMeAt = 0
-    Runtime.deactOutAt = 0
-    Runtime.lastSpeed = 0
-    Runtime.lastGate =
-        "waiting_for_character"
-    Runtime.activationReturnWindow = 0
-    Runtime.lastReturnAt = 0
-    Runtime.lastEvalAt = 0
+    R.parryRadius = 0
+    R.actRadius = 0
+    R.boundRoot = nil
+    R.lastTarget = -1
+    R.wasMeTarget = false
+    R.lostMeAt = 0
+    R.deactOutAt = 0
+    R.lastSpeed = 0
+    R.lastGate = "waiting_for_character"
+    R.lastEvalAt = 0
     resetDetector()
-    if not (
-        character
-        and character.Parent
-    ) then
+    if not (character and character.Parent) then
         return false
     end
-    local root =
-        character:FindFirstChild(
-            "HumanoidRootPart"
-        )
-        or character:WaitForChild(
-            "HumanoidRootPart",
-            1
-        )
-    if generation ~= Runtime.generation
-        or not (root and root.Parent)
-    then
+    local root = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 1)
+    if not (generation == R.generation and root and root.Parent) then
         return false
     end
-    Runtime.boundRoot = root
-    local heartbeatConnection
-    heartbeatConnection =
-        Utils.getRunService()
-            .Heartbeat
-            :Connect(function()
-                if generation
-                    ~= Runtime.generation
-                then
-                    return
-                end
-                local ok, err =
-                    xpcall(
-                        function()
-                            if not (
-                                character.Parent
-                                and root.Parent
-                            ) then
-                                return
-                            end
-                            if Utils.isManualSpamActive() then
-                                return
-                            end
-                            if not Utils.isActive() then
-                                if Runtime.active then
-                                    setActive(
-                                        false,
-                                        "hub_inactive"
-                                    )
-                                end
-                                return
-                            end
-                            if Utils.getConfig()
-                                .AutoClash
-                                ~= true
-                            then
-                                if Runtime.active then
-                                    setActive(
-                                        false,
-                                        "hub_disabled"
-                                    )
-                                end
-                                return
-                            end
-                            local time =
-                                Utils.now()
-                            if time - Runtime.lastEvalAt
-                                < Tuning.MIN_EVAL_INTERVAL
-                            then
-                                return
-                            end
-                            Runtime.lastEvalAt = time
-                            local snapshot =
-                                GameInfo.getSnapshot(
-                                    Runtime.lastTarget,
-                                    time
-                                )
-                            if not GameInfo.isSnapshotValid(
-                                snapshot,
-                                time
-                            ) then
-                                return
-                            end
-                            if type(
-                                snapshot.targetId
-                            ) == "number"
-                            then
-                                Runtime.lastTarget =
-                                    snapshot.targetId
-                            end
-                            evaluateClash(
-                                time,
-                                snapshot
-                            )
-                        end,
-                        debug.traceback
-                    )
-                if not ok then
-                    pcall(
-                        Utils.recordError,
-                        "AutoClash",
-                        tostring(err)
-                    )
-                end
-            end)
-    Runtime.connections[
-        #Runtime.connections + 1
-    ] = heartbeatConnection
-    Utils.trackCharacter(
-        heartbeatConnection
-    )
-    local ancestryConnection =
-        character.AncestryChanged
-            :Connect(function(_, parent)
-                if not parent then
-                    Runtime.generation =
-                        Runtime.generation + 1
-                    Runtime.bound = false
-                    Runtime.boundRoot = nil
-                    disconnectConnections()
-                    if Runtime.active then
-                        setActive(
-                            false,
-                            "character_removed"
-                        )
-                    end
-                end
-            end)
-    Runtime.connections[
-        #Runtime.connections + 1
-    ] = ancestryConnection
-    Utils.trackCharacter(
-        ancestryConnection
-    )
-    Runtime.bound = true
-    setPhase(
-        "waiting",
-        "character_bound"
-    )
+    R.boundRoot = root
+    local heartbeat = Utils.getRunService().Heartbeat:Connect(function()
+        if generation ~= R.generation then
+            return
+        end
+        if not (character.Parent and root.Parent) then
+            return
+        end
+        if Utils.isManualSpamActive() then
+            return
+        end
+        if not Utils.isActive() then
+            if R.active then
+                setActive(false, "hub_inactive")
+            end
+            return
+        end
+        if not Utils.getConfig().AutoClash then
+            if R.active then
+                setActive(false, "hub_disabled")
+            end
+            return
+        end
+        local time = Utils.now()
+        if time - R.lastEvalAt < T.MIN_EVAL_INTERVAL then
+            return
+        end
+        R.lastEvalAt = time
+        local snapshot = GameInfo.getSnapshot(R.lastTarget, time)
+        if not GameInfo.isSnapshotValid(snapshot, time) then
+            return
+        end
+        if type(snapshot.targetId) == "number" then
+            R.lastTarget = snapshot.targetId
+        end
+        evaluateClash(time, snapshot)
+    end)
+    R.connections[#R.connections + 1] = heartbeat
+    Utils.trackCharacter(heartbeat)
+    local ancestry = character.AncestryChanged:Connect(function(_, parent)
+        if not parent then
+            R.generation = R.generation + 1
+            R.bound = false
+            R.boundRoot = nil
+            disconnectConnections()
+            if R.active then
+                setActive(false, "character_removed")
+            end
+        end
+    end)
+    R.connections[#R.connections + 1] = ancestry
+    Utils.trackCharacter(ancestry)
+    R.bound = true
+    setPhase("waiting", "character_bound")
     return true
 end
 
 -- setup
 function AutoClash.setup(deps)
-    if type(deps) ~= "table"
-        or type(deps.AutoParry) ~= "table"
-        or type(deps.AutoParry.getParryRadius)
-            ~= "function"
-        or type(deps.AutoParry.getPingOneWay)
-            ~= "function"
-        or type(deps.GameInfo) ~= "table"
-        or type(deps.GameInfo.getSnapshot)
-            ~= "function"
-        or type(deps.GameInfo.isSnapshotValid)
-            ~= "function"
-        or type(deps.Utils) ~= "table"
-        or type(deps.Utils.now)
-            ~= "function"
-        or type(deps.Utils.apiVersion)
-            ~= "function"
-        or type(deps.Utils.getConfig)
-            ~= "function"
-        or type(deps.Utils.getRunService)
-            ~= "function"
-        or type(deps.Utils.trackCharacter)
-            ~= "function"
-        or type(deps.Utils.untrackCharacter)
-            ~= "function"
-        or type(deps.Utils.isActive)
-            ~= "function"
-        or type(deps.Utils.isManualSpamActive)
-            ~= "function"
-        or type(deps.Utils.setAutoSpamActive)
-            ~= "function"
-        or type(deps.Utils.recordTransition)
-            ~= "function"
-    then
-        return false, "dependência ausente: AutoParry, GameInfo ou uma API obrigatória de Utils"
+    if not (
+        deps and
+        deps.AutoParry and type(deps.AutoParry.getParryRadius) == "function" and
+        type(deps.AutoParry.getPingOneWay) == "function" and
+        deps.GameInfo and type(deps.GameInfo.getSnapshot) == "function" and
+        type(deps.GameInfo.isSnapshotValid) == "function" and
+        deps.Utils and type(deps.Utils.now) == "function" and
+        type(deps.Utils.getConfig) == "function" and
+        type(deps.Utils.getRunService) == "function" and
+        type(deps.Utils.recordTransition) == "function" and
+        type(deps.Utils.setAutoSpamActive) == "function" and
+        type(deps.Utils.trackCharacter) == "function" and
+        type(deps.Utils.untrackCharacter) == "function" and
+        type(deps.Utils.isActive) == "function" and
+        type(deps.Utils.isManualSpamActive) == "function"
+    ) then
+        return false
     end
     AutoParry = deps.AutoParry
     GameInfo = deps.GameInfo
     Utils = deps.Utils
-    local player =
-        Utils.getLocalPlayer()
-    Runtime.localUserId =
-        player
-        and player.UserId
-        or nil
-    Runtime.generation = 0
-    Runtime.bound = false
-    Runtime.active = false
-    Runtime.phase = "detached"
-    Runtime.lastActivatedAt = 0
-    Runtime.lastDeactivatedAt = 0
-    Runtime.parryRadius = 0
-    Runtime.activationRadius = 0
-    Runtime.deactivationRadius = 0
-    Runtime.connections = {}
-    Runtime.lastTarget = -1
-    Runtime.boundRoot = nil
-    Runtime.lastTargetAt = 0
-    Runtime.lastTargetId = nil
-    Runtime.wasMeTarget = false
-    Runtime.lostMeAt = 0
-    Runtime.deactOutAt = 0
-    Runtime.lastSpeed = 0
-    Runtime.lastGate = "none"
-    Runtime.activationReturnWindow = 0
-    Runtime.lastReturnAt = 0
-    Runtime.lastEvalAt = 0
+    local player = Utils.getLocalPlayer()
+    R.localUserId = player and player.UserId or nil
+    R.generation = 0
+    R.bound = false
+    R.active = false
+    R.phase = "detached"
+    R.parryRadius = 0
+    R.actRadius = 0
+    R.connections = {}
+    R.lastTarget = -1
+    R.boundRoot = nil
+    R.lastSpeed = 0
+    R.lastGate = "none"
+    R.lastEvalAt = 0
+    R.lostMeAt = 0
+    R.deactOutAt = 0
+    R.wasMeTarget = false
     resetDetector()
-    return true, nil
+    return true
 end
 
 function AutoClash.bindCharacter(character)
@@ -783,30 +439,22 @@ function AutoClash.bindCharacter(character)
 end
 
 function AutoClash.detachCharacter()
-    Runtime.generation =
-        Runtime.generation + 1
-    Runtime.bound = false
-    Runtime.boundRoot = nil
+    R.generation = R.generation + 1
+    R.bound = false
+    R.boundRoot = nil
     disconnectConnections()
-    if Runtime.active then
-        setActive(
-            false,
-            "detach"
-        )
+    if R.active then
+        setActive(false, "detach")
     end
 end
 
 function AutoClash.teardown()
-    Runtime.generation =
-        Runtime.generation + 1
-    Runtime.bound = false
-    Runtime.boundRoot = nil
+    R.generation = R.generation + 1
+    R.bound = false
+    R.boundRoot = nil
     disconnectConnections()
-    if Runtime.active then
-        setActive(
-            false,
-            "teardown"
-        )
+    if R.active then
+        setActive(false, "teardown")
     end
     AutoParry = nil
     GameInfo = nil
@@ -814,85 +462,52 @@ function AutoClash.teardown()
 end
 
 function AutoClash.onBallSync(data)
-    if type(data) ~= "table" then
+    if not data then
         return
     end
-    local target =
-        data.TargetPlayerID
+    local target = data.TargetPlayerID
     if type(target) == "number" then
-        Runtime.lastTarget = target
-        Runtime.lastTargetId = target
+        R.lastTarget = target
     elseif type(target) == "string" then
-        local parsed =
-            tonumber(target)
-        Runtime.lastTarget =
-            parsed or -1
-        Runtime.lastTargetId =
-            Runtime.lastTarget
+        R.lastTarget = tonumber(target) or -1
     else
         return
     end
-    local t =
-        Utils.now()
-    Runtime.lastTargetAt = t
-    if type(Runtime.lastTargetId)
-            == "number"
-        and Runtime.localUserId
-    then
-        local isMe =
-            Runtime.lastTargetId
-            == Runtime.localUserId
-        if isMe then
-            local returned =
-                Runtime.wasMeTarget == false
-                and Runtime.lostMeAt > 0
-            if returned then
-                local speed =
-                    Runtime.lastSpeed
-                local window =
-                    getTargetReturnWindow(
-                        speed
-                    )
-                local elapsed =
-                    t - Runtime.lostMeAt
-                if elapsed >= 0
-                    and elapsed <= window
-                then
-                    Runtime.lastReturnAt = t
-                    if Runtime.active then
-                        Runtime.lastGate =
-                            "target_return_refresh"
+    local t = Utils.now()
+    if type(R.lastTarget) == "number" and R.localUserId then
+        local isMe = R.lastTarget == R.localUserId
+        if isMe and not R.wasMeTarget then
+            if R.lostMeAt > 0 then
+                local elapsed = t - R.lostMeAt
+                local window = returnWindow(R.lastSpeed)
+                if elapsed >= 0 and elapsed <= window then
+                    R.lastReturnAt = t
+                    if R.active then
+                        R.lastGate = "target_return_refresh"
                     end
                 end
             end
-            Runtime.wasMeTarget = true
-        else
-            if Runtime.wasMeTarget then
-                Runtime.lostMeAt = t
-            end
-            Runtime.wasMeTarget = false
+        elseif not isMe and R.wasMeTarget then
+            R.lostMeAt = t
         end
+        R.wasMeTarget = isMe
     end
 end
 
 function AutoClash.isActive()
-    return Runtime.active == true
+    return R.active == true
 end
 
 function AutoClash.getStatus()
     return {
         schema = Utils.apiVersion(),
-        phase = Runtime.phase,
-        bound = Runtime.bound == true,
-        active = Runtime.active == true,
-        parryRadius = Runtime.parryRadius,
-        activationRadius = Runtime.activationRadius,
-        deactivationRadius = Runtime.deactivationRadius,
-        lastActivatedAt = Runtime.lastActivatedAt,
-        lastDeactivatedAt = Runtime.lastDeactivatedAt,
-        localUserId = Runtime.localUserId,
-        lastTarget = Runtime.lastTarget,
-        lastGate = Runtime.lastGate,
+        phase = R.phase,
+        bound = R.bound == true,
+        active = R.active == true,
+        parryRadius = R.parryRadius,
+        actRadius = R.actRadius,
+        lastTarget = R.lastTarget,
+        lastGate = R.lastGate,
     }
 end
 
