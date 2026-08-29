@@ -732,7 +732,8 @@ function AutoClash.setup(deps)
     Runtime.lastReturnAt = 0
     Runtime.lastEvalAt = 0
     resetDetector()
-    return true, nild
+    return true, nil
+end
 
 function AutoClash.bindCharacter(character)
     return bindCharacter(character)
