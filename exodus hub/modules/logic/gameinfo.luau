@@ -28,11 +28,7 @@ local State = {
 local deflectAbility
 local abilityAttempted = false
 local abilityCheckedAt = 0
-
--- reset
-local function resetState()
-    State.ball = nil
-    State.ballAt = 0
+local function clearSyncState()
     State.speed = 0
     State.speedAt = 0
     State.realPosition = Vector3.new(0, 0, 0)
@@ -42,6 +38,13 @@ local function resetState()
     State.lastSyncAt = 0
     State.positionAt = 0
     State.deflectDirection = Vector3.new(0, 0, 0)
+end
+
+-- reset
+local function resetState()
+    State.ball = nil
+    State.ballAt = 0
+    clearSyncState()
     deflectAbility = nil
     abilityAttempted = false
     abilityCheckedAt = 0
@@ -56,6 +59,9 @@ local function isBall(instance)
 end
 local function setBall(ball)
     if isBall(ball) then
+        if State.ball ~= ball then
+            clearSyncState()
+        end
         State.ball = ball
         State.ballAt = Utils.now()
     end
@@ -64,6 +70,7 @@ local function clearBall(ball)
     if State.ball == ball then
         State.ball = nil
         State.ballAt = Utils.now()
+        clearSyncState()
     end
 end
 local function getBall()
@@ -78,6 +85,7 @@ local function getBall()
     end
     State.ball = nil
     State.ballAt = time
+    clearSyncState()
     return nil
 end
 
@@ -401,10 +409,8 @@ end
 function GameInfo.getDeflectCD()
     return getDeflectCooldown()
 end
-
 GameInfo.__contract = {
     requires = { Utils = "utils" },
-    ballSync = true,  -- expõe applySync pro pipeline
+    ballSync = true,
 }
-
 return GameInfo
