@@ -199,6 +199,9 @@ local function checkProximityGate(snapshot)
     then
         return false
     end
+    local approaching =
+        type(snapshot.approachingSpeed) == "number"
+        and snapshot.approachingSpeed > 0
     local position = snapshot.position
     local root = Runtime.boundRoot
     if not (
@@ -221,6 +224,7 @@ local function checkProximityGate(snapshot)
     return distance
         <= Runtime.parryRadius
             * Tuning.PROXIMITY_GATE_FACTOR
+        and approaching
 end
 
 local function getDetectorRadius(speed)
