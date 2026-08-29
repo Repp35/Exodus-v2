@@ -14,8 +14,7 @@ local T = {
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
     DET_FACTOR = 2.0,
-    DEACT_PHYS = 2.7,
-    DEACT_FALLBACK = 2.2,
+    DEACT_FALLBACK = 2.1,
     PING_FACTOR = 0.3,
     DET_DOT_EMA = 0.35,
     DET_DOT_THRESHOLD = 0.14,
@@ -37,7 +36,6 @@ local R = {
     actRadius = 0,
     lostMeAt = 0,
     wasMeTarget = false,
-    deactOutAt = 0,
     detPhase = "IDLE",
     detExitAt = 0,
     detMinDist = 0,
@@ -65,9 +63,6 @@ local function detectorWindow(speed)
 end
 local function deactWindow(speed)
     return returnWindow(speed) * T.DEACT_FALLBACK
-end
-local function deactPhysWindow(speed)
-    return returnWindow(speed) * T.DEACT_PHYS
 end
 local function setPhase(phase, reason)
     if R.phase == phase then
@@ -234,34 +229,6 @@ local function shouldActivate(t, snapshot)
 end
 
 -- deactivation
-local function physicalDeactivationGate(t, snapshot)
-    local ball = snapshot and snapshot.ball
-    local position = snapshot and snapshot.position
-    local root = R.boundRoot
-    if not (ball and ball.Parent and position and root and root.Parent) then
-        R.deactOutAt = 0
-        return false
-    end
-    local ok, rootPos = pcall(function()
-        return root.Position
-    end)
-    if not (ok and typeof(rootPos) == "Vector3") then
-        R.deactOutAt = 0
-        return false
-    end
-    local distance = (rootPos - position).Magnitude
-    local inRadius = distance <= R.parryRadius
-    local approaching = type(snapshot.approachingSpeed) == "number" and snapshot.approachingSpeed > 0
-    if inRadius or approaching then
-        R.deactOutAt = 0
-        return false
-    end
-    if R.deactOutAt <= 0 then
-        R.deactOutAt = t
-    end
-    local elapsed = t - R.deactOutAt
-    return elapsed > deactPhysWindow(R.lastSpeed)
-end
 local function targetDeactivationGate(t)
     if R.lostMeAt <= 0
         or R.wasMeTarget
@@ -272,10 +239,8 @@ local function targetDeactivationGate(t)
     local elapsed = t - R.lostMeAt
     return elapsed > deactWindow(R.lastSpeed)
 end
-local function shouldDeactivate(t, snapshot)
-    local physicalDeactivation = physicalDeactivationGate(t, snapshot)
-    local targetDeactivation = targetDeactivationGate(t)
-    return physicalDeactivation or targetDeactivation
+local function shouldDeactivate(t)
+    return targetDeactivationGate(t)
 end
 
 -- main evaluation
@@ -288,10 +253,9 @@ local function evaluateClash(time, snapshot)
         return
     end
     if R.active then
-        if shouldDeactivate(time, snapshot) then
-            setActive(false, "deactivated")
+        if shouldDeactivate(time) then
+            setActive(false, "target_deactivated")
             R.lostMeAt = 0
-            R.deactOutAt = 0
         end
         return
     end
@@ -314,7 +278,6 @@ local function bindCharacter(character)
     R.lastTarget = -1
     R.wasMeTarget = false
     R.lostMeAt = 0
-    R.deactOutAt = 0
     R.lastSpeed = 0
     R.lastGate = "waiting_for_character"
     R.lastEvalAt = 0
@@ -339,7 +302,6 @@ local function bindCharacter(character)
                 setActive(false, "manual_spam")
             end
             R.lostMeAt = 0
-            R.deactOutAt = 0
             resetDetector()
             return
         end
@@ -348,7 +310,6 @@ local function bindCharacter(character)
                 setActive(false, "hub_inactive")
             end
             R.lostMeAt = 0
-            R.deactOutAt = 0
             resetDetector()
             return
         end
@@ -357,7 +318,6 @@ local function bindCharacter(character)
                 setActive(false, "hub_disabled")
             end
             R.lostMeAt = 0
-            R.deactOutAt = 0
             resetDetector()
             return
         end
@@ -371,7 +331,6 @@ local function bindCharacter(character)
             if R.active then
                 setActive(false, "snapshot_invalid")
                 R.lostMeAt = 0
-                R.deactOutAt = 0
                 resetDetector()
             end
             return
@@ -397,8 +356,7 @@ local function bindCharacter(character)
             R.lastTarget = -1
             R.wasMeTarget = false
             R.lostMeAt = 0
-            R.deactOutAt = 0
-            R.lastSpeed = 0
+                    R.lastSpeed = 0
             R.lastGate = "character_removed"
             R.lastEvalAt = 0
             resetDetector()
@@ -459,7 +417,6 @@ function AutoClash.setup(deps)
     R.lastGate = "none"
     R.lastEvalAt = 0
     R.lostMeAt = 0
-    R.deactOutAt = 0
     R.wasMeTarget = false
     resetDetector()
     return true
@@ -480,7 +437,6 @@ function AutoClash.detachCharacter()
     R.lastTarget = -1
     R.wasMeTarget = false
     R.lostMeAt = 0
-    R.deactOutAt = 0
     R.lastSpeed = 0
     R.lastGate = "detached"
     R.lastEvalAt = 0
@@ -500,7 +456,6 @@ function AutoClash.teardown()
     R.lastTarget = -1
     R.wasMeTarget = false
     R.lostMeAt = 0
-    R.deactOutAt = 0
     R.lastSpeed = 0
     R.lastGate = "detached"
     R.lastEvalAt = 0
@@ -517,8 +472,7 @@ function AutoClash.onBallSync(data)
     if data.Teleported == true then
         R.lostMeAt = 0
         R.wasMeTarget = false
-        R.deactOutAt = 0
-        resetDetector()
+            resetDetector()
         if R.active then
             setActive(false, "teleported")
         end
