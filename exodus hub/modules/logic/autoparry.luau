@@ -544,10 +544,6 @@ end
 function AutoParry.fire()
     return requestParry()
 end
--- exportado como bindCharacter: o character.lua descobre módulos com
--- `module.bindCharacter` via __contract.bindCharacter. Se for exportado
--- com outro nome, o autoparry nunca será bindado e fica silenciosamente
--- inativo (Runtime.bound = false pra sempre). Não renomear.
 function AutoParry.bindCharacter(character)
     return bindCharacter(character)
 end
@@ -588,7 +584,6 @@ function AutoParry.getStatus()
         stationary = Runtime.stationary == true,
     }
 end
-
 AutoParry.__contract = {
     requires = {
         Remote = "remote",
@@ -598,5 +593,4 @@ AutoParry.__contract = {
     onBallSync = true,
     bindCharacter = true,
 }
-
 return AutoParry
