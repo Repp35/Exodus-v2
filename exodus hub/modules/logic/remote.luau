@@ -1,4 +1,4 @@
---[[ Remote ]]
+-- [[ Remote ]]
 
 -- state
 local Remote = {}
@@ -10,12 +10,10 @@ local parryInitialized = false
 local maintenanceGeneration = 0
 local parryRemoteSource
 local remoteState = "uninitialized"
-
 local HttpService = game:GetService("HttpService")
 local STORAGE_SCHEMA = 1
 local STORAGE_FILE = "deflect_remotes.json"
 local MAX_CAPTURED_REMOTES = 128
-
 local Storage = {
     initialized = false,
     available = false,
@@ -27,9 +25,7 @@ local Storage = {
     lastError = nil,
     errorReported = false,
 }
-
 local CapturedRemotes = setmetatable({}, { __mode = "k" })
-
 local function reportStorageError(message)
     Storage.lastError = tostring(message)
     if not Storage.errorReported and Utils and type(Utils.recordError) == "function" then
@@ -37,7 +33,6 @@ local function reportStorageError(message)
         Utils.recordError("RemoteStorage", Storage.lastError)
     end
 end
-
 local function safeInstanceInfo(instance)
     if typeof(instance) ~= "Instance" then return nil end
     local info = {}
@@ -49,7 +44,6 @@ local function safeInstanceInfo(instance)
     if okFullName then info.fullName = fullName end
     return info
 end
-
 local function safeValue(value, depth)
     depth = depth or 0
     if value == nil then return nil end
@@ -61,7 +55,6 @@ local function safeValue(value, depth)
         return tostring(value)
     end
     if depth >= 3 then return tostring(value) end
-
     local valueType = typeof(value)
     if valueType == "Vector3" then
         return { type = valueType, x = value.X, y = value.Y, z = value.Z }
@@ -88,13 +81,11 @@ local function safeValue(value, depth)
     end
     return tostring(value)
 end
-
 local function safeAttributes(remote)
     local ok, attributes = pcall(function() return remote:GetAttributes() end)
     if not ok or type(attributes) ~= "table" then return {} end
     return safeValue(attributes) or {}
 end
-
 local function safeAncestry(remote)
     local ancestry = {}
     local current = remote
@@ -108,7 +99,6 @@ local function safeAncestry(remote)
     end
     return ancestry
 end
-
 local function emptyStorageDocument()
     return {
         schema = STORAGE_SCHEMA,
@@ -117,53 +107,44 @@ local function emptyStorageDocument()
         captures = {},
     }
 end
-
 local function writeStorage()
     if not Storage.available or Storage.writeBlocked then return false end
     local document = emptyStorageDocument()
     document.captures = Storage.captures
-
     local encodeOk, body = pcall(HttpService.JSONEncode, HttpService, document)
     if not encodeOk or type(body) ~= "string" then
         Storage.writeBlocked = true
         reportStorageError("falha ao codificar " .. Storage.path)
         return false
     end
-
     local writeOk, writeResult = pcall(writefile, Storage.path, body)
     if not writeOk or writeResult == false then
         Storage.writeBlocked = true
         reportStorageError(writeResult or ("falha ao gravar " .. Storage.path))
         return false
     end
-
     Storage.lastWriteAt = os.time()
     Storage.lastError = nil
     return true
 end
-
 local function initializeStorage()
     if Storage.initialized then return Storage.available end
     Storage.initialized = true
-
     local folderOk, folderPath = Utils.ensureDataFolder()
     if not folderOk then
         reportStorageError(folderPath)
         return false
     end
-
     Storage.path = folderPath .. "/" .. STORAGE_FILE
     if type(isfile) ~= "function" or type(readfile) ~= "function" or type(writefile) ~= "function" then
         reportStorageError("APIs de arquivo do executor indisponíveis")
         return false
     end
-
     local fileOk, fileExists = pcall(isfile, Storage.path)
     if not fileOk then
         reportStorageError(fileExists)
         return false
     end
-
     local body = ""
     if fileExists then
         local readOk
@@ -187,14 +168,12 @@ local function initializeStorage()
             end
         end
     end
-
     Storage.available = true
     if not fileExists or body == "" then
         writeStorage()
     end
     return true
 end
-
 local function queueStorageWrite()
     if not initializeStorage() or Storage.writeBlocked or Storage.flushQueued then return end
     Storage.flushQueued = true
@@ -203,11 +182,9 @@ local function queueStorageWrite()
         writeStorage()
     end)
 end
-
 local function captureRemote(remote)
     if CapturedRemotes[remote] then return end
     CapturedRemotes[remote] = true
-
     task.spawn(function()
         local ok, errorMessage = pcall(function()
             if not initializeStorage() then return end
@@ -215,7 +192,6 @@ local function captureRemote(remote)
             local parentOk = pcall(function() parent = remote.Parent end)
             local remoteInfo = safeInstanceInfo(remote)
             if not remoteInfo then return end
-
             local capture = {
                 id = #Storage.captures + 1,
                 capturedAt = os.time(),
@@ -242,7 +218,6 @@ local function captureRemote(remote)
         if not ok then reportStorageError(errorMessage) end
     end)
 end
-
 local function getStorageStatus()
     return {
         schema = STORAGE_SCHEMA,
@@ -253,7 +228,6 @@ local function getStorageStatus()
         lastError = Storage.lastError,
     }
 end
-
 local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
 local HookState = type(namespace.RemoteHooks) == "table" and namespace.RemoteHooks or {
     installed = false,
@@ -261,11 +235,20 @@ local HookState = type(namespace.RemoteHooks) == "table" and namespace.RemoteHoo
 }
 namespace.RemoteHooks = HookState
 _G.Exodus = namespace
+local function isAlive(remote)
+    return remote
+        and typeof(remote) == "Instance"
+        and remote:IsA("RemoteEvent")
+        and remote.Parent ~= nil
+end
 
 -- discovery
 local function registerRemote(remote)
-    if not parryRemote then
+    if isAlive(remote) and not isAlive(parryRemote) then
         parryRemote = remote
+        parryRemoteSource = "hook"
+        parryInitialized = false
+        remoteState = "captured"
     end
 end
 
@@ -334,19 +317,12 @@ local function locateBallSync()
     local candidate = remotes and remotes:FindFirstChild("BallSyncData")
     return candidate and candidate:IsA("RemoteEvent") and candidate or nil
 end
-local function isAlive(remote)
-    return remote
-        and typeof(remote) == "Instance"
-        and remote:IsA("RemoteEvent")
-        and remote.Parent ~= nil
-end
 local function clearRemovedRemote(remote)
     if parryRemote == remote and not isAlive(remote) then
         parryRemote = nil
         parryInitialized = false
     end
 end
-
 function Remote.setParryRemote(remote)
     if not isAlive(remote) then
         return false
@@ -407,7 +383,6 @@ function Remote.getRemote()
     end
     return parryRemote
 end
-
 function Remote.getStatus()
     return {
         schema = Utils.apiVersion(),
@@ -491,15 +466,12 @@ function Remote.startMaintenance(options)
     end)
     return true
 end
-
 function Remote.stopMaintenance()
     maintenanceGeneration = maintenanceGeneration + 1
     disconnectBallSync()
 end
-
 Remote.__contract = {
     requires = { Utils = "utils" },
     ballSync = true,
 }
-
 return Remote
