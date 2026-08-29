@@ -23,6 +23,7 @@ local Tuning = {
     DEACT_WINDOW_FACTOR = 1.8,
     DEACT_GUARD_TIME = 0.080,
     PROXIMITY_GATE_FACTOR = 0.60,
+    MIN_EVAL_INTERVAL = 1 / 120,
 }
 
 -- state
@@ -53,6 +54,7 @@ local Runtime = {
     detMinDist = 0,
     detDotEma = 0,
     detWasComing = false,
+    lastEvalAt = 0,
 }
 
 -- helpers
@@ -192,7 +194,9 @@ local function getDeactivationWindow(speed)
 end
 
 local function checkProximityGate(snapshot)
-    if snapshot.targeted ~= true then
+    if type(snapshot) ~= "table"
+        or snapshot.targeted ~= true
+    then
         return false
     end
     local position = snapshot.position
@@ -381,12 +385,7 @@ local function shouldActivate(t, snapshot)
     local speed =
         tonumber(snapshot.speed) or 0
     Runtime.lastSpeed = speed
-    local parryRadius =
-        getParryRadius(speed, t)
-    Runtime.parryRadius = parryRadius
-    Runtime.activationRadius =
-        parryRadius
-            * Tuning.ACT_RAD_FACTOR
+    local activationRadius = Runtime.activationRadius
     local isTargeted =
         snapshot.targeted == true
     if isTargeted
@@ -410,7 +409,7 @@ local function shouldActivate(t, snapshot)
         t,
         root,
         ball,
-        Runtime.activationRadius,
+        activationRadius,
         speed
     ) then
         Runtime.lastGate =
@@ -522,6 +521,7 @@ local function bindCharacter(character)
         "waiting_for_character"
     Runtime.activationReturnWindow = 0
     Runtime.lastReturnAt = 0
+    Runtime.lastEvalAt = 0
     resetDetector()
     if not (
         character
@@ -588,6 +588,12 @@ local function bindCharacter(character)
                             end
                             local time =
                                 Utils.now()
+                            if time - Runtime.lastEvalAt
+                                < Tuning.MIN_EVAL_INTERVAL
+                            then
+                                return
+                            end
+                            Runtime.lastEvalAt = time
                             local snapshot =
                                 GameInfo.getSnapshot(
                                     Runtime.lastTarget,
@@ -724,9 +730,9 @@ function AutoClash.setup(deps)
     Runtime.lastGate = "none"
     Runtime.activationReturnWindow = 0
     Runtime.lastReturnAt = 0
+    Runtime.lastEvalAt = 0
     resetDetector()
-    return true
-end
+    return true, nild
 
 function AutoClash.bindCharacter(character)
     return bindCharacter(character)
