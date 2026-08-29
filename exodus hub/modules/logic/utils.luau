@@ -475,7 +475,5 @@ function Utils.warn(message)
     Utils.log("warn", message)
 end
 _G.ExodusStop = Utils.stop
-
 Utils.__contract = { requires = {} }
-
 return Utils
