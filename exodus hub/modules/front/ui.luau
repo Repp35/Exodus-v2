@@ -1379,5 +1379,4 @@ function ExodusUI.setup(deps)
     setSpam(Utils.isManualSpamActive())
     return true
 end
-
 return ExodusUI
