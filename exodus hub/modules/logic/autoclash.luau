@@ -3,15 +3,16 @@
 local AutoClash = {}
 local AutoParry
 local GameInfo
-local Utils 
+local Utils
 
 -- tuning
 local T = {
-    RETURN_WIN_LO = 0.130,
+    RETURN_WIN_LO = 0.150,
     RETURN_WIN_HI = 0.110,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
     PING_FACTOR = 0.3,
+    DEACT_FACTOR = 2.1,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -27,8 +28,9 @@ local R = {
     lastSpeed = 0,
     parryRadius = 0,
     lostMeAt = 0,
-    wasMeTarget = false,
     returnPending = false,
+    deactOutsideAt = 0,
+    wasMeTarget = false,
     lastEvalAt = 0,
     connections = {},
     lastGate = "none",
@@ -58,8 +60,14 @@ local function returnWindow(speed)
         T.RETURN_SPD_HI
     )
 
-    return base + AutoParry.getPingOneWay()
+    return base
+        + AutoParry.getPingOneWay()
         * T.PING_FACTOR
+end
+
+local function deactivationWindow(speed)
+    return returnWindow(speed)
+        * T.DEACT_FACTOR
 end
 
 local function setPhase(phase, reason)
@@ -135,8 +143,9 @@ local function resetRuntime(reason)
     R.lastSpeed = 0
     R.parryRadius = 0
     R.lostMeAt = 0
-    R.wasMeTarget = false
     R.returnPending = false
+    R.deactOutsideAt = 0
+    R.wasMeTarget = false
     R.lastEvalAt = 0
     R.lastGate = "detached"
 
@@ -180,6 +189,62 @@ local function shouldActivate(t, snapshot)
     return true
 end
 
+-- deactivation
+local function shouldDeactivate(t, snapshot)
+    if R.lostMeAt <= 0 then
+        R.deactOutsideAt = 0
+        return false
+    end
+
+    if snapshot.targeted == true then
+        R.lostMeAt = 0
+        R.deactOutsideAt = 0
+        return false
+    end
+
+    local root = R.boundRoot
+    local position = snapshot.position
+
+    if not (
+        root
+        and root.Parent
+        and position
+    ) then
+        return false
+    end
+
+    local ok, rootPosition =
+        pcall(function()
+            return root.Position
+        end)
+
+    if not (
+        ok
+        and typeof(rootPosition) == "Vector3"
+        and typeof(position) == "Vector3"
+    ) then
+        return false
+    end
+
+    local distance =
+        (rootPosition - position).Magnitude
+
+    if distance <= R.parryRadius then
+        R.deactOutsideAt = 0
+        return false
+    end
+
+    if R.deactOutsideAt <= 0 then
+        R.deactOutsideAt = t
+        return false
+    end
+
+    return t - R.deactOutsideAt
+        > deactivationWindow(
+            R.lastSpeed
+        )
+end
+
 -- main evaluation
 local function evaluateClash(t, snapshot)
     if not (
@@ -207,10 +272,26 @@ local function evaluateClash(t, snapshot)
         ) or 8
 
     if R.active then
+        if shouldDeactivate(
+            t,
+            snapshot
+        ) then
+            setActive(
+                false,
+                "target_deactivated"
+            )
+
+            R.lostMeAt = 0
+            R.deactOutsideAt = 0
+        end
+
         return
     end
 
-    if shouldActivate(t, snapshot) then
+    if shouldActivate(
+        t,
+        snapshot
+    ) then
         setActive(
             true,
             "activated"
@@ -279,8 +360,9 @@ local function bindCharacter(character)
                     end
 
                     R.lostMeAt = 0
-                    R.wasMeTarget = false
                     R.returnPending = false
+                    R.deactOutsideAt = 0
+                    R.wasMeTarget = false
                     return
                 end
 
@@ -293,8 +375,9 @@ local function bindCharacter(character)
                     end
 
                     R.lostMeAt = 0
-                    R.wasMeTarget = false
                     R.returnPending = false
+                    R.deactOutsideAt = 0
+                    R.wasMeTarget = false
                     return
                 end
 
@@ -309,8 +392,9 @@ local function bindCharacter(character)
                     end
 
                     R.lostMeAt = 0
-                    R.wasMeTarget = false
                     R.returnPending = false
+                    R.deactOutsideAt = 0
+                    R.wasMeTarget = false
                     return
                 end
 
@@ -476,8 +560,9 @@ function AutoClash.setup(deps)
     R.lastSpeed = 0
     R.parryRadius = 0
     R.lostMeAt = 0
-    R.wasMeTarget = false
     R.returnPending = false
+    R.deactOutsideAt = 0
+    R.wasMeTarget = false
     R.lastEvalAt = 0
     R.connections = {}
     R.lastGate = "none"
@@ -510,8 +595,9 @@ function AutoClash.onBallSync(data)
 
     if data.Teleported == true then
         R.lostMeAt = 0
-        R.wasMeTarget = false
         R.returnPending = false
+        R.deactOutsideAt = 0
+        R.wasMeTarget = false
 
         if R.active then
             setActive(
@@ -533,9 +619,10 @@ function AutoClash.onBallSync(data)
             tonumber(target) or -1
     else
         R.lastTarget = -1
-        R.wasMeTarget = false
         R.lostMeAt = 0
         R.returnPending = false
+        R.deactOutsideAt = 0
+        R.wasMeTarget = false
         return
     end
 
@@ -552,10 +639,13 @@ function AutoClash.onBallSync(data)
             Utils.now()
 
         R.returnPending = false
+        R.deactOutsideAt = 0
 
     elseif not R.wasMeTarget and isMe then
         if R.lostMeAt > 0 then
-            local t = Utils.now()
+            local t =
+                Utils.now()
+
             local elapsed =
                 t - R.lostMeAt
 
