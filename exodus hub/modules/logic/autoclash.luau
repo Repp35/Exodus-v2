@@ -7,17 +7,18 @@ local Utils
 
 -- tuning
 local T = {
-    RETURN_WIN_START = 0.118,
+    RETURN_WIN_START = 0.110,
     RETURN_WIN_END = 0.060,
     RETURN_SPD_START = 60,
     RETURN_SPD_END = 600,
     PING_FACTOR = 0.3,
-    DEACT_FACTOR = 1.0,
-    ACT_RAD_FACTOR = 1.20,
+    DEACT_FACTOR = 1.5,
+    ACTIVATION_ADDITIONAL_TIME = 0.250,
     MIN_EVAL_INTERVAL = 1 / 120,
     TELEPORT_GRACE_TIME = 0.20,
 }
 
+-- runtime
 local R = {
     generation = 0,
     bound = false,
@@ -39,6 +40,7 @@ local R = {
     lastGate = "none",
 }
 
+-- helpers
 local function lerp(a, b, alpha)
     return a + (b - a) * alpha
 end
@@ -46,8 +48,7 @@ end
 local function returnWindow(speed)
     speed = tonumber(speed) or 0
 
-    local span =
-        T.RETURN_SPD_END
+    local span = T.RETURN_SPD_END
         - T.RETURN_SPD_START
 
     local alpha
@@ -172,6 +173,7 @@ local function resetRuntime(reason)
     )
 end
 
+-- activation
 local function shouldActivate(t, snapshot)
     if not (
         snapshot
@@ -198,54 +200,15 @@ local function shouldActivate(t, snapshot)
         return false
     end
 
-    local position = snapshot.position
-
-    if not position then
-        R.lastGate = "position_unavailable"
-        return false
-    end
-
-    local ok, rootPosition =
-        pcall(function()
-            return R.boundRoot.Position
-        end)
-
-    if not (
-        ok
-        and typeof(rootPosition) == "Vector3"
-        and typeof(position) == "Vector3"
-    ) then
-        R.lastGate = "position_unavailable"
-        return false
-    end
-
-    local distance =
-        (rootPosition - position).Magnitude
-
-    if distance > R.actRadius then
-        R.lastGate = "outside_activation_radius"
-        return false
-    end
-
     R.returnPending = false
     R.lostMeAt = 0
-    R.lastGate = "target_return"
 
+    R.lastGate = "target_return"
     return true
 end
 
+-- deactivation
 local function shouldDeactivate(t, snapshot)
-    if snapshot.targeted == true then
-        R.lostMeAt = 0
-        R.deactOutsideAt = 0
-        return false
-    end
-
-    if R.lostMeAt <= 0 then
-        R.deactOutsideAt = 0
-        return false
-    end
-
     local root = R.boundRoot
     local position = snapshot.position
 
@@ -280,6 +243,9 @@ local function shouldDeactivate(t, snapshot)
 
     if R.deactOutsideAt <= 0 then
         R.deactOutsideAt = t
+    end
+
+    if snapshot.targeted == true then
         return false
     end
 
@@ -289,6 +255,7 @@ local function shouldDeactivate(t, snapshot)
         )
 end
 
+-- main evaluation
 local function evaluateClash(t, snapshot)
     if not (
         R.boundRoot
@@ -316,7 +283,12 @@ local function evaluateClash(t, snapshot)
 
     R.actRadius =
         R.parryRadius
-        * T.ACT_RAD_FACTOR
+        + R.lastSpeed
+        * (
+            T.ACTIVATION_ADDITIONAL_TIME
+            + AutoParry.getPingOneWay()
+            * T.PING_FACTOR
+        )
 
     if R.active then
         if shouldDeactivate(
@@ -346,6 +318,7 @@ local function evaluateClash(t, snapshot)
     end
 end
 
+-- character
 local function bindCharacter(character)
     resetRuntime("rebind")
 
@@ -528,6 +501,7 @@ local function bindCharacter(character)
     return true
 end
 
+-- setup
 function AutoClash.setup(deps)
     if not (
         deps
@@ -690,7 +664,6 @@ function AutoClash.onBallSync(data)
             nowTime
 
         R.returnPending = false
-        R.deactOutsideAt = 0
 
     elseif not R.wasMeTarget and isMe then
         if R.lostMeAt > 0 then
@@ -699,9 +672,10 @@ function AutoClash.onBallSync(data)
                 - R.lostMeAt
 
             if elapsed >= 0
-                and elapsed <= returnWindow(
-                    R.lastSpeed
-                )
+                and elapsed
+                    <= returnWindow(
+                        R.lastSpeed
+                    )
             then
                 R.returnPending = true
             else
