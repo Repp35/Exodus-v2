@@ -7,14 +7,13 @@ local Utils
 
 -- tuning
 local T = {
-    RETURN_WIN_START = 0.133,
-    RETURN_WIN_END = 0.080,
+    RETURN_WIN_START = 0.119,
+    RETURN_WIN_END = 0.060,
     RETURN_SPD_START = 60,
     RETURN_SPD_END = 600,
     PING_FACTOR = 0.3,
-    DEACT_FACTOR = 1.8,
+    DEACT_FACTOR = 1.85,
     ACTIVATION_ADDITIONAL_TIME = 0.250,
-    DEACTIVATION_ADDITIONAL_TIME = 0.100,
     MIN_EVAL_INTERVAL = 1 / 120,
     TELEPORT_GRACE_TIME = 0.20,
 }
@@ -76,9 +75,8 @@ local function returnWindow(speed)
 end
 
 local function deactivationWindow(speed)
-    return T.DEACTIVATION_ADDITIONAL_TIME
-        + AutoParry.getPingOneWay()
-        * T.PING_FACTOR
+    return returnWindow(speed)
+        * T.DEACT_FACTOR
 end
 
 local function setPhase(phase, reason)
@@ -219,7 +217,7 @@ local function shouldDeactivate(t, snapshot)
 
     if R.lostMeAt <= 0 then
         R.deactOutsideAt = 0
-        return true
+        return false
     end
 
     local root = R.boundRoot
