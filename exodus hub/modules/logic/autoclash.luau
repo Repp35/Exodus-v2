@@ -7,7 +7,7 @@ local Utils
 
 -- tuning
 local T = {
-    RETURN_WIN_LO = 0.110,
+    RETURN_WIN_LO = 0.150,
     RETURN_WIN_HI = 0.110,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
@@ -27,8 +27,8 @@ local R = {
     lastSpeed = 0,
     parryRadius = 0,
     lostMeAt = 0,
-    lastReturnAt = 0,
     wasMeTarget = false,
+    returnPending = false,
     lastEvalAt = 0,
     connections = {},
     lastGate = "none",
@@ -58,7 +58,8 @@ local function returnWindow(speed)
         T.RETURN_SPD_HI
     )
 
-    return base + AutoParry.getPingOneWay() * T.PING_FACTOR
+    return base + AutoParry.getPingOneWay()
+        * T.PING_FACTOR
 end
 
 local function setPhase(phase, reason)
@@ -134,8 +135,8 @@ local function resetRuntime(reason)
     R.lastSpeed = 0
     R.parryRadius = 0
     R.lostMeAt = 0
-    R.lastReturnAt = 0
     R.wasMeTarget = false
+    R.returnPending = false
     R.lastEvalAt = 0
     R.lastGate = "detached"
 
@@ -167,20 +168,13 @@ local function shouldActivate(t, snapshot)
         return false
     end
 
-    if R.lastReturnAt <= 0 then
+    if not R.returnPending then
         R.lastGate = "awaiting_return"
         return false
     end
 
-    local elapsed =
-        t - R.lastReturnAt
-
-    if elapsed < 0
-        or elapsed > returnWindow(R.lastSpeed)
-    then
-        R.lastGate = "return_expired"
-        return false
-    end
+    R.returnPending = false
+    R.lostMeAt = 0
 
     R.lastGate = "target_return"
     return true
@@ -221,8 +215,6 @@ local function evaluateClash(t, snapshot)
             true,
             "activated"
         )
-
-        R.lastReturnAt = 0
     end
 end
 
@@ -287,8 +279,8 @@ local function bindCharacter(character)
                     end
 
                     R.lostMeAt = 0
-                    R.lastReturnAt = 0
                     R.wasMeTarget = false
+                    R.returnPending = false
                     return
                 end
 
@@ -301,8 +293,8 @@ local function bindCharacter(character)
                     end
 
                     R.lostMeAt = 0
-                    R.lastReturnAt = 0
                     R.wasMeTarget = false
+                    R.returnPending = false
                     return
                 end
 
@@ -317,8 +309,8 @@ local function bindCharacter(character)
                     end
 
                     R.lostMeAt = 0
-                    R.lastReturnAt = 0
                     R.wasMeTarget = false
+                    R.returnPending = false
                     return
                 end
 
@@ -484,8 +476,8 @@ function AutoClash.setup(deps)
     R.lastSpeed = 0
     R.parryRadius = 0
     R.lostMeAt = 0
-    R.lastReturnAt = 0
     R.wasMeTarget = false
+    R.returnPending = false
     R.lastEvalAt = 0
     R.connections = {}
     R.lastGate = "none"
@@ -518,8 +510,8 @@ function AutoClash.onBallSync(data)
 
     if data.Teleported == true then
         R.lostMeAt = 0
-        R.lastReturnAt = 0
         R.wasMeTarget = false
+        R.returnPending = false
 
         if R.active then
             setActive(
@@ -541,6 +533,10 @@ function AutoClash.onBallSync(data)
             tonumber(target) or -1
     else
         R.lastTarget = -1
+        R.wasMeTarget = false
+        R.lostMeAt = 0
+        R.returnPending = false
+        return
     end
 
     if not R.localUserId then
@@ -551,16 +547,29 @@ function AutoClash.onBallSync(data)
         R.lastTarget
         == R.localUserId
 
-    local wasMe =
-        R.wasMeTarget
-
-    if wasMe and not isMe then
+    if R.wasMeTarget and not isMe then
         R.lostMeAt =
             Utils.now()
-    elseif not wasMe and isMe then
+
+        R.returnPending = false
+
+    elseif not R.wasMeTarget and isMe then
         if R.lostMeAt > 0 then
-            R.lastReturnAt =
-                Utils.now()
+            local t = Utils.now()
+            local elapsed =
+                t - R.lostMeAt
+
+            if elapsed >= 0
+                and elapsed
+                    <= returnWindow(
+                        R.lastSpeed
+                    )
+            then
+                R.returnPending = true
+            else
+                R.lostMeAt = 0
+                R.returnPending = false
+            end
         end
     end
 
