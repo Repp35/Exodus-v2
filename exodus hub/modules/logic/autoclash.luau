@@ -9,7 +9,7 @@ local Utils
 local T = {
     ACT_RAD_FACTOR = 1.15,
     PROX_FACTOR = 0.50,
-    RETURN_WIN_LO = 0.150,
+    RETURN_WIN_LO = 0.140,
     RETURN_WIN_HI = 0.068,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
