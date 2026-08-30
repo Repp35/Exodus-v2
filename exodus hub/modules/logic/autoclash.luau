@@ -13,7 +13,7 @@ local T = {
     RETURN_WIN_HI = 0.068,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
-    DET_FACTOR = 2.1,
+    DET_FACTOR = 2.0,
     DEACT_FALLBACK = 1.85,
     PING_FACTOR = 0.3,
     DET_DOT_EMA = 0.35,
@@ -229,15 +229,25 @@ local function shouldActivate(t, snapshot)
 end
 
 -- deactivation
-local function targetDeactivationGate(t)
+local function targetDeactivationGate(t, snapshot)
+    local position = snapshot and snapshot.position
+    local root = R.boundRoot
+    if position and root and root.Parent then
+        local ok, rootPos = pcall(function() return root.Position end)
+        if ok and typeof(rootPos) == "Vector3" then
+            if (rootPos - position).Magnitude <= R.parryRadius then
+                return false
+            end
+        end
+    end
     if R.lostMeAt <= 0 then
         return false
     end
     local elapsed = t - R.lostMeAt
     return elapsed > deactWindow(R.lastSpeed)
 end
-local function shouldDeactivate(t)
-    return targetDeactivationGate(t)
+local function shouldDeactivate(t, snapshot)
+    return targetDeactivationGate(t, snapshot)
 end
 
 -- main evaluation
@@ -250,7 +260,7 @@ local function evaluateClash(time, snapshot)
         return
     end
     if R.active then
-        if shouldDeactivate(time) then
+        if shouldDeactivate(time, snapshot) then
             setActive(false, "target_deactivated")
         end
         return
