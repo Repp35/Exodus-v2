@@ -9,12 +9,12 @@ local Utils
 local T = {
     ACT_RAD_FACTOR = 1.15,
     PROX_FACTOR = 0.50,
-    RETURN_WIN_LO = 0.140,
+    RETURN_WIN_LO = 0.150,
     RETURN_WIN_HI = 0.068,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
     DET_FACTOR = 2.0,
-    DEACT_FALLBACK = 2.0,
+    DEACT_FALLBACK = 1.85,
     PING_FACTOR = 0.3,
     DET_DOT_EMA = 0.35,
     DET_DOT_THRESHOLD = 0.14,
@@ -267,6 +267,7 @@ local function evaluateClash(time, snapshot)
     end
     if shouldActivate(time, snapshot) then
         setActive(true, "activated")
+        R.lostMeAt = 0
     end
 end
 
@@ -489,9 +490,7 @@ function AutoClash.onBallSync(data)
     local t = Utils.now()
     if type(R.lastTarget) == "number" and R.localUserId then
         local isMe = R.lastTarget == R.localUserId
-        if isMe and not R.wasMeTarget then
-            R.lostMeAt = 0
-        elseif not isMe and R.wasMeTarget then
+        if not isMe and R.wasMeTarget then
             R.lostMeAt = t
         end
         R.wasMeTarget = isMe
