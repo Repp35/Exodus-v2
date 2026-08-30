@@ -12,8 +12,6 @@ local T = {
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
     PING_FACTOR = 0.3,
-    ACT_TIME = 0.300,
-    DEACT_TIME = 0.200,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -29,6 +27,7 @@ local R = {
     lastSpeed = 0,
     parryRadius = 0,
     lostMeAt = 0,
+    lastReturnAt = 0,
     wasMeTarget = false,
     lastEvalAt = 0,
     connections = {},
@@ -69,7 +68,13 @@ local function setPhase(phase, reason)
 
     local previous = R.phase
     R.phase = phase
-    pcall(Utils.recordTransition, "AutoClash", previous, phase, reason)
+    pcall(
+        Utils.recordTransition,
+        "AutoClash",
+        previous,
+        phase,
+        reason
+    )
 end
 
 local function setActive(active, reason)
@@ -80,8 +85,16 @@ local function setActive(active, reason)
     end
 
     R.active = active
-    pcall(Utils.setAutoSpamActive, active)
-    setPhase(active and "active" or "idle", reason)
+
+    pcall(
+        Utils.setAutoSpamActive,
+        active
+    )
+
+    setPhase(
+        active and "active" or "idle",
+        reason
+    )
 end
 
 local function disconnectConnections()
@@ -90,7 +103,10 @@ local function disconnectConnections()
         R.connections[i] = nil
 
         if Utils then
-            pcall(Utils.untrackCharacter, connection)
+            pcall(
+                Utils.untrackCharacter,
+                connection
+            )
         end
 
         pcall(function()
@@ -103,7 +119,10 @@ local function resetRuntime(reason)
     R.generation = R.generation + 1
 
     if R.active and Utils then
-        setActive(false, reason or "reset")
+        setActive(
+            false,
+            reason or "reset"
+        )
     end
 
     disconnectConnections()
@@ -114,136 +133,116 @@ local function resetRuntime(reason)
     R.lastSpeed = 0
     R.parryRadius = 0
     R.lostMeAt = 0
+    R.lastReturnAt = 0
     R.wasMeTarget = false
     R.lastEvalAt = 0
     R.lastGate = "detached"
 
-    setPhase("detached", reason or "reset")
+    setPhase(
+        "detached",
+        reason or "reset"
+    )
 end
 
 -- activation
-local function targetReturnGate(t, snapshot)
+local function shouldActivate(t, snapshot)
+    if not (
+        snapshot
+        and snapshot.ball
+        and snapshot.ball.Parent
+    ) then
+        return false
+    end
+
+    if not (
+        R.boundRoot
+        and R.boundRoot.Parent
+    ) then
+        return false
+    end
+
+    if snapshot.targeted ~= true then
+        R.lastGate = "target_not_me"
+        return false
+    end
+
+    if R.lastReturnAt <= 0 then
+        R.lastGate = "awaiting_return"
+        return false
+    end
+
+    local elapsed =
+        t - R.lastReturnAt
+
+    if elapsed < 0
+        or elapsed > returnWindow(R.lastSpeed)
+    then
+        R.lastGate = "return_expired"
+        return false
+    end
+
+    R.lastGate = "target_return"
+    return true
+end
+
+-- deactivation
+local function shouldDeactivate(t)
     if R.lostMeAt <= 0 then
         return false
     end
 
-    if not (snapshot and snapshot.targeted == true) then
+    if R.lostMeAt <= R.lastReturnAt then
         return false
     end
 
-    local elapsed = t - R.lostMeAt
-
-    if elapsed < 0 or elapsed > returnWindow(R.lastSpeed) then
-        return false
-    end
-
-    local position = snapshot.position
-    local root = R.boundRoot
-
-    if not (position and root and root.Parent) then
-        return false
-    end
-
-    local speed = tonumber(snapshot.approachingSpeed) or R.lastSpeed
-
-    if speed <= 0 then
-        return false
-    end
-
-    local ok, rootPosition = pcall(function()
-        return root.Position
-    end)
-
-    if not (ok and typeof(rootPosition) == "Vector3") then
-        return false
-    end
-
-    local distance = (rootPosition - position).Magnitude
-    local distanceToParry = distance - R.parryRadius
-
-    if distanceToParry <= 0 then
-        return true
-    end
-
-    return distanceToParry / speed <= T.ACT_TIME
-end
-
-local function shouldActivate(t, snapshot)
-    if not (snapshot and snapshot.ball and snapshot.ball.Parent) then
-        return false
-    end
-
-    if not (R.boundRoot and R.boundRoot.Parent) then
-        return false
-    end
-
-    if targetReturnGate(t, snapshot) then
-        R.lastGate = "target_return"
-        return true
-    end
-
-    R.lastGate = snapshot.targeted == true
-        and "awaiting_return"
-        or "target_not_me"
-
-    return false
-end
-
--- deactivation
-local function shouldDeactivate(snapshot)
-    local position = snapshot and snapshot.position
-    local root = R.boundRoot
-
-    if not (position and root and root.Parent) then
-        return false
-    end
-
-    local ok, rootPosition = pcall(function()
-        return root.Position
-    end)
-
-    if not (ok and typeof(rootPosition) == "Vector3") then
-        return false
-    end
-
-    local speed = tonumber(snapshot.approachingSpeed)
-        or tonumber(snapshot.speed)
-        or R.lastSpeed
-
-    if speed < 0 then
-        speed = 0
-    end
-
-    local deactivationRadius =
-        R.parryRadius + speed * T.DEACT_TIME
-
-    return (rootPosition - position).Magnitude <= deactivationRadius
+    return t - R.lostMeAt
+        > returnWindow(R.lastSpeed) * 2.0
 end
 
 -- main evaluation
 local function evaluateClash(t, snapshot)
-    if not (R.boundRoot and R.boundRoot.Parent) then
+    if not (
+        R.boundRoot
+        and R.boundRoot.Parent
+    ) then
         return
     end
 
-    if not (snapshot and snapshot.ball and snapshot.ball.Parent) then
+    if not (
+        snapshot
+        and snapshot.ball
+        and snapshot.ball.Parent
+    ) then
         return
     end
 
-    R.lastSpeed = tonumber(snapshot.speed) or 0
-    R.parryRadius = AutoParry.getParryRadius(R.lastSpeed, t) or 8
+    R.lastSpeed =
+        tonumber(snapshot.speed) or 0
+
+    R.parryRadius =
+        AutoParry.getParryRadius(
+            R.lastSpeed,
+            t
+        ) or 8
 
     if R.active then
-        if shouldDeactivate(snapshot) then
-            setActive(false, "target_deactivated")
-        else
-            return
+        if shouldDeactivate(t) then
+            setActive(
+                false,
+                "target_deactivated"
+            )
         end
+
+        return
     end
 
     if shouldActivate(t, snapshot) then
-        setActive(true, "activated")
-        R.lostMeAt = 0
+        setActive(
+            true,
+            "activated"
+        )
+
+        R.lastReturnAt = 0
     end
 end
 
@@ -251,100 +250,174 @@ end
 local function bindCharacter(character)
     resetRuntime("rebind")
 
-    local generation = R.generation
+    local generation =
+        R.generation
 
-    if not (character and character.Parent) then
+    if not (
+        character
+        and character.Parent
+    ) then
         return false
     end
 
     local root =
-        character:FindFirstChild("HumanoidRootPart")
-        or character:WaitForChild("HumanoidRootPart", 1)
+        character:FindFirstChild(
+            "HumanoidRootPart"
+        )
+        or character:WaitForChild(
+            "HumanoidRootPart",
+            1
+        )
 
-    if not (generation == R.generation and root and root.Parent) then
+    if not (
+        generation == R.generation
+        and root
+        and root.Parent
+    ) then
         return false
     end
 
     R.boundRoot = root
-    R.lastGate = "waiting_for_character"
+    R.lastGate =
+        "waiting_for_character"
 
-    local heartbeat = Utils.getRunService().Heartbeat:Connect(function()
-        if generation ~= R.generation then
-            return
-        end
+    local heartbeat =
+        Utils.getRunService()
+            .Heartbeat
+            :Connect(function()
+                if generation
+                    ~= R.generation
+                then
+                    return
+                end
 
-        if not (character.Parent and root.Parent) then
-            return
-        end
+                if not (
+                    character.Parent
+                    and root.Parent
+                ) then
+                    return
+                end
 
-        if Utils.isManualSpamActive() then
-            if R.active then
-                setActive(false, "manual_spam")
-            end
+                if Utils.isManualSpamActive() then
+                    if R.active then
+                        setActive(
+                            false,
+                            "manual_spam"
+                        )
+                    end
 
-            R.lostMeAt = 0
-            R.wasMeTarget = false
-            return
-        end
+                    R.lostMeAt = 0
+                    R.lastReturnAt = 0
+                    R.wasMeTarget = false
+                    return
+                end
 
-        if not Utils.isActive() then
-            if R.active then
-                setActive(false, "hub_inactive")
-            end
+                if not Utils.isActive() then
+                    if R.active then
+                        setActive(
+                            false,
+                            "hub_inactive"
+                        )
+                    end
 
-            R.lostMeAt = 0
-            R.wasMeTarget = false
-            return
-        end
+                    R.lostMeAt = 0
+                    R.lastReturnAt = 0
+                    R.wasMeTarget = false
+                    return
+                end
 
-        if not Utils.getConfig().AutoClash then
-            if R.active then
-                setActive(false, "hub_disabled")
-            end
+                if not Utils.getConfig()
+                    .AutoClash
+                then
+                    if R.active then
+                        setActive(
+                            false,
+                            "hub_disabled"
+                        )
+                    end
 
-            R.lostMeAt = 0
-            R.wasMeTarget = false
-            return
-        end
+                    R.lostMeAt = 0
+                    R.lastReturnAt = 0
+                    R.wasMeTarget = false
+                    return
+                end
 
-        local t = Utils.now()
+                local t =
+                    Utils.now()
 
-        if t - R.lastEvalAt < T.MIN_EVAL_INTERVAL then
-            return
-        end
+                if t - R.lastEvalAt
+                    < T.MIN_EVAL_INTERVAL
+                then
+                    return
+                end
 
-        R.lastEvalAt = t
+                R.lastEvalAt = t
 
-        local snapshot = GameInfo.getSnapshot(R.lastTarget, t)
+                local snapshot =
+                    GameInfo.getSnapshot(
+                        R.lastTarget,
+                        t
+                    )
 
-        if not GameInfo.isSnapshotValid(snapshot, t) then
-            return
-        end
+                if not GameInfo
+                    .isSnapshotValid(
+                        snapshot,
+                        t
+                    )
+                then
+                    return
+                end
 
-        if type(snapshot.targetId) == "number" then
-            R.lastTarget = snapshot.targetId
-        end
+                if type(
+                    snapshot.targetId
+                ) == "number" then
+                    R.lastTarget =
+                        snapshot.targetId
+                end
 
-        evaluateClash(t, snapshot)
-    end)
+                evaluateClash(
+                    t,
+                    snapshot
+                )
+            end)
 
-    R.connections[#R.connections + 1] = heartbeat
-    Utils.trackCharacter(heartbeat)
+    R.connections[
+        #R.connections + 1
+    ] = heartbeat
 
-    local ancestry = character.AncestryChanged:Connect(function(_, parent)
-        if parent then
-            return
-        end
+    Utils.trackCharacter(
+        heartbeat
+    )
 
-        resetRuntime("character_removed")
-        R.lastGate = "character_removed"
-    end)
+    local ancestry =
+        character.AncestryChanged
+            :Connect(function(_, parent)
+                if parent then
+                    return
+                end
 
-    R.connections[#R.connections + 1] = ancestry
-    Utils.trackCharacter(ancestry)
+                resetRuntime(
+                    "character_removed"
+                )
+
+                R.lastGate =
+                    "character_removed"
+            end)
+
+    R.connections[
+        #R.connections + 1
+    ] = ancestry
+
+    Utils.trackCharacter(
+        ancestry
+    )
 
     R.bound = true
-    setPhase("waiting", "character_bound")
+
+    setPhase(
+        "waiting",
+        "character_bound"
+    )
 
     return true
 end
@@ -354,23 +427,53 @@ function AutoClash.setup(deps)
     if not (
         deps
         and deps.AutoParry
-        and type(deps.AutoParry.getParryRadius) == "function"
-        and type(deps.AutoParry.getPingOneWay) == "function"
+        and type(
+            deps.AutoParry.getParryRadius
+        ) == "function"
+        and type(
+            deps.AutoParry.getPingOneWay
+        ) == "function"
         and deps.GameInfo
-        and type(deps.GameInfo.getSnapshot) == "function"
-        and type(deps.GameInfo.isSnapshotValid) == "function"
+        and type(
+            deps.GameInfo.getSnapshot
+        ) == "function"
+        and type(
+            deps.GameInfo.isSnapshotValid
+        ) == "function"
         and deps.Utils
-        and type(deps.Utils.now) == "function"
-        and type(deps.Utils.getConfig) == "function"
-        and type(deps.Utils.getRunService) == "function"
-        and type(deps.Utils.recordTransition) == "function"
-        and type(deps.Utils.setAutoSpamActive) == "function"
-        and type(deps.Utils.trackCharacter) == "function"
-        and type(deps.Utils.untrackCharacter) == "function"
-        and type(deps.Utils.isActive) == "function"
-        and type(deps.Utils.isManualSpamActive) == "function"
-        and type(deps.Utils.getLocalPlayer) == "function"
-        and type(deps.Utils.apiVersion) == "function"
+        and type(
+            deps.Utils.now
+        ) == "function"
+        and type(
+            deps.Utils.getConfig
+        ) == "function"
+        and type(
+            deps.Utils.getRunService
+        ) == "function"
+        and type(
+            deps.Utils.recordTransition
+        ) == "function"
+        and type(
+            deps.Utils.setAutoSpamActive
+        ) == "function"
+        and type(
+            deps.Utils.trackCharacter
+        ) == "function"
+        and type(
+            deps.Utils.untrackCharacter
+        ) == "function"
+        and type(
+            deps.Utils.isActive
+        ) == "function"
+        and type(
+            deps.Utils.isManualSpamActive
+        ) == "function"
+        and type(
+            deps.Utils.getLocalPlayer
+        ) == "function"
+        and type(
+            deps.Utils.apiVersion
+        ) == "function"
     ) then
         return false
     end
@@ -383,9 +486,14 @@ function AutoClash.setup(deps)
     GameInfo = deps.GameInfo
     Utils = deps.Utils
 
-    local player = Utils.getLocalPlayer()
+    local player =
+        Utils.getLocalPlayer()
 
-    R.localUserId = player and player.UserId or nil
+    R.localUserId =
+        player
+        and player.UserId
+        or nil
+
     R.generation = 0
     R.bound = false
     R.active = false
@@ -395,6 +503,7 @@ function AutoClash.setup(deps)
     R.lastSpeed = 0
     R.parryRadius = 0
     R.lostMeAt = 0
+    R.lastReturnAt = 0
     R.wasMeTarget = false
     R.lastEvalAt = 0
     R.connections = {}
@@ -420,27 +529,35 @@ function AutoClash.teardown()
 end
 
 function AutoClash.onBallSync(data)
-    if type(data) ~= "table" or not Utils then
+    if type(data) ~= "table"
+        or not Utils
+    then
         return
     end
 
     if data.Teleported == true then
         R.lostMeAt = 0
+        R.lastReturnAt = 0
         R.wasMeTarget = false
 
         if R.active then
-            setActive(false, "teleported")
+            setActive(
+                false,
+                "teleported"
+            )
         end
 
         return
     end
 
-    local target = data.TargetPlayerID
+    local target =
+        data.TargetPlayerID
 
     if type(target) == "number" then
         R.lastTarget = target
     elseif type(target) == "string" then
-        R.lastTarget = tonumber(target) or -1
+        R.lastTarget =
+            tonumber(target) or -1
     else
         R.lastTarget = -1
     end
@@ -449,10 +566,21 @@ function AutoClash.onBallSync(data)
         return
     end
 
-    local isMe = R.lastTarget == R.localUserId
+    local isMe =
+        R.lastTarget
+        == R.localUserId
 
-    if not isMe and R.wasMeTarget then
-        R.lostMeAt = Utils.now()
+    local wasMe =
+        R.wasMeTarget
+
+    if wasMe and not isMe then
+        R.lostMeAt =
+            Utils.now()
+    elseif not wasMe and isMe then
+        if R.lostMeAt > 0 then
+            R.lastReturnAt =
+                Utils.now()
+        end
     end
 
     R.wasMeTarget = isMe
