@@ -134,9 +134,20 @@ local function getConfigEnabled()
     local config = Utils.getConfig()
     return type(config) == "table" and config.AutoClash == true
 end
+local function isBallInsideParryRadius(snapshot)
+    if not R.boundRoot or not R.boundRoot.Parent or not isBallValid(snapshot) then
+        return false
+    end
+    local ballPosition = snapshot.ball.Position
+    local rootPosition = R.boundRoot.Position
+    if typeof(ballPosition) ~= "Vector3" or typeof(rootPosition) ~= "Vector3" then
+        return false
+    end
+    return (ballPosition - rootPosition).Magnitude <= R.parryRadius
+end
 
 -- deactivation gates
-local function checkDeactivationGates(t)
+local function checkDeactivationGates(t, snapshot)
     if Utils.isActive() ~= true then
         return "hub_inactive"
     end
@@ -150,9 +161,10 @@ local function checkDeactivationGates(t)
         return "teleport_grace"
     end
     if R.active and R.lostMeAt > 0 and not R.wasMeTarget then
-        local elapsed = t - R.lostMeAt
-        local limit = getActivationTime() * T.LOST_TARGET_DEACT_FACTOR
-        if elapsed >= limit then
+        if isBallInsideParryRadius(snapshot) then
+            R.lostMeAt = 0
+            R.lastGate = "target_timeout_reset"
+        elseif t - R.lostMeAt >= getActivationTime() * T.LOST_TARGET_DEACT_FACTOR then
             return "target_timeout"
         end
     end
@@ -232,12 +244,23 @@ local function bindCharacter(character)
             return
         end
         local t = getNow()
-        local deactivationGate = checkDeactivationGates(t)
+        local snapshot = GameInfo.getSnapshot(R.lastTarget, t)
+        if snapshot and GameInfo.isSnapshotValid(snapshot, t) then
+            local targetId = snapshot.targetId
+            if type(targetId) == "number" then
+                R.lastTarget = targetId
+            elseif type(targetId) == "string" then
+                R.lastTarget = tonumber(targetId) or R.lastTarget
+            end
+        end
+        local deactivationGate = checkDeactivationGates(t, snapshot)
         if deactivationGate then
             if R.active then
                 setActive(false, deactivationGate)
             end
-            clearTargetHistory()
+            if deactivationGate ~= "target_timeout_reset" then
+                clearTargetHistory()
+            end
             R.lastGate = deactivationGate
             return
         end
@@ -245,16 +268,9 @@ local function bindCharacter(character)
             return
         end
         R.lastEvalAt = t
-        local snapshot = GameInfo.getSnapshot(R.lastTarget, t)
-        if not GameInfo.isSnapshotValid(snapshot, t) then
+        if not snapshot or not GameInfo.isSnapshotValid(snapshot, t) then
             R.lastGate = "invalid_snapshot"
             return
-        end
-        local targetId = snapshot.targetId
-        if type(targetId) == "number" then
-            R.lastTarget = targetId
-        elseif type(targetId) == "string" then
-            R.lastTarget = tonumber(targetId) or R.lastTarget
         end
         evaluateClash(t, snapshot)
     end)
@@ -385,7 +401,7 @@ function AutoClash.onBallSync(data)
     end
     local isMe = targetId == R.localUserId
     if R.wasMeTarget and not isMe then
-        R.lostMeAt = nowTime
+        R.lostMeAt = 0
         R.returnPending = false
     elseif not R.wasMeTarget and isMe then
         if R.lostMeAt > 0 then
