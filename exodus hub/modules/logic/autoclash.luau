@@ -7,12 +7,12 @@ local Utils
 
 -- tuning
 local T = {
-    RETURN_WIN_START = 0.126,
+    RETURN_WIN_START = 0.100,
     RETURN_WIN_END = 0.060,
     RETURN_SPD_START = 60,
     RETURN_SPD_END = 600,
     PING_FACTOR = 0.3,
-    DEACT_FACTOR = 1.0,
+    DEACT_FACTOR = 1.5,
     ACTIVATION_ADDITIONAL_TIME = 0.250,
     MIN_EVAL_INTERVAL = 1 / 120,
     TELEPORT_GRACE_TIME = 0.20,
@@ -243,10 +243,6 @@ local function shouldDeactivate(t, snapshot)
 
     if R.deactOutsideAt <= 0 then
         R.deactOutsideAt = t
-    end
-
-    if snapshot.targeted == true then
-        return false
     end
 
     return t - R.deactOutsideAt
