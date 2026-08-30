@@ -156,48 +156,37 @@ local function resetRuntime(reason)
 end
 
 -- activation
-local function shouldActivate(t, snapshot)
-    if not (
-        snapshot
-        and snapshot.ball
-        and snapshot.ball.Parent
-    ) then
-        return false
-    end
-
-    if not (
-        R.boundRoot
-        and R.boundRoot.Parent
-    ) then
-        return false
-    end
-
-    if snapshot.targeted ~= true then
-        R.lastGate = "target_not_me"
-        return false
-    end
-
+local function targetReturnGate(t)
     if not R.returnPending then
-        R.lastGate = "awaiting_return"
         return false
     end
 
-    R.returnPending = false
-    R.lostMeAt = 0
+    if R.lostMeAt <= 0 then
+        R.returnPending = false
+        return false
+    end
 
-    R.lastGate = "target_return"
+    local elapsed = t - R.lostMeAt
+    local window = returnWindow(R.lastSpeed)
+
+    if elapsed < 0 or elapsed > window then
+        R.lostMeAt = 0
+        R.returnPending = false
+        return false
+    end
+
     return true
 end
 
 -- deactivation
-local function shouldDeactivate(t, snapshot)
-    if R.lostMeAt <= 0 then
+local function targetDeactivationGate(t, snapshot)
+    if snapshot.targeted == true then
         R.deactOutsideAt = 0
+        R.lostMeAt = 0
         return false
     end
 
-    if snapshot.targeted == true then
-        R.lostMeAt = 0
+    if R.lostMeAt <= 0 then
         R.deactOutsideAt = 0
         return false
     end
@@ -272,7 +261,7 @@ local function evaluateClash(t, snapshot)
         ) or 8
 
     if R.active then
-        if shouldDeactivate(
+        if targetDeactivationGate(
             t,
             snapshot
         ) then
@@ -282,16 +271,18 @@ local function evaluateClash(t, snapshot)
             )
 
             R.lostMeAt = 0
+            R.returnPending = false
             R.deactOutsideAt = 0
         end
 
         return
     end
 
-    if shouldActivate(
-        t,
-        snapshot
-    ) then
+    if targetReturnGate(t) then
+        R.returnPending = false
+        R.lostMeAt = 0
+        R.lastGate = "target_return"
+
         setActive(
             true,
             "activated"
