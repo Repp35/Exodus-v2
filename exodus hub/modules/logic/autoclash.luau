@@ -13,12 +13,8 @@ local T = {
     RETURN_WIN_HI = 0.068,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
-    DET_FACTOR = 2.0,
-    DEACT_FALLBACK = 1.85,
+    DEACT_FALLBACK = 2.1,
     PING_FACTOR = 0.3,
-    DET_DOT_EMA = 0.35,
-    DET_DOT_THRESHOLD = 0.14,
-    DET_TIMEOUT = 0.8,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -36,10 +32,6 @@ local R = {
     actRadius = 0,
     lostMeAt = 0,
     wasMeTarget = false,
-    detPhase = "IDLE",
-    detExitAt = 0,
-    detMinDist = 0,
-    detDotEma = 0,
     lastEvalAt = 0,
     connections = {},
     lastGate = "none",
@@ -70,10 +62,6 @@ local function returnWindow(speed)
     )
 
     return base + AutoParry.getPingOneWay() * T.PING_FACTOR
-end
-
-local function detectorWindow(speed)
-    return returnWindow(speed) * T.DET_FACTOR
 end
 
 local function deactWindow(speed)
@@ -117,13 +105,6 @@ local function disconnectConnections()
     end
 end
 
-local function resetDetector()
-    R.detPhase = "IDLE"
-    R.detExitAt = 0
-    R.detMinDist = 0
-    R.detDotEma = 0
-end
-
 local function resetRuntime(reason)
     R.generation = R.generation + 1
 
@@ -144,7 +125,6 @@ local function resetRuntime(reason)
     R.lastEvalAt = 0
     R.lastGate = "detached"
 
-    resetDetector()
     setPhase("detached", reason or "reset")
 end
 
@@ -185,93 +165,9 @@ local function targetReturnGate(t)
     end
 
     local elapsed = t - R.lostMeAt
-    return elapsed >= 0 and elapsed <= returnWindow(R.lastSpeed)
-end
 
-local function detectorGate(t, snapshot)
-    local ball = snapshot and snapshot.ball
-    local root = R.boundRoot
-
-    if not (ball and ball.Parent and root and root.Parent) then
-        resetDetector()
-        return false
-    end
-
-    local ok, velocity, rootPosition, ballPosition = pcall(function()
-        return ball.AssemblyLinearVelocity, root.Position, ball.Position
-    end)
-
-    if not (
-        ok
-        and typeof(velocity) == "Vector3"
-        and typeof(rootPosition) == "Vector3"
-        and typeof(ballPosition) == "Vector3"
-    ) then
-        resetDetector()
-        return false
-    end
-
-    if velocity.Magnitude <= 1 then
-        resetDetector()
-        return false
-    end
-
-    local offset = rootPosition - ballPosition
-    local distance = offset.Magnitude
-
-    if distance <= 0.001 then
-        resetDetector()
-        return false
-    end
-
-    local rawDot = velocity:Dot(offset.Unit)
-
-    R.detDotEma =
-        R.detDotEma * (1 - T.DET_DOT_EMA)
-        + rawDot * T.DET_DOT_EMA
-
-    local approaching = R.detDotEma > T.DET_DOT_THRESHOLD
-
-    if R.detPhase == "IDLE" then
-        if approaching and distance <= R.actRadius then
-            R.detPhase = "INSIDE"
-            R.detMinDist = distance
-        end
-
-        return false
-    end
-
-    if R.detPhase == "INSIDE" then
-        R.detMinDist = math.min(R.detMinDist, distance)
-
-        if not approaching then
-            R.detPhase = "EXITED"
-            R.detExitAt = t
-        end
-
-        return false
-    end
-
-    if R.detPhase == "EXITED" then
-        if t - R.detExitAt > T.DET_TIMEOUT then
-            resetDetector()
-            return false
-        end
-
-        local elapsed = t - R.detExitAt
-        local returned =
-            approaching
-            and distance <= R.detMinDist + 0.5
-            and distance <= R.actRadius
-
-        if returned and elapsed <= detectorWindow(R.lastSpeed) then
-            R.detPhase = "INSIDE"
-            R.detMinDist = distance
-            return true
-        end
-    end
-
-    return false
+    return elapsed >= 0
+        and elapsed <= returnWindow(R.lastSpeed)
 end
 
 local function shouldActivate(t, snapshot)
@@ -283,10 +179,6 @@ local function shouldActivate(t, snapshot)
         return false
     end
 
-    R.lastSpeed = tonumber(snapshot.speed) or 0
-    R.parryRadius = AutoParry.getParryRadius(R.lastSpeed, t) or 8
-    R.actRadius = R.parryRadius * T.ACT_RAD_FACTOR
-
     if proximityGate(snapshot) then
         R.lastGate = "proximity"
         return true
@@ -294,11 +186,6 @@ local function shouldActivate(t, snapshot)
 
     if targetReturnGate(t) then
         R.lastGate = "target_return"
-        return true
-    end
-
-    if detectorGate(t, snapshot) then
-        R.lastGate = "detector_return"
         return true
     end
 
@@ -342,6 +229,10 @@ local function evaluateClash(t, snapshot)
     if not (snapshot and snapshot.ball and snapshot.ball.Parent) then
         return
     end
+
+    R.lastSpeed = tonumber(snapshot.speed) or 0
+    R.parryRadius = AutoParry.getParryRadius(R.lastSpeed, t) or 8
+    R.actRadius = R.parryRadius * T.ACT_RAD_FACTOR
 
     if R.active then
         if targetDeactivationGate(t, snapshot) then
@@ -393,7 +284,6 @@ local function bindCharacter(character)
             end
 
             R.lostMeAt = 0
-            resetDetector()
             return
         end
 
@@ -403,7 +293,6 @@ local function bindCharacter(character)
             end
 
             R.lostMeAt = 0
-            resetDetector()
             return
         end
 
@@ -413,7 +302,6 @@ local function bindCharacter(character)
             end
 
             R.lostMeAt = 0
-            resetDetector()
             return
         end
 
@@ -511,8 +399,6 @@ function AutoClash.setup(deps)
     R.connections = {}
     R.lastGate = "none"
 
-    resetDetector()
-
     return true
 end
 
@@ -540,7 +426,6 @@ function AutoClash.onBallSync(data)
     if data.Teleported == true then
         R.lostMeAt = 0
         R.wasMeTarget = false
-        resetDetector()
 
         if R.active then
             setActive(false, "teleported")
