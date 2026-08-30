@@ -3,11 +3,11 @@
 local AutoClash = {}
 local AutoParry
 local GameInfo
-local Utils
+local Utils 
 
 -- tuning
 local T = {
-    RETURN_WIN_LO = 0.150,
+    RETURN_WIN_LO = 0.130,
     RETURN_WIN_HI = 0.110,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
