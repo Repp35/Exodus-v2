@@ -13,7 +13,7 @@ local T = {
     RETURN_WIN_HI = 0.068,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
-    DET_FACTOR = 2.0,
+    DET_FACTOR = 2.1,
     DEACT_FALLBACK = 1.85,
     PING_FACTOR = 0.3,
     DET_DOT_EMA = 0.35,
@@ -252,7 +252,6 @@ local function evaluateClash(time, snapshot)
     if R.active then
         if shouldDeactivate(time) then
             setActive(false, "target_deactivated")
-            R.lostMeAt = 0
         end
         return
     end
