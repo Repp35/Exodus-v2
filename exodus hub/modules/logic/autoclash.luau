@@ -7,13 +7,14 @@ local Utils
 
 -- tuning
 local T = {
-    RETURN_WIN_LO = 0.120,
-    RETURN_WIN_HI = 0.90,
+    RETURN_WIN_LO = 0.130,
+    RETURN_WIN_HI = 0.110,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
     PING_FACTOR = 0.3,
-    DEACT_FACTOR = 1.7,
-    GRACE_TIME = 0.20,
+    DEACT_FACTOR = 1.85,
+    ACTIVATION_EXTRA_TIME = 0.250,
+    DEACTIVATION_EXTRA_TIME = 0.100,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -28,11 +29,11 @@ local R = {
     lastTarget = -1,
     lastSpeed = 0,
     parryRadius = 0,
+    actRadius = 0,
     lostMeAt = 0,
     returnPending = false,
     deactOutsideAt = 0,
     wasMeTarget = false,
-    graceUntil = 0,
     lastEvalAt = 0,
     connections = {},
     lastGate = "none",
@@ -127,13 +128,6 @@ local function disconnectConnections()
     end
 end
 
-local function clearTargetHistory()
-    R.lostMeAt = 0
-    R.returnPending = false
-    R.deactOutsideAt = 0
-    R.wasMeTarget = false
-end
-
 local function resetRuntime(reason)
     R.generation = R.generation + 1
 
@@ -151,11 +145,13 @@ local function resetRuntime(reason)
     R.lastTarget = -1
     R.lastSpeed = 0
     R.parryRadius = 0
-    R.graceUntil = 0
+    R.actRadius = 0
+    R.lostMeAt = 0
+    R.returnPending = false
+    R.deactOutsideAt = 0
+    R.wasMeTarget = false
     R.lastEvalAt = 0
     R.lastGate = "detached"
-
-    clearTargetHistory()
 
     setPhase(
         "detached",
@@ -163,57 +159,77 @@ local function resetRuntime(reason)
     )
 end
 
-local function enterGrace(t)
-    R.graceUntil = t + T.GRACE_TIME
-
-    if R.active then
-        setActive(
-            false,
-            "grace"
-        )
-    end
-
-    clearTargetHistory()
-    R.lastGate = "grace"
-end
-
-local function inGrace(t)
-    return t < R.graceUntil
-end
-
 -- activation
-local function targetReturnGate(t)
+local function shouldActivate(t, snapshot)
+    if not (
+        snapshot
+        and snapshot.ball
+        and snapshot.ball.Parent
+    ) then
+        return false
+    end
+
+    if not (
+        R.boundRoot
+        and R.boundRoot.Parent
+    ) then
+        return false
+    end
+
+    if snapshot.targeted ~= true then
+        R.lastGate = "target_not_me"
+        return false
+    end
+
     if not R.returnPending then
+        R.lastGate = "awaiting_return"
         return false
     end
 
-    if R.lostMeAt <= 0 then
-        R.returnPending = false
+    local root = R.boundRoot
+    local position = snapshot.position
+
+    if not position then
+        R.lastGate = "position_unavailable"
         return false
     end
 
-    local elapsed = t - R.lostMeAt
-    local window = returnWindow(R.lastSpeed)
+    local ok, rootPosition = pcall(function()
+        return root.Position
+    end)
 
-    if elapsed < 0 or elapsed > window then
-        R.lostMeAt = 0
-        R.returnPending = false
-        R.lastGate = "return_expired"
+    if not (
+        ok
+        and typeof(rootPosition) == "Vector3"
+        and typeof(position) == "Vector3"
+    ) then
+        R.lastGate = "position_unavailable"
         return false
     end
 
+    local distance = (rootPosition - position).Magnitude
+
+    if distance > R.actRadius then
+        R.lastGate = "outside_activation_radius"
+        return false
+    end
+
+    R.returnPending = false
+    R.lostMeAt = 0
+
+    R.lastGate = "target_return"
     return true
 end
 
 -- deactivation
-local function targetDeactivationGate(t, snapshot)
-    if snapshot.targeted == true then
+local function shouldDeactivate(t, snapshot)
+    if R.lostMeAt <= 0 then
         R.deactOutsideAt = 0
-        R.lostMeAt = 0
         return false
     end
 
-    if R.lostMeAt <= 0 then
+    if snapshot.targeted == true then
+        R.lostMeAt = 0
         R.deactOutsideAt = 0
         return false
     end
@@ -229,10 +245,9 @@ local function targetDeactivationGate(t, snapshot)
         return false
     end
 
-    local ok, rootPosition =
-        pcall(function()
-            return root.Position
-        end)
+    local ok, rootPosition = pcall(function()
+        return root.Position
+    end)
 
     if not (
         ok
@@ -245,7 +260,11 @@ local function targetDeactivationGate(t, snapshot)
     local distance =
         (rootPosition - position).Magnitude
 
-    if distance <= R.parryRadius then
+    local deactRadius =
+        R.parryRadius
+        + R.lastSpeed * T.DEACTIVATION_EXTRA_TIME
+
+    if distance <= deactRadius then
         R.deactOutsideAt = 0
         return false
     end
@@ -287,21 +306,13 @@ local function evaluateClash(t, snapshot)
             t
         ) or 8
 
-    if inGrace(t) then
-        if R.active then
-            setActive(
-                false,
-                "grace"
-            )
-        end
-
-        clearTargetHistory()
-        R.lastGate = "grace"
-        return
-    end
+    R.actRadius =
+        R.parryRadius
+        + R.lastSpeed
+        * T.ACTIVATION_EXTRA_TIME
 
     if R.active then
-        if targetDeactivationGate(
+        if shouldDeactivate(
             t,
             snapshot
         ) then
@@ -311,18 +322,16 @@ local function evaluateClash(t, snapshot)
             )
 
             R.lostMeAt = 0
-            R.returnPending = false
             R.deactOutsideAt = 0
         end
 
         return
     end
 
-    if targetReturnGate(t) then
-        R.returnPending = false
-        R.lostMeAt = 0
-        R.lastGate = "target_return"
-
+    if shouldActivate(
+        t,
+        snapshot
+    ) then
         setActive(
             true,
             "activated"
@@ -390,7 +399,10 @@ local function bindCharacter(character)
                         )
                     end
 
-                    clearTargetHistory()
+                    R.lostMeAt = 0
+                    R.returnPending = false
+                    R.deactOutsideAt = 0
+                    R.wasMeTarget = false
                     return
                 end
 
@@ -402,7 +414,10 @@ local function bindCharacter(character)
                         )
                     end
 
-                    clearTargetHistory()
+                    R.lostMeAt = 0
+                    R.returnPending = false
+                    R.deactOutsideAt = 0
+                    R.wasMeTarget = false
                     return
                 end
 
@@ -416,25 +431,15 @@ local function bindCharacter(character)
                         )
                     end
 
-                    clearTargetHistory()
+                    R.lostMeAt = 0
+                    R.returnPending = false
+                    R.deactOutsideAt = 0
+                    R.wasMeTarget = false
                     return
                 end
 
                 local t =
                     Utils.now()
-
-                if inGrace(t) then
-                    if R.active then
-                        setActive(
-                            false,
-                            "grace"
-                        )
-                    end
-
-                    clearTargetHistory()
-                    R.lastGate = "grace"
-                    return
-                end
 
                 if t - R.lastEvalAt
                     < T.MIN_EVAL_INTERVAL
@@ -594,11 +599,11 @@ function AutoClash.setup(deps)
     R.lastTarget = -1
     R.lastSpeed = 0
     R.parryRadius = 0
+    R.actRadius = 0
     R.lostMeAt = 0
     R.returnPending = false
     R.deactOutsideAt = 0
     R.wasMeTarget = false
-    R.graceUntil = 0
     R.lastEvalAt = 0
     R.connections = {}
     R.lastGate = "none"
@@ -629,16 +634,19 @@ function AutoClash.onBallSync(data)
         return
     end
 
-    local t = Utils.now()
-
     if data.Teleported == true then
-        enterGrace(t)
-        return
-    end
+        R.lostMeAt = 0
+        R.returnPending = false
+        R.deactOutsideAt = 0
+        R.wasMeTarget = false
 
-    if inGrace(t) then
-        clearTargetHistory()
-        R.lastGate = "grace"
+        if R.active then
+            setActive(
+                false,
+                "teleported"
+            )
+        end
+
         return
     end
 
@@ -652,7 +660,10 @@ function AutoClash.onBallSync(data)
             tonumber(target) or -1
     else
         R.lastTarget = -1
-        clearTargetHistory()
+        R.lostMeAt = 0
+        R.returnPending = false
+        R.deactOutsideAt = 0
+        R.wasMeTarget = false
         return
     end
 
@@ -665,12 +676,17 @@ function AutoClash.onBallSync(data)
         == R.localUserId
 
     if R.wasMeTarget and not isMe then
-        R.lostMeAt = t
+        R.lostMeAt =
+            Utils.now()
+
         R.returnPending = false
         R.deactOutsideAt = 0
 
     elseif not R.wasMeTarget and isMe then
         if R.lostMeAt > 0 then
+            local t =
+                Utils.now()
+
             local elapsed =
                 t - R.lostMeAt
 
@@ -702,6 +718,7 @@ function AutoClash.getStatus()
         bound = R.bound == true,
         active = R.active == true,
         parryRadius = R.parryRadius,
+        activationRadius = R.actRadius,
         lastTarget = R.lastTarget,
         lastGate = R.lastGate,
     }
