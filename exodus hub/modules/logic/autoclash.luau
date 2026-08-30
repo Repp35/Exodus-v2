@@ -7,15 +7,16 @@ local Utils
 
 -- tuning
 local T = {
-    RETURN_WIN_LO = 0.130,
-    RETURN_WIN_HI = 0.110,
-    RETURN_SPD_LO = 60,
-    RETURN_SPD_HI = 200,
+    RETURN_WIN_START = 0.130,
+    RETURN_WIN_END = 0.070,
+    RETURN_SPD_START = 60,
+    RETURN_SPD_END = 600,
     PING_FACTOR = 0.3,
     DEACT_FACTOR = 1.85,
-    ACTIVATION_EXTRA_TIME = 0.250,
-    DEACTIVATION_EXTRA_TIME = 0.100,
+    ACTIVATION_ADDITIONAL_TIME = 0.250,
+    DEACTIVATION_ADDITIONAL_TIME = 0.100,
     MIN_EVAL_INTERVAL = 1 / 120,
+    TELEPORT_GRACE_TIME = 0.20,
 }
 
 -- runtime
@@ -35,32 +36,38 @@ local R = {
     deactOutsideAt = 0,
     wasMeTarget = false,
     lastEvalAt = 0,
+    teleportLockUntil = 0,
     connections = {},
     lastGate = "none",
 }
 
 -- helpers
-local function lerp(speed, lo, hi, spdLo, spdHi)
-    if spdHi <= spdLo then
-        return lo
-    end
-
-    local alpha = math.clamp(
-        (speed - spdLo) / (spdHi - spdLo),
-        0,
-        1
-    )
-
-    return lo + (hi - lo) * alpha
+local function lerp(a, b, alpha)
+    return a + (b - a) * alpha
 end
 
 local function returnWindow(speed)
+    speed = tonumber(speed) or 0
+
+    local span = T.RETURN_SPD_END
+        - T.RETURN_SPD_START
+
+    local alpha
+
+    if span <= 0 then
+        alpha = 0
+    else
+        alpha = math.clamp(
+            (speed - T.RETURN_SPD_START) / span,
+            0,
+            1
+        )
+    end
+
     local base = lerp(
-        speed,
-        T.RETURN_WIN_LO,
-        T.RETURN_WIN_HI,
-        T.RETURN_SPD_LO,
-        T.RETURN_SPD_HI
+        T.RETURN_WIN_START,
+        T.RETURN_WIN_END,
+        alpha
     )
 
     return base
@@ -69,8 +76,9 @@ local function returnWindow(speed)
 end
 
 local function deactivationWindow(speed)
-    return returnWindow(speed)
-        * T.DEACT_FACTOR
+    return T.DEACTIVATION_ADDITIONAL_TIME
+        + AutoParry.getPingOneWay()
+        * T.PING_FACTOR
 end
 
 local function setPhase(phase, reason)
@@ -128,6 +136,13 @@ local function disconnectConnections()
     end
 end
 
+local function clearTargetHistory()
+    R.lostMeAt = 0
+    R.returnPending = false
+    R.deactOutsideAt = 0
+    R.wasMeTarget = false
+end
+
 local function resetRuntime(reason)
     R.generation = R.generation + 1
 
@@ -151,6 +166,7 @@ local function resetRuntime(reason)
     R.deactOutsideAt = 0
     R.wasMeTarget = false
     R.lastEvalAt = 0
+    R.teleportLockUntil = 0
     R.lastGate = "detached"
 
     setPhase(
@@ -186,34 +202,6 @@ local function shouldActivate(t, snapshot)
         return false
     end
 
-    local root = R.boundRoot
-    local position = snapshot.position
-
-    if not position then
-        R.lastGate = "position_unavailable"
-        return false
-    end
-
-    local ok, rootPosition = pcall(function()
-        return root.Position
-    end)
-
-    if not (
-        ok
-        and typeof(rootPosition) == "Vector3"
-        and typeof(position) == "Vector3"
-    ) then
-        R.lastGate = "position_unavailable"
-        return false
-    end
-
-    local distance = (rootPosition - position).Magnitude
-
-    if distance > R.actRadius then
-        R.lastGate = "outside_activation_radius"
-        return false
-    end
-
     R.returnPending = false
     R.lostMeAt = 0
 
@@ -223,15 +211,15 @@ end
 
 -- deactivation
 local function shouldDeactivate(t, snapshot)
-    if R.lostMeAt <= 0 then
-        R.deactOutsideAt = 0
-        return false
-    end
-
     if snapshot.targeted == true then
         R.lostMeAt = 0
         R.deactOutsideAt = 0
         return false
+    end
+
+    if R.lostMeAt <= 0 then
+        R.deactOutsideAt = 0
+        return true
     end
 
     local root = R.boundRoot
@@ -245,9 +233,10 @@ local function shouldDeactivate(t, snapshot)
         return false
     end
 
-    local ok, rootPosition = pcall(function()
-        return root.Position
-    end)
+    local ok, rootPosition =
+        pcall(function()
+            return root.Position
+        end)
 
     if not (
         ok
@@ -260,11 +249,7 @@ local function shouldDeactivate(t, snapshot)
     local distance =
         (rootPosition - position).Magnitude
 
-    local deactRadius =
-        R.parryRadius
-        + R.lastSpeed * T.DEACTIVATION_EXTRA_TIME
-
-    if distance <= deactRadius then
+    if distance <= R.parryRadius then
         R.deactOutsideAt = 0
         return false
     end
@@ -309,7 +294,11 @@ local function evaluateClash(t, snapshot)
     R.actRadius =
         R.parryRadius
         + R.lastSpeed
-        * T.ACTIVATION_EXTRA_TIME
+        * (
+            T.ACTIVATION_ADDITIONAL_TIME
+            + AutoParry.getPingOneWay()
+            * T.PING_FACTOR
+        )
 
     if R.active then
         if shouldDeactivate(
@@ -399,10 +388,7 @@ local function bindCharacter(character)
                         )
                     end
 
-                    R.lostMeAt = 0
-                    R.returnPending = false
-                    R.deactOutsideAt = 0
-                    R.wasMeTarget = false
+                    clearTargetHistory()
                     return
                 end
 
@@ -414,10 +400,7 @@ local function bindCharacter(character)
                         )
                     end
 
-                    R.lostMeAt = 0
-                    R.returnPending = false
-                    R.deactOutsideAt = 0
-                    R.wasMeTarget = false
+                    clearTargetHistory()
                     return
                 end
 
@@ -431,15 +414,24 @@ local function bindCharacter(character)
                         )
                     end
 
-                    R.lostMeAt = 0
-                    R.returnPending = false
-                    R.deactOutsideAt = 0
-                    R.wasMeTarget = false
+                    clearTargetHistory()
                     return
                 end
 
                 local t =
                     Utils.now()
+
+                if t < R.teleportLockUntil then
+                    if R.active then
+                        setActive(
+                            false,
+                            "teleport_grace"
+                        )
+                    end
+
+                    clearTargetHistory()
+                    return
+                end
 
                 if t - R.lastEvalAt
                     < T.MIN_EVAL_INTERVAL
@@ -605,6 +597,7 @@ function AutoClash.setup(deps)
     R.deactOutsideAt = 0
     R.wasMeTarget = false
     R.lastEvalAt = 0
+    R.teleportLockUntil = 0
     R.connections = {}
     R.lastGate = "none"
 
@@ -634,16 +627,20 @@ function AutoClash.onBallSync(data)
         return
     end
 
+    local nowTime =
+        Utils.now()
+
     if data.Teleported == true then
-        R.lostMeAt = 0
-        R.returnPending = false
-        R.deactOutsideAt = 0
-        R.wasMeTarget = false
+        R.teleportLockUntil =
+            nowTime
+            + T.TELEPORT_GRACE_TIME
+
+        clearTargetHistory()
 
         if R.active then
             setActive(
                 false,
-                "teleported"
+                "teleport_grace"
             )
         end
 
@@ -660,10 +657,7 @@ function AutoClash.onBallSync(data)
             tonumber(target) or -1
     else
         R.lastTarget = -1
-        R.lostMeAt = 0
-        R.returnPending = false
-        R.deactOutsideAt = 0
-        R.wasMeTarget = false
+        clearTargetHistory()
         return
     end
 
@@ -677,18 +671,16 @@ function AutoClash.onBallSync(data)
 
     if R.wasMeTarget and not isMe then
         R.lostMeAt =
-            Utils.now()
+            nowTime
 
         R.returnPending = false
         R.deactOutsideAt = 0
 
     elseif not R.wasMeTarget and isMe then
         if R.lostMeAt > 0 then
-            local t =
-                Utils.now()
-
             local elapsed =
-                t - R.lostMeAt
+                nowTime
+                - R.lostMeAt
 
             if elapsed >= 0
                 and elapsed
@@ -718,7 +710,7 @@ function AutoClash.getStatus()
         bound = R.bound == true,
         active = R.active == true,
         parryRadius = R.parryRadius,
-        activationRadius = R.actRadius,
+        actRadius = R.actRadius,
         lastTarget = R.lastTarget,
         lastGate = R.lastGate,
     }
