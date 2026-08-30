@@ -68,6 +68,7 @@ local function setPhase(phase, reason)
 
     local previous = R.phase
     R.phase = phase
+
     pcall(
         Utils.recordTransition,
         "AutoClash",
@@ -185,20 +186,6 @@ local function shouldActivate(t, snapshot)
     return true
 end
 
--- deactivation
-local function shouldDeactivate(t)
-    if R.lostMeAt <= 0 then
-        return false
-    end
-
-    if R.lostMeAt <= R.lastReturnAt then
-        return false
-    end
-
-    return t - R.lostMeAt
-        > returnWindow(R.lastSpeed) * 2.0
-end
-
 -- main evaluation
 local function evaluateClash(t, snapshot)
     if not (
@@ -226,13 +213,6 @@ local function evaluateClash(t, snapshot)
         ) or 8
 
     if R.active then
-        if shouldDeactivate(t) then
-            setActive(
-                false,
-                "target_deactivated"
-            )
-        end
-
         return
     end
 
@@ -370,7 +350,8 @@ local function bindCharacter(character)
 
                 if type(
                     snapshot.targetId
-                ) == "number" then
+                ) == "number"
+                then
                     R.lastTarget =
                         snapshot.targetId
                 end
