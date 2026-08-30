@@ -229,15 +229,25 @@ local function shouldActivate(t, snapshot)
 end
 
 -- deactivation
-local function targetDeactivationGate(t)
+local function targetDeactivationGate(t, snapshot)
+    local position = snapshot and snapshot.position
+    local root = R.boundRoot
+    if position and root and root.Parent then
+        local ok, rootPos = pcall(function() return root.Position end)
+        if ok and typeof(rootPos) == "Vector3" then
+            if (rootPos - position).Magnitude <= R.parryRadius then
+                return false
+            end
+        end
+    end
     if R.lostMeAt <= 0 then
         return false
     end
     local elapsed = t - R.lostMeAt
     return elapsed > deactWindow(R.lastSpeed)
 end
-local function shouldDeactivate(t)
-    return targetDeactivationGate(t)
+local function shouldDeactivate(t, snapshot)
+    return targetDeactivationGate(t, snapshot)
 end
 
 -- main evaluation
@@ -250,7 +260,7 @@ local function evaluateClash(time, snapshot)
         return
     end
     if R.active then
-        if shouldDeactivate(time) then
+        if shouldDeactivate(time, snapshot) then
             setActive(false, "target_deactivated")
         end
         return
@@ -480,15 +490,6 @@ function AutoClash.onBallSync(data)
     if type(R.lastTarget) == "number" and R.localUserId then
         local isMe = R.lastTarget == R.localUserId
         if isMe and not R.wasMeTarget then
-            if R.lostMeAt > 0 then
-                local elapsed = t - R.lostMeAt
-                local window = returnWindow(R.lastSpeed)
-                if elapsed >= 0 and elapsed <= window then
-                    if R.active then
-                        R.lastGate = "target_return_refresh"
-                    end
-                end
-            end
             R.lostMeAt = 0
         elseif not isMe and R.wasMeTarget then
             R.lostMeAt = t
