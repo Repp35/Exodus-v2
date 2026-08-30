@@ -7,14 +7,13 @@ local Utils
 
 -- tuning
 local T = {
-    ACT_RAD_FACTOR = 1.15,
-    PROX_FACTOR = 0.50,
-    RETURN_WIN_LO = 0.144,
+    RETURN_WIN_LO = 0.150,
     RETURN_WIN_HI = 0.068,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
-    DEACT_FALLBACK = 2.0,
     PING_FACTOR = 0.3,
+    ACT_TIME = 0.300,
+    DEACT_TIME = 0.200,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -29,7 +28,6 @@ local R = {
     lastTarget = -1,
     lastSpeed = 0,
     parryRadius = 0,
-    actRadius = 0,
     lostMeAt = 0,
     wasMeTarget = false,
     lastEvalAt = 0,
@@ -62,10 +60,6 @@ local function returnWindow(speed)
     )
 
     return base + AutoParry.getPingOneWay() * T.PING_FACTOR
-end
-
-local function deactWindow(speed)
-    return returnWindow(speed) * T.DEACT_FALLBACK
 end
 
 local function setPhase(phase, reason)
@@ -119,7 +113,6 @@ local function resetRuntime(reason)
     R.lastTarget = -1
     R.lastSpeed = 0
     R.parryRadius = 0
-    R.actRadius = 0
     R.lostMeAt = 0
     R.wasMeTarget = false
     R.lastEvalAt = 0
@@ -129,19 +122,74 @@ local function resetRuntime(reason)
 end
 
 -- activation
-local function proximityGate(snapshot)
-    if not (snapshot and snapshot.targeted == true) then
+local function targetReturnGate(t, snapshot)
+    if not R.wasMeTarget or R.lostMeAt <= 0 then
         return false
     end
 
-    if not (
-        type(snapshot.approachingSpeed) == "number"
-        and snapshot.approachingSpeed > 0
-    ) then
+    local elapsed = t - R.lostMeAt
+
+    if elapsed < 0 or elapsed > returnWindow(R.lastSpeed) then
         return false
     end
 
-    local position = snapshot.position
+    local position = snapshot and snapshot.position
+    local root = R.boundRoot
+
+    if not (position and root and root.Parent) then
+        return false
+    end
+
+    local speed = tonumber(snapshot.approachingSpeed) or R.lastSpeed
+
+    if speed <= 0 then
+        return false
+    end
+
+    local ok, rootPosition = pcall(function()
+        return root.Position
+    end)
+
+    if not (ok and typeof(rootPosition) == "Vector3") then
+        return false
+    end
+
+    local distance = (rootPosition - position).Magnitude
+    local distanceToParry = distance - R.parryRadius
+
+    if distanceToParry <= 0 then
+        return true
+    end
+
+    local timeToParry = distanceToParry / speed
+
+    return timeToParry <= T.ACT_TIME
+end
+
+local function shouldActivate(t, snapshot)
+    if not (snapshot and snapshot.ball and snapshot.ball.Parent) then
+        return false
+    end
+
+    if not (R.boundRoot and R.boundRoot.Parent) then
+        return false
+    end
+
+    if targetReturnGate(t, snapshot) then
+        R.lastGate = "target_return"
+        return true
+    end
+
+    R.lastGate = snapshot.targeted == true
+        and "awaiting_return"
+        or "target_not_me"
+
+    return false
+end
+
+-- deactivation
+local function shouldDeactivate(snapshot)
+    local position = snapshot and snapshot.position
     local root = R.boundRoot
 
     if not (position and root and root.Parent) then
@@ -156,68 +204,18 @@ local function proximityGate(snapshot)
         return false
     end
 
-    return (rootPosition - position).Magnitude <= R.parryRadius * T.PROX_FACTOR
-end
+    local speed = tonumber(snapshot.approachingSpeed)
+        or tonumber(snapshot.speed)
+        or R.lastSpeed
 
-local function targetReturnGate(t)
-    if not R.wasMeTarget or R.lostMeAt <= 0 then
-        return false
+    if speed < 0 then
+        speed = 0
     end
 
-    local elapsed = t - R.lostMeAt
+    local deactivationRadius =
+        R.parryRadius + speed * T.DEACT_TIME
 
-    return elapsed >= 0
-        and elapsed <= returnWindow(R.lastSpeed)
-end
-
-local function shouldActivate(t, snapshot)
-    if not (snapshot and snapshot.ball and snapshot.ball.Parent) then
-        return false
-    end
-
-    if not (R.boundRoot and R.boundRoot.Parent) then
-        return false
-    end
-
-    if proximityGate(snapshot) then
-        R.lastGate = "proximity"
-        return true
-    end
-
-    if targetReturnGate(t) then
-        R.lastGate = "target_return"
-        return true
-    end
-
-    R.lastGate = snapshot.targeted == true
-        and "awaiting_gate"
-        or "target_not_me"
-
-    return false
-end
-
--- deactivation
-local function targetDeactivationGate(t, snapshot)
-    local position = snapshot and snapshot.position
-    local root = R.boundRoot
-
-    if position and root and root.Parent then
-        local ok, rootPosition = pcall(function()
-            return root.Position
-        end)
-
-        if ok and typeof(rootPosition) == "Vector3" then
-            if (rootPosition - position).Magnitude <= R.parryRadius then
-                return false
-            end
-        end
-    end
-
-    if R.lostMeAt <= 0 then
-        return false
-    end
-
-    return t - R.lostMeAt > deactWindow(R.lastSpeed)
+    return (rootPosition - position).Magnitude <= deactivationRadius
 end
 
 -- main evaluation
@@ -232,14 +230,13 @@ local function evaluateClash(t, snapshot)
 
     R.lastSpeed = tonumber(snapshot.speed) or 0
     R.parryRadius = AutoParry.getParryRadius(R.lastSpeed, t) or 8
-    R.actRadius = R.parryRadius * T.ACT_RAD_FACTOR
 
     if R.active then
-        if targetDeactivationGate(t, snapshot) then
+        if shouldDeactivate(snapshot) then
             setActive(false, "target_deactivated")
+        else
+            return
         end
-
-        return
     end
 
     if shouldActivate(t, snapshot) then
@@ -284,6 +281,7 @@ local function bindCharacter(character)
             end
 
             R.lostMeAt = 0
+            R.wasMeTarget = false
             return
         end
 
@@ -293,6 +291,7 @@ local function bindCharacter(character)
             end
 
             R.lostMeAt = 0
+            R.wasMeTarget = false
             return
         end
 
@@ -302,6 +301,7 @@ local function bindCharacter(character)
             end
 
             R.lostMeAt = 0
+            R.wasMeTarget = false
             return
         end
 
@@ -392,7 +392,6 @@ function AutoClash.setup(deps)
     R.lastTarget = -1
     R.lastSpeed = 0
     R.parryRadius = 0
-    R.actRadius = 0
     R.lostMeAt = 0
     R.wasMeTarget = false
     R.lastEvalAt = 0
@@ -468,7 +467,6 @@ function AutoClash.getStatus()
         bound = R.bound == true,
         active = R.active == true,
         parryRadius = R.parryRadius,
-        actRadius = R.actRadius,
         lastTarget = R.lastTarget,
         lastGate = R.lastGate,
     }
