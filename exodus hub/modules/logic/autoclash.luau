@@ -13,7 +13,7 @@ local T = {
     RETURN_WIN_HI = 0.068,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
-    DEACT_FALLBACK = 1.9,
+    DEACT_FALLBACK = 2.0,
     PING_FACTOR = 0.3,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
