@@ -8,7 +8,7 @@ local Utils
 -- tuning
 local T = {
     RETURN_WIN_LO = 0.110,
-    RETURN_WIN_HI = 0.068,
+    RETURN_WIN_HI = 0.90,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
     PING_FACTOR = 0.3,
