@@ -7,14 +7,14 @@ local Utils
 
 -- tuning
 local T = {
-    ACT_RAD_FACTOR = 1.40,
-    PROX_FACTOR = 0.60,
-    RETURN_WIN_LO = 0.155,
-    RETURN_WIN_HI = 0.083,
+    ACT_RAD_FACTOR = 1.15,
+    PROX_FACTOR = 0.50,
+    RETURN_WIN_LO = 0.150,
+    RETURN_WIN_HI = 0.068,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 200,
     DET_FACTOR = 2.0,
-    DEACT_FALLBACK = 2.1,
+    DEACT_FALLBACK = 1.85,
     PING_FACTOR = 0.3,
     DET_DOT_EMA = 0.35,
     DET_DOT_THRESHOLD = 0.14,
@@ -230,10 +230,7 @@ end
 
 -- deactivation
 local function targetDeactivationGate(t)
-    if R.lostMeAt <= 0
-        or R.wasMeTarget
-        or R.lastTarget == R.localUserId
-    then
+    if R.lostMeAt <= 0 then
         return false
     end
     local elapsed = t - R.lostMeAt
@@ -261,7 +258,6 @@ local function evaluateClash(time, snapshot)
     end
     if shouldActivate(time, snapshot) then
         setActive(true, "activated")
-        R.lostMeAt = 0
     end
 end
 
@@ -328,11 +324,6 @@ local function bindCharacter(character)
         R.lastEvalAt = time
         local snapshot = GameInfo.getSnapshot(R.lastTarget, time)
         if not GameInfo.isSnapshotValid(snapshot, time) then
-            if R.active then
-                setActive(false, "snapshot_invalid")
-                R.lostMeAt = 0
-                resetDetector()
-            end
             return
         end
         if type(snapshot.targetId) == "number" then
@@ -499,6 +490,7 @@ function AutoClash.onBallSync(data)
                     end
                 end
             end
+            R.lostMeAt = 0
         elseif not isMe and R.wasMeTarget then
             R.lostMeAt = t
         end
