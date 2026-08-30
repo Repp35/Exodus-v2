@@ -123,7 +123,11 @@ end
 
 -- activation
 local function targetReturnGate(t, snapshot)
-    if not R.wasMeTarget or R.lostMeAt <= 0 then
+    if R.lostMeAt <= 0 then
+        return false
+    end
+
+    if not (snapshot and snapshot.targeted == true) then
         return false
     end
 
@@ -133,7 +137,7 @@ local function targetReturnGate(t, snapshot)
         return false
     end
 
-    local position = snapshot and snapshot.position
+    local position = snapshot.position
     local root = R.boundRoot
 
     if not (position and root and root.Parent) then
@@ -161,9 +165,7 @@ local function targetReturnGate(t, snapshot)
         return true
     end
 
-    local timeToParry = distanceToParry / speed
-
-    return timeToParry <= T.ACT_TIME
+    return distanceToParry / speed <= T.ACT_TIME
 end
 
 local function shouldActivate(t, snapshot)
