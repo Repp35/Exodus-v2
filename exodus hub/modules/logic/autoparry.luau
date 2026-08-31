@@ -156,14 +156,16 @@ end
 local function computeParryRadius(time, speed)
 	time = Utils.isFiniteNumber(time) and time or now()
 	speed = Utils.isFiniteNumber(speed) and math.max(speed, Tuning.MIN_BALL_SPEED) or Tuning.MIN_BALL_SPEED
-	return math.max(Tuning.DEFLECT_RADIUS + getResilienceBonus(time) + speed * Tuning.RADIUS_LEAD_TIME + speed * getPingOneWay(), 0)
+	return math.max(Tuning.DEFLECT_RADIUS + getResilienceBonus(time), 0)
 end
 local function computeDetectionRadius(time, speed, frameDelta)
 	time = Utils.isFiniteNumber(time) and time or now()
 	speed = Utils.isFiniteNumber(speed) and math.max(speed, Tuning.MIN_BALL_SPEED) or Tuning.MIN_BALL_SPEED
 	frameDelta = Utils.isFiniteNumber(frameDelta) and math.max(frameDelta, 0) or 0
 	local parryRadius = computeParryRadius(time, speed)
-	return parryRadius + speed * frameDelta
+	local earlyWindow = Tuning.RADIUS_LEAD_TIME + getPingOneWay()
+	local detectionRadius = parryRadius + speed * (earlyWindow + frameDelta)
+	return detectionRadius
 end
 local function onBallSync(data)
 	if typeof(data) ~= "table" then
@@ -357,35 +359,30 @@ local function bindCharacter(character)
 		Runtime.detectionRadius = detectionRadius
 		local offset = root.Position - position
 		local distanceSquared = offset:Dot(offset)
-		local cooldownActive = updateCooldownState(timeNow)
-		if distanceSquared <= parryRadius * parryRadius then
-			if cooldownActive then
-				ParryState.armed = true
-				ParryState.armedBall = ball
-				ParryState.armedAt = timeNow
-				setPhase("armed", "cooldown_active")
-				return
-			end
-			clearArmedState()
-			if requestParry() then
-				ParryState.firedThisBall = true
-			end
-			return
-		end
 		if distanceSquared > detectionRadius * detectionRadius then
 			clearArmedState()
 			setPhase("waiting", "outside_detection_radius")
 			return
 		end
-		if not ParryState.armed then
+		local distance = math.sqrt(distanceSquared)
+		local earlyWindow = Tuning.RADIUS_LEAD_TIME + getPingOneWay()
+		local impactTime = math.max(0, (distance - parryRadius) / speed)
+		if impactTime > earlyWindow then
+			setPhase("waiting", "outside_early_window")
+			return
+		end
+		local cooldownActive = updateCooldownState(timeNow)
+		if cooldownActive then
 			ParryState.armed = true
 			ParryState.armedBall = ball
 			ParryState.armedAt = timeNow
-		elseif ParryState.armedBall ~= ball then
-			clearArmedState()
+			setPhase("armed", "cooldown_active")
 			return
 		end
-		setPhase("armed", cooldownActive and "preparing_parry" or "waiting_for_parry_radius")
+		clearArmedState()
+		if requestParry() then
+			ParryState.firedThisBall = true
+		end
 	end)
 	Runtime.connections[#Runtime.connections + 1] = heartbeatConnection
 	Utils.trackCharacter(heartbeatConnection)
