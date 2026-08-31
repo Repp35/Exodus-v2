@@ -12,8 +12,6 @@ local heartbeatConnection
 local generation = 0
 local wasActive = false
 local acumulador = 0
-local pendingRequests = 0
-local dispatching = false
 local lastMode
 local lastRate
 local Scheduler = {
@@ -27,7 +25,6 @@ local function invalidate(reason)
     generation = generation + 1
     Scheduler.phase = "stopped"
     acumulador = 0
-    pendingRequests = 0
     lastMode = nil
     lastRate = nil
     if Utils and type(Utils.recordTransition) == "function" and wasActive then
@@ -60,41 +57,9 @@ local function scheduleCPF(rate, dt)
     acumulador = acumulador + rate * dt
     local scheduled = math.floor(acumulador)
     acumulador = acumulador - scheduled
-    pendingRequests = pendingRequests + scheduled
-end
-local function dispatchPending(currentGeneration)
-    if dispatching then
-        return
-    end
-    if pendingRequests > 0 then
-        if currentGeneration ~= generation or not isActive() then
-            pendingRequests = 0
-            return
-        end
-        pendingRequests = pendingRequests - 1
+    for _ = 1, scheduled do
         requestParry()
     end
-    if pendingRequests <= 0 then
-        return
-    end
-    dispatching = true
-    task.spawn(function()
-        local processed = 0
-        while pendingRequests > 0 do
-            if currentGeneration ~= generation or not isActive() then
-                pendingRequests = 0
-                break
-            end
-            pendingRequests = pendingRequests - 1
-            requestParry()
-            processed = processed + 1
-            if processed >= 64 then
-                processed = 0
-                task.wait()
-            end
-        end
-        dispatching = false
-    end)
 end
 
 -- runtime
@@ -109,7 +74,6 @@ local function tick(dt)
     end
     if not wasActive then
         Scheduler.phase = "running"
-        pendingRequests = pendingRequests + 1
         if type(Utils.recordTransition) == "function" then
             Utils.recordTransition("Spam", "stopped", "running", "spam_enabled")
         end
@@ -123,34 +87,33 @@ local function tick(dt)
     if mode ~= lastMode then
         lastMode = mode
         acumulador = 0
-        pendingRequests = 0
         lastRate = nil
     end
     if mode == "CPF" then
         if rate ~= lastRate then
             lastRate = rate
             acumulador = 0
-            pendingRequests = 0
         end
         scheduleCPF(rate, dt)
-        dispatchPending(generation)
         return
     end
     if rate ~= lastRate then
         lastRate = rate
         acumulador = 0
-        pendingRequests = 0
     end
     if rate <= 0 then
         return
     end
     local intervaloEntreClicks = 1 / math_max(rate, 1)
     acumulador = acumulador + dt
+    local currentGeneration = generation
     while acumulador >= intervaloEntreClicks do
+        if currentGeneration ~= generation or not isActive() then
+            return
+        end
+        task.spawn(requestParry)
         acumulador = acumulador - intervaloEntreClicks
-        pendingRequests = pendingRequests + 1
     end
-    dispatchPending(generation)
 end
 
 -- setup
@@ -186,7 +149,6 @@ function Spam.resetState()
     invalidate("reset")
     wasActive = false
     acumulador = 0
-    pendingRequests = 0
     lastMode = nil
     lastRate = nil
     Scheduler.phase = "stopped"
