@@ -677,6 +677,19 @@ end
 
 R.wasMeTarget = isMe
 
+if isMe
+    and R.returnPending
+    and R.bound
+    and Utils.isActive()
+    and getConfigEnabled()
+    and not Utils.isManualSpamActive()
+    and nowTime >= R.teleportLockUntil
+then
+    R.returnPending = false
+    R.lostMeAt = 0
+    setActive(true, "target_return")
+end
+
 end
 
 function AutoClash.isActive()
