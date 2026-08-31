@@ -9,7 +9,7 @@ local RunServiceService = game:GetService("RunService")
 local WorkspaceService = game:GetService("Workspace")
 
 -- metadata
-local SCRIPT_VERSION = "26.12"
+local SCRIPT_VERSION = "26.13"
 local API_VERSION = 1
 local SCRIPT_NAME = "Exodus Hub"
 local INTERNAL_NAME = "Exodus"
@@ -66,6 +66,7 @@ local State = {
         transitions = {},
     },
 }
+
 -- helpers
 local function disconnectAll(list)
     for index = #list, 1, -1 do
@@ -198,6 +199,19 @@ end
 -- lifecycle
 function Utils.start()
     local previousPhase = State.lifecycle.phase
+    disconnectAll(State.characterConnections)
+    disconnectAll(State.connections)
+    State.config = {}
+    State.moduleURLs = {}
+    State.manualSpamActive = false
+    State.autoSpamActive = false
+    State.diagnostics = {
+        lastError = nil,
+        lastTransition = nil,
+        lastTransitionAt = 0,
+        errors = {},
+        transitions = {},
+    }
     State.lifecycle.generation = State.lifecycle.generation + 1
     State.lifecycle.startedAt = os.clock()
     State.lifecycle.stoppedAt = 0
@@ -476,4 +490,5 @@ function Utils.warn(message)
 end
 _G.ExodusStop = Utils.stop
 Utils.__contract = { requires = {} }
+
 return Utils
