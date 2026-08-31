@@ -51,7 +51,7 @@ local State = {
     config = {},
     moduleURLs = {},
 	    manualSpamActive = false,
-	    autoSpamActive = false,
+	    autoClashActive = false,
 	    spamActivationHandler = nil,
 	    lifecycle = {
         phase = "stopped",
@@ -205,7 +205,7 @@ function Utils.start()
     State.config = {}
     State.moduleURLs = {}
     State.manualSpamActive = false
-    State.autoSpamActive = false
+    State.autoClashActive = false
     State.spamActivationHandler = nil
     State.diagnostics = {
         lastError = nil,
@@ -229,7 +229,7 @@ function Utils.stop()
     local previousPhase = State.lifecycle.phase
     State.active = false
     State.manualSpamActive = false
-    State.autoSpamActive = false
+    State.autoClashActive = false
     State.spamActivationHandler = nil
     DiagnosticsModules = {}
     State.lifecycle.stoppedAt = os.clock()
@@ -297,7 +297,7 @@ function Utils.getDiagnostics()
         runtime = {
             active = State.active,
             manualSpamActive = State.manualSpamActive,
-            autoSpamActive = State.autoSpamActive,
+            autoClashActive = State.autoClashActive,
         },
         modules = getModuleStatuses(),
     }
@@ -314,7 +314,7 @@ function Utils.getStateSnapshot()
         generatedAt = os.clock(),
         active = State.active,
         manualSpamActive = State.manualSpamActive,
-        autoSpamActive = State.autoSpamActive,
+        autoClashActive = State.autoClashActive,
         lifecycle = copyMap(State.lifecycle),
         config = copyMap(State.config),
         moduleURLs = copyMap(State.moduleURLs),
@@ -342,7 +342,7 @@ function Utils.isManualSpamActive()
     return State.manualSpamActive == true
 end
 function Utils.isSpamActive()
-    return State.manualSpamActive == true or State.autoSpamActive == true
+    return State.manualSpamActive == true or State.autoClashActive == true
 end
 function Utils.setSpamActivationHandler(handler)
     if handler ~= nil and type(handler) ~= "function" then
@@ -351,14 +351,14 @@ function Utils.setSpamActivationHandler(handler)
     State.spamActivationHandler = handler
     return true
 end
-function Utils.setAutoSpamActive(value)
+function Utils.setAutoClashActive(value)
     local nextValue = value == true
-    if State.autoSpamActive == nextValue then
+    if State.autoClashActive == nextValue then
         return
     end
-    local wasActive = State.manualSpamActive or State.autoSpamActive
-    local previous = State.autoSpamActive
-    State.autoSpamActive = nextValue
+    local wasActive = State.manualSpamActive or State.autoClashActive
+    local previous = State.autoClashActive
+    State.autoClashActive = nextValue
     if not wasActive and nextValue and type(State.spamActivationHandler) == "function" then
         pcall(State.spamActivationHandler)
     end
@@ -366,7 +366,7 @@ function Utils.setAutoSpamActive(value)
         "AutoClash",
         previous and "active" or "inactive",
         nextValue and "active" or "inactive",
-        "automatic_toggle"
+        "auto_clash_toggle"
     )
 end
 function Utils.setManualSpamActive(value)
@@ -374,7 +374,7 @@ function Utils.setManualSpamActive(value)
     if State.manualSpamActive == nextValue then
         return
     end
-    local wasActive = State.manualSpamActive or State.autoSpamActive
+    local wasActive = State.manualSpamActive or State.autoClashActive
     local previous = State.manualSpamActive
     State.manualSpamActive = nextValue
     if not wasActive and nextValue and type(State.spamActivationHandler) == "function" then
