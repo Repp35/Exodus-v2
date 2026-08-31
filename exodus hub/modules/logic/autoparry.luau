@@ -170,6 +170,7 @@ local function onBallSync(data)
 	if typeof(data) ~= "table" then
 		return
 	end
+
 	local time = now()
 
 	if data.Teleported == true then
@@ -448,6 +449,17 @@ local function bindCharacter(character)
 		local offset = root.Position - position
 		local distanceSquared = offset:Dot(offset)
 
+		if distanceSquared <= parryRadius * parryRadius then
+			clearArmedState()
+
+			if requestParry() then
+				ParryState.fired = true
+				ParryState.firedAt = timeNow
+			end
+
+			return
+		end
+
 		if distanceSquared > detectionRadius * detectionRadius then
 			clearArmedState()
 			setPhase("waiting", "outside_detection_radius")
@@ -455,11 +467,7 @@ local function bindCharacter(character)
 		end
 
 		local distance = math.sqrt(distanceSquared)
-		local impactTime = math.max(
-			0,
-			(distance - parryRadius) / speed
-		)
-
+		local impactTime = (distance - parryRadius) / speed
 		local earlyWindow = Tuning.RADIUS_LEAD_TIME
 			+ getPingWindow()
 			+ frameDelta
@@ -470,23 +478,13 @@ local function bindCharacter(character)
 			return
 		end
 
-		if impactTime > 0 then
-			if not ParryState.armed then
-				ParryState.armed = true
-				ParryState.armedBall = ball
-				ParryState.armedAt = timeNow
-			end
-
-			setPhase("armed", "impact_window")
-			return
+		if not ParryState.armed then
+			ParryState.armed = true
+			ParryState.armedBall = ball
+			ParryState.armedAt = timeNow
 		end
 
-		clearArmedState()
-
-		if requestParry() then
-			ParryState.fired = true
-			ParryState.firedAt = timeNow
-		end
+		setPhase("armed", "impact_window")
 	end)
 
 	Runtime.connections[#Runtime.connections + 1] = heartbeatConnection
