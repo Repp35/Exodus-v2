@@ -146,7 +146,7 @@ local function samplePing()
 end
 local function getPingCompensation()
         return math.clamp(
-                Runtime.smoothPing * 0.5,
+                Runtime.smoothPing,
                 Tuning.PING_FLOOR,
                 Tuning.PING_CAP
         )
