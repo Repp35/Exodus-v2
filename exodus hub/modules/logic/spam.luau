@@ -66,6 +66,17 @@ local function dispatchPending(currentGeneration)
     if dispatching then
         return
     end
+    if pendingRequests > 0 then
+        if currentGeneration ~= generation or not isActive() then
+            pendingRequests = 0
+            return
+        end
+        pendingRequests = pendingRequests - 1
+        requestParry()
+    end
+    if pendingRequests <= 0 then
+        return
+    end
     dispatching = true
     task.spawn(function()
         local processed = 0
@@ -98,6 +109,7 @@ local function tick(dt)
     end
     if not wasActive then
         Scheduler.phase = "running"
+        pendingRequests = pendingRequests + 1
         if type(Utils.recordTransition) == "function" then
             Utils.recordTransition("Spam", "stopped", "running", "spam_enabled")
         end
