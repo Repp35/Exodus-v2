@@ -14,13 +14,11 @@ local Tuning = {
 	DEFLECT_RADIUS = 8.5,
 	RES_PER_PARRY = 0.225,
 	RES_CAP_STUDS = 32,
-	DEFLECT_WINDOW_MAX = 0.85,
-	DEFLECT_WINDOW_MIN = 0.20,
+	RADIUS_LEAD_TIME = 0.250,
 	PING_SAMPLE_INTERVAL = 1.5,
 	PING_EMA_ALPHA = 0.3,
 	PING_FLOOR = 0.030,
 	PING_CAP = 0.300,
-	PING_WINDOW_FLOOR = 0.10,
 	HITBOX_OWN_WINDOW = 0.5,
 	HITBOX_PROXIMITY = 3,
 	HITBOX_GAP = 0.4,
@@ -55,7 +53,6 @@ local Runtime = {
 	resilienceBonus = 0,
 	resilienceBonusAt = -1,
 	parryRadius = 0,
-	deflectionWindow = Tuning.DEFLECT_WINDOW_MAX,
 	smoothPing = 0.060,
 	pingTimer = 0,
 	cooldownSeenAt = 0,
@@ -133,25 +130,13 @@ local function getPingCompensation()
 	return math.clamp(Runtime.smoothPing * 0.5, Tuning.PING_FLOOR, Tuning.PING_CAP)
 end
 
--- deflection window
-local function computeDeflectionWindow(speed)
-	local base
-	if not Utils.isFiniteNumber(speed) or speed <= Tuning.BALL_BASE_SPEED then
-		base = Tuning.DEFLECT_WINDOW_MAX
-	elseif speed >= Tuning.BALL_MAX_SPEED then
-		base = Tuning.DEFLECT_WINDOW_MIN
-	else
-		local t = (speed - Tuning.BALL_BASE_SPEED) / (Tuning.BALL_MAX_SPEED - Tuning.BALL_BASE_SPEED)
-		base = Tuning.DEFLECT_WINDOW_MAX + (Tuning.DEFLECT_WINDOW_MIN - Tuning.DEFLECT_WINDOW_MAX) * t
-	end
-	local window = base - getPingCompensation()
-	return math.max(window, Tuning.PING_WINDOW_FLOOR)
-end
-
 -- radius
-local function computeParryRadius(time)
+local function computeParryRadius(time, speed)
 	time = Utils.isFiniteNumber(time) and time or now()
+	speed = Utils.isFiniteNumber(speed) and math.max(speed, Tuning.MIN_BALL_SPEED) or Tuning.MIN_BALL_SPEED
 	local radius = Tuning.DEFLECT_RADIUS + getResilienceBonus(time)
+	radius = radius + speed * Tuning.RADIUS_LEAD_TIME
+	radius = radius + speed * getPingCompensation()
 	return math.max(radius, 0)
 end
 
@@ -338,17 +323,14 @@ local function bindCharacter(character)
 			setPhase("waiting", "position_unavailable")
 			return
 		end
-		local deflectionWindow = computeDeflectionWindow(speed)
-		Runtime.deflectionWindow = deflectionWindow
-		local parryRadius = computeParryRadius(timeNow)
-		Runtime.parryRadius = parryRadius
+		Runtime.parryRadius = computeParryRadius(timeNow, speed)
 		local offset = root.Position - position
 		local distanceSquared = offset:Dot(offset)
 		if ParryState.firedThisBall then
 			setPhase("waiting", "already_fired")
 			return
 		end
-		if distanceSquared > parryRadius * parryRadius then
+		if distanceSquared > Runtime.parryRadius * Runtime.parryRadius then
 			setPhase("waiting", "outside_parry_radius")
 			return
 		end
@@ -396,7 +378,6 @@ local function resetState()
 	Runtime.resilienceBonus = 0
 	Runtime.resilienceBonusAt = -1
 	Runtime.parryRadius = 0
-	Runtime.deflectionWindow = Tuning.DEFLECT_WINDOW_MAX
 	Runtime.pingTimer = 0
 	Runtime.cooldownSeenAt = 0
 	Runtime.cooldownConfirmed = false
@@ -439,16 +420,13 @@ end
 function AutoParry.onBallSync(data)
 	onBallSync(data)
 end
-function AutoParry.getParryRadius(time)
-	local radius = computeParryRadius(time)
+function AutoParry.getParryRadius(time, speed)
+	local radius = computeParryRadius(time, speed)
 	Runtime.parryRadius = radius
 	return radius
 end
-function AutoParry.getDeflectionWindow(speed)
-	return computeDeflectionWindow(speed)
-end
 function AutoParry.getPingOneWay()
-	return math.clamp(Runtime.smoothPing * 0.5, Tuning.PING_FLOOR, Tuning.PING_CAP)
+	return getPingCompensation()
 end
 function AutoParry.getStatus()
 	return {
@@ -456,8 +434,7 @@ function AutoParry.getStatus()
 		phase = Runtime.phase,
 		bound = Runtime.bound == true,
 		resilienceStack = Resilience.stack,
-		parryRadius = computeParryRadius(now()),
-		deflectionWindow = Runtime.deflectionWindow,
+		parryRadius = computeParryRadius(now(), Tuning.MIN_BALL_SPEED),
 		ping = Runtime.smoothPing,
 	}
 end
