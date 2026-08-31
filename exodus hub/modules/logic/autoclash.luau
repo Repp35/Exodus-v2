@@ -32,6 +32,8 @@ local R = {
     activationRadius = 0,
     wasTarget = false,
     targetLostAt = 0,
+    targetLostSpeed = 0,
+    returnConfirmed = false,
     outsideRadiusAt = 0,
     lastEvalAt = 0,
     teleportLockUntil = 0,
@@ -120,6 +122,8 @@ end
 local function clearTargetState()
     R.wasTarget = false
     R.targetLostAt = 0
+    R.targetLostSpeed = 0
+    R.returnConfirmed = false
 end
 local function clearRadiusState()
     R.outsideRadiusAt = 0
@@ -203,14 +207,11 @@ local function shouldDeactivate(t, snapshot)
         clearRadiusState()
         return false
     end
-    -- Enquanto estiver dentro do raio de parry,
-    -- a desativação fica completamente bloqueada.
     if distance <= R.parryRadius then
         clearRadiusState()
         R.lastGate = "inside_parry_radius"
         return false
     end
-    -- Começou a ficar fora do raio.
     if R.outsideRadiusAt <= 0 then
         R.outsideRadiusAt = t
         R.lastGate = "outside_parry_started"
@@ -218,13 +219,10 @@ local function shouldDeactivate(t, snapshot)
     end
     local outsideTime = t - R.outsideRadiusAt
     local deactivateTime = getDeactivateTime(R.speed)
-    -- Ainda não ficou fora por tempo suficiente.
     if outsideTime < deactivateTime then
         R.lastGate = "outside_parry_waiting"
         return false
     end
-    -- Desativação baseada SOMENTE no tempo fora do raio.
-    -- O estado de target é completamente ignorado aqui.
     R.lastGate = "outside_parry_timeout"
     return true
 end
@@ -239,18 +237,36 @@ local function shouldActivate(t, snapshot)
         R.lastGate = "invalid_character"
         return false
     end
-    if snapshot.targeted ~= true then
-        R.lastGate = "target_not_me"
-        return false
-    end
     if R.targetLostAt <= 0 then
         R.lastGate = "no_recent_target_loss"
         return false
     end
+    if R.returnConfirmed ~= true then
+        R.lastGate = "return_not_confirmed"
+        return false
+    end
+    if R.targetId ~= R.localUserId then
+        R.lastGate = "target_not_me"
+        return false
+    end
+    if snapshot.targetId ~= nil
+        and tonumber(snapshot.targetId) ~= R.localUserId
+    then
+        R.lastGate = "snapshot_target_not_me"
+        return false
+    end
+    if snapshot.targeted ~= true then
+        R.lastGate = "target_not_me"
+        return false
+    end
     local returnElapsed = t - R.targetLostAt
-    local returnTime = getReturnTime(R.speed)
+    local returnTime = getReturnTime(
+        R.targetLostSpeed > 0
+            and R.targetLostSpeed
+            or R.speed
+    )
     if returnElapsed < 0 or returnElapsed > returnTime then
-        R.targetLostAt = 0
+        clearTargetState()
         R.lastGate = "return_time_expired"
         return false
     end
@@ -263,7 +279,7 @@ local function shouldActivate(t, snapshot)
         R.lastGate = "outside_activation_radius"
         return false
     end
-    R.targetLostAt = 0
+    clearTargetState()
     R.lastGate = "target_return"
     return true
 end
@@ -465,6 +481,8 @@ function AutoClash.setup(deps)
     R.activationRadius = 0
     R.wasTarget = false
     R.targetLostAt = 0
+    R.targetLostSpeed = 0
+    R.returnConfirmed = false
     R.outsideRadiusAt = 0
     R.lastEvalAt = 0
     R.teleportLockUntil = 0
@@ -521,27 +539,49 @@ function AutoClash.onBallSync(data)
         R.lastGate = "invalid_target"
         return
     end
-    R.targetId = newTargetId
     if not R.localUserId then
+        R.targetId = newTargetId
+        R.wasTarget = false
+        R.returnConfirmed = false
         return
     end
     local isTarget = newTargetId == R.localUserId
-    if R.wasTarget and not isTarget then
+    local previousTarget = R.targetId
+    local previousWasTarget = R.wasTarget
+    R.targetId = newTargetId
+    if previousWasTarget and not isTarget then
         R.targetLostAt = t
-    elseif not R.wasTarget and isTarget then
+        R.targetLostSpeed = R.speed
+        R.returnConfirmed = false
+    elseif not previousWasTarget and isTarget then
         if R.targetLostAt > 0 then
             local elapsed = t - R.targetLostAt
-            if elapsed < 0
-                or elapsed > getReturnTime(R.speed)
-            then
-                R.targetLostAt = 0
+            local returnTime = getReturnTime(
+                R.targetLostSpeed > 0
+                    and R.targetLostSpeed
+                    or R.speed
+            )
+            if elapsed >= 0 and elapsed <= returnTime then
+                R.returnConfirmed = true
+            else
+                clearTargetState()
+                R.lastGate = "return_time_expired"
             end
         end
+    elseif not isTarget then
+        R.returnConfirmed = false
+    end
+    if isTarget
+        and previousTarget == R.localUserId
+        and not previousWasTarget
+    then
+        R.returnConfirmed = false
     end
     R.wasTarget = isTarget
     if isTarget
         and R.bound
         and R.targetLostAt > 0
+        and R.returnConfirmed == true
         and Utils.isActive() == true
         and isConfigEnabled()
         and not Utils.isManualSpamActive()
