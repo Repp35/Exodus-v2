@@ -61,6 +61,7 @@ local Runtime = {
 	pingTimer = 0,
 	cooldownSeenAt = 0,
 	cooldownConfirmed = false,
+	cooldownWasActive = false,
 	phase = "detached",
 	bound = false,
 }
@@ -100,6 +101,9 @@ local function clearRuntimeCycle()
 	clearArmedState()
 	Runtime.parryRadius = 0
 	Runtime.detectionRadius = 0
+	Runtime.cooldownSeenAt = 0
+	Runtime.cooldownConfirmed = false
+	Runtime.cooldownWasActive = false
 end
 local CONFIRM_WINDOW = 0.500
 local function updateCooldownState(time)
@@ -110,18 +114,19 @@ local function updateCooldownState(time)
 		return true
 	end
 	if cooldown > 0 then
-		Runtime.cooldownSeenAt = 0
-		Runtime.cooldownConfirmed = false
+		if not Runtime.cooldownWasActive then
+			Runtime.cooldownWasActive = true
+			Runtime.cooldownSeenAt = time
+			Runtime.cooldownConfirmed = false
+		elseif not Runtime.cooldownConfirmed and time - Runtime.cooldownSeenAt >= CONFIRM_WINDOW then
+			Runtime.cooldownConfirmed = true
+		end
 		return true
 	end
-	if Runtime.cooldownSeenAt <= 0 then
-		Runtime.cooldownSeenAt = time
-	end
-	if time - Runtime.cooldownSeenAt >= CONFIRM_WINDOW then
-		Runtime.cooldownConfirmed = true
-		return false
-	end
-	return true
+	Runtime.cooldownSeenAt = 0
+	Runtime.cooldownConfirmed = Runtime.cooldownWasActive
+	Runtime.cooldownWasActive = false
+	return false
 end
 local function getResilienceBonus(time)
 	if time == Runtime.resilienceBonusAt then
@@ -146,7 +151,7 @@ local function getPingWindow()
 	return math.clamp(Runtime.smoothPing, Tuning.PING_WINDOW_MIN, Tuning.PING_WINDOW_MAX)
 end
 local function getPingOneWay()
-	return getPingCompensation() * 0.5
+	return getPingCompensation()
 end
 local function computeParryRadius(time, speed)
 	time = Utils.isFiniteNumber(time) and time or now()
@@ -352,14 +357,13 @@ local function bindCharacter(character)
 		Runtime.detectionRadius = detectionRadius
 		local offset = root.Position - position
 		local distanceSquared = offset:Dot(offset)
+		local cooldownActive = updateCooldownState(timeNow)
 		if distanceSquared <= parryRadius * parryRadius then
-			if updateCooldownState(timeNow) then
-				if not ParryState.armed then
-					ParryState.armed = true
-					ParryState.armedBall = ball
-					ParryState.armedAt = timeNow
-				end
-				setPhase("armed", "awaiting_cooldown")
+			if cooldownActive then
+				ParryState.armed = true
+				ParryState.armedBall = ball
+				ParryState.armedAt = timeNow
+				setPhase("armed", "cooldown_active")
 				return
 			end
 			clearArmedState()
@@ -381,14 +385,7 @@ local function bindCharacter(character)
 			clearArmedState()
 			return
 		end
-		if updateCooldownState(timeNow) == false then
-			clearArmedState()
-			if requestParry() then
-				ParryState.firedThisBall = true
-			end
-			return
-		end
-		setPhase("armed", "preparing_parry")
+		setPhase("armed", cooldownActive and "preparing_parry" or "waiting_for_parry_radius")
 	end)
 	Runtime.connections[#Runtime.connections + 1] = heartbeatConnection
 	Utils.trackCharacter(heartbeatConnection)
@@ -434,6 +431,7 @@ local function resetState()
 	Runtime.pingTimer = 0
 	Runtime.cooldownSeenAt = 0
 	Runtime.cooldownConfirmed = false
+	Runtime.cooldownWasActive = false
 	Runtime.bound = false
 	setPhase("detached", "reset")
 end
