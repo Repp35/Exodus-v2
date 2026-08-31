@@ -32,7 +32,7 @@ local function resetModules()
         pcall(Spam.resetState)
     end
     Utils.setManualSpamActive(false)
-    Utils.setAutoSpamActive(false)
+    Utils.setAutoClashActive(false)
 end
 local function disconnectCharacterRuntime()
     Utils.disconnectCharacterConnections()
@@ -71,7 +71,7 @@ local function bind(character, currentGeneration)
             end
             Utils.disconnectCharacterConnections()
             Utils.setManualSpamActive(false)
-            Utils.setAutoSpamActive(false)
+            Utils.setAutoClashActive(false)
             setPhase("invalid", "bind_failed")
             return
         end
@@ -127,7 +127,7 @@ function Character.setup(deps)
         or type(deps.Utils.disconnectCharacterConnections) ~= "function"
         or type(deps.Utils.trackCharacter) ~= "function"
         or type(deps.Utils.setManualSpamActive) ~= "function"
-        or type(deps.Utils.setAutoSpamActive) ~= "function"
+        or type(deps.Utils.setAutoClashActive) ~= "function"
         or type(deps.Utils.warn) ~= "function"
         or type(deps.Utils.recordTransition) ~= "function"
         or type(deps.Utils.recordError) ~= "function"
