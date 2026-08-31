@@ -105,20 +105,33 @@ local function clearRuntimeCycle()
 end
 
 -- cooldown
+-- só considera "sem cooldown" se GameInfo.getDeflectCD() ficou em 0
+-- por pelo menos CONFIRM_WINDOW segundos consecutivos. protege contra
+-- falso-zero (spike de transição) que fazia o AP disparar e o server recusar.
+local CONFIRM_WINDOW = 0.500
+
 local function updateCooldownState(time)
         local cooldown = GameInfo.getDeflectCD()
-        if not Utils.isFiniteNumber(cooldown) or cooldown <= 0 then
+        if not Utils.isFiniteNumber(cooldown) then
                 Runtime.cooldownSeenAt = 0
                 Runtime.cooldownConfirmed = false
-                return false
+                return true   -- valor inválido: assume bloqueado
         end
+        if cooldown > 0 then
+                -- cooldown ativo: reseta confirmação
+                Runtime.cooldownSeenAt = 0
+                Runtime.cooldownConfirmed = false
+                return true
+        end
+        -- cooldown == 0 agora. Mas só libera se ficou em 0 por CONFIRM_WINDOW
         if Runtime.cooldownSeenAt <= 0 then
                 Runtime.cooldownSeenAt = time
         end
-        if time - Runtime.cooldownSeenAt >= 0.20 then
+        if time - Runtime.cooldownSeenAt >= CONFIRM_WINDOW then
                 Runtime.cooldownConfirmed = true
+                return false
         end
-        return true
+        return true   -- ainda confirmando, bloqueia
 end
 
 -- resilience
@@ -160,6 +173,12 @@ local function getPingWindow()
 end
 
 -- radius
+-- nota: getPingCompensation() retorna o RTT inteiro. para o raio de
+-- antecipação, usa-se o one-way (metade), igual o antigo fazia.
+local function getPingOneWay()
+        return getPingCompensation() * 0.5
+end
+
 local function computeParryRadius(time, speed)
         time = Utils.isFiniteNumber(time) and time or now()
         speed = Utils.isFiniteNumber(speed)
@@ -170,7 +189,7 @@ local function computeParryRadius(time, speed)
                 Tuning.DEFLECT_RADIUS
                         + getResilienceBonus(time)
                         + speed * Tuning.RADIUS_LEAD_TIME
-                        + speed * getPingCompensation(),
+                        + speed * getPingOneWay(),
                 0
         )
 end
@@ -429,16 +448,6 @@ local function bindCharacter(character)
                         return
                 end
 
-                if updateCooldownState(timeNow) then
-                        setPhase(
-                                "waiting",
-                                Runtime.cooldownConfirmed
-                                        and "server_on_cooldown"
-                                        or "cooldown_confirming"
-                        )
-                        return
-                end
-
                 local speed = snapshot.speed
                 if not isFiniteNumber(speed)
                         or speed < Tuning.MIN_BALL_SPEED
@@ -469,6 +478,17 @@ local function bindCharacter(character)
                 local distanceSquared = offset:Dot(offset)
 
                 if distanceSquared <= parryRadius * parryRadius then
+                        -- dentro do raio: tenta fire, mas se server tá em cd, arma e espera
+                        if updateCooldownState(timeNow) then
+                                if not ParryState.armed then
+                                        ParryState.armed = true
+                                        ParryState.armedBall = ball
+                                        ParryState.armedAt = timeNow
+                                end
+                                setPhase("armed", "awaiting_cooldown")
+                                return
+                        end
+
                         clearArmedState()
 
                         if requestParry() then
@@ -490,6 +510,15 @@ local function bindCharacter(character)
                         ParryState.armedAt = timeNow
                 elseif ParryState.armedBall ~= ball then
                         clearArmedState()
+                        return
+                end
+
+                -- se já tá armed e cooldown zerou agora, dispara já
+                if updateCooldownState(timeNow) == false then
+                        clearArmedState()
+                        if requestParry() then
+                                ParryState.firedThisBall = true
+                        end
                         return
                 end
 
