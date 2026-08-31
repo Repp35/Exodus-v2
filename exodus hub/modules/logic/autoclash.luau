@@ -7,7 +7,7 @@ local Utils
 
 -- tuning
 local T = {
-    RETURN_TIME_START = 0.80,
+    RETURN_TIME_START = 0.100,
     RETURN_TIME_END = 0.040,
     RETURN_SPEED_START = 60,
     RETURN_SPEED_END = 600,
