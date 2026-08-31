@@ -486,6 +486,9 @@ function AutoParry.getParryRadius(speed, time)
 	local _, detectionRadius = computeParryRadius(time, speed)
 	return detectionRadius
 end
+function AutoParry.getPingOneWay()
+	return getPingHalf()
+end
 function AutoParry.getStatus()
 	return {
 		schema = Utils.apiVersion(),
