@@ -167,7 +167,10 @@ local function computeParryRadius(time, speed)
 		or Tuning.MIN_BALL_SPEED
 
 	return math.max(
-		Tuning.DEFLECT_RADIUS + getResilienceBonus(time),
+		Tuning.DEFLECT_RADIUS
+			+ getResilienceBonus(time)
+			+ speed * Tuning.RADIUS_LEAD_TIME
+			+ speed * getPingCompensation(),
 		0
 	)
 end
@@ -181,11 +184,7 @@ local function computeDetectionRadius(time, speed, frameDelta)
 		or 0
 
 	local parryRadius = computeParryRadius(time, speed)
-	local leadTime = Tuning.RADIUS_LEAD_TIME
-		+ getPingCompensation()
-		+ frameDelta
-
-	return parryRadius + speed * leadTime
+	return parryRadius + speed * frameDelta
 end
 
 -- targeting
@@ -486,11 +485,8 @@ local function bindCharacter(character)
 
 		local distance = math.sqrt(distanceSquared)
 		local impactTime = (distance - parryRadius) / speed
-		local preparationWindow = Tuning.RADIUS_LEAD_TIME
-			+ getPingWindow()
-			+ frameDelta
 
-		if impactTime > preparationWindow then
+		if impactTime > Tuning.RADIUS_LEAD_TIME then
 			clearArmedState()
 			setPhase("waiting", "outside_preparation_window")
 			return
