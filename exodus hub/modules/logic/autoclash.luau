@@ -1,498 +1,706 @@
--- [[ Auto Parry ]]
+-- [[ Auto Clash ]]
 
-local AutoParry = {}
-local Remote
+local AutoClash = {}
+local AutoParry
 local GameInfo
 local Utils
 
 -- tuning
-local Tuning = {
-MIN_BALL_SPEED = 5,
-BALL_BASE_SPEED = 16,
-BALL_MAX_SPEED = 600,
-DEFLECT_RADIUS = 8.5,
-RES_PER_PARRY = 0.225,
-RES_CAP_STUDS = 32,
-DEFLECT_WINDOW_MAX = 0.85,
-DEFLECT_WINDOW_MIN = 0.20,
-PING_SAMPLE_INTERVAL = 1.5,
-PING_EMA_ALPHA = 0.3,
-PING_FLOOR = 0.030,
-PING_CAP = 0.300,
-PING_WINDOW_FLOOR = 0.10,
-HITBOX_OWN_WINDOW = 0.5,
-HITBOX_PROXIMITY = 3,
-HITBOX_GAP = 0.4,
+local T = {
+    RETURN_TIME_START = 0.80,
+    RETURN_TIME_END = 0.040,
+    RETURN_SPEED_START = 60,
+    RETURN_SPEED_END = 600,
+    PING_FACTOR = 0.3,
+    RADIUS_LEAD_TIME = 0.250,
+    DEACT_RETURN_FACTOR = 0.7,
+    MIN_EVAL_INTERVAL = 1 / 120,
+    TELEPORT_GRACE_TIME = 0.20,
 }
 
--- shared hitbox hook
-local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
-local HitboxState = type(namespace.AutoParryHitbox) == "table"
-and namespace.AutoParryHitbox or {
-connection = nil,
-handler = nil,
+-- runtime
+local R = {
+    generation = 0,
+    bound = false,
+    active = false,
+    phase = "detached",
+    root = nil,
+    localUserId = nil,
+    targetId = -1,
+    speed = 0,
+    parryRadius = 0,
+    activationRadius = 0,
+    wasTarget = false,
+    targetLostAt = 0,
+    outsideRadiusAt = 0,
+    lastEvalAt = 0,
+    teleportLockUntil = 0,
+    connections = {},
+    lastGate = "none",
 }
-namespace.AutoParryHitbox = HitboxState
-_G.Exodus = namespace
-
--- state
-local ParryState = {
-firedThisBall = false,
-ball = nil,
-}
-local Resilience = {
-stack = 0,
-lastFireBall = nil,
-lastFireAt = 0,
-lastHitboxAt = 0,
-}
-local Runtime = {
-generation = 0,
-localUserId = -1,
-lastTarget = -1,
-teleportLockUntil = 0,
-connections = {},
-resilienceBonus = 0,
-resilienceBonusAt = -1,
-parryRadius = 0,
-deflectionWindow = Tuning.DEFLECT_WINDOW_MAX,
-smoothPing = 0.060,
-pingTimer = 0,
-phase = "detached",
-bound = false,
-}
-local Stats = game:GetService("Stats")
 
 -- helpers
+local function lerp(a, b, alpha)
+    return a + (b - a) * alpha
+end
+
 local function now()
-return Utils.now()
+    return Utils and Utils.now() or os.clock()
 end
+
+local function getPing()
+    if not AutoParry then
+        return 0
+    end
+
+    local ok, value = pcall(AutoParry.getPingOneWay)
+
+    return ok and (tonumber(value) or 0) or 0
+end
+
+local function getRadiusLeadTime()
+    return T.RADIUS_LEAD_TIME
+end
+
+local function getReturnTime(speed)
+    speed = tonumber(speed) or 0
+
+    local span =
+        T.RETURN_SPEED_END
+        - T.RETURN_SPEED_START
+
+    local alpha = 0
+
+    if span > 0 then
+        alpha = math.clamp(
+            (speed - T.RETURN_SPEED_START) / span,
+            0,
+            1
+        )
+    end
+
+    return lerp(
+        T.RETURN_TIME_START,
+        T.RETURN_TIME_END,
+        alpha
+    ) + getPing() * T.PING_FACTOR
+end
+
+local function getDeactivateTime(speed)
+    return getReturnTime(speed) * T.DEACT_RETURN_FACTOR
+end
+
 local function setPhase(phase, reason)
-if Runtime.phase == phase then
-return
+    if R.phase == phase then
+        return
+    end
+
+    local previous = R.phase
+    R.phase = phase
+
+    if Utils and type(Utils.recordTransition) == "function" then
+        pcall(
+            Utils.recordTransition,
+            "AutoClash",
+            previous,
+            phase,
+            reason
+        )
+    end
 end
-local previous = Runtime.phase
-Runtime.phase = phase
-if Utils and type(Utils.recordTransition) == "function" then
-Utils.recordTransition("AutoParry", previous, phase, reason)
+
+local function setActive(active, reason)
+    active = active == true
+
+    if R.active == active then
+        return
+    end
+
+    R.active = active
+
+    if Utils and type(Utils.setAutoSpamActive) == "function" then
+        pcall(Utils.setAutoSpamActive, active)
+    end
+
+    setPhase(active and "active" or "idle", reason)
 end
-end
+
 local function disconnectConnections()
-for index = #Runtime.connections, 1, -1 do
-local connection = Runtime.connections[index]
-Runtime.connections[index] = nil
-Utils.untrackCharacter(connection)
-pcall(connection.Disconnect, connection)
-end
-end
-local function clearRuntimeCycle()
-ParryState.firedThisBall = false
-ParryState.ball = nil
-Runtime.parryRadius = 0
+    for i = #R.connections, 1, -1 do
+        local connection = R.connections[i]
+        R.connections[i] = nil
+
+        if Utils and type(Utils.untrackCharacter) == "function" then
+            pcall(Utils.untrackCharacter, connection)
+        end
+
+        pcall(function()
+            connection:Disconnect()
+        end)
+    end
 end
 
--- resilience
-local function getResilienceBonus(time)
-if time == Runtime.resilienceBonusAt then
-return Runtime.resilienceBonus
-end
-Runtime.resilienceBonus = math.min(
-Resilience.stack * Tuning.RES_PER_PARRY,
-Tuning.RES_CAP_STUDS
-)
-Runtime.resilienceBonusAt = time
-return Runtime.resilienceBonus
+local function clearTargetState()
+    R.wasTarget = false
+    R.targetLostAt = 0
 end
 
--- ping compensation
-local function samplePing()
-local ok, ping = pcall(function()
-return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
-end)
-if ok and type(ping) == "number" and ping > 0 and ping < 0.5 then
-Runtime.smoothPing = Runtime.smoothPing * (1 - Tuning.PING_EMA_ALPHA)
-+ ping * Tuning.PING_EMA_ALPHA
-end
-end
-local function getPingCompensation()
-return math.clamp(
-Runtime.smoothPing * 0.5,
-Tuning.PING_FLOOR,
-Tuning.PING_CAP
-)
+local function clearRadiusState()
+    R.outsideRadiusAt = 0
 end
 
--- deflection window
-local function computeDeflectionWindow(speed)
-local base
-if not Utils.isFiniteNumber(speed) or speed <= Tuning.BALL_BASE_SPEED then
-base = Tuning.DEFLECT_WINDOW_MAX
-elseif speed >= Tuning.BALL_MAX_SPEED then
-base = Tuning.DEFLECT_WINDOW_MIN
-else
-local t = (speed - Tuning.BALL_BASE_SPEED)
-/ (Tuning.BALL_MAX_SPEED - Tuning.BALL_BASE_SPEED)
-base = Tuning.DEFLECT_WINDOW_MAX
-+ (Tuning.DEFLECT_WINDOW_MIN - Tuning.DEFLECT_WINDOW_MAX) * t
-end
-local window = base - getPingCompensation()
-return math.max(window, Tuning.PING_WINDOW_FLOOR)
+local function resetRuntime(reason)
+    R.generation += 1
+
+    if R.active then
+        setActive(false, reason or "reset")
+    end
+
+    disconnectConnections()
+
+    R.bound = false
+    R.root = nil
+    R.targetId = -1
+    R.speed = 0
+    R.parryRadius = 0
+    R.activationRadius = 0
+
+    clearTargetState()
+    clearRadiusState()
+
+    R.lastEvalAt = 0
+    R.teleportLockUntil = 0
+    R.lastGate = "detached"
+
+    setPhase("detached", reason or "reset")
 end
 
--- radius
-local function computeParryRadius(time)
-time = Utils.isFiniteNumber(time) and time or now()
-local radius = Tuning.DEFLECT_RADIUS + getResilienceBonus(time)
-return math.max(radius, 0)
+local function isCharacterValid(character, root)
+    return character
+        and character.Parent
+        and root
+        and root.Parent
 end
 
--- targeting
-local function onBallSync(data)
-if typeof(data) ~= "table" then
-return
-end
-local time = now()
-if data.Teleported == true then
-Runtime.teleportLockUntil = time + 0.20
-ParryState.firedThisBall = false
-return
-end
-if data.Grace == true then
-Runtime.teleportLockUntil = time + 0.20
-ParryState.firedThisBall = false
-return
-end
-local targetId
-if Utils.isFiniteNumber(data.TargetPlayerID) then
-targetId = data.TargetPlayerID
-elseif type(data.TargetPlayerID) == "string" then
-local parsedTarget = tonumber(data.TargetPlayerID)
-targetId = Utils.isFiniteNumber(parsedTarget) and parsedTarget or -1
-else
-targetId = -1
-end
-if targetId == Runtime.lastTarget then
-return
-end
-Runtime.lastTarget = targetId
-ParryState.firedThisBall = false
+local function isBallValid(snapshot)
+    return snapshot
+        and snapshot.ball
+        and snapshot.ball.Parent
 end
 
--- parry request
-local function requestParry()
-local time = now()
-if not Remote.fireParry(1) then
-if Utils and type(Utils.recordError) == "function" then
-Utils.recordError("AutoParry", "Remote.fireParry falhou")
-end
-return false
-end
-setPhase("fired", "parry_requested")
-ParryState.firedThisBall = true
-local ball = GameInfo.getBall()
-if ball and ball.Parent then
-Resilience.lastFireBall = ball
-Resilience.lastFireAt = time
-end
-return true
+local function isConfigEnabled()
+    if not Utils or type(Utils.getConfig) ~= "function" then
+        return false
+    end
+
+    local config = Utils.getConfig()
+
+    return type(config) == "table"
+        and config.AutoClash == true
 end
 
--- hitbox
-local function handleHitbox(instance)
-if typeof(instance) ~= "Instance"
-or not Utils.isActive()
-or instance.Name ~= "HitboxGrow"
-then
-return
-end
-local ok, position = pcall(function()
-return instance.Position
-end)
-if not ok or typeof(position) ~= "Vector3" then
-return
-end
-local time = now()
-if time - Resilience.lastFireAt > Tuning.HITBOX_OWN_WINDOW then
-return
-end
-if not (Resilience.lastFireBall and Resilience.lastFireBall.Parent) then
-return
-end
-if time - Resilience.lastHitboxAt < Tuning.HITBOX_GAP then
-return
-end
-local okBall, ballPosition = pcall(function()
-return Resilience.lastFireBall.Position
-end)
-if not okBall or typeof(ballPosition) ~= "Vector3" then
-return
-end
-if (ballPosition - position).Magnitude > Tuning.HITBOX_PROXIMITY then
-return
-end
-Resilience.lastHitboxAt = time
-local maxStack = math.floor(Tuning.RES_CAP_STUDS / Tuning.RES_PER_PARRY)
-Resilience.stack = math.min(Resilience.stack + 1, maxStack)
-Runtime.resilienceBonusAt = -1
-end
-local function installHitboxHook()
-if HitboxState.connection then
-return true
-end
-local workspaceService = Utils.getWorkspace()
-if not workspaceService then
-return false
-end
-local ok, connection = pcall(function()
-return workspaceService.DescendantAdded:Connect(function(instance)
-local handler = HitboxState.handler
-if type(handler) == "function" then
-handler(instance)
-end
-end)
-end)
-if not ok or not connection then
-return false
-end
-HitboxState.connection = connection
-Utils.trackGlobal(connection)
-return true
+local function getBallDistance(snapshot)
+    if not isBallValid(snapshot) then
+        return nil
+    end
+
+    if not R.root or not R.root.Parent then
+        return nil
+    end
+
+    local ballPosition = snapshot.ball.Position
+    local rootPosition = R.root.Position
+
+    if not ballPosition or not rootPosition then
+        return nil
+    end
+
+    return (ballPosition - rootPosition).Magnitude
 end
 
--- character runtime
+local function updateBallState(t, snapshot)
+    R.speed = tonumber(snapshot.speed) or 0
+
+    local radius = 8
+
+    local ok, result = pcall(
+        AutoParry.getParryRadius,
+        R.speed,
+        t
+    )
+
+    if ok and tonumber(result) then
+        radius = result
+    end
+
+    R.parryRadius = radius
+    R.activationRadius =
+        radius
+        + R.speed * getRadiusLeadTime()
+end
+
+-- deactivation gates
+local function shouldDeactivate(t, snapshot)
+    if not R.active then
+        return false
+    end
+
+    local distance = getBallDistance(snapshot)
+
+    if not distance then
+        clearRadiusState()
+        return false
+    end
+
+    -- Enquanto estiver dentro do raio de parry,
+    -- a desativação fica completamente bloqueada.
+    if distance <= R.parryRadius then
+        clearRadiusState()
+        R.lastGate = "inside_parry_radius"
+        return false
+    end
+
+    -- Começou a ficar fora do raio.
+    if R.outsideRadiusAt <= 0 then
+        R.outsideRadiusAt = t
+        R.lastGate = "outside_parry_started"
+        return false
+    end
+
+    local outsideTime = t - R.outsideRadiusAt
+    local deactivateTime = getDeactivateTime(R.speed)
+
+    -- Ainda não ficou fora por tempo suficiente.
+    if outsideTime < deactivateTime then
+        R.lastGate = "outside_parry_waiting"
+        return false
+    end
+
+    -- Desativação baseada SOMENTE no tempo fora do raio.
+    -- O estado de target é completamente ignorado aqui.
+    R.lastGate = "outside_parry_timeout"
+
+    return true
+end
+
+-- activation gates
+local function shouldActivate(t, snapshot)
+    if not isBallValid(snapshot) then
+        R.lastGate = "invalid_ball"
+        return false
+    end
+
+    if not R.root or not R.root.Parent then
+        R.lastGate = "invalid_character"
+        return false
+    end
+
+    if snapshot.targeted ~= true then
+        R.lastGate = "target_not_me"
+        return false
+    end
+
+    if R.targetLostAt <= 0 then
+        R.lastGate = "no_recent_target_loss"
+        return false
+    end
+
+    local returnElapsed = t - R.targetLostAt
+    local returnTime = getReturnTime(R.speed)
+
+    if returnElapsed < 0 or returnElapsed > returnTime then
+        R.targetLostAt = 0
+        R.lastGate = "return_time_expired"
+        return false
+    end
+
+    local distance = getBallDistance(snapshot)
+
+    if not distance then
+        R.lastGate = "invalid_distance"
+        return false
+    end
+
+    if distance > R.activationRadius then
+        R.lastGate = "outside_activation_radius"
+        return false
+    end
+
+    R.targetLostAt = 0
+    R.lastGate = "target_return"
+
+    return true
+end
+
+-- evaluation
+local function evaluate(t, snapshot)
+    if not R.root or not R.root.Parent then
+        return
+    end
+
+    if not isBallValid(snapshot) then
+        return
+    end
+
+    updateBallState(t, snapshot)
+
+    if R.active then
+        if shouldDeactivate(t, snapshot) then
+            setActive(false, "outside_parry_timeout")
+            clearRadiusState()
+            clearTargetState()
+            R.lastGate = "outside_parry_timeout"
+        end
+
+        return
+    end
+
+    if shouldActivate(t, snapshot) then
+        setActive(true, "activated")
+    end
+end
+
+-- character
 local function bindCharacter(character)
-Runtime.generation = Runtime.generation + 1
-local generation = Runtime.generation
-Runtime.bound = false
-setPhase("detached", "rebind_start")
-disconnectConnections()
-clearRuntimeCycle()
-if not (character and character.Parent) then
-return false
-end
-local root = character:FindFirstChild("HumanoidRootPart")
-or character:WaitForChild("HumanoidRootPart", 1)
-if generation ~= Runtime.generation or not (root and root.Parent) then
-return false
-end
-local getConfig = Utils.getConfig
-local isSpamActive = Utils.isSpamActive
-local heartbeatConnection = Utils.getRunService().Heartbeat:Connect(function(dt)
-if generation ~= Runtime.generation then
-return
-end
-if not (character.Parent and root.Parent) then
-Runtime.bound = false
-return
-end
-local config = getConfig()
-if type(config) ~= "table" or config.AutoParry ~= true then
-setPhase("waiting", "disabled")
-return
-end
-local timeNow = now()
-Runtime.pingTimer = Runtime.pingTimer
-+ (Utils.isFiniteNumber(dt) and math.max(0, dt) or 0)
-if Runtime.pingTimer >= Tuning.PING_SAMPLE_INTERVAL then
-Runtime.pingTimer = 0
-samplePing()
-end
-if timeNow < Runtime.teleportLockUntil then
-setPhase("waiting", "grace_or_teleport_lock")
-return
-end
-if isSpamActive() then
-clearRuntimeCycle()
-setPhase("waiting", "spam_active")
-return
-end
-local snapshot = GameInfo.getSnapshot(Runtime.lastTarget, timeNow)
-if not GameInfo.isSnapshotValid(snapshot, timeNow) then
-setPhase("waiting", "snapshot_invalid")
-return
-end
-local ball = snapshot.ball
-local deflectCooldown = GameInfo.getDeflectCD()
-if not (ball and ball.Parent) or snapshot.targeted ~= true then
-setPhase("waiting", "ball_or_target_invalid")
-return
-end
-if ParryState.ball ~= ball then
-ParryState.ball = ball
-ParryState.firedThisBall = false
-end
-local speed = snapshot.speed
-if not Utils.isFiniteNumber(speed) or speed < Tuning.MIN_BALL_SPEED then
-setPhase("waiting", "ball_too_slow")
-return
-end
-local position = snapshot.position
-if typeof(position) ~= "Vector3" then
-setPhase("waiting", "position_unavailable")
-return
-end
-if not Utils.isFiniteNumber(deflectCooldown) or deflectCooldown > 0 then
-setPhase("waiting", "server_on_cooldown")
-return
-end
-if ParryState.firedThisBall then
-setPhase("waiting", "already_fired")
-return
-end
-local deflectionWindow = computeDeflectionWindow(speed)
-Runtime.deflectionWindow = deflectionWindow
-local parryRadius = computeParryRadius(timeNow)
-Runtime.parryRadius = parryRadius
-local offset = root.Position - position
-local distanceSquared = offset:Dot(offset)
-if distanceSquared > parryRadius * parryRadius then
-setPhase("waiting", "outside_parry_radius")
-return
-end
-local distance = math.sqrt(distanceSquared)
-if speed <= 0 then
-setPhase("waiting", "zero_speed")
-return
-end
-local impactTime = distance / speed
-if impactTime > deflectionWindow then
-setPhase("waiting", "outside_deflection_window")
-return
-end
-if requestParry() then
-ParryState.firedThisBall = true
-end
-end)
-Runtime.connections[#Runtime.connections + 1] = heartbeatConnection
-Utils.trackCharacter(heartbeatConnection)
-local ancestryConnection = character.AncestryChanged:Connect(function(_, parent)
-if not parent then
-Runtime.generation = Runtime.generation + 1
-Runtime.bound = false
-setPhase("detached", "character_removed")
-end
-end)
-Runtime.connections[#Runtime.connections + 1] = ancestryConnection
-Utils.trackCharacter(ancestryConnection)
-local humanoid = character:FindFirstChildOfClass("Humanoid")
-if humanoid then
-local diedConnection = humanoid.Died:Connect(function()
-if generation ~= Runtime.generation then
-return
-end
-Resilience.stack = 0
-Runtime.resilienceBonusAt = -1
-end)
-Runtime.connections[#Runtime.connections + 1] = diedConnection
-Utils.trackCharacter(diedConnection)
-end
-Runtime.bound = true
-setPhase("waiting", "character_bound")
-return true
-end
+    resetRuntime("rebind")
 
--- lifecycle
-local function resetState()
-clearRuntimeCycle()
-Resilience.stack = 0
-Resilience.lastFireBall = nil
-Resilience.lastFireAt = 0
-Resilience.lastHitboxAt = 0
-Runtime.teleportLockUntil = 0
-Runtime.lastTarget = -1
-Runtime.resilienceBonus = 0
-Runtime.resilienceBonusAt = -1
-Runtime.parryRadius = 0
-Runtime.deflectionWindow = Tuning.DEFLECT_WINDOW_MAX
-Runtime.pingTimer = 0
-Runtime.bound = false
-setPhase("detached", "reset")
+    if not character or not character.Parent then
+        return false
+    end
+
+    local generation = R.generation
+
+    local root =
+        character:FindFirstChild("HumanoidRootPart")
+        or character:WaitForChild("HumanoidRootPart", 1)
+
+    if generation ~= R.generation
+        or not root
+        or not root.Parent
+    then
+        return false
+    end
+
+    R.root = root
+    R.lastGate = "waiting_for_character"
+
+    local heartbeat
+
+    heartbeat = Utils.getRunService().Heartbeat:Connect(function()
+        if generation ~= R.generation then
+            return
+        end
+
+        if not isCharacterValid(character, root) then
+            if R.active then
+                setActive(false, "death")
+            end
+
+            resetRuntime("character_invalid")
+            return
+        end
+
+        local t = now()
+
+        local snapshot =
+            GameInfo.getSnapshot(
+                R.targetId,
+                t
+            )
+
+        if snapshot
+            and GameInfo.isSnapshotValid(snapshot, t)
+        then
+            local snapshotTarget = snapshot.targetId
+
+            if type(snapshotTarget) == "number" then
+                R.targetId = snapshotTarget
+            elseif type(snapshotTarget) == "string" then
+                R.targetId =
+                    tonumber(snapshotTarget)
+                    or R.targetId
+            end
+        end
+
+        if Utils.isActive() ~= true then
+            if R.active then
+                setActive(false, "hub_inactive")
+            end
+
+            clearTargetState()
+            clearRadiusState()
+            R.lastGate = "hub_inactive"
+
+            return
+        end
+
+        if not isConfigEnabled() then
+            if R.active then
+                setActive(false, "hub_disabled")
+            end
+
+            clearTargetState()
+            clearRadiusState()
+            R.lastGate = "hub_disabled"
+
+            return
+        end
+
+        if Utils.isManualSpamActive() then
+            if R.active then
+                setActive(false, "manual_spam")
+            end
+
+            clearTargetState()
+            clearRadiusState()
+            R.lastGate = "manual_spam"
+
+            return
+        end
+
+        if t < R.teleportLockUntil then
+            if R.active then
+                setActive(false, "teleport_grace")
+            end
+
+            clearTargetState()
+            clearRadiusState()
+            R.lastGate = "teleport_grace"
+
+            return
+        end
+
+        if t - R.lastEvalAt < T.MIN_EVAL_INTERVAL then
+            return
+        end
+
+        R.lastEvalAt = t
+
+        if not snapshot
+            or not GameInfo.isSnapshotValid(snapshot, t)
+        then
+            R.lastGate = "invalid_snapshot"
+            return
+        end
+
+        evaluate(t, snapshot)
+    end)
+
+    R.connections[#R.connections + 1] = heartbeat
+    Utils.trackCharacter(heartbeat)
+
+    local ancestry =
+        character.AncestryChanged:Connect(function(_, parent)
+            if parent or generation ~= R.generation then
+                return
+            end
+
+            if R.active then
+                setActive(false, "death")
+            end
+
+            resetRuntime("character_removed")
+            R.lastGate = "character_removed"
+        end)
+
+    R.connections[#R.connections + 1] = ancestry
+    Utils.trackCharacter(ancestry)
+
+    R.bound = true
+    setPhase("waiting", "character_bound")
+
+    return true
 end
 
 -- setup
-function AutoParry.setup(deps)
-if type(deps) ~= "table"
-or type(deps.Remote) ~= "table"
-or type(deps.Remote.fireParry) ~= "function"
-or type(deps.GameInfo) ~= "table"
-or type(deps.GameInfo.getDeflectCD) ~= "function"
-or type(deps.GameInfo.getBall) ~= "function"
-or type(deps.GameInfo.getSnapshot) ~= "function"
-or type(deps.GameInfo.isSnapshotValid) ~= "function"
-or type(deps.Utils) ~= "table"
-or type(deps.Utils.now) ~= "function"
-or type(deps.Utils.apiVersion) ~= "function"
-or type(deps.Utils.isFiniteNumber) ~= "function"
-or type(deps.Utils.getConfig) ~= "function"
-or type(deps.Utils.getLocalPlayer) ~= "function"
-or type(deps.Utils.getWorkspace) ~= "function"
-or type(deps.Utils.getRunService) ~= "function"
-or type(deps.Utils.trackCharacter) ~= "function"
-or type(deps.Utils.untrackCharacter) ~= "function"
-or type(deps.Utils.trackGlobal) ~= "function"
-or type(deps.Utils.isActive) ~= "function"
-or type(deps.Utils.isSpamActive) ~= "function"
-or type(deps.Utils.warn) ~= "function"
-then
-return false, "dependência ausente: Remote.fireParry, GameInfo, Utils ou uma API obrigatória"
+function AutoClash.setup(deps)
+    if type(deps) ~= "table"
+        or not deps.AutoParry
+        or not deps.GameInfo
+        or not deps.Utils
+    then
+        return false
+    end
+
+    local ap = deps.AutoParry
+    local gi = deps.GameInfo
+    local u = deps.Utils
+
+    local required = {
+        { ap, "getParryRadius" },
+        { ap, "getPingOneWay" },
+        { gi, "getSnapshot" },
+        { gi, "isSnapshotValid" },
+        { u, "now" },
+        { u, "getConfig" },
+        { u, "getRunService" },
+        { u, "recordTransition" },
+        { u, "setAutoSpamActive" },
+        { u, "trackCharacter" },
+        { u, "untrackCharacter" },
+        { u, "isActive" },
+        { u, "isManualSpamActive" },
+        { u, "getLocalPlayer" },
+        { u, "apiVersion" },
+    }
+
+    for i = 1, #required do
+        local object = required[i][1]
+        local name = required[i][2]
+
+        if type(object[name]) ~= "function" then
+            return false
+        end
+    end
+
+    if Utils then
+        resetRuntime("setup")
+    end
+
+    AutoParry = ap
+    GameInfo = gi
+    Utils = u
+
+    local player = Utils.getLocalPlayer()
+
+    R.localUserId =
+        player
+        and player.UserId
+        or nil
+
+    R.generation = 0
+    R.bound = false
+    R.active = false
+    R.phase = "detached"
+    R.root = nil
+    R.targetId = -1
+    R.speed = 0
+    R.parryRadius = 0
+    R.activationRadius = 0
+    R.wasTarget = false
+    R.targetLostAt = 0
+    R.outsideRadiusAt = 0
+    R.lastEvalAt = 0
+    R.teleportLockUntil = 0
+    R.connections = {}
+    R.lastGate = "none"
+
+    return true
 end
-Remote = deps.Remote
-GameInfo = deps.GameInfo
-Utils = deps.Utils
-local localPlayer = Utils.getLocalPlayer()
-Runtime.localUserId = localPlayer and localPlayer.UserId or -1
-HitboxState.handler = handleHitbox
-resetState()
-if not installHitboxHook() then
-Utils.warn("hook de hitbox indisponível")
+
+-- api
+function AutoClash.bindCharacter(character)
+    if not Utils then
+        return false
+    end
+
+    return bindCharacter(character)
 end
-return true
+
+function AutoClash.detachCharacter()
+    resetRuntime("detach")
 end
-function AutoParry.fire()
-return requestParry()
+
+function AutoClash.teardown()
+    resetRuntime("teardown")
+
+    AutoParry = nil
+    GameInfo = nil
+    Utils = nil
 end
-function AutoParry.bindCharacter(character)
-return bindCharacter(character)
+
+function AutoClash.onBallSync(data)
+    if type(data) ~= "table"
+        or not Utils
+    then
+        return
+    end
+
+    local t = now()
+
+    if data.Teleported == true then
+        R.teleportLockUntil =
+            t + T.TELEPORT_GRACE_TIME
+
+        clearTargetState()
+        clearRadiusState()
+        R.lastGate = "teleport"
+
+        if R.active then
+            setActive(false, "teleport_grace")
+        end
+
+        return
+    end
+
+    local target = data.TargetPlayerID
+    local newTargetId
+
+    if type(target) == "number" then
+        newTargetId = target
+    elseif type(target) == "string" then
+        newTargetId = tonumber(target)
+    end
+
+    if not newTargetId then
+        R.targetId = -1
+        clearTargetState()
+        clearRadiusState()
+        R.lastGate = "invalid_target"
+        return
+    end
+
+    R.targetId = newTargetId
+
+    if not R.localUserId then
+        return
+    end
+
+    local isTarget = newTargetId == R.localUserId
+
+    if R.wasTarget and not isTarget then
+        R.targetLostAt = t
+
+    elseif not R.wasTarget and isTarget then
+        if R.targetLostAt > 0 then
+            local elapsed = t - R.targetLostAt
+
+            if elapsed < 0
+                or elapsed > getReturnTime(R.speed)
+            then
+                R.targetLostAt = 0
+            end
+        end
+    end
+
+    R.wasTarget = isTarget
 end
-function AutoParry.resetState()
-resetState()
+
+function AutoClash.isActive()
+    return R.active == true
 end
-function AutoParry.detachCharacter()
-Runtime.generation = Runtime.generation + 1
-Runtime.bound = false
-disconnectConnections()
-resetState()
+
+function AutoClash.getStatus()
+    return {
+        schema = Utils and Utils.apiVersion() or nil,
+        phase = R.phase,
+        bound = R.bound == true,
+        active = R.active == true,
+        parryRadius = R.parryRadius,
+        activationRadius = R.activationRadius,
+        targetId = R.targetId,
+        lastGate = R.lastGate,
+    }
 end
-function AutoParry.onBallSync(data)
-onBallSync(data)
-end
-function AutoParry.getParryRadius(time)
-local radius = computeParryRadius(time)
-Runtime.parryRadius = radius
-return radius
-end
-function AutoParry.getDeflectionWindow(speed)
-return computeDeflectionWindow(speed)
-end
-function AutoParry.getStatus()
-return {
-schema = Utils.apiVersion(),
-phase = Runtime.phase,
-bound = Runtime.bound == true,
-resilienceStack = Resilience.stack,
-parryRadius = computeParryRadius(now()),
-deflectionWindow = Runtime.deflectionWindow,
-ping = Runtime.smoothPing,
-}
-end
-AutoParry.__contract = {
-requires = {
-Remote = "remote",
-GameInfo = "gameinfo",
-Utils = "utils",
-},
-onBallSync = true,
-bindCharacter = true,
+
+AutoClash.__contract = {
+    requires = {
+        AutoParry = "autoparry",
+        GameInfo = "gameinfo",
+        Utils = "utils",
+    },
+    onBallSync = true,
+    bindCharacter = true,
 }
 
-return AutoParry
+return AutoClash
