@@ -10,6 +10,7 @@ local Tuning = {
 	MIN_BALL_SPEED = 5,
 	BALL_BASE_SPEED = 16,
 	BALL_MAX_SPEED = 600,
+	REARM_DISTANCE = 2,
 	COOLDOWN_CONFIRM_TIME = 0.20,
 	DEFLECT_RADIUS = 8.5,
 	RES_PER_PARRY = 0.225,
@@ -338,28 +339,21 @@ local function bindCharacter(character)
 			setPhase("waiting", "position_unavailable")
 			return
 		end
-		if ParryState.firedThisBall then
-			setPhase("waiting", "already_fired")
-			return
-		end
 		local deflectionWindow = computeDeflectionWindow(speed)
 		Runtime.deflectionWindow = deflectionWindow
 		local parryRadius = computeParryRadius(timeNow)
 		Runtime.parryRadius = parryRadius
 		local offset = root.Position - position
 		local distanceSquared = offset:Dot(offset)
+		if ParryState.firedThisBall and distanceSquared > (parryRadius + Tuning.REARM_DISTANCE) ^ 2 then
+			ParryState.firedThisBall = false
+		end
+		if ParryState.firedThisBall then
+			setPhase("waiting", "already_fired")
+			return
+		end
 		if distanceSquared > parryRadius * parryRadius then
 			setPhase("waiting", "outside_parry_radius")
-			return
-		end
-		local distance = math.sqrt(distanceSquared)
-		if speed <= 0 then
-			setPhase("waiting", "zero_speed")
-			return
-		end
-		local impactTime = distance / speed
-		if impactTime > deflectionWindow then
-			setPhase("waiting", "outside_deflection_window")
 			return
 		end
 		if requestParry() then
