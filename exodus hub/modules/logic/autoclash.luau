@@ -1,8 +1,8 @@
 -- [[ Auto Clash ]]
 --
--- Responsabilidade única: controlar o flag `autoClashActive` no Utils.
--- A decisão de "spam on/off" fica no Spam, que lê Utils.isSpamActive().
--- AutoClash NÃO replica lógica do Spam.
+-- Responsabilidade única: detectar o clash e controlar o ciclo do Auto Clash.
+-- Quando ativa, a rotina liga diretamente o Manual Spam para reutilizar
+-- exatamente o mesmo motor de disparo.
 --
 -- Pipeline de dados (sem intermediários redundantes):
 --   remote.onBallSync → GameInfo.applySync  (snapshot atualizado)
@@ -43,6 +43,7 @@ local R = {
 	generation = 0,
 	bound = false,
 	active = false,
+	ownsSpam = false,
 	phase = "detached",
 	boundRoot = nil,
 	localUserId = nil,
@@ -110,10 +111,20 @@ local function setActive(active, reason)
 	if R.active == active then
 		return
 	end
-	R.active = active
-	if Utils and type(Utils.setAutoClashActive) == "function" then
-		pcall(Utils.setAutoClashActive, active)
+	if Utils and type(Utils.setManualSpamActive) == "function" then
+		if active then
+			-- Auto Clash usa exatamente o mesmo caminho do Manual Spam.
+			local ok, accepted = pcall(Utils.setManualSpamActive, true, "autoclash")
+			if not ok or accepted == false then
+				return
+			end
+			R.ownsSpam = true
+		elseif R.ownsSpam then
+			R.ownsSpam = false
+			pcall(Utils.setManualSpamActive, false, "autoclash")
+		end
 	end
+	R.active = active
 	setPhase(active and "active" or "idle", reason)
 end
 
@@ -279,10 +290,7 @@ local function onHeartbeat(generation, character, root)
 		return
 	end
 
-	if Utils.isManualSpamActive() then
-		if R.active then
-			setActive(false, "manual_spam_active")
-		end
+	if Utils.isManualSpamActive() and not R.active then
 		clearArmed("manual_spam_active")
 		clearOutsideParry()
 		R.lastGate = "manual_spam_active"
@@ -411,7 +419,7 @@ function AutoClash.setup(deps)
 		{ u, "getConfig" },
 		{ u, "getRunService" },
 		{ u, "recordTransition" },
-		{ u, "setAutoClashActive" },
+		{ u, "setManualSpamActive" },
 		{ u, "trackCharacter" },
 		{ u, "untrackCharacter" },
 		{ u, "isActive" },
@@ -442,6 +450,7 @@ function AutoClash.setup(deps)
 	R.generation = 0
 	R.bound = false
 	R.active = false
+	R.ownsSpam = false
 	R.phase = "detached"
 	R.boundRoot = nil
 	R.lastTarget = -1
@@ -478,8 +487,7 @@ function AutoClash.teardown()
 end
 
 -- onBallSync: única fonte que detecta transição de target.
--- aqui NÓS NUNCA ativamos spam. só armamos o flag "armed" para
--- que o evaluateActivation (no heartbeat) decida na próxima janela.
+-- aqui apenas armamos o estado; a ativação no heartbeat liga o Manual Spam.
 function AutoClash.onBallSync(data)
 	if type(data) ~= "table" or not Utils then
 		return
