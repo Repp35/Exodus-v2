@@ -10,7 +10,6 @@ local Tuning = {
 	MIN_BALL_SPEED = 5,
 	BALL_BASE_SPEED = 16,
 	BALL_MAX_SPEED = 600,
-	REARM_DISTANCE = 2,
 	COOLDOWN_CONFIRM_TIME = 0.20,
 	DEFLECT_RADIUS = 8.5,
 	RES_PER_PARRY = 0.225,
@@ -345,9 +344,6 @@ local function bindCharacter(character)
 		Runtime.parryRadius = parryRadius
 		local offset = root.Position - position
 		local distanceSquared = offset:Dot(offset)
-		if ParryState.firedThisBall and distanceSquared > (parryRadius + Tuning.REARM_DISTANCE) ^ 2 then
-			ParryState.firedThisBall = false
-		end
 		if ParryState.firedThisBall then
 			setPhase("waiting", "already_fired")
 			return
