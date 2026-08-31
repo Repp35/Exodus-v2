@@ -134,6 +134,9 @@ function Spam.setup(deps)
     end
     Remote = deps.Remote
     Utils = deps.Utils
+    if type(Utils.setSpamActivationHandler) == "function" then
+        Utils.setSpamActivationHandler(requestParry)
+    end
     Spam.resetState()
     local RunService = Utils.getRunService and Utils.getRunService() or game:GetService("RunService")
     local signal = RunService.RenderStepped or RunService.Heartbeat
