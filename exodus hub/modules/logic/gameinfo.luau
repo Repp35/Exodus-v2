@@ -307,7 +307,7 @@ end
 local function getDeflectCooldown()
     local ability = locateDeflectAbility()
     if not ability then
-        return 0
+        return nil
     end
     local ok, cooldown = pcall(function()
         return ability.Cooldown
@@ -315,7 +315,7 @@ local function getDeflectCooldown()
     if ok and Utils.isFiniteNumber(cooldown) then
         return math.max(0, cooldown)
     end
-    return 0
+    return nil
 end
 
 -- watcher
@@ -366,6 +366,18 @@ function GameInfo.getSnapshot(lastTarget, time)
     return getSnapshot(lastTarget, time)
 end
 function GameInfo.getStatus()
+    if not Utils then
+        return {
+            schema = SNAPSHOT_SCHEMA,
+            snapshotSchema = SNAPSHOT_SCHEMA,
+            generatedAt = 0,
+            valid = false,
+            ballValid = false,
+            syncFresh = false,
+            syncValid = false,
+            targeted = false,
+        }
+    end
     local snapshot = getSnapshot(nil, Utils.now())
     return {
         schema = Utils.apiVersion(),
@@ -413,4 +425,5 @@ GameInfo.__contract = {
     requires = { Utils = "utils" },
     ballSync = true,
 }
+
 return GameInfo
