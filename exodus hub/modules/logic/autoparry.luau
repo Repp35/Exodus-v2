@@ -483,6 +483,10 @@ function AutoParry.onBallSync(data)
 	onBallSync(data)
 end
 function AutoParry.getParryRadius(speed, time)
+	local parryRadius = computeParryRadius(time, speed)
+	return parryRadius
+end
+function AutoParry.getDetectionRadius(speed, time)
 	local _, detectionRadius = computeParryRadius(time, speed)
 	return detectionRadius
 end
