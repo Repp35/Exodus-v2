@@ -10,7 +10,7 @@ local Tuning = {
 	MIN_BALL_SPEED = 5,
 	BALL_BASE_SPEED = 16,
 	BALL_MAX_SPEED = 600,
-	COOLDOWN_READY_TIME = 0.20,
+	COOLDOWN_CONFIRM_TIME = 0.20,
 	DEFLECT_RADIUS = 8.5,
 	RES_PER_PARRY = 0.225,
 	RES_CAP_STUDS = 32,
@@ -58,7 +58,8 @@ local Runtime = {
 	deflectionWindow = Tuning.DEFLECT_WINDOW_MAX,
 	smoothPing = 0.060,
 	pingTimer = 0,
-	cooldownReadyAt = 0,
+	cooldownSeenAt = 0,
+	cooldownConfirmed = false,
 	phase = "detached",
 	bound = false,
 }
@@ -90,6 +91,23 @@ local function clearRuntimeCycle()
 	ParryState.firedThisBall = false
 	ParryState.ball = nil
 	Runtime.parryRadius = 0
+end
+
+-- cooldown
+local function updateCooldownState(time)
+	local cooldown = GameInfo.getDeflectCD()
+	if not Utils.isFiniteNumber(cooldown) or cooldown <= 0 then
+		Runtime.cooldownSeenAt = 0
+		Runtime.cooldownConfirmed = false
+		return false
+	end
+	if Runtime.cooldownSeenAt <= 0 then
+		Runtime.cooldownSeenAt = time
+	end
+	if time - Runtime.cooldownSeenAt >= Tuning.COOLDOWN_CONFIRM_TIME then
+		Runtime.cooldownConfirmed = true
+	end
+	return true
 end
 
 -- resilience
@@ -294,14 +312,15 @@ local function bindCharacter(character)
 		end
 		local snapshot = GameInfo.getSnapshot(Runtime.lastTarget, timeNow)
 		if not GameInfo.isSnapshotValid(snapshot, timeNow) then
-			Runtime.cooldownReadyAt = 0
 			setPhase("waiting", "snapshot_invalid")
 			return
 		end
 		local ball = snapshot.ball
-		local deflectCooldown = GameInfo.getDeflectCD()
+		if updateCooldownState(timeNow) then
+			setPhase("waiting", Runtime.cooldownConfirmed and "server_on_cooldown" or "cooldown_confirming")
+			return
+		end
 		if not (ball and ball.Parent) or snapshot.targeted ~= true then
-			Runtime.cooldownReadyAt = 0
 			setPhase("waiting", "ball_or_target_invalid")
 			return
 		end
@@ -317,20 +336,6 @@ local function bindCharacter(character)
 		local position = snapshot.position
 		if typeof(position) ~= "Vector3" then
 			setPhase("waiting", "position_unavailable")
-			return
-		end
-		if not Utils.isFiniteNumber(deflectCooldown) or deflectCooldown > 0 then
-			Runtime.cooldownReadyAt = 0
-			setPhase("waiting", "server_on_cooldown")
-			return
-		end
-		if Runtime.cooldownReadyAt <= 0 then
-			Runtime.cooldownReadyAt = timeNow
-			setPhase("waiting", "cooldown_ready_stabilizing")
-			return
-		end
-		if timeNow - Runtime.cooldownReadyAt < Tuning.COOLDOWN_READY_TIME then
-			setPhase("waiting", "cooldown_ready_stabilizing")
 			return
 		end
 		if ParryState.firedThisBall then
@@ -403,7 +408,8 @@ local function resetState()
 	Runtime.parryRadius = 0
 	Runtime.deflectionWindow = Tuning.DEFLECT_WINDOW_MAX
 	Runtime.pingTimer = 0
-	Runtime.cooldownReadyAt = 0
+	Runtime.cooldownSeenAt = 0
+	Runtime.cooldownConfirmed = false
 	Runtime.bound = false
 	setPhase("detached", "reset")
 end
