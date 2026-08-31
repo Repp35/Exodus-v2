@@ -7,7 +7,7 @@ local Utils
 
 -- tuning
 local Tuning = {
-	MIN_BALL_SPEED = 5,
+	MIN_BALL_SPEED = 7,
 	DEFLECT_RADIUS = 8.5,
 	RES_PER_PARRY = 0.225,
 	RES_CAP_STUDS = 32,
@@ -59,9 +59,6 @@ local Runtime = {
 	detectionRadius = 0,
 	smoothPing = 0.060,
 	pingTimer = 0,
-	cooldownSeenAt = 0,
-	cooldownConfirmed = false,
-	cooldownWasActive = false,
 	phase = "detached",
 	bound = false,
 }
@@ -101,32 +98,6 @@ local function clearRuntimeCycle()
 	clearArmedState()
 	Runtime.parryRadius = 0
 	Runtime.detectionRadius = 0
-	Runtime.cooldownSeenAt = 0
-	Runtime.cooldownConfirmed = false
-	Runtime.cooldownWasActive = false
-end
-local CONFIRM_WINDOW = 0.500
-local function updateCooldownState(time)
-	local cooldown = GameInfo.getDeflectCD()
-	if not Utils.isFiniteNumber(cooldown) then
-		Runtime.cooldownSeenAt = 0
-		Runtime.cooldownConfirmed = false
-		return true
-	end
-	if cooldown > 0 then
-		if not Runtime.cooldownWasActive then
-			Runtime.cooldownWasActive = true
-			Runtime.cooldownSeenAt = time
-			Runtime.cooldownConfirmed = false
-		elseif not Runtime.cooldownConfirmed and time - Runtime.cooldownSeenAt >= CONFIRM_WINDOW then
-			Runtime.cooldownConfirmed = true
-		end
-		return true
-	end
-	Runtime.cooldownSeenAt = 0
-	Runtime.cooldownConfirmed = Runtime.cooldownWasActive
-	Runtime.cooldownWasActive = false
-	return false
 end
 local function getResilienceBonus(time)
 	if time == Runtime.resilienceBonusAt then
@@ -327,8 +298,32 @@ local function bindCharacter(character)
 			return
 		end
 		local ball = snapshot.ball
+		local deflectCooldown = GameInfo.getDeflectCD()
+		if ParryState.armed then
+			local sameBall = ball == ParryState.armedBall
+			local validBall = ball and ball.Parent and sameBall
+			if not (validBall and snapshot.targeted == true) then
+				clearArmedState()
+				setPhase("waiting", "armed_context_invalid")
+			elseif deflectCooldown > 0 then
+				setPhase("cooldown", "deflect_cooldown")
+				return
+			else
+				local canRetry = not ParryState.firedThisBall
+					or timeNow - ParryState.firedAt >= Tuning.FIRE_TIMEOUT
+				if canRetry then
+					if requestParry() then
+						ParryState.firedThisBall = true
+						ParryState.firedAt = timeNow
+					else
+						ParryState.firedThisBall = false
+					end
+				end
+				clearArmedState()
+				return
+			end
+		end
 		if not (ball and ball.Parent) or snapshot.targeted ~= true then
-			clearArmedState()
 			setPhase("waiting", "ball_or_target_invalid")
 			return
 		end
@@ -371,17 +366,31 @@ local function bindCharacter(character)
 			setPhase("waiting", "outside_early_window")
 			return
 		end
-		local cooldownActive = updateCooldownState(timeNow)
-		if cooldownActive then
+		if deflectCooldown > 0 then
 			ParryState.armed = true
 			ParryState.armedBall = ball
 			ParryState.armedAt = timeNow
-			setPhase("armed", "cooldown_active")
+			setPhase("armed", "awaiting_deflect_cooldown")
 			return
 		end
-		clearArmedState()
+		if ParryState.firedThisBall then
+			local elapsed = timeNow - ParryState.firedAt
+			if elapsed < Tuning.FIRE_LOCK_TIME then
+				setPhase("cooldown", "fire_lock")
+				return
+			end
+			if elapsed < Tuning.FIRE_TIMEOUT then
+				setPhase("cooldown", "fire_timeout")
+				return
+			end
+			ParryState.firedThisBall = false
+			setPhase("waiting", "fire_retry_window")
+		end
 		if requestParry() then
 			ParryState.firedThisBall = true
+			ParryState.firedAt = timeNow
+		else
+			ParryState.firedThisBall = false
 		end
 	end)
 	Runtime.connections[#Runtime.connections + 1] = heartbeatConnection
@@ -426,9 +435,6 @@ local function resetState()
 	Runtime.parryRadius = 0
 	Runtime.detectionRadius = 0
 	Runtime.pingTimer = 0
-	Runtime.cooldownSeenAt = 0
-	Runtime.cooldownConfirmed = false
-	Runtime.cooldownWasActive = false
 	Runtime.bound = false
 	setPhase("detached", "reset")
 end
