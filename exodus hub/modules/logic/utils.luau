@@ -50,9 +50,10 @@ local State = {
     characterConnections = {},
     config = {},
     moduleURLs = {},
-    manualSpamActive = false,
-    autoSpamActive = false,
-    lifecycle = {
+	    manualSpamActive = false,
+	    autoSpamActive = false,
+	    spamActivationHandler = nil,
+	    lifecycle = {
         phase = "stopped",
         generation = 0,
         startedAt = 0,
@@ -205,6 +206,7 @@ function Utils.start()
     State.moduleURLs = {}
     State.manualSpamActive = false
     State.autoSpamActive = false
+    State.spamActivationHandler = nil
     State.diagnostics = {
         lastError = nil,
         lastTransition = nil,
@@ -228,6 +230,7 @@ function Utils.stop()
     State.active = false
     State.manualSpamActive = false
     State.autoSpamActive = false
+    State.spamActivationHandler = nil
     DiagnosticsModules = {}
     State.lifecycle.stoppedAt = os.clock()
     setLifecyclePhase("stopped")
@@ -341,13 +344,24 @@ end
 function Utils.isSpamActive()
     return State.manualSpamActive == true or State.autoSpamActive == true
 end
+function Utils.setSpamActivationHandler(handler)
+    if handler ~= nil and type(handler) ~= "function" then
+        return false
+    end
+    State.spamActivationHandler = handler
+    return true
+end
 function Utils.setAutoSpamActive(value)
     local nextValue = value == true
     if State.autoSpamActive == nextValue then
         return
     end
+    local wasActive = State.manualSpamActive or State.autoSpamActive
     local previous = State.autoSpamActive
     State.autoSpamActive = nextValue
+    if not wasActive and nextValue and type(State.spamActivationHandler) == "function" then
+        pcall(State.spamActivationHandler)
+    end
     recordTransition(
         "AutoClash",
         previous and "active" or "inactive",
@@ -360,8 +374,12 @@ function Utils.setManualSpamActive(value)
     if State.manualSpamActive == nextValue then
         return
     end
+    local wasActive = State.manualSpamActive or State.autoSpamActive
     local previous = State.manualSpamActive
     State.manualSpamActive = nextValue
+    if not wasActive and nextValue and type(State.spamActivationHandler) == "function" then
+        pcall(State.spamActivationHandler)
+    end
     recordTransition(
         "Spam",
         previous and "active" or "inactive",
