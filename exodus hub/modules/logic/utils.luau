@@ -51,6 +51,7 @@ local State = {
     config = {},
     moduleURLs = {},
 	    manualSpamActive = false,
+	    manualSpamOwner = nil,
 	    autoClashActive = false,
 	    spamActivationHandler = nil,
 	    lifecycle = {
@@ -203,9 +204,10 @@ function Utils.start()
     disconnectAll(State.characterConnections)
     disconnectAll(State.connections)
     State.config = {}
-    State.moduleURLs = {}
-    State.manualSpamActive = false
-    State.autoClashActive = false
+	    State.moduleURLs = {}
+	    State.manualSpamActive = false
+	    State.manualSpamOwner = nil
+	    State.autoClashActive = false
     State.spamActivationHandler = nil
     State.diagnostics = {
         lastError = nil,
@@ -227,9 +229,10 @@ function Utils.start()
 end
 function Utils.stop()
     local previousPhase = State.lifecycle.phase
-    State.active = false
-    State.manualSpamActive = false
-    State.autoClashActive = false
+	    State.active = false
+	    State.manualSpamActive = false
+	    State.manualSpamOwner = nil
+	    State.autoClashActive = false
     State.spamActivationHandler = nil
     DiagnosticsModules = {}
     State.lifecycle.stoppedAt = os.clock()
@@ -342,7 +345,9 @@ function Utils.isManualSpamActive()
     return State.manualSpamActive == true
 end
 function Utils.isSpamActive()
-    return State.manualSpamActive == true or State.autoClashActive == true
+    -- Há um único motor de spam: o Manual Spam. O Auto Clash apenas liga
+    -- este mesmo estado quando detecta a janela correta.
+    return State.manualSpamActive == true
 end
 function Utils.setSpamActivationHandler(handler)
     if handler ~= nil and type(handler) ~= "function" then
@@ -352,7 +357,9 @@ function Utils.setSpamActivationHandler(handler)
     return true
 end
 function Utils.setAutoClashActive(value)
-    local nextValue = value == true
+    -- Manual Spam tem prioridade absoluta: Auto Clash não pode entrar em
+    -- estado ativo enquanto o spam manual estiver ligado.
+    local nextValue = value == true and State.manualSpamActive ~= true
     if State.autoClashActive == nextValue then
         return
     end
@@ -369,14 +376,36 @@ function Utils.setAutoClashActive(value)
         "auto_clash_toggle"
     )
 end
-function Utils.setManualSpamActive(value)
+function Utils.setManualSpamActive(value, source)
     local nextValue = value == true
+    local owner = source == "autoclash" and "autoclash" or "ui"
+    if not nextValue and owner == "autoclash" and State.manualSpamOwner ~= "autoclash" then
+        return false
+    end
+    if nextValue and owner == "autoclash" and State.manualSpamActive and State.manualSpamOwner == "ui" then
+        return false
+    end
     if State.manualSpamActive == nextValue then
-        return
+        if nextValue then
+            State.manualSpamOwner = owner
+        elseif not nextValue then
+            State.manualSpamOwner = nil
+        end
+        if nextValue and State.autoClashActive then
+            Utils.setAutoClashActive(false)
+        end
+        return true
     end
     local wasActive = State.manualSpamActive or State.autoClashActive
     local previous = State.manualSpamActive
     State.manualSpamActive = nextValue
+    State.manualSpamOwner = nextValue and owner or nil
+    -- Manual Spam é o modo de maior prioridade. Ao ser ligado, interrompa
+    -- imediatamente qualquer ciclo de Auto Clash; o Auto Parry também é
+    -- bloqueado por Utils.isSpamActive() enquanto este flag estiver ativo.
+    if nextValue and State.autoClashActive then
+        Utils.setAutoClashActive(false)
+    end
     if not wasActive and nextValue and type(State.spamActivationHandler) == "function" then
         pcall(State.spamActivationHandler)
     end
@@ -386,6 +415,7 @@ function Utils.setManualSpamActive(value)
         nextValue and "active" or "inactive",
         "manual_toggle"
     )
+    return true
 end
 function Utils.isFiniteNumber(value)
     return type(value) == "number"
