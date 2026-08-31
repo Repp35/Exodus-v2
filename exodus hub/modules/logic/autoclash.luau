@@ -15,7 +15,6 @@ RES_PER_PARRY = 0.225,
 RES_CAP_STUDS = 32,
 DEFLECT_WINDOW_MAX = 0.85,
 DEFLECT_WINDOW_MIN = 0.20,
-NOOB_WINDOW_BONUS = 0.15,
 PING_SAMPLE_INTERVAL = 1.5,
 PING_EMA_ALPHA = 0.3,
 PING_FLOOR = 0.030,
@@ -136,7 +135,7 @@ local t = (speed - Tuning.BALL_BASE_SPEED)
 base = Tuning.DEFLECT_WINDOW_MAX
 + (Tuning.DEFLECT_WINDOW_MIN - Tuning.DEFLECT_WINDOW_MAX) * t
 end
-local window = base + Tuning.NOOB_WINDOW_BONUS - getPingCompensation()
+local window = base - getPingCompensation()
 return math.max(window, Tuning.PING_WINDOW_FLOOR)
 end
 
