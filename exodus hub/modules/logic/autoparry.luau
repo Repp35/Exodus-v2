@@ -36,10 +36,11 @@ _G.Exodus = namespace
 
 -- state
 local ParryState = {
+	firedThisBall = false,
+	ball = nil,
 	armed = false,
 	armedBall = nil,
 	armedAt = 0,
-	fired = false,
 	firedAt = 0,
 }
 local Resilience = {
@@ -60,6 +61,8 @@ local Runtime = {
 	detectionRadius = 0,
 	smoothPing = 0.060,
 	pingTimer = 0,
+	cooldownSeenAt = 0,
+	cooldownConfirmed = false,
 	phase = "detached",
 	bound = false,
 }
@@ -93,11 +96,29 @@ local function disconnectConnections()
 	end
 end
 local function clearRuntimeCycle()
-	clearArmedState()
-	ParryState.fired = false
+	ParryState.firedThisBall = false
+	ParryState.ball = nil
 	ParryState.firedAt = 0
+	clearArmedState()
 	Runtime.parryRadius = 0
 	Runtime.detectionRadius = 0
+end
+
+-- cooldown
+local function updateCooldownState(time)
+	local cooldown = GameInfo.getDeflectCD()
+	if not Utils.isFiniteNumber(cooldown) or cooldown <= 0 then
+		Runtime.cooldownSeenAt = 0
+		Runtime.cooldownConfirmed = false
+		return false
+	end
+	if Runtime.cooldownSeenAt <= 0 then
+		Runtime.cooldownSeenAt = time
+	end
+	if time - Runtime.cooldownSeenAt >= 0.20 then
+		Runtime.cooldownConfirmed = true
+	end
+	return true
 end
 
 -- resilience
@@ -123,7 +144,7 @@ local function samplePing()
 			+ ping * Tuning.PING_EMA_ALPHA
 	end
 end
-local function getPingOneWay()
+local function getPingCompensation()
 	return math.clamp(
 		Runtime.smoothPing * 0.5,
 		Tuning.PING_FLOOR,
@@ -145,8 +166,10 @@ local function computeParryRadius(time, speed)
 		and math.max(speed, Tuning.MIN_BALL_SPEED)
 		or Tuning.MIN_BALL_SPEED
 
-	local radius = Tuning.DEFLECT_RADIUS + getResilienceBonus(time)
-	return math.max(radius, 0)
+	return math.max(
+		Tuning.DEFLECT_RADIUS + getResilienceBonus(time),
+		0
+	)
 end
 local function computeDetectionRadius(time, speed, frameDelta)
 	time = Utils.isFiniteNumber(time) and time or now()
@@ -158,11 +181,11 @@ local function computeDetectionRadius(time, speed, frameDelta)
 		or 0
 
 	local parryRadius = computeParryRadius(time, speed)
-	local detectionWindow = Tuning.RADIUS_LEAD_TIME
-		+ getPingOneWay()
+	local leadTime = Tuning.RADIUS_LEAD_TIME
+		+ getPingCompensation()
 		+ frameDelta
 
-	return parryRadius + speed * detectionWindow
+	return parryRadius + speed * leadTime
 end
 
 -- targeting
@@ -173,17 +196,11 @@ local function onBallSync(data)
 
 	local time = now()
 
-	if data.Teleported == true then
+	if data.Teleported == true or data.Grace == true then
 		Runtime.teleportLockUntil = time + 0.20
+		ParryState.firedThisBall = false
+		ParryState.ball = nil
 		clearArmedState()
-		ParryState.fired = false
-		return
-	end
-
-	if data.Grace == true then
-		Runtime.teleportLockUntil = time + 0.20
-		clearArmedState()
-		ParryState.fired = false
 		return
 	end
 
@@ -202,8 +219,9 @@ local function onBallSync(data)
 	end
 
 	Runtime.lastTarget = targetId
+	ParryState.firedThisBall = false
+	ParryState.ball = nil
 	clearArmedState()
-	ParryState.fired = false
 end
 
 -- parry request
@@ -219,7 +237,7 @@ local function requestParry()
 	end
 
 	setPhase("fired", "parry_requested")
-	ParryState.fired = true
+	ParryState.firedThisBall = true
 	ParryState.firedAt = time
 
 	local ball = GameInfo.getBall()
@@ -400,24 +418,25 @@ local function bindCharacter(character)
 			return
 		end
 
-		if ParryState.fired then
-			local elapsed = timeNow - ParryState.firedAt
-
-			if elapsed < Tuning.FIRE_LOCK_TIME then
-				setPhase("cooldown", "fire_lock")
-				return
-			end
-
-			if elapsed < Tuning.FIRE_TIMEOUT then
-				setPhase("waiting", "fire_timeout")
-				return
-			end
-
-			ParryState.fired = false
+		if ParryState.ball ~= ball then
+			ParryState.ball = ball
+			ParryState.firedThisBall = false
+			clearArmedState()
 		end
 
-		if ParryState.armed and ParryState.armedBall ~= ball then
-			clearArmedState()
+		if ParryState.firedThisBall then
+			setPhase("waiting", "already_fired")
+			return
+		end
+
+		if updateCooldownState(timeNow) then
+			setPhase(
+				"waiting",
+				Runtime.cooldownConfirmed
+					and "server_on_cooldown"
+					or "cooldown_confirming"
+			)
+			return
 		end
 
 		local speed = snapshot.speed
@@ -453,8 +472,7 @@ local function bindCharacter(character)
 			clearArmedState()
 
 			if requestParry() then
-				ParryState.fired = true
-				ParryState.firedAt = timeNow
+				ParryState.firedThisBall = true
 			end
 
 			return
@@ -468,13 +486,13 @@ local function bindCharacter(character)
 
 		local distance = math.sqrt(distanceSquared)
 		local impactTime = (distance - parryRadius) / speed
-		local earlyWindow = Tuning.RADIUS_LEAD_TIME
+		local preparationWindow = Tuning.RADIUS_LEAD_TIME
 			+ getPingWindow()
 			+ frameDelta
 
-		if impactTime > earlyWindow then
+		if impactTime > preparationWindow then
 			clearArmedState()
-			setPhase("waiting", "outside_early_window")
+			setPhase("waiting", "outside_preparation_window")
 			return
 		end
 
@@ -484,7 +502,7 @@ local function bindCharacter(character)
 			ParryState.armedAt = timeNow
 		end
 
-		setPhase("armed", "impact_window")
+		setPhase("armed", "preparing_parry")
 	end)
 
 	Runtime.connections[#Runtime.connections + 1] = heartbeatConnection
@@ -537,6 +555,8 @@ local function resetState()
 	Runtime.parryRadius = 0
 	Runtime.detectionRadius = 0
 	Runtime.pingTimer = 0
+	Runtime.cooldownSeenAt = 0
+	Runtime.cooldownConfirmed = false
 	Runtime.bound = false
 
 	setPhase("detached", "reset")
@@ -618,7 +638,7 @@ function AutoParry.getParryRadius(time, speed)
 end
 
 function AutoParry.getPingOneWay()
-	return getPingOneWay()
+	return getPingCompensation()
 end
 
 function AutoParry.getStatus()
@@ -626,8 +646,6 @@ function AutoParry.getStatus()
 		schema = Utils.apiVersion(),
 		phase = Runtime.phase,
 		bound = Runtime.bound == true,
-		armed = ParryState.armed == true,
-		fired = ParryState.fired == true,
 		resilienceStack = Resilience.stack,
 		parryRadius = Runtime.parryRadius,
 		detectionRadius = Runtime.detectionRadius,
