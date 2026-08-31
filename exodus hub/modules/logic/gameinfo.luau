@@ -307,7 +307,7 @@ end
 local function getDeflectCooldown()
     local ability = locateDeflectAbility()
     if not ability then
-        return nil
+        return 0
     end
     local ok, cooldown = pcall(function()
         return ability.Cooldown
@@ -315,7 +315,7 @@ local function getDeflectCooldown()
     if ok and Utils.isFiniteNumber(cooldown) then
         return math.max(0, cooldown)
     end
-    return nil
+    return 0
 end
 
 -- watcher
