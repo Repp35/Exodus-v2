@@ -15,6 +15,7 @@ local T = {
     DEACT_OUT_LO = 0.070,
     DEACT_OUT_HI = 0.170,
     FASTPATH_RADIUS_FACTOR = 0.20,
+    RALLY_TIMEOUT = 0.200,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -27,6 +28,7 @@ local R = {
     boundRoot = nil,
     localUserId = nil,
     lastTarget = -1,
+    clashPartnerId = -1,
     lastSpeed = 0,
     parryRadius = 0,
     lostMeAt = 0,
@@ -131,6 +133,10 @@ local function setActive(active, reason)
 
     R.active = active
 
+    if active then
+        R.clashPartnerId = R.lastTarget
+    end
+
     if Utils
         and type(Utils.setAutoSpamActive) == "function"
     then
@@ -148,6 +154,7 @@ end
 
 local function resetTargetState()
     R.lastTarget = -1
+    R.clashPartnerId = -1
     R.lostMeAt = 0
     R.returnPending = false
     R.outSinceAt = 0
@@ -199,6 +206,150 @@ local function resetRuntime(reason)
         "detached",
         reason or "reset"
     )
+end
+
+-- rally
+local function rallyCheck(data)
+    if not R.active then
+        return true
+    end
+
+    if type(data) ~= "table" then
+        return true
+    end
+
+    local novoTarget = data.TargetPlayerID
+
+    if type(novoTarget) == "string" then
+        novoTarget = tonumber(novoTarget)
+    end
+
+    if type(novoTarget) ~= "number" then
+        return true
+    end
+
+    if novoTarget == R.localUserId then
+        return true
+    end
+
+    local realPosition = data.RealPosition
+
+    if typeof(realPosition) ~= "Vector3" then
+        return true
+    end
+
+    local speed = tonumber(data.Speed) or 0
+
+    if speed <= 0 then
+        setActive(
+            false,
+            "rally_invalid_speed"
+        )
+
+        R.clashPartnerId = -1
+        R.returnPending = false
+        R.lostMeAt = 0
+
+        return false
+    end
+
+    if not Utils
+        or type(Utils.getPlayers) ~= "function"
+    then
+        return true
+    end
+
+    local okPlayers, Players =
+        pcall(Utils.getPlayers)
+
+    if not okPlayers or not Players then
+        return true
+    end
+
+    local okPlayer, player =
+        pcall(
+            Players.GetPlayerByUserId,
+            Players,
+            novoTarget
+        )
+
+    if not okPlayer or not player then
+        return true
+    end
+
+    local character = player.Character
+
+    if not (
+        character
+        and character.Parent
+    ) then
+        return true
+    end
+
+    local targetRoot =
+        character:FindFirstChild(
+            "HumanoidRootPart"
+        )
+
+    if not (
+        targetRoot
+        and targetRoot.Parent
+    ) then
+        return true
+    end
+
+    local okTargetPos, novoTargetPos =
+        pcall(function()
+            return targetRoot.Position
+        end)
+
+    if not (
+        okTargetPos
+        and typeof(novoTargetPos) == "Vector3"
+    ) then
+        return true
+    end
+
+    local okRootPos, rootPos =
+        pcall(function()
+            return R.boundRoot
+                and R.boundRoot.Position
+        end)
+
+    if not (
+        okRootPos
+        and typeof(rootPos) == "Vector3"
+    ) then
+        return true
+    end
+
+    local tempoIda =
+        (realPosition - novoTargetPos).Magnitude
+        / speed
+
+    local tempoVolta =
+        (novoTargetPos - rootPos).Magnitude
+        / speed
+
+    local tempoTotal =
+        tempoIda + tempoVolta
+
+    if tempoTotal > T.RALLY_TIMEOUT then
+        setActive(
+            false,
+            "rally_too_far"
+        )
+
+        R.clashPartnerId = -1
+        R.returnPending = false
+        R.lostMeAt = 0
+
+        return false
+    end
+
+    R.clashPartnerId = novoTarget
+
+    return true
 end
 
 -- activation
@@ -325,6 +476,7 @@ local function evaluateClash(t, snapshot)
 
             R.returnPending = false
             R.lostMeAt = 0
+            R.clashPartnerId = -1
         end
 
         return
@@ -603,6 +755,7 @@ function AutoClash.setup(deps)
     R.phase = "detached"
     R.boundRoot = nil
     R.lastTarget = -1
+    R.clashPartnerId = -1
     R.lastSpeed = 0
     R.parryRadius = 0
     R.lostMeAt = 0
@@ -689,6 +842,16 @@ function AutoClash.onBallSync(data)
     end
 
     if R.wasMeTarget and not isMe then
+        if R.active then
+            local rallyAccepted =
+                rallyCheck(data)
+
+            if not rallyAccepted then
+                R.wasMeTarget = isMe
+                return
+            end
+        end
+
         R.lostMeAt =
             Utils.now()
 
@@ -791,6 +954,7 @@ function AutoClash.getStatus()
         active = R.active == true,
         parryRadius = R.parryRadius,
         lastTarget = R.lastTarget,
+        clashPartnerId = R.clashPartnerId,
         lastGate = R.lastGate,
     }
 end
