@@ -13,7 +13,8 @@ local T = {
     RETURN_SPD_HI = 600,
     PING_FACTOR = 0.3,
     DEACT_OUT_LO = 0.080,
-    DEACT_OUT_HI = 0.170,
+    DEACT_OUT_HI = 0.250,
+    FASTPATH_RADIUS_FACTOR = 0.70,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -713,7 +714,9 @@ function AutoClash.onBallSync(data)
                 local dist =
                     (rootPos - data.RealPosition).Magnitude
 
-                if dist <= R.parryRadius * 0.70 then
+                if dist <= R.parryRadius
+                    * T.FASTPATH_RADIUS_FACTOR
+                then
                     fastpath = true
                 end
             end
