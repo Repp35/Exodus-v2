@@ -11,16 +11,9 @@ local Tuning = {
     FIRE_TIMEOUT = 2.0,
     MIN_BALL_SPEED = 5,
     DEFLECT_RADIUS = 8.5,
-    RADIUS_CAP = 1000,
-    PING_FLOOR = 0.030,
-    PING_CAP = 0.150,
-    STATIONARY_ADDITIONAL_TIME = 0.140,
-    MOVING_ADDITIONAL_TIME = 0.080,
-    MOVEMENT_THRESHOLD = 0.5,
-    PING_PARRY_MIN = 0.030,
-    PING_PARRY_MAX = 0.500,
+    ADDITIONAL_WINDOW = 0.110,
     RES_PER_PARRY = 0.225,
-    RES_CAP = 6.0,
+    RES_CAP_STUDS = 32,
     RES_HOLD_TIME = 1.2,
     RES_DECAY_TIME = 4.0,
     HITBOX_OWN_WINDOW = 0.5,
@@ -29,7 +22,6 @@ local Tuning = {
 }
 local PING_SAMPLE_INTERVAL = 1.5
 local PING_EMA_ALPHA = 0.3
-local PING_CACHE_INTERVAL = 0.25
 
 -- shared hitbox hook
 local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
@@ -66,11 +58,10 @@ local Runtime = {
     smoothPing = 0.060,
     pingTimer = 0,
     pingOneWay = 0.030,
-    pingOneWayAt = 0,
     resilienceBonus = 0,
     resilienceBonusAt = -1,
     parryRadius = 0,
-    additionalWindow = 0.080,
+    additionalWindow = Tuning.ADDITIONAL_WINDOW,
     stationary = false,
     phase = "detached",
     bound = false,
@@ -119,22 +110,8 @@ local function samplePing()
             + ping * PING_EMA_ALPHA
     end
 end
-local function getPingWindow()
-    return math.clamp(
-        Runtime.smoothPing,
-        Tuning.PING_PARRY_MIN,
-        Tuning.PING_PARRY_MAX
-    )
-end
-local function getPingOneWay(time)
-    if time - Runtime.pingOneWayAt > PING_CACHE_INTERVAL then
-        Runtime.pingOneWay = math.clamp(
-            Runtime.smoothPing * 0.5,
-            Tuning.PING_FLOOR,
-            Tuning.PING_CAP
-        )
-        Runtime.pingOneWayAt = time
-    end
+local function getPingOneWay()
+    Runtime.pingOneWay = Runtime.smoothPing * 0.5
     return Runtime.pingOneWay
 end
 
@@ -145,7 +122,7 @@ local function getResilienceBonus(time)
     end
     Runtime.resilienceBonus = math.min(
         Resilience.stack * Tuning.RES_PER_PARRY,
-        Tuning.RES_CAP
+        Tuning.RES_CAP_STUDS
     )
     Runtime.resilienceBonusAt = time
     return Runtime.resilienceBonus
@@ -171,47 +148,19 @@ local function tickResilience(time)
 end
 
 -- radius
-local function getAdditionalWindow(root)
-    local ok, velocity = pcall(function()
-        return root.AssemblyLinearVelocity
-    end)
-    if not ok or typeof(velocity) ~= "Vector3"
-        or not Utils.isFiniteNumber(velocity.X)
-        or not Utils.isFiniteNumber(velocity.Z)
-    then
-        return Tuning.MOVING_ADDITIONAL_TIME, false
-    end
-    local horizontalSpeedSquared = velocity.X * velocity.X
-        + velocity.Z * velocity.Z
-    local stationary = horizontalSpeedSquared
-        <= Tuning.MOVEMENT_THRESHOLD * Tuning.MOVEMENT_THRESHOLD
-    return stationary
-        and Tuning.STATIONARY_ADDITIONAL_TIME
-        or Tuning.MOVING_ADDITIONAL_TIME,
-        stationary
-end
-local function computeParryRadius(speed, time, frameDelta, additionalWindow)
+local function computeParryRadius(speed, time, frameDelta)
     speed = tonumber(speed)
     time = tonumber(time)
     frameDelta = tonumber(frameDelta)
-    additionalWindow = tonumber(additionalWindow)
     speed = Utils.isFiniteNumber(speed) and math.max(0, speed) or 0
     time = Utils.isFiniteNumber(time) and time or now()
     frameDelta = Utils.isFiniteNumber(frameDelta) and math.max(0, frameDelta) or 0
-    additionalWindow = Utils.isFiniteNumber(additionalWindow)
-        and math.max(0, additionalWindow)
-        or Tuning.MOVING_ADDITIONAL_TIME
     local parryRadius = Tuning.DEFLECT_RADIUS
         + getResilienceBonus(time)
-    parryRadius = math.clamp(
-        parryRadius,
-        Tuning.DEFLECT_RADIUS,
-        Tuning.RADIUS_CAP
-    )
     local detectionRadius = parryRadius
         + speed * (
-            getPingOneWay(time)
-            + additionalWindow
+            getPingOneWay()
+            + Tuning.ADDITIONAL_WINDOW
             + frameDelta
         )
     return parryRadius, detectionRadius
@@ -298,7 +247,7 @@ local function handleHitbox(instance)
     Resilience.lastStackAt = time
     Resilience.stack = math.min(
         Resilience.stack + 1,
-        math.floor(Tuning.RES_CAP / Tuning.RES_PER_PARRY)
+        math.floor(Tuning.RES_CAP_STUDS / Tuning.RES_PER_PARRY)
     )
     Runtime.resilienceBonusAt = -1
 end
@@ -418,14 +367,10 @@ local function bindCharacter(character)
             setPhase("waiting", "position_unavailable")
             return
         end
-        local additionalWindow, stationary = getAdditionalWindow(root)
-        Runtime.additionalWindow = additionalWindow
-        Runtime.stationary = stationary
         local parryRadius, detectionRadius = computeParryRadius(
             speed,
             timeNow,
-            frameDelta,
-            additionalWindow
+            frameDelta
         )
         Runtime.parryRadius = detectionRadius
         local offset = root.Position - position
@@ -436,7 +381,7 @@ local function bindCharacter(character)
         end
         local distance = math.sqrt(distanceSquared)
         local impactTime = math.max(0, (distance - parryRadius) / speed)
-        local earlyWindow = additionalWindow + getPingWindow()
+        local earlyWindow = Tuning.ADDITIONAL_WINDOW + getPingOneWay()
         if impactTime > earlyWindow then
             setPhase("waiting", "outside_early_window")
             return
@@ -493,11 +438,10 @@ local function resetState()
     Runtime.teleportLockUntil = 0
     Runtime.lastTarget = -1
     Runtime.pingTimer = 0
-    Runtime.pingOneWayAt = 0
     Runtime.resilienceBonus = 0
     Runtime.resilienceBonusAt = -1
     Runtime.parryRadius = 0
-    Runtime.additionalWindow = Tuning.MOVING_ADDITIONAL_TIME
+    Runtime.additionalWindow = Tuning.ADDITIONAL_WINDOW
     Runtime.stationary = false
     Runtime.bound = false
     setPhase("detached", "reset")
@@ -563,13 +507,12 @@ function AutoParry.getParryRadius(speed, time)
     local _, detectionRadius = computeParryRadius(
         speed,
         time,
-        0,
-        Runtime.additionalWindow
+        0
     )
     return detectionRadius
 end
 function AutoParry.getPingOneWay()
-    return getPingOneWay(now())
+    return getPingOneWay()
 end
 function AutoParry.getStatus()
     return {
