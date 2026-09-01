@@ -366,18 +366,6 @@ function GameInfo.getSnapshot(lastTarget, time)
     return getSnapshot(lastTarget, time)
 end
 function GameInfo.getStatus()
-    if not Utils then
-        return {
-            schema = SNAPSHOT_SCHEMA,
-            snapshotSchema = SNAPSHOT_SCHEMA,
-            generatedAt = 0,
-            valid = false,
-            ballValid = false,
-            syncFresh = false,
-            syncValid = false,
-            targeted = false,
-        }
-    end
     local snapshot = getSnapshot(nil, Utils.now())
     return {
         schema = Utils.apiVersion(),
@@ -425,5 +413,4 @@ GameInfo.__contract = {
     requires = { Utils = "utils" },
     ballSync = true,
 }
-
 return GameInfo
