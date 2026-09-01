@@ -9,7 +9,7 @@ local RunServiceService = game:GetService("RunService")
 local WorkspaceService = game:GetService("Workspace")
 
 -- metadata
-local SCRIPT_VERSION = "26.13"
+local SCRIPT_VERSION = "26.12"
 local API_VERSION = 1
 local SCRIPT_NAME = "Exodus Hub"
 local INTERNAL_NAME = "Exodus"
@@ -50,11 +50,9 @@ local State = {
     characterConnections = {},
     config = {},
     moduleURLs = {},
-	    manualSpamActive = false,
-	    manualSpamOwner = nil,
-	    autoClashActive = false,
-	    spamActivationHandler = nil,
-	    lifecycle = {
+    manualSpamActive = false,
+    autoSpamActive = false,
+    lifecycle = {
         phase = "stopped",
         generation = 0,
         startedAt = 0,
@@ -68,7 +66,6 @@ local State = {
         transitions = {},
     },
 }
-
 -- helpers
 local function disconnectAll(list)
     for index = #list, 1, -1 do
@@ -201,21 +198,6 @@ end
 -- lifecycle
 function Utils.start()
     local previousPhase = State.lifecycle.phase
-    disconnectAll(State.characterConnections)
-    disconnectAll(State.connections)
-    State.config = {}
-	    State.moduleURLs = {}
-	    State.manualSpamActive = false
-	    State.manualSpamOwner = nil
-	    State.autoClashActive = false
-    State.spamActivationHandler = nil
-    State.diagnostics = {
-        lastError = nil,
-        lastTransition = nil,
-        lastTransitionAt = 0,
-        errors = {},
-        transitions = {},
-    }
     State.lifecycle.generation = State.lifecycle.generation + 1
     State.lifecycle.startedAt = os.clock()
     State.lifecycle.stoppedAt = 0
@@ -229,11 +211,9 @@ function Utils.start()
 end
 function Utils.stop()
     local previousPhase = State.lifecycle.phase
-	    State.active = false
-	    State.manualSpamActive = false
-	    State.manualSpamOwner = nil
-	    State.autoClashActive = false
-    State.spamActivationHandler = nil
+    State.active = false
+    State.manualSpamActive = false
+    State.autoSpamActive = false
     DiagnosticsModules = {}
     State.lifecycle.stoppedAt = os.clock()
     setLifecyclePhase("stopped")
@@ -300,7 +280,7 @@ function Utils.getDiagnostics()
         runtime = {
             active = State.active,
             manualSpamActive = State.manualSpamActive,
-            autoClashActive = State.autoClashActive,
+            autoSpamActive = State.autoSpamActive,
         },
         modules = getModuleStatuses(),
     }
@@ -317,7 +297,7 @@ function Utils.getStateSnapshot()
         generatedAt = os.clock(),
         active = State.active,
         manualSpamActive = State.manualSpamActive,
-        autoClashActive = State.autoClashActive,
+        autoSpamActive = State.autoSpamActive,
         lifecycle = copyMap(State.lifecycle),
         config = copyMap(State.config),
         moduleURLs = copyMap(State.moduleURLs),
@@ -345,77 +325,35 @@ function Utils.isManualSpamActive()
     return State.manualSpamActive == true
 end
 function Utils.isSpamActive()
-    -- Há um único motor de spam: o Manual Spam. O Auto Clash apenas liga
-    -- este mesmo estado quando detecta a janela correta.
-    return State.manualSpamActive == true
+    return State.manualSpamActive == true or State.autoSpamActive == true
 end
-function Utils.setSpamActivationHandler(handler)
-    if handler ~= nil and type(handler) ~= "function" then
-        return false
-    end
-    State.spamActivationHandler = handler
-    return true
-end
-function Utils.setAutoClashActive(value)
-    -- Manual Spam tem prioridade absoluta: Auto Clash não pode entrar em
-    -- estado ativo enquanto o spam manual estiver ligado.
-    local nextValue = value == true and State.manualSpamActive ~= true
-    if State.autoClashActive == nextValue then
+function Utils.setAutoSpamActive(value)
+    local nextValue = value == true
+    if State.autoSpamActive == nextValue then
         return
     end
-    local wasActive = State.manualSpamActive or State.autoClashActive
-    local previous = State.autoClashActive
-    State.autoClashActive = nextValue
-    if not wasActive and nextValue and type(State.spamActivationHandler) == "function" then
-        pcall(State.spamActivationHandler)
-    end
+    local previous = State.autoSpamActive
+    State.autoSpamActive = nextValue
     recordTransition(
         "AutoClash",
         previous and "active" or "inactive",
         nextValue and "active" or "inactive",
-        "auto_clash_toggle"
+        "automatic_toggle"
     )
 end
-function Utils.setManualSpamActive(value, source)
+function Utils.setManualSpamActive(value)
     local nextValue = value == true
-    local owner = source == "autoclash" and "autoclash" or "ui"
-    if not nextValue and owner == "autoclash" and State.manualSpamOwner ~= "autoclash" then
-        return false
-    end
-    if nextValue and owner == "autoclash" and State.manualSpamActive and State.manualSpamOwner == "ui" then
-        return false
-    end
     if State.manualSpamActive == nextValue then
-        if nextValue then
-            State.manualSpamOwner = owner
-        elseif not nextValue then
-            State.manualSpamOwner = nil
-        end
-        if nextValue and State.autoClashActive then
-            Utils.setAutoClashActive(false)
-        end
-        return true
+        return
     end
-    local wasActive = State.manualSpamActive or State.autoClashActive
     local previous = State.manualSpamActive
     State.manualSpamActive = nextValue
-    State.manualSpamOwner = nextValue and owner or nil
-    -- Manual Spam é o modo de maior prioridade. Ao ser ligado, interrompa
-    -- imediatamente qualquer ciclo de Auto Clash; o Auto Parry também é
-    -- bloqueado por Utils.isSpamActive() enquanto este flag estiver ativo.
-    if nextValue and State.autoClashActive then
-        Utils.setAutoClashActive(false)
-    end
-    if not wasActive and nextValue and type(State.spamActivationHandler) == "function" then
-        pcall(State.spamActivationHandler)
-    end
     recordTransition(
         "Spam",
         previous and "active" or "inactive",
         nextValue and "active" or "inactive",
         "manual_toggle"
     )
-    return true
 end
 function Utils.isFiniteNumber(value)
     return type(value) == "number"
@@ -538,5 +476,4 @@ function Utils.warn(message)
 end
 _G.ExodusStop = Utils.stop
 Utils.__contract = { requires = {} }
-
 return Utils
