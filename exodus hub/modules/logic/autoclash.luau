@@ -7,7 +7,7 @@ local Utils
 
 -- tuning
 local T = {
-RETURN_WIN_LO = 0.100,
+RETURN_WIN_LO = 0.080,
 RETURN_WIN_HI = 0.060,
 RETURN_SPD_LO = 60,
 RETURN_SPD_HI = 600,
