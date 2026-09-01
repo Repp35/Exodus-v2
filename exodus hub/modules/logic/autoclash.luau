@@ -12,7 +12,7 @@ local T = {
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 600,
     PING_FACTOR = 0.3,
-    DEACT_FACTOR = 0.5,
+    DEACT_FACTOR = 0.3,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
