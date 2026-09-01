@@ -264,12 +264,7 @@ end
 -- hooks
 local function installHooks()
     if HookState.installed then return true end
-    if type(hookmetamethod) ~= "function"
-        or type(getnamecallmethod) ~= "function"
-        or type(checkcaller) ~= "function"
-    then
-        return false
-    end
+    if type(hookmetamethod) ~= "function" then return false end
     local ok = pcall(function()
         local oldNamecall
         oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
@@ -349,10 +344,8 @@ function Remote.setup(deps)
     HookState.register = registerRemote
     if not installHooks() then
         HookState.register = nil
-        remoteState = "degraded"
         Utils.warn("hooks do Remote indisponíveis")
-        initializeStorage()
-        return true
+        return false
     end
     remoteState = "hooked"
     initializeStorage()
@@ -392,7 +385,7 @@ function Remote.getRemote()
 end
 function Remote.getStatus()
     return {
-        schema = Utils and Utils.apiVersion() or 1,
+        schema = Utils.apiVersion(),
         state = remoteState,
         initialized = parryInitialized == true,
         source = parryRemoteSource,
@@ -456,11 +449,7 @@ function Remote.startMaintenance(options)
     maintenanceGeneration = maintenanceGeneration + 1
     local currentGeneration = maintenanceGeneration
     task.spawn(function()
-        while currentGeneration == maintenanceGeneration do
-            local activeOk, active = pcall(isActive)
-            if not activeOk or active ~= true then
-                break
-            end
+        while currentGeneration == maintenanceGeneration and isActive() do
             local remote = Remote.getRemote()
             if remote and not isAlive(remote) then
                 clearRemovedRemote(remote)
@@ -485,5 +474,4 @@ Remote.__contract = {
     requires = { Utils = "utils" },
     ballSync = true,
 }
-
 return Remote
