@@ -12,8 +12,10 @@ local heartbeatConnection
 local generation = 0
 local wasActive = false
 local acumulador = 0
+local cpfFps
 local lastMode
 local lastRate
+local EMA = 0.08
 local Scheduler = {
     phase = "stopped",
     lastRequestAt = 0,
@@ -25,6 +27,7 @@ local function invalidate(reason)
     generation = generation + 1
     Scheduler.phase = "stopped"
     acumulador = 0
+    cpfFps = nil
     lastMode = nil
     lastRate = nil
     if Utils and type(Utils.recordTransition) == "function" and wasActive then
@@ -35,9 +38,6 @@ local function isActive()
     return Utils.isActive and Utils.isSpamActive and Utils.isActive() and Utils.isSpamActive()
 end
 local function requestParry()
-    if not isActive() then
-        return false
-    end
     local ok, result = pcall(Remote.fireParry, 1)
     Scheduler.lastRequestAt = Utils.now and Utils.now() or now()
     if not ok or result == false then
@@ -54,9 +54,15 @@ local function scheduleCPF(rate, dt)
     if rate <= 0 then
         return
     end
-    acumulador = acumulador + rate * dt
-    local scheduled = math.floor(acumulador)
-    acumulador = acumulador - scheduled
+    local fpsNow = 1 / dt
+    if not cpfFps then
+        cpfFps = fpsNow
+    else
+        cpfFps = cpfFps + (fpsNow - cpfFps) * EMA
+    end
+    local fps = math_max(cpfFps, 1)
+    local clicks = rate * math_max(60, fps) / fps
+    local scheduled = math.floor(clicks)
     for _ = 1, scheduled do
         requestParry()
     end
@@ -83,16 +89,19 @@ local function tick(dt)
     local mode = type(config) == "table" and config.SpamRateMode == "CPF" and "CPF" or "CPS"
     local rateKey = mode == "CPF" and "CPF" or "CPS"
     local rate = type(config) == "table" and tonumber(config[rateKey]) or nil
-    rate = math_max(rate or 0, 0)
+    rate = math_max(rate or 1, 0)
     if mode ~= lastMode then
         lastMode = mode
         acumulador = 0
         lastRate = nil
+        cpfCredits = 0
+        cpfSent = 0
     end
     if mode == "CPF" then
         if rate ~= lastRate then
             lastRate = rate
-            acumulador = 0
+            cpfCredits = 0
+            cpfSent = 0
         end
         scheduleCPF(rate, dt)
         return
@@ -100,9 +109,6 @@ local function tick(dt)
     if rate ~= lastRate then
         lastRate = rate
         acumulador = 0
-    end
-    if rate <= 0 then
-        return
     end
     local intervaloEntreClicks = 1 / math_max(rate, 1)
     acumulador = acumulador + dt
@@ -134,9 +140,6 @@ function Spam.setup(deps)
     end
     Remote = deps.Remote
     Utils = deps.Utils
-    if type(Utils.setSpamActivationHandler) == "function" then
-        Utils.setSpamActivationHandler(requestParry)
-    end
     Spam.resetState()
     local RunService = Utils.getRunService and Utils.getRunService() or game:GetService("RunService")
     local signal = RunService.RenderStepped or RunService.Heartbeat
@@ -152,6 +155,7 @@ function Spam.resetState()
     invalidate("reset")
     wasActive = false
     acumulador = 0
+    cpfFps = nil
     lastMode = nil
     lastRate = nil
     Scheduler.phase = "stopped"
@@ -172,5 +176,4 @@ Spam.__contract = {
         Utils = "utils",
     },
 }
-
 return Spam
