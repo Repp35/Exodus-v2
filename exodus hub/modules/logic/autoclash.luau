@@ -12,8 +12,8 @@ local T = {
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 600,
     PING_FACTOR = 0.3,
-    DEACT_OUT_LO = 0.050,
-    DEACT_OUT_HI = 0.190,
+    DEACT_OUT_LO = 0.080,
+    DEACT_OUT_HI = 0.170,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -696,34 +696,67 @@ function AutoClash.onBallSync(data)
         R.lastGate = "target_lost"
 
     elseif not R.wasMeTarget and isMe then
-        local lostAt =
-            R.lostMeAt
+        local fastpath = false
 
-        if lostAt > 0 then
-            local now =
-                Utils.now()
+        if not R.active
+            and R.parryRadius > 0
+            and R.boundRoot
+            and R.boundRoot.Parent
+            and data.RealPosition
+            and typeof(data.RealPosition) == "Vector3"
+        then
+            local ok, rootPos = pcall(function()
+                return R.boundRoot.Position
+            end)
 
-            local elapsed =
-                now - lostAt
+            if ok and typeof(rootPos) == "Vector3" then
+                local dist =
+                    (rootPos - data.RealPosition).Magnitude
 
-            local window =
-                returnWindow(
-                    R.lastSpeed
-                )
-
-            if elapsed >= 0
-                and elapsed <= window
-            then
-                R.returnPending = true
-                R.lastGate = "target_return"
-            else
-                R.lostMeAt = 0
-                R.returnPending = false
-                R.lastGate = "return_too_late"
+                if dist <= R.parryRadius * 0.70 then
+                    fastpath = true
+                end
             end
-        else
+        end
+
+        if fastpath then
+            setActive(
+                true,
+                "sync_target_instant"
+            )
+
             R.returnPending = false
-            R.lastGate = "return_without_loss"
+            R.lostMeAt = 0
+        else
+            local lostAt =
+                R.lostMeAt
+
+            if lostAt > 0 then
+                local now =
+                    Utils.now()
+
+                local elapsed =
+                    now - lostAt
+
+                local window =
+                    returnWindow(
+                        R.lastSpeed
+                    )
+
+                if elapsed >= 0
+                    and elapsed <= window
+                then
+                    R.returnPending = true
+                    R.lastGate = "target_return"
+                else
+                    R.lostMeAt = 0
+                    R.returnPending = false
+                    R.lastGate = "return_too_late"
+                end
+            else
+                R.returnPending = false
+                R.lastGate = "return_without_loss"
+            end
         end
     end
 
