@@ -7,13 +7,13 @@ local Utils
 
 -- tuning
 local T = {
-    RETURN_WIN_LO = 0.090,
-    RETURN_WIN_HI = 0.060,
+    RETURN_WIN_LO = 0.080,
+    RETURN_WIN_HI = 0.040,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 600,
     PING_FACTOR = 0.3,
-    DEACT_OUT_LO = 0.070,
-    DEACT_OUT_HI = 0.130,
+    DEACT_OUT_LO = 0.050,
+    DEACT_OUT_HI = 0.110,
     FASTPATH_RADIUS_FACTOR = 0.60,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
