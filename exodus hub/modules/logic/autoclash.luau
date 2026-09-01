@@ -7,12 +7,12 @@ local Utils
 
 -- tuning
 local T = {
-    RETURN_WIN_LO = 0.150,
-    RETURN_WIN_HI = 0.110,
+    RETURN_WIN_LO = 0.100,
+    RETURN_WIN_HI = 0.060,
     RETURN_SPD_LO = 60,
-    RETURN_SPD_HI = 200,
+    RETURN_SPD_HI = 600,
     PING_FACTOR = 0.3,
-    DEACT_FACTOR = 1.85,
+    DEACT_FACTOR = 1.3,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -192,12 +192,6 @@ end
 -- deactivation
 local function shouldDeactivate(t, snapshot)
     if R.lostMeAt <= 0 then
-        R.deactOutsideAt = 0
-        return false
-    end
-
-    if snapshot.targeted == true then
-        R.lostMeAt = 0
         R.deactOutsideAt = 0
         return false
     end
