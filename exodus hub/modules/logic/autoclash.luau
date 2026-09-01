@@ -7,12 +7,12 @@ local Utils
 
 -- tuning
 local T = {
-    RETURN_WIN_LO = 0.70,
-    RETURN_WIN_HI = 0.030,
+    RETURN_WIN_LO = 0.90,
+    RETURN_WIN_HI = 0.060,
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 600,
     PING_FACTOR = 0.3,
-    DEACT_FACTOR = 1.1,
+    DEACT_FACTOR = 0.1,
     DEACT_DISTANCE_EMA_ALPHA = 0.20,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
@@ -32,7 +32,7 @@ local R = {
     returnPending = false,
     deactOutsideAt = 0,
     deactDistanceEMA = nil,
-    wasMeTarget = false,
+    wasMeTarget = nil,
     lastEvalAt = 0,
     connections = {},
     lastGate = "none",
@@ -148,7 +148,7 @@ local function resetRuntime(reason)
     R.returnPending = false
     R.deactOutsideAt = 0
     R.deactDistanceEMA = nil
-    R.wasMeTarget = false
+    R.wasMeTarget = nil
     R.lastEvalAt = 0
     R.lastGate = "detached"
 
@@ -288,6 +288,7 @@ local function evaluateClash(t, snapshot)
             R.lostMeAt = 0
             R.deactOutsideAt = 0
             R.deactDistanceEMA = nil
+            R.returnPending = false
         end
 
         return
@@ -368,7 +369,7 @@ local function bindCharacter(character)
                     R.returnPending = false
                     R.deactOutsideAt = 0
                     R.deactDistanceEMA = nil
-                    R.wasMeTarget = false
+                    R.wasMeTarget = nil
                     return
                 end
 
@@ -384,7 +385,7 @@ local function bindCharacter(character)
                     R.returnPending = false
                     R.deactOutsideAt = 0
                     R.deactDistanceEMA = nil
-                    R.wasMeTarget = false
+                    R.wasMeTarget = nil
                     return
                 end
 
@@ -402,7 +403,7 @@ local function bindCharacter(character)
                     R.returnPending = false
                     R.deactOutsideAt = 0
                     R.deactDistanceEMA = nil
-                    R.wasMeTarget = false
+                    R.wasMeTarget = nil
                     return
                 end
 
@@ -571,7 +572,7 @@ function AutoClash.setup(deps)
     R.returnPending = false
     R.deactOutsideAt = 0
     R.deactDistanceEMA = nil
-    R.wasMeTarget = false
+    R.wasMeTarget = nil
     R.lastEvalAt = 0
     R.connections = {}
     R.lastGate = "none"
@@ -607,7 +608,7 @@ function AutoClash.onBallSync(data)
         R.returnPending = false
         R.deactOutsideAt = 0
         R.deactDistanceEMA = nil
-        R.wasMeTarget = false
+        R.wasMeTarget = nil
 
         if R.active then
             setActive(
@@ -633,7 +634,7 @@ function AutoClash.onBallSync(data)
         R.returnPending = false
         R.deactOutsideAt = 0
         R.deactDistanceEMA = nil
-        R.wasMeTarget = false
+        R.wasMeTarget = nil
         return
     end
 
@@ -645,6 +646,18 @@ function AutoClash.onBallSync(data)
         R.lastTarget
         == R.localUserId
 
+    if R.wasMeTarget == nil then
+        R.wasMeTarget = isMe
+
+        if isMe then
+            R.lastGate = "initial_me"
+        else
+            R.lastGate = "initial_not_me"
+        end
+
+        return
+    end
+
     if R.wasMeTarget and not isMe then
         R.lostMeAt =
             Utils.now()
@@ -652,6 +665,7 @@ function AutoClash.onBallSync(data)
         R.returnPending = false
         R.deactOutsideAt = 0
         R.deactDistanceEMA = nil
+        R.lastGate = "target_lost"
 
     elseif not R.wasMeTarget and isMe then
         if R.lostMeAt > 0 then
@@ -668,11 +682,11 @@ function AutoClash.onBallSync(data)
                     )
             then
                 R.returnPending = true
+                R.lastGate = "target_return"
             else
                 R.lostMeAt = 0
                 R.returnPending = false
-                R.deactOutsideAt = 0
-                R.deactDistanceEMA = nil
+                R.lastGate = "return_too_late"
             end
         end
     end
