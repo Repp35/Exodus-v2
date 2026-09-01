@@ -21,6 +21,8 @@ local Tuning = {
     HITBOX_GAP = 0.4,
 }
 local PING_SAMPLE_INTERVAL = 1.5
+local PING_MEASURE_DURATION = 60.0
+local PING_DEFAULT = 0.060
 
 -- shared hitbox hook
 local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
@@ -54,9 +56,11 @@ local Runtime = {
     lastTarget = -1,
     teleportLockUntil = 0,
     connections = {},
-    minPing = nil,
     pingTimer = 0,
-    pingOneWay = 0.030,
+    pingMeasureStartedAt = -1,
+    pingMeasureLocked = false,
+    minPing = PING_DEFAULT,
+    pingOneWay = PING_DEFAULT * 0.5,
     resilienceBonus = 0,
     resilienceBonusAt = -1,
     parryRadius = 0,
@@ -101,20 +105,36 @@ local function clearRuntimeCycle()
     Runtime.parryRadius = 0
 end
 local function samplePing()
+    if Runtime.pingMeasureLocked then
+        return
+    end
     local ok, ping = pcall(function()
         return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() / 1000
     end)
     if ok and type(ping) == "number" and ping > 0 and ping < 0.5 then
-        if Runtime.minPing == nil or ping < Runtime.minPing then
+        if ping < Runtime.minPing then
             Runtime.minPing = ping
             Runtime.pingOneWay = ping * 0.5
         end
     end
 end
-local function getPingOneWay()
-    if Runtime.minPing ~= nil then
-        Runtime.pingOneWay = Runtime.minPing * 0.5
+local function updatePingMeasurement(time, dt)
+    if Runtime.pingMeasureStartedAt < 0 or Runtime.pingMeasureLocked then
+        return
     end
+    local elapsed = time - Runtime.pingMeasureStartedAt
+    if elapsed >= PING_MEASURE_DURATION then
+        Runtime.pingMeasureLocked = true
+        Runtime.pingTimer = 0
+        return
+    end
+    Runtime.pingTimer = Runtime.pingTimer + dt
+    if Runtime.pingTimer >= PING_SAMPLE_INTERVAL then
+        Runtime.pingTimer = Runtime.pingTimer - PING_SAMPLE_INTERVAL
+        samplePing()
+    end
+end
+local function getPingOneWay()
     return Runtime.pingOneWay
 end
 
@@ -320,11 +340,7 @@ local function bindCharacter(character)
         end
         local frameDelta = isFiniteNumber(dt) and math.max(0, dt) or 0
         tickResilience(timeNow)
-        Runtime.pingTimer = Runtime.pingTimer + frameDelta
-        if Runtime.pingTimer >= PING_SAMPLE_INTERVAL then
-            Runtime.pingTimer = 0
-            samplePing()
-        end
+        updatePingMeasurement(timeNow, frameDelta)
         local snapshot = GameInfo.getSnapshot(Runtime.lastTarget, timeNow)
         if not GameInfo.isSnapshotValid(snapshot, timeNow) then
             setPhase("waiting", "snapshot_invalid")
@@ -450,6 +466,15 @@ local function resetState()
     setPhase("detached", "reset")
 end
 
+local function resetPingMeasurement()
+    Runtime.pingTimer = 0
+    Runtime.pingMeasureStartedAt = now()
+    Runtime.pingMeasureLocked = false
+    Runtime.minPing = PING_DEFAULT
+    Runtime.pingOneWay = PING_DEFAULT * 0.5
+    samplePing()
+end
+
 -- setup
 function AutoParry.setup(deps)
     if type(deps) ~= "table"
@@ -483,6 +508,7 @@ function AutoParry.setup(deps)
     Runtime.localUserId = localPlayer and localPlayer.UserId or -1
     HitboxState.handler = handleHitbox
     resetState()
+    resetPingMeasurement()
     if not installHitboxHook() then
         Utils.warn("hook de hitbox indisponível")
     end
