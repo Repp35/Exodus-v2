@@ -12,7 +12,7 @@ local T = {
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 600,
     PING_FACTOR = 0.3,
-    DEACT_FACTOR = 2.1,
+    DEACT_OUT_WINDOW = 0.150,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -29,7 +29,7 @@ local R = {
     parryRadius = 0,
     lostMeAt = 0,
     returnPending = false,
-    lastMeAt = 0,
+    outSinceAt = 0,
     wasMeTarget = nil,
     lastEvalAt = 0,
     connections = {},
@@ -138,7 +138,7 @@ local function resetTargetState()
     R.lastTarget = -1
     R.lostMeAt = 0
     R.returnPending = false
-    R.lastMeAt = 0
+    R.outSinceAt = 0
     R.wasMeTarget = nil
 end
 
@@ -227,17 +227,37 @@ local function shouldActivate(snapshot)
 end
 
 -- deactivation
-local function shouldDeactivate()
-    if R.lastMeAt <= 0 then
+local function shouldDeactivate(t, snapshot)
+    local root = R.boundRoot
+    local position = snapshot and snapshot.position
+
+    if not (root and root.Parent and position) then
+        R.outSinceAt = 0
         return false
     end
 
-    local elapsed =
-        Utils.now() - R.lastMeAt
+    local ok, rootPos = pcall(function()
+        return root.Position
+    end)
 
-    return elapsed >=
-        returnWindow(R.lastSpeed)
-        * T.DEACT_FACTOR
+    if not (ok and typeof(rootPos) == "Vector3") then
+        R.outSinceAt = 0
+        return false
+    end
+
+    local dist = (rootPos - position).Magnitude
+
+    if dist <= R.parryRadius then
+        R.outSinceAt = 0
+        return false
+    end
+
+    if R.outSinceAt <= 0 then
+        R.outSinceAt = t
+        return false
+    end
+
+    return (t - R.outSinceAt) >= T.DEACT_OUT_WINDOW
 end
 
 -- main evaluation
@@ -285,7 +305,7 @@ local function evaluateClash(t, snapshot)
     end
 
     if R.active then
-        if shouldDeactivate() then
+        if shouldDeactivate(t, snapshot) then
             setActive(
                 false,
                 "target_deactivated"
@@ -575,7 +595,7 @@ function AutoClash.setup(deps)
     R.parryRadius = 0
     R.lostMeAt = 0
     R.returnPending = false
-    R.lastMeAt = 0
+    R.outSinceAt = 0
     R.wasMeTarget = nil
     R.lastEvalAt = 0
     R.connections = {}
@@ -644,10 +664,6 @@ function AutoClash.onBallSync(data)
 
     local isMe =
         target == R.localUserId
-
-    if isMe then
-        R.lastMeAt = Utils.now()
-    end
 
     if R.wasMeTarget == nil then
         R.wasMeTarget = isMe
