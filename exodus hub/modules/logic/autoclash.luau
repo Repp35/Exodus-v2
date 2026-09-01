@@ -12,7 +12,8 @@ local T = {
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 600,
     PING_FACTOR = 0.3,
-    DEACT_OUT_WINDOW = 0.150,
+    DEACT_OUT_LO = 0.080,
+    DEACT_OUT_HI = 0.250,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -87,6 +88,16 @@ local function returnWindow(speed)
         * T.PING_FACTOR
 
     return math.max(window, 0)
+end
+
+local function deactOutWindow(speed)
+    return lerp(
+        speed,
+        T.DEACT_OUT_HI,
+        T.DEACT_OUT_LO,
+        T.RETURN_SPD_LO,
+        T.RETURN_SPD_HI
+    )
 end
 
 local function setPhase(phase, reason)
@@ -257,7 +268,7 @@ local function shouldDeactivate(t, snapshot)
         return false
     end
 
-    return (t - R.outSinceAt) >= T.DEACT_OUT_WINDOW
+    return (t - R.outSinceAt) >= deactOutWindow(R.lastSpeed)
 end
 
 -- main evaluation
