@@ -12,7 +12,8 @@ local T = {
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 600,
     PING_FACTOR = 0.3,
-    DEACT_FACTOR = 0.1,
+    DEACT_FACTOR = 1.1,
+    DEACT_DISTANCE_EMA_ALPHA = 0.20,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -30,6 +31,7 @@ local R = {
     lostMeAt = 0,
     returnPending = false,
     deactOutsideAt = 0,
+    deactDistanceEMA = nil,
     wasMeTarget = false,
     lastEvalAt = 0,
     connections = {},
@@ -145,6 +147,7 @@ local function resetRuntime(reason)
     R.lostMeAt = 0
     R.returnPending = false
     R.deactOutsideAt = 0
+    R.deactDistanceEMA = nil
     R.wasMeTarget = false
     R.lastEvalAt = 0
     R.lastGate = "detached"
@@ -191,11 +194,6 @@ end
 
 -- deactivation
 local function shouldDeactivate(t, snapshot)
-    if R.lostMeAt <= 0 then
-        R.deactOutsideAt = 0
-        return false
-    end
-
     local root = R.boundRoot
     local position = snapshot.position
 
@@ -223,7 +221,19 @@ local function shouldDeactivate(t, snapshot)
     local distance =
         (rootPosition - position).Magnitude
 
-    if distance <= R.parryRadius then
+    if R.deactDistanceEMA == nil then
+        R.deactDistanceEMA = distance
+    else
+        R.deactDistanceEMA =
+            R.deactDistanceEMA
+            + (
+                distance
+                - R.deactDistanceEMA
+            )
+            * T.DEACT_DISTANCE_EMA_ALPHA
+    end
+
+    if R.deactDistanceEMA <= R.parryRadius then
         R.deactOutsideAt = 0
         return false
     end
@@ -277,6 +287,7 @@ local function evaluateClash(t, snapshot)
 
             R.lostMeAt = 0
             R.deactOutsideAt = 0
+            R.deactDistanceEMA = nil
         end
 
         return
@@ -356,6 +367,7 @@ local function bindCharacter(character)
                     R.lostMeAt = 0
                     R.returnPending = false
                     R.deactOutsideAt = 0
+                    R.deactDistanceEMA = nil
                     R.wasMeTarget = false
                     return
                 end
@@ -371,6 +383,7 @@ local function bindCharacter(character)
                     R.lostMeAt = 0
                     R.returnPending = false
                     R.deactOutsideAt = 0
+                    R.deactDistanceEMA = nil
                     R.wasMeTarget = false
                     return
                 end
@@ -388,6 +401,7 @@ local function bindCharacter(character)
                     R.lostMeAt = 0
                     R.returnPending = false
                     R.deactOutsideAt = 0
+                    R.deactDistanceEMA = nil
                     R.wasMeTarget = false
                     return
                 end
@@ -556,6 +570,7 @@ function AutoClash.setup(deps)
     R.lostMeAt = 0
     R.returnPending = false
     R.deactOutsideAt = 0
+    R.deactDistanceEMA = nil
     R.wasMeTarget = false
     R.lastEvalAt = 0
     R.connections = {}
@@ -591,6 +606,7 @@ function AutoClash.onBallSync(data)
         R.lostMeAt = 0
         R.returnPending = false
         R.deactOutsideAt = 0
+        R.deactDistanceEMA = nil
         R.wasMeTarget = false
 
         if R.active then
@@ -616,6 +632,7 @@ function AutoClash.onBallSync(data)
         R.lostMeAt = 0
         R.returnPending = false
         R.deactOutsideAt = 0
+        R.deactDistanceEMA = nil
         R.wasMeTarget = false
         return
     end
@@ -634,6 +651,7 @@ function AutoClash.onBallSync(data)
 
         R.returnPending = false
         R.deactOutsideAt = 0
+        R.deactDistanceEMA = nil
 
     elseif not R.wasMeTarget and isMe then
         if R.lostMeAt > 0 then
@@ -653,6 +671,8 @@ function AutoClash.onBallSync(data)
             else
                 R.lostMeAt = 0
                 R.returnPending = false
+                R.deactOutsideAt = 0
+                R.deactDistanceEMA = nil
             end
         end
     end
