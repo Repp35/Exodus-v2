@@ -12,8 +12,8 @@ local T = {
     RETURN_SPD_LO = 60,
     RETURN_SPD_HI = 600,
     PING_FACTOR = 0.3,
-    DEACT_OUT_LO = 0.080,
-    DEACT_OUT_HI = 0.250,
+    DEACT_OUT_LO = 0.050,
+    DEACT_OUT_HI = 0.190,
     MIN_EVAL_INTERVAL = 1 / 120,
 }
 
