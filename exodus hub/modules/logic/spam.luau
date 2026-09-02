@@ -13,8 +13,11 @@ local generation = 0
 local wasActive = false
 local acumulador = 0
 local cpfFps
+local cpfCredits = 0
+local cpfSent = 0
 local lastMode
 local lastRate
+local chainRunning = false
 local EMA = 0.08
 local Scheduler = {
     phase = "stopped",
@@ -28,15 +31,20 @@ local function invalidate(reason)
     Scheduler.phase = "stopped"
     acumulador = 0
     cpfFps = nil
+    cpfCredits = 0
+    cpfSent = 0
     lastMode = nil
     lastRate = nil
+    chainRunning = false
     if Utils and type(Utils.recordTransition) == "function" and wasActive then
         Utils.recordTransition("Spam", "running", "stopped", reason or "invalidated")
     end
 end
+
 local function isActive()
     return Utils.isActive and Utils.isSpamActive and Utils.isActive() and Utils.isSpamActive()
 end
+
 local function requestParry()
     local ok, result = pcall(Remote.fireParry, 1)
     Scheduler.lastRequestAt = Utils.now and Utils.now() or now()
@@ -50,6 +58,7 @@ local function requestParry()
     Scheduler.lastError = nil
     return true
 end
+
 local function scheduleCPF(rate, dt)
     if rate <= 0 then
         return
@@ -68,28 +77,71 @@ local function scheduleCPF(rate, dt)
     end
 end
 
+local function scheduleChain()
+    if not isActive() then
+        chainRunning = false
+        return
+    end
+
+    local currentGeneration = generation
+
+    requestParry()
+
+    if currentGeneration ~= generation or not isActive() then
+        chainRunning = false
+        return
+    end
+
+    task.spawn(scheduleChain)
+end
+
 -- runtime
 local function tick(dt)
     if typeof(dt) ~= "number" or dt <= 0 or dt ~= dt or dt == math.huge then
         return
     end
+
     if not isActive() then
-        if wasActive then invalidate("spam_disabled") end
+        if wasActive then
+            invalidate("spam_disabled")
+        end
         wasActive = false
         return
     end
+
+    local config = Utils.getConfig and Utils.getConfig()
+    local configuredMode = type(config) == "table" and config.SpamRateMode
+    local mode
+
+    if configuredMode == "CPF" then
+        mode = "CPF"
+    elseif configuredMode == "CHAIN" then
+        mode = "CHAIN"
+    else
+        mode = "CPS"
+    end
+
+    local rateKey = mode == "CPF" and "CPF" or "CPS"
+    local rate = type(config) == "table" and tonumber(config[rateKey]) or nil
+    rate = math_max(rate or 1, 0)
+
     if not wasActive then
         Scheduler.phase = "running"
         if type(Utils.recordTransition) == "function" then
             Utils.recordTransition("Spam", "stopped", "running", "spam_enabled")
         end
     end
+
     wasActive = true
-    local config = Utils.getConfig and Utils.getConfig()
-    local mode = type(config) == "table" and config.SpamRateMode == "CPF" and "CPF" or "CPS"
-    local rateKey = mode == "CPF" and "CPF" or "CPS"
-    local rate = type(config) == "table" and tonumber(config[rateKey]) or nil
-    rate = math_max(rate or 1, 0)
+
+    if mode == "CHAIN" then
+        if not chainRunning then
+            chainRunning = true
+            task.spawn(scheduleChain)
+        end
+        return
+    end
+
     if mode ~= lastMode then
         lastMode = mode
         acumulador = 0
@@ -97,22 +149,26 @@ local function tick(dt)
         cpfCredits = 0
         cpfSent = 0
     end
-    if mode == "CPF" then
-        if rate ~= lastRate then
-            lastRate = rate
+
+    if rate ~= lastRate then
+        lastRate = rate
+        if mode == "CPF" then
             cpfCredits = 0
             cpfSent = 0
+        else
+            acumulador = 0
         end
+    end
+
+    if mode == "CPF" then
         scheduleCPF(rate, dt)
         return
     end
-    if rate ~= lastRate then
-        lastRate = rate
-        acumulador = 0
-    end
+
     local intervaloEntreClicks = 1 / math_max(rate, 1)
     acumulador = acumulador + dt
     local currentGeneration = generation
+
     while acumulador >= intervaloEntreClicks do
         if currentGeneration ~= generation or not isActive() then
             return
@@ -131,6 +187,7 @@ function Spam.setup(deps)
     then
         return false, "dependência ausente: Remote.fireParry ou Utils"
     end
+
     if heartbeatConnection then
         pcall(heartbeatConnection.Disconnect, heartbeatConnection)
         if type(deps.Utils.untrackGlobal) == "function" then
@@ -138,15 +195,20 @@ function Spam.setup(deps)
         end
         heartbeatConnection = nil
     end
+
     Remote = deps.Remote
     Utils = deps.Utils
     Spam.resetState()
+
     local RunService = Utils.getRunService and Utils.getRunService() or game:GetService("RunService")
     local signal = RunService.RenderStepped or RunService.Heartbeat
+
     heartbeatConnection = signal:Connect(tick)
+
     if type(Utils.trackGlobal) == "function" then
         Utils.trackGlobal(heartbeatConnection)
     end
+
     return true
 end
 
@@ -156,12 +218,16 @@ function Spam.resetState()
     wasActive = false
     acumulador = 0
     cpfFps = nil
+    cpfCredits = 0
+    cpfSent = 0
     lastMode = nil
     lastRate = nil
+    chainRunning = false
     Scheduler.phase = "stopped"
     Scheduler.lastRequestAt = 0
     Scheduler.lastError = nil
 end
+
 function Spam.getStatus()
     return {
         schema = Utils.apiVersion and Utils.apiVersion() or 1,
@@ -170,10 +236,12 @@ function Spam.getStatus()
         lastError = Scheduler.lastError,
     }
 end
+
 Spam.__contract = {
     requires = {
         Remote = "remote",
         Utils = "utils",
     },
 }
+
 return Spam
