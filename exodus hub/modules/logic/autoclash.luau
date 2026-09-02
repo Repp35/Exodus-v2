@@ -15,6 +15,7 @@ local T = {
         FASTPATH_RADIUS_FACTOR = 0.25,
         RALLY_TIMEOUT = 0.100,
         DEACT_RADIUS_EXTRA_WINDOW = 0.30,
+        DEACT_TRAVEL_MAX = 0.035,
         ACT_RADIUS_EXTRA_WINDOW = 0.150,
         REACTIVATE_COOLDOWN = 0.100,
         MIN_EVAL_INTERVAL = 1 / 120,
@@ -524,6 +525,22 @@ local function shouldDeactivate(t, snapshot)
         if distance > deactRadius then
                 R.outSinceAt = 0
                 return true
+        end
+
+        -- Dentro do raio mas não sou o target: mede o
+        -- "tempo de viagem" da bola até mim. Se ela
+        -- precisa de mais que DEACT_TRAVEL_MAX pra
+        -- voltar, a chance dela voltar a me alvejar
+        -- é mínima -> desativa. Quanto maior a
+        -- velocidade, menor a distância permitida
+        -- para o mesmo teto de tempo.
+        if speed > 0 then
+                local travel = distance / speed
+
+                if travel > T.DEACT_TRAVEL_MAX then
+                        R.outSinceAt = 0
+                        return true
+                end
         end
 
         R.outSinceAt = 0
