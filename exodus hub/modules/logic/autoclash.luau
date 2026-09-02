@@ -13,9 +13,10 @@ local T = {
         RETURN_SPD_HI = 600,
         PING_FACTOR = 0.3,
         FASTPATH_RADIUS_FACTOR = 0.25,
-        RALLY_TIMEOUT = 0.200,
-        DEACT_RADIUS_EXTRA_WINDOW = 0.100,
-        ACT_RADIUS_EXTRA_WINDOW = 0.170,
+        RALLY_TIMEOUT = 0.100,
+        DEACT_RADIUS_EXTRA_WINDOW = 0.30,
+        ACT_RADIUS_EXTRA_WINDOW = 0.150,
+        REACTIVATE_COOLDOWN = 0.100,
         MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -37,6 +38,7 @@ local R = {
         outSinceAt = 0,
         wasMeTarget = nil,
         lastEvalAt = 0,
+        reactivateBlockedUntil = 0,
         connections = {},
         lastGate = "none",
 }
@@ -56,36 +58,48 @@ local function getNow()
         if not Utils or type(Utils.now) ~= "function" then
                 return 0
         end
+
         local ok, now = pcall(Utils.now)
+
         if not ok then
                 return 0
         end
+
         return tonumber(now) or 0
 end
 
 local function getPingOneWay()
-        if not AutoParry or type(AutoParry.getPingOneWay) ~= "function" then
+        if not AutoParry
+                or type(AutoParry.getPingOneWay) ~= "function" then
                 return 0
         end
+
         local ok, ping = pcall(AutoParry.getPingOneWay)
+
         if not ok then
                 return 0
         end
+
         ping = tonumber(ping) or 0
+
         return math.max(ping, 0)
 end
 
 local function getRootPosition()
         local root = R.boundRoot
+
         if not (root and root.Parent) then
                 return nil
         end
+
         local ok, position = pcall(function()
                 return root.Position
         end)
+
         if not (ok and typeof(position) == "Vector3") then
                 return nil
         end
+
         return position
 end
 
@@ -93,23 +107,29 @@ local function getSnapshotPosition(snapshot)
         if type(snapshot) ~= "table" then
                 return nil
         end
+
         local position = snapshot.position
+
         if typeof(position) ~= "Vector3" then
                 return nil
         end
+
         return position
 end
 
 local function lerp(speed, lo, hi, spdLo, spdHi)
         speed = tonumber(speed) or 0
+
         if spdHi <= spdLo then
                 return lo
         end
+
         local alpha = math.clamp(
                 (speed - spdLo) / (spdHi - spdLo),
                 0,
                 1
         )
+
         return lo + (hi - lo) * alpha
 end
 
@@ -121,7 +141,10 @@ local function returnWindow(speed)
                 T.RETURN_SPD_LO,
                 T.RETURN_SPD_HI
         )
-        local window = base + getPingOneWay() * T.PING_FACTOR
+
+        local window =
+                base + getPingOneWay() * T.PING_FACTOR
+
         return math.max(window, 0)
 end
 
@@ -163,13 +186,20 @@ local function setActive(active, reason)
                 R.clashPartnerId = R.lastTarget
         else
                 R.clashPartnerId = -1
+
+                -- Cooldown começa somente quando realmente desliga.
+                R.reactivateBlockedUntil =
+                        getNow() + T.REACTIVATE_COOLDOWN
         end
 
         if Utils and type(Utils.setAutoSpamActive) == "function" then
                 pcall(Utils.setAutoSpamActive, active)
         end
 
-        setPhase(active and "active" or "idle", reason)
+        setPhase(
+                active and "active" or "idle",
+                reason
+        )
 end
 
 local function resetTargetState()
@@ -185,10 +215,14 @@ end
 local function disconnectConnections()
         for i = #R.connections, 1, -1 do
                 local connection = R.connections[i]
+
                 R.connections[i] = nil
 
                 if Utils and type(Utils.untrackCharacter) == "function" then
-                        pcall(Utils.untrackCharacter, connection)
+                        pcall(
+                                Utils.untrackCharacter,
+                                connection
+                        )
                 end
 
                 pcall(function()
@@ -211,11 +245,15 @@ local function resetRuntime(reason)
         R.lastSpeed = 0
         R.parryRadius = 0
         R.lastEvalAt = 0
+        R.reactivateBlockedUntil = 0
         R.lastGate = "detached"
 
         resetTargetState()
 
-        setPhase("detached", reason or "reset")
+        setPhase(
+                "detached",
+                reason or "reset"
+        )
 end
 
 -- rally
@@ -228,7 +266,8 @@ local function rallyCheck(data)
                 return true
         end
 
-        local novoTarget = normalizeTarget(data.TargetPlayerID)
+        local novoTarget =
+                normalizeTarget(data.TargetPlayerID)
 
         if not novoTarget then
                 return true
@@ -244,7 +283,8 @@ local function rallyCheck(data)
                 return true
         end
 
-        local speed = tonumber(data.Speed) or 0
+        local speed =
+                tonumber(data.Speed) or 0
 
         if speed <= 0 then
                 setActive(false, "rally_invalid_speed")
@@ -252,21 +292,24 @@ local function rallyCheck(data)
                 return false
         end
 
-        if not Utils or type(Utils.getPlayers) ~= "function" then
+        if not Utils
+                or type(Utils.getPlayers) ~= "function" then
                 return true
         end
 
-        local okPlayers, Players = pcall(Utils.getPlayers)
+        local okPlayers, Players =
+                pcall(Utils.getPlayers)
 
         if not okPlayers or not Players then
                 return true
         end
 
-        local okPlayer, player = pcall(
-                Players.GetPlayerByUserId,
-                Players,
-                novoTarget
-        )
+        local okPlayer, player =
+                pcall(
+                        Players.GetPlayerByUserId,
+                        Players,
+                        novoTarget
+                )
 
         if not okPlayer or not player then
                 return true
@@ -278,17 +321,22 @@ local function rallyCheck(data)
                 return true
         end
 
-        local targetRoot = character:FindFirstChild("HumanoidRootPart")
+        local targetRoot =
+                character:FindFirstChild("HumanoidRootPart")
 
         if not (targetRoot and targetRoot.Parent) then
                 return true
         end
 
-        local okTargetPos, novoTargetPos = pcall(function()
-                return targetRoot.Position
-        end)
+        local okTargetPos, novoTargetPos =
+                pcall(function()
+                        return targetRoot.Position
+                end)
 
-        if not (okTargetPos and typeof(novoTargetPos) == "Vector3") then
+        if not (
+                okTargetPos
+                and typeof(novoTargetPos) == "Vector3"
+        ) then
                 return true
         end
 
@@ -299,12 +347,15 @@ local function rallyCheck(data)
         end
 
         local tempoIda =
-                (realPosition - novoTargetPos).Magnitude / speed
+                (realPosition - novoTargetPos).Magnitude
+                / speed
 
         local tempoVolta =
-                (novoTargetPos - rootPos).Magnitude / speed
+                (novoTargetPos - rootPos).Magnitude
+                / speed
 
-        local tempoTotal = tempoIda + tempoVolta
+        local tempoTotal =
+                tempoIda + tempoVolta
 
         if tempoTotal > T.RALLY_TIMEOUT then
                 setActive(false, "rally_too_far")
@@ -319,7 +370,11 @@ end
 
 -- activation
 local function shouldActivate(snapshot)
-        if not (snapshot and snapshot.ball and snapshot.ball.Parent) then
+        if not (
+                snapshot
+                and snapshot.ball
+                and snapshot.ball.Parent
+        ) then
                 R.lastGate = "no_ball"
                 return false
         end
@@ -336,7 +391,8 @@ local function shouldActivate(snapshot)
                 return false
         end
 
-        local position = getSnapshotPosition(snapshot)
+        local position =
+                getSnapshotPosition(snapshot)
 
         if not position then
                 R.lastGate = "no_position"
@@ -344,7 +400,10 @@ local function shouldActivate(snapshot)
         end
 
         local parryRadius =
-                math.max(tonumber(R.parryRadius) or 0, 0)
+                math.max(
+                        tonumber(R.parryRadius) or 0,
+                        0
+                )
 
         if parryRadius <= 0 then
                 R.lastGate = "no_effective_radius"
@@ -353,13 +412,16 @@ local function shouldActivate(snapshot)
 
         local effectiveRadius =
                 parryRadius
-                + R.lastSpeed * T.ACT_RADIUS_EXTRA_WINDOW
+                + R.lastSpeed
+                * T.ACT_RADIUS_EXTRA_WINDOW
 
         local distance =
                 (rootPos - position).Magnitude
 
         if distance > effectiveRadius then
-                R.lastGate = "outside_effective_radius"
+                R.lastGate =
+                        "outside_effective_radius"
+
                 return false
         end
 
@@ -368,8 +430,23 @@ local function shouldActivate(snapshot)
         return true
 end
 
+local function canReactivate()
+        local now = getNow()
+
+        if now < R.reactivateBlockedUntil then
+                R.lastGate = "reactivate_cooldown"
+                return false
+        end
+
+        return true
+end
+
 local function tryReturnActivate(snapshot)
         if not R.returnPending then
+                return false
+        end
+
+        if not canReactivate() then
                 return false
         end
 
@@ -385,6 +462,10 @@ end
 
 local function tryFastpathActivate(snapshot)
         if not R.fastpathPending then
+                return false
+        end
+
+        if not canReactivate() then
                 return false
         end
 
@@ -414,7 +495,10 @@ local function shouldDeactivate(t, snapshot)
         end
 
         local parryRadius =
-                math.max(tonumber(R.parryRadius) or 0, 0)
+                math.max(
+                        tonumber(R.parryRadius) or 0,
+                        0
+                )
 
         if parryRadius <= 0 then
                 R.outSinceAt = 0
@@ -422,16 +506,21 @@ local function shouldDeactivate(t, snapshot)
         end
 
         local speed =
-                math.max(tonumber(R.lastSpeed) or 0, 0)
+                math.max(
+                        tonumber(R.lastSpeed) or 0,
+                        0
+                )
 
         local distance =
                 (rootPos - position).Magnitude
 
         local deactRadius =
                 parryRadius
-                + speed * T.DEACT_RADIUS_EXTRA_WINDOW
+                + speed
+                * T.DEACT_RADIUS_EXTRA_WINDOW
 
-        -- Não sou o target + fora do raio efetivo = desativa instantaneamente.
+        -- Não sou o target + fora do raio efetivo
+        -- = desativa imediatamente.
         if distance > deactRadius then
                 R.outSinceAt = 0
                 return true
@@ -443,23 +532,36 @@ end
 
 -- main evaluation
 local function evaluateClash(t, snapshot)
-        if not (R.boundRoot and R.boundRoot.Parent) then
+        if not (
+                R.boundRoot
+                and R.boundRoot.Parent
+        ) then
                 return
         end
 
-        if not (snapshot and snapshot.ball and snapshot.ball.Parent) then
+        if not (
+                snapshot
+                and snapshot.ball
+                and snapshot.ball.Parent
+        ) then
                 return
         end
 
         R.lastSpeed =
-                math.max(tonumber(snapshot.speed) or 0, 0)
-
-        if AutoParry and type(AutoParry.getParryRadius) == "function" then
-                local ok, radius = pcall(
-                        AutoParry.getParryRadius,
-                        R.lastSpeed,
-                        t
+                math.max(
+                        tonumber(snapshot.speed) or 0,
+                        0
                 )
+
+        if AutoParry
+                and type(AutoParry.getParryRadius) == "function" then
+
+                local ok, radius =
+                        pcall(
+                                AutoParry.getParryRadius,
+                                R.lastSpeed,
+                                t
+                        )
 
                 if ok then
                         radius = tonumber(radius)
@@ -472,7 +574,11 @@ local function evaluateClash(t, snapshot)
 
         if R.active then
                 if shouldDeactivate(t, snapshot) then
-                        setActive(false, "target_deactivated")
+                        setActive(
+                                false,
+                                "target_deactivated"
+                        )
+
                         clearReturnState()
                         R.fastpathPending = false
                 end
@@ -481,13 +587,21 @@ local function evaluateClash(t, snapshot)
         end
 
         if tryFastpathActivate(snapshot) then
-                setActive(true, "sync_target_instant")
+                setActive(
+                        true,
+                        "sync_target_instant"
+                )
+
                 clearReturnState()
                 return
         end
 
         if tryReturnActivate(snapshot) then
-                setActive(true, "activated")
+                setActive(
+                        true,
+                        "activated"
+                )
+
                 clearReturnState()
                 return
         end
@@ -505,7 +619,10 @@ local function bindCharacter(character)
 
         local root =
                 character:FindFirstChild("HumanoidRootPart")
-                or character:WaitForChild("HumanoidRootPart", 1)
+                or character:WaitForChild(
+                        "HumanoidRootPart",
+                        1
+                )
 
         if not (
                 generation == R.generation
@@ -519,94 +636,134 @@ local function bindCharacter(character)
         R.lastGate = "waiting_for_character"
 
         local heartbeat =
-                Utils.getRunService().Heartbeat:Connect(function()
-                        if generation ~= R.generation then
-                                return
-                        end
-
-                        if not (character.Parent and root.Parent) then
-                                return
-                        end
-
-                        if Utils.isManualSpamActive() then
-                                if R.active then
-                                        setActive(false, "manual_spam")
+                Utils.getRunService().Heartbeat:Connect(
+                        function()
+                                if generation ~= R.generation then
+                                        return
                                 end
 
-                                resetTargetState()
-                                R.lastGate = "manual_spam"
-                                return
-                        end
-
-                        if not Utils.isActive() then
-                                if R.active then
-                                        setActive(false, "hub_inactive")
+                                if not (
+                                        character.Parent
+                                        and root.Parent
+                                ) then
+                                        return
                                 end
 
-                                resetTargetState()
-                                R.lastGate = "hub_inactive"
-                                return
-                        end
+                                if Utils.isManualSpamActive() then
+                                        if R.active then
+                                                setActive(
+                                                        false,
+                                                        "manual_spam"
+                                                )
+                                        end
 
-                        local config = Utils.getConfig()
-
-                        if not (config and config.AutoClash) then
-                                if R.active then
-                                        setActive(false, "hub_disabled")
+                                        resetTargetState()
+                                        R.lastGate = "manual_spam"
+                                        return
                                 end
 
-                                resetTargetState()
-                                R.lastGate = "hub_disabled"
-                                return
-                        end
+                                if not Utils.isActive() then
+                                        if R.active then
+                                                setActive(
+                                                        false,
+                                                        "hub_inactive"
+                                                )
+                                        end
 
-                        local t = getNow()
+                                        resetTargetState()
+                                        R.lastGate = "hub_inactive"
+                                        return
+                                end
 
-                        if t - R.lastEvalAt < T.MIN_EVAL_INTERVAL then
-                                return
-                        end
+                                local config =
+                                        Utils.getConfig()
 
-                        R.lastEvalAt = t
+                                if not (
+                                        config
+                                        and config.AutoClash
+                                ) then
+                                        if R.active then
+                                                setActive(
+                                                        false,
+                                                        "hub_disabled"
+                                                )
+                                        end
 
-                        local snapshot =
-                                GameInfo.getSnapshot(
-                                        R.lastTarget,
+                                        resetTargetState()
+                                        R.lastGate = "hub_disabled"
+                                        return
+                                end
+
+                                local t = getNow()
+
+                                if t - R.lastEvalAt
+                                        < T.MIN_EVAL_INTERVAL then
+                                        return
+                                end
+
+                                R.lastEvalAt = t
+
+                                local snapshot =
+                                        GameInfo.getSnapshot(
+                                                R.lastTarget,
+                                                t
+                                        )
+
+                                if not GameInfo.isSnapshotValid(
+                                        snapshot,
                                         t
+                                ) then
+                                        return
+                                end
+
+                                local target =
+                                        normalizeTarget(
+                                                snapshot.targetId
+                                        )
+
+                                if target then
+                                        R.lastTarget = target
+                                end
+
+                                evaluateClash(
+                                        t,
+                                        snapshot
                                 )
-
-                        if not GameInfo.isSnapshotValid(snapshot, t) then
-                                return
                         end
+                )
 
-                        local target =
-                                normalizeTarget(snapshot.targetId)
+        R.connections[#R.connections + 1] =
+                heartbeat
 
-                        if target then
-                                R.lastTarget = target
-                        end
-
-                        evaluateClash(t, snapshot)
-                end)
-
-        R.connections[#R.connections + 1] = heartbeat
         Utils.trackCharacter(heartbeat)
 
         local ancestry =
-                character.AncestryChanged:Connect(function(_, parent)
-                        if parent then
-                                return
+                character.AncestryChanged:Connect(
+                        function(_, parent)
+                                if parent then
+                                        return
+                                end
+
+                                resetRuntime(
+                                        "character_removed"
+                                )
+
+                                R.lastGate =
+                                        "character_removed"
                         end
+                )
 
-                        resetRuntime("character_removed")
-                        R.lastGate = "character_removed"
-                end)
+        R.connections[#R.connections + 1] =
+                ancestry
 
-        R.connections[#R.connections + 1] = ancestry
         Utils.trackCharacter(ancestry)
 
         R.bound = true
 
-        setPhase("waiting", "character_bound")
+        setPhase(
+                "waiting",
+                "character_bound"
+        )
 
         return true
 end
@@ -616,23 +773,53 @@ function AutoClash.setup(deps)
         if not (
                 deps
                 and deps.AutoParry
-                and type(deps.AutoParry.getParryRadius) == "function"
-                and type(deps.AutoParry.getPingOneWay) == "function"
+                and type(
+                        deps.AutoParry.getParryRadius
+                ) == "function"
+                and type(
+                        deps.AutoParry.getPingOneWay
+                ) == "function"
                 and deps.GameInfo
-                and type(deps.GameInfo.getSnapshot) == "function"
-                and type(deps.GameInfo.isSnapshotValid) == "function"
+                and type(
+                        deps.GameInfo.getSnapshot
+                ) == "function"
+                and type(
+                        deps.GameInfo.isSnapshotValid
+                ) == "function"
                 and deps.Utils
-                and type(deps.Utils.now) == "function"
-                and type(deps.Utils.getConfig) == "function"
-                and type(deps.Utils.getRunService) == "function"
-                and type(deps.Utils.recordTransition) == "function"
-                and type(deps.Utils.setAutoSpamActive) == "function"
-                and type(deps.Utils.trackCharacter) == "function"
-                and type(deps.Utils.untrackCharacter) == "function"
-                and type(deps.Utils.isActive) == "function"
-                and type(deps.Utils.isManualSpamActive) == "function"
-                and type(deps.Utils.getLocalPlayer) == "function"
-                and type(deps.Utils.apiVersion) == "function"
+                and type(
+                        deps.Utils.now
+                ) == "function"
+                and type(
+                        deps.Utils.getConfig
+                ) == "function"
+                and type(
+                        deps.Utils.getRunService
+                ) == "function"
+                and type(
+                        deps.Utils.recordTransition
+                ) == "function"
+                and type(
+                        deps.Utils.setAutoSpamActive
+                ) == "function"
+                and type(
+                        deps.Utils.trackCharacter
+                ) == "function"
+                and type(
+                        deps.Utils.untrackCharacter
+                ) == "function"
+                and type(
+                        deps.Utils.isActive
+                ) == "function"
+                and type(
+                        deps.Utils.isManualSpamActive
+                ) == "function"
+                and type(
+                        deps.Utils.getLocalPlayer
+                ) == "function"
+                and type(
+                        deps.Utils.apiVersion
+                ) == "function"
         ) then
                 return false
         end
@@ -645,7 +832,8 @@ function AutoClash.setup(deps)
         GameInfo = deps.GameInfo
         Utils = deps.Utils
 
-        local player = Utils.getLocalPlayer()
+        local player =
+                Utils.getLocalPlayer()
 
         R.localUserId =
                 player and player.UserId or nil
@@ -665,6 +853,7 @@ function AutoClash.setup(deps)
         R.outSinceAt = 0
         R.wasMeTarget = nil
         R.lastEvalAt = 0
+        R.reactivateBlockedUntil = 0
         R.connections = {}
         R.lastGate = "none"
 
@@ -705,11 +894,16 @@ function AutoClash.onBallSync(data)
         end
 
         local target =
-                normalizeTarget(data.TargetPlayerID)
+                normalizeTarget(
+                        data.TargetPlayerID
+                )
 
         if not target then
                 if R.active then
-                        setActive(false, "invalid_target")
+                        setActive(
+                                false,
+                                "invalid_target"
+                        )
                 end
 
                 resetTargetState()
@@ -724,6 +918,7 @@ function AutoClash.onBallSync(data)
 
         if R.wasMeTarget == nil then
                 R.wasMeTarget = isMe
+
                 R.lastGate =
                         isMe
                         and "initial_me"
@@ -752,8 +947,11 @@ function AutoClash.onBallSync(data)
                 R.lastGate = "target_lost"
 
         elseif not previousTarget and isMe then
-                local rootPos = getRootPosition()
-                local realPosition = data.RealPosition
+                local rootPos =
+                        getRootPosition()
+
+                local realPosition =
+                        data.RealPosition
 
                 local speed =
                         math.max(
@@ -779,13 +977,18 @@ function AutoClash.onBallSync(data)
                         end
                 end
 
-                local lostAt = R.lostMeAt
+                local lostAt =
+                        R.lostMeAt
 
                 if lostAt > 0 then
                         local now = getNow()
-                        local elapsed = now - lostAt
+                        local elapsed =
+                                now - lostAt
+
                         local window =
-                                returnWindow(R.lastSpeed)
+                                returnWindow(
+                                        R.lastSpeed
+                                )
 
                         if elapsed >= 0
                                 and elapsed <= window then
@@ -822,7 +1025,9 @@ end
 function AutoClash.getStatus()
         local schema
 
-        if Utils and type(Utils.apiVersion) == "function" then
+        if Utils
+                and type(Utils.apiVersion) == "function" then
+
                 local ok, value =
                         pcall(Utils.apiVersion)
 
