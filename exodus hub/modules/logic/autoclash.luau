@@ -13,6 +13,7 @@ local T = {
 	RETURN_SPD_HI = 600,
 	PING_FACTOR = 0.3,
 	FASTPATH_RADIUS_FACTOR = 0.25,
+	DEACT_INSTANT_WINDOW = 0.200,
 	DEACT_RADIUS_EXTRA_WINDOW = 0.30,
 	ACT_RADIUS_EXTRA_WINDOW = 0.150,
 	REACTIVATE_COOLDOWN = 0.100,
@@ -312,6 +313,11 @@ local function shouldDeactivate(t, snapshot)
 	end
 	local speed = math.max(tonumber(R.lastSpeed) or 0, 0)
 	local distance = (rootPos - position).Magnitude
+	local deactInstantRadius = parryRadius + speed * T.DEACT_INSTANT_WINDOW
+	if distance > deactInstantRadius then
+		R.outSinceAt = 0
+		return true
+	end
 	local deactRadius = parryRadius + speed * T.DEACT_RADIUS_EXTRA_WINDOW
 	if distance > deactRadius then
 		R.outSinceAt = 0
