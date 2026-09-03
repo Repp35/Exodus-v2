@@ -18,7 +18,7 @@ local T = {
 
         -- deactivation
         DEACT_TRAVEL_GUARD_WINDOW = 0.130,
-        DEACT_TRAVEL_MAX_LO = 0.085,
+        DEACT_TRAVEL_MAX_LO = 0.070,
         DEACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
         DEACT_TRAVEL_SPD_LO = 60,
         DEACT_TRAVEL_SPD_HI = 600,
