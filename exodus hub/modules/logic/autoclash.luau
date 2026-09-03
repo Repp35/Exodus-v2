@@ -296,10 +296,6 @@ end
 
 -- deactivation
 local function shouldDeactivate(t, snapshot)
-	if snapshot and snapshot.targeted == true then
-		R.outSinceAt = 0
-		return false
-	end
 	local rootPos = getRootPosition()
 	local position = getSnapshotPosition(snapshot)
 	if not (rootPos and position) then
@@ -317,6 +313,10 @@ local function shouldDeactivate(t, snapshot)
 	if distance > deactInstantRadius then
 		R.outSinceAt = 0
 		return true
+	end
+	if snapshot and snapshot.targeted == true then
+		R.outSinceAt = 0
+		return false
 	end
 	local deactRadius = parryRadius + speed * T.DEACT_RADIUS_EXTRA_WINDOW
 	if distance > deactRadius then
