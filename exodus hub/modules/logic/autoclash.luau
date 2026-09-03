@@ -13,6 +13,7 @@ local T = {
         RETURN_SPD_HI = 600,
         PING_FACTOR = 0.3,
         DEACT_RADIUS_EXTRA_WINDOW = 0.20,
+        DEACT_TRAVEL_GUARD_WINDOW = 0.170,
         DEACT_TRAVEL_MAX = 0.028,
         ACT_RADIUS_EXTRA_WINDOW = 0.150,
         REACTIVATE_COOLDOWN = 0.100,
@@ -293,6 +294,13 @@ local function shouldDeactivate(t, snapshot)
         end
         local speed = math.max(tonumber(R.lastSpeed) or 0, 0)
         local distance = (rootPos - position).Magnitude
+
+        local travelGuardRadius = math.max(parryRadius - speed * T.DEACT_TRAVEL_GUARD_WINDOW, 0)
+
+        if distance <= travelGuardRadius then
+                R.outSinceAt = 0
+                return false
+        end
 
         if speed > 0 then
                 local travelTime = distance / speed
