@@ -8,7 +8,7 @@ local Utils
 -- tuning
 local T = {
         -- activation
-        RETURN_WIN_LO = 0.088,
+        RETURN_WIN_LO = 0.090,
         RETURN_WIN_MIN_FACTOR = 0.50,
         RETURN_SPD_LO = 60,
         RETURN_SPD_HI = 600,
@@ -17,8 +17,13 @@ local T = {
         REACTIVATE_COOLDOWN = 0.25,
 
         -- deactivation
-        DEACT_TRAVEL_GUARD_WINDOW = 0.195,
-        DEACT_TRAVEL_MARGIN = 0.030,
+        DEACT_TRAVEL_GUARD_WINDOW = 0.130,
+        DEACT_TRAVEL_MAX_LO = 0.085,
+        DEACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
+        DEACT_TRAVEL_SPD_LO = 60,
+        DEACT_TRAVEL_SPD_HI = 600,
+        DEACT_TRAVEL_HOLD = 0.040,
+        DEACT_APPROACH_WINDOW = 0.65,
         DEACT_RADIUS_FACTOR = 1.65,
         DEACT_RADIUS_EXTRA_WINDOW = 0.090,
         DEACT_OUT_WINDOW = 0.100,
@@ -43,6 +48,7 @@ local R = {
         returnPending = false,
         approachNegSince = 0,
         outSince = 0,
+        travelSince = 0,
         wasMeTarget = nil,
         lastEvalAt = 0,
         reactivateBlockedUntil = 0,
@@ -104,6 +110,7 @@ end
 local function resetDeactivationState()
         R.approachNegSince = 0
         R.outSince = 0
+        R.travelSince = 0
 end
 local function resetTargetState()
         R.lastTarget = -1
@@ -261,11 +268,36 @@ local function shouldDeactivate(t, snapshot)
         local travelGuardRadius = math.max(parryRadius - speed * T.DEACT_TRAVEL_GUARD_WINDOW, 0)
         if distance > travelGuardRadius then
                 if speed > 0 then
-                        local activationTravel = (parryRadius / speed) + T.ACT_RADIUS_EXTRA_WINDOW
-                        if distance / speed > activationTravel + T.DEACT_TRAVEL_MARGIN then
-                                R.lastGate = "deact_travel"
+                        local travelMax = lerp(
+                                speed,
+                                T.DEACT_TRAVEL_MAX_LO,
+                                T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
+                                T.DEACT_TRAVEL_SPD_LO,
+                                T.DEACT_TRAVEL_SPD_HI
+                        )
+                        if distance / speed > travelMax then
+                                R.travelSince = R.travelSince > 0 and R.travelSince or t
+                                if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
+                                        R.lastGate = "deact_travel"
+                                        R.travelSince = 0
+                                        return true
+                                end
+                        else
+                                R.travelSince = 0
+                        end
+                end
+        end
+
+        local approachingSpeed = snapshot.approachingSpeed
+        if type(approachingSpeed) == "number" then
+                if approachingSpeed < 0 then
+                        R.approachNegSince = R.approachNegSince > 0 and R.approachNegSince or t
+                        if t - R.approachNegSince >= getReturnWindow(speed) * T.DEACT_APPROACH_WINDOW then
+                                R.lastGate = "deact_approach"
                                 return true
                         end
+                else
+                        R.approachNegSince = 0
                 end
         end
 
