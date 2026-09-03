@@ -13,6 +13,9 @@ local T = {
         RETURN_SPD_HI = 600,
         PING_FACTOR = 0.3,
         DEACT_RADIUS_EXTRA_WINDOW = 0.20,
+        DEACT_RADIUS_FACTOR = 1.65,
+        DEACT_APPROACH_WINDOW = 0.50,
+        DEACT_OUT_WINDOW = 0.200,
         DEACT_TRAVEL_GUARD_WINDOW = 0.090,
         DEACT_TRAVEL_MAX = 0.028,
         ACT_RADIUS_EXTRA_WINDOW = 0.150,
@@ -35,6 +38,8 @@ local R = {
         lostMeAt = 0,
         returnPending = false,
         outSinceAt = 0,
+        approachNegSince = 0,
+        outSince = 0,
         wasMeTarget = nil,
         lastEvalAt = 0,
         reactivateBlockedUntil = 0,
@@ -130,6 +135,8 @@ local function setActive(active, reason)
         end
         R.active = active
         R.outSinceAt = 0
+        R.approachNegSince = 0
+        R.outSince = 0
         if active then
                 if R.clashPartnerId == -1 and R.lastTarget ~= R.localUserId then
                         R.clashPartnerId = R.lastTarget
@@ -149,6 +156,8 @@ local function resetTargetState()
         R.lostMeAt = 0
         R.returnPending = false
         R.outSinceAt = 0
+        R.approachNegSince = 0
+        R.outSince = 0
         R.wasMeTarget = nil
 end
 local function disconnectConnections()
@@ -284,20 +293,28 @@ local function shouldDeactivate(t, snapshot)
         local rootPos = getRootPosition()
         local position = getSnapshotPosition(snapshot)
         if not (rootPos and position) then
+                R.approachNegSince = 0
+                R.outSince = 0
                 R.outSinceAt = 0
                 return false
         end
+
         local parryRadius = math.max(tonumber(R.parryRadius) or 0, 0)
         if parryRadius <= 0 then
+                R.approachNegSince = 0
+                R.outSince = 0
                 R.outSinceAt = 0
                 return false
         end
+
         local speed = math.max(tonumber(R.lastSpeed) or 0, 0)
         local distance = (rootPos - position).Magnitude
 
         local travelGuardRadius = math.max(parryRadius - speed * T.DEACT_TRAVEL_GUARD_WINDOW, 0)
 
         if distance <= travelGuardRadius then
+                R.approachNegSince = 0
+                R.outSince = 0
                 R.outSinceAt = 0
                 return false
         end
@@ -305,21 +322,41 @@ local function shouldDeactivate(t, snapshot)
         if speed > 0 then
                 local travelTime = distance / speed
                 if travelTime <= T.DEACT_TRAVEL_MAX then
+                        R.approachNegSince = 0
+                        R.outSince = 0
                         R.outSinceAt = 0
                         return true
                 end
         end
 
-        if snapshot and snapshot.targeted == true then
-                R.outSinceAt = 0
-                return false
+        local approachingSpeed = snapshot.approachingSpeed
+        if type(approachingSpeed) == "number" then
+                if approachingSpeed < 0 then
+                        if R.approachNegSince <= 0 then
+                                R.approachNegSince = t
+                        elseif (t - R.approachNegSince) >= returnWindow(speed) * T.DEACT_APPROACH_WINDOW then
+                                return true
+                        end
+                else
+                        R.approachNegSince = 0
+                end
         end
-        local deactRadius = parryRadius + speed * T.DEACT_RADIUS_EXTRA_WINDOW
-        if distance > deactRadius then
-                R.outSinceAt = 0
+
+        if distance > parryRadius * T.DEACT_RADIUS_FACTOR then
                 return true
         end
-        R.outSinceAt = 0
+
+        local deactOutRadius = parryRadius + speed * T.DEACT_RADIUS_EXTRA_WINDOW
+        if distance > deactOutRadius then
+                if R.outSince <= 0 then
+                        R.outSince = t
+                elseif (t - R.outSince) >= T.DEACT_OUT_WINDOW then
+                        return true
+                end
+        else
+                R.outSince = 0
+        end
+
         return false
 end
 
@@ -457,6 +494,8 @@ function AutoClash.setup(deps)
         R.lostMeAt = 0
         R.returnPending = false
         R.outSinceAt = 0
+        R.approachNegSince = 0
+        R.outSince = 0
         R.wasMeTarget = nil
         R.lastEvalAt = 0
         R.reactivateBlockedUntil = 0
