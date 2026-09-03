@@ -15,7 +15,7 @@ local T = {
         PING_FACTOR = 0.3,
         ACT_RADIUS_EXTRA_WINDOW = 0.150,
         REACTIVATE_COOLDOWN = 0.25,
-        INSTANT_REACT_FACTOR = 0.50,
+        INSTANT_REACT_FACTOR = 0.25,
 
         -- deactivation
         DEACT_TRAVEL_GUARD_WINDOW = 0.130,
