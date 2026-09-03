@@ -7,7 +7,7 @@ local Utils
 
 -- tuning
 local T = {
-        RETURN_WIN_LO = 0.10,
+        RETURN_WIN_LO = 0.12,
         RETURN_WIN_MIN_FACTOR = 0.50,
         RETURN_SPD_LO = 60,
         RETURN_SPD_HI = 600,
@@ -16,7 +16,7 @@ local T = {
         DEACT_RADIUS_FACTOR = 1.65,
         DEACT_APPROACH_WINDOW = 0.50,
         DEACT_OUT_WINDOW = 0.150,
-        DEACT_TRAVEL_GUARD_WINDOW = 0.170,
+        DEACT_TRAVEL_GUARD_WINDOW = 0.090,
         DEACT_TRAVEL_MAX = 0.035,
         ACT_RADIUS_EXTRA_WINDOW = 0.150,
         REACTIVATE_COOLDOWN = 0.200,
