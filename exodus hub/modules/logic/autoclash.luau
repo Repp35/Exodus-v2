@@ -18,7 +18,10 @@ local T = {
 
         -- deactivation
         DEACT_TRAVEL_GUARD_WINDOW = 0.195,
-        DEACT_TRAVEL_MAX = 0.035,
+        DEACT_TRAVEL_MAX_LO = 0.090,
+        DEACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
+        DEACT_TRAVEL_SPD_LO = 60,
+        DEACT_TRAVEL_SPD_HI = 600,
         DEACT_APPROACH_WINDOW = 0.65,
         DEACT_RADIUS_FACTOR = 1.65,
         DEACT_RADIUS_EXTRA_WINDOW = 0.090,
@@ -261,9 +264,18 @@ local function shouldDeactivate(t, snapshot)
 
         local travelGuardRadius = math.max(parryRadius - speed * T.DEACT_TRAVEL_GUARD_WINDOW, 0)
         if distance > travelGuardRadius then
-                if speed > 0 and distance / speed > T.DEACT_TRAVEL_MAX then
-                        R.lastGate = "deact_travel"
-                        return true
+                if speed > 0 then
+                        local travelMax = lerp(
+                                speed,
+                                T.DEACT_TRAVEL_MAX_LO,
+                                T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
+                                T.DEACT_TRAVEL_SPD_LO,
+                                T.DEACT_TRAVEL_SPD_HI
+                        )
+                        if distance / speed > travelMax then
+                                R.lastGate = "deact_travel"
+                                return true
+                        end
                 end
         end
 
