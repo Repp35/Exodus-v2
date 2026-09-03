@@ -261,7 +261,7 @@ local function shouldDeactivate(t, snapshot)
 
         local travelGuardRadius = math.max(parryRadius - speed * T.DEACT_TRAVEL_GUARD_WINDOW, 0)
         if distance > travelGuardRadius then
-                if speed > 0 and distance / speed <= T.DEACT_TRAVEL_MAX then
+                if speed > 0 and distance / speed > T.DEACT_TRAVEL_MAX then
                         R.lastGate = "deact_travel"
                         return true
                 end
