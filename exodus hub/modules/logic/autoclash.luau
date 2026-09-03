@@ -15,7 +15,6 @@ local T = {
         PING_FACTOR = 0.3,
         ACT_RADIUS_EXTRA_WINDOW = 0.150,
         REACTIVATE_COOLDOWN = 0.25,
-        INSTANT_REACT_FACTOR = 0.25,
 
         -- deactivation
         DEACT_TRAVEL_GUARD_WINDOW = 0.130,
@@ -23,7 +22,7 @@ local T = {
         DEACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
         DEACT_TRAVEL_SPD_LO = 60,
         DEACT_TRAVEL_SPD_HI = 600,
-        DEACT_TRAVEL_HOLD = 0.020,
+        DEACT_TRAVEL_HOLD = 0.015,
         DEACT_APPROACH_WINDOW = 0.65,
         DEACT_RADIUS_FACTOR = 1.65,
         DEACT_RADIUS_EXTRA_WINDOW = 0.090,
@@ -47,8 +46,6 @@ local R = {
         parryRadius = 0,
         lostMeAt = 0,
         returnPending = false,
-        instantReactPending = false,
-        instantReactReady = false,
         approachNegSince = 0,
         outSince = 0,
         travelSince = 0,
@@ -71,6 +68,7 @@ local function getNow()
         if not Utils or type(Utils.now) ~= "function" then
                 return 0
         end
+
         local ok, value = pcall(Utils.now)
         return ok and tonumber(value) or 0
 end
@@ -79,18 +77,22 @@ local function getPingOneWay()
         if not AutoParry or type(AutoParry.getPingOneWay) ~= "function" then
                 return 0
         end
+
         local ok, value = pcall(AutoParry.getPingOneWay)
         return ok and math.max(tonumber(value) or 0, 0) or 0
 end
 
 local function getRootPosition()
         local root = R.boundRoot
+
         if not (root and root.Parent) then
                 return nil
         end
+
         local ok, position = pcall(function()
                 return root.Position
         end)
+
         return ok and typeof(position) == "Vector3" and position or nil
 end
 
@@ -101,10 +103,17 @@ end
 
 local function lerp(speed, lo, hi, speedLo, speedHi)
         speed = tonumber(speed) or 0
+
         if speedHi <= speedLo then
                 return lo
         end
-        local alpha = math.clamp((speed - speedLo) / (speedHi - speedLo), 0, 1)
+
+        local alpha = math.clamp(
+                (speed - speedLo) / (speedHi - speedLo),
+                0,
+                1
+        )
+
         return lo + (hi - lo) * alpha
 end
 
@@ -116,17 +125,16 @@ local function getReturnWindow(speed)
                 T.RETURN_SPD_LO,
                 T.RETURN_SPD_HI
         )
-        return math.max(base + getPingOneWay() * T.PING_FACTOR, 0)
+
+        return math.max(
+                base + getPingOneWay() * T.PING_FACTOR,
+                0
+        )
 end
 
 local function clearReturnState()
         R.lostMeAt = 0
         R.returnPending = false
-end
-
-local function clearInstantReactState()
-        R.instantReactPending = false
-        R.instantReactReady = false
 end
 
 local function resetDeactivationState()
@@ -140,7 +148,6 @@ local function resetTargetState()
         R.clashPartnerId = -1
         R.wasMeTarget = nil
         clearReturnState()
-        clearInstantReactState()
         resetDeactivationState()
 end
 
@@ -148,20 +155,31 @@ local function setPhase(phase, reason)
         if R.phase == phase then
                 return
         end
+
         local previous = R.phase
         R.phase = phase
+
         if Utils and type(Utils.recordTransition) == "function" then
-                pcall(Utils.recordTransition, "AutoClash", previous, phase, reason)
+                pcall(
+                        Utils.recordTransition,
+                        "AutoClash",
+                        previous,
+                        phase,
+                        reason
+                )
         end
 end
 
 local function setActive(active, reason)
         active = active == true
+
         if R.active == active then
                 return
         end
+
         R.active = active
         resetDeactivationState()
+
         if active then
                 if R.clashPartnerId == -1 and R.lastTarget ~= R.localUserId then
                         R.clashPartnerId = R.lastTarget
@@ -170,9 +188,11 @@ local function setActive(active, reason)
                 R.clashPartnerId = -1
                 R.reactivateBlockedUntil = getNow() + T.REACTIVATE_COOLDOWN
         end
+
         if Utils and type(Utils.setAutoSpamActive) == "function" then
                 pcall(Utils.setAutoSpamActive, active)
         end
+
         setPhase(active and "active" or "idle", reason)
 end
 
@@ -180,9 +200,11 @@ local function disconnectConnections()
         for i = #R.connections, 1, -1 do
                 local connection = R.connections[i]
                 R.connections[i] = nil
+
                 if Utils and type(Utils.untrackCharacter) == "function" then
                         pcall(Utils.untrackCharacter, connection)
                 end
+
                 pcall(function()
                         connection:Disconnect()
                 end)
@@ -191,17 +213,22 @@ end
 
 local function resetRuntime(reason)
         R.generation = R.generation + 1
+
         if R.active then
                 setActive(false, reason or "reset")
         end
+
         disconnectConnections()
+
         R.bound = false
         R.boundRoot = nil
         R.lastSpeed = 0
         R.parryRadius = 0
         R.lastEvalAt = 0
         R.reactivateBlockedUntil = 0
+
         resetTargetState()
+
         R.lastGate = "detached"
         setPhase("detached", reason or "reset")
 end
@@ -214,7 +241,9 @@ local function rallyCheck(data)
 
         local newTarget = normalizeTarget(data.TargetPlayerID)
 
-        if not newTarget or newTarget == R.localUserId or newTarget == R.clashPartnerId then
+        if not newTarget
+                or newTarget == R.localUserId
+                or newTarget == R.clashPartnerId then
                 return true
         end
 
@@ -230,13 +259,17 @@ local function rallyCheck(data)
                 0
         )
 
-        local parryRadius = math.max(tonumber(R.parryRadius) or 0, 0)
+        local parryRadius = math.max(
+                tonumber(R.parryRadius) or 0,
+                0
+        )
 
         if parryRadius <= 0 then
                 return true
         end
 
-        local effectiveRadius = parryRadius + speed * T.ACT_RADIUS_EXTRA_WINDOW
+        local effectiveRadius =
+                parryRadius + speed * T.ACT_RADIUS_EXTRA_WINDOW
 
         if (rootPos - realPosition).Magnitude > effectiveRadius then
                 setActive(false, "rally_outside_effective_radius")
@@ -250,7 +283,9 @@ end
 
 -- activation
 local function shouldActivate(snapshot)
-        if not (snapshot and snapshot.ball and snapshot.ball.Parent) then
+        if not snapshot
+                or not snapshot.ball
+                or not snapshot.ball.Parent then
                 R.lastGate = "no_ball"
                 return false
         end
@@ -274,14 +309,18 @@ local function shouldActivate(snapshot)
                 return false
         end
 
-        local parryRadius = math.max(tonumber(R.parryRadius) or 0, 0)
+        local parryRadius = math.max(
+                tonumber(R.parryRadius) or 0,
+                0
+        )
 
         if parryRadius <= 0 then
                 R.lastGate = "no_effective_radius"
                 return false
         end
 
-        local effectiveRadius = parryRadius + R.lastSpeed * T.ACT_RADIUS_EXTRA_WINDOW
+        local effectiveRadius =
+                parryRadius + R.lastSpeed * T.ACT_RADIUS_EXTRA_WINDOW
 
         if (rootPos - position).Magnitude > effectiveRadius then
                 R.lastGate = "outside_effective_radius"
@@ -297,23 +336,14 @@ local function canReactivate()
                 R.lastGate = "reactivate_cooldown"
                 return false
         end
+
         return true
 end
 
 local function tryReturnActivate(snapshot)
-        return R.returnPending and canReactivate() and shouldActivate(snapshot)
-end
-
-local function tryInstantReactivate()
-        if not R.instantReactReady then
-                return false
-        end
-
-        if not canReactivate() then
-                return false
-        end
-
-        return true
+        return R.returnPending
+                and canReactivate()
+                and shouldActivate(snapshot)
 end
 
 -- deactivation
@@ -321,17 +351,24 @@ local function shouldDeactivate(t, snapshot)
         local rootPos = getRootPosition()
         local position = getSnapshotPosition(snapshot)
 
-        if not (rootPos and position) then
+        if not rootPos or not position then
                 return false
         end
 
-        local parryRadius = math.max(tonumber(R.parryRadius) or 0, 0)
+        local parryRadius = math.max(
+                tonumber(R.parryRadius) or 0,
+                0
+        )
 
         if parryRadius <= 0 then
                 return false
         end
 
-        local speed = math.max(tonumber(R.lastSpeed) or 0, 0)
+        local speed = math.max(
+                tonumber(R.lastSpeed) or 0,
+                0
+        )
+
         local distance = (rootPos - position).Magnitude
 
         local travelGuardRadius = math.max(
@@ -339,37 +376,44 @@ local function shouldDeactivate(t, snapshot)
                 0
         )
 
-        if distance > travelGuardRadius then
-                if speed > 0 then
-                        local travelMax = lerp(
-                                speed,
-                                T.DEACT_TRAVEL_MAX_LO,
-                                T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
-                                T.DEACT_TRAVEL_SPD_LO,
-                                T.DEACT_TRAVEL_SPD_HI
-                        )
+        if distance > travelGuardRadius and speed > 0 then
+                local travelMax = lerp(
+                        speed,
+                        T.DEACT_TRAVEL_MAX_LO,
+                        T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
+                        T.DEACT_TRAVEL_SPD_LO,
+                        T.DEACT_TRAVEL_SPD_HI
+                )
 
-                        if distance / speed > travelMax then
-                                R.travelSince = R.travelSince > 0 and R.travelSince or t
+                if distance / speed > travelMax then
+                        R.travelSince =
+                                R.travelSince > 0
+                                and R.travelSince
+                                or t
 
-                                if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
-                                        R.lastGate = "deact_travel"
-                                        R.travelSince = 0
-                                        return true
-                                end
-                        else
+                        if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
+                                R.lastGate = "deact_travel"
                                 R.travelSince = 0
+                                return true
                         end
+                else
+                        R.travelSince = 0
                 end
+        else
+                R.travelSince = 0
         end
 
         local approachingSpeed = snapshot.approachingSpeed
 
         if type(approachingSpeed) == "number" then
                 if approachingSpeed < 0 then
-                        R.approachNegSince = R.approachNegSince > 0 and R.approachNegSince or t
+                        R.approachNegSince =
+                                R.approachNegSince > 0
+                                and R.approachNegSince
+                                or t
 
-                        if t - R.approachNegSince >= getReturnWindow(speed) * T.DEACT_APPROACH_WINDOW then
+                        if t - R.approachNegSince
+                                >= getReturnWindow(speed) * T.DEACT_APPROACH_WINDOW then
                                 R.lastGate = "deact_approach"
                                 return true
                         end
@@ -383,10 +427,14 @@ local function shouldDeactivate(t, snapshot)
                 return true
         end
 
-        local deactOutRadius = parryRadius + speed * T.DEACT_RADIUS_EXTRA_WINDOW
+        local deactOutRadius =
+                parryRadius + speed * T.DEACT_RADIUS_EXTRA_WINDOW
 
         if distance > deactOutRadius then
-                R.outSince = R.outSince > 0 and R.outSince or t
+                R.outSince =
+                        R.outSince > 0
+                        and R.outSince
+                        or t
 
                 if t - R.outSince >= T.DEACT_OUT_WINDOW then
                         R.lastGate = "deact_out_window"
@@ -402,9 +450,11 @@ end
 
 -- state update
 local function updateParryState(t, snapshot)
-        R.lastSpeed = math.max(tonumber(snapshot.speed) or 0, 0)
+        local speed = tonumber(snapshot.speed) or 0
+        R.lastSpeed = math.max(speed, 0)
 
-        if AutoParry and type(AutoParry.getParryRadius) == "function" then
+        if AutoParry
+                and type(AutoParry.getParryRadius) == "function" then
                 local ok, radius = pcall(
                         AutoParry.getParryRadius,
                         R.lastSpeed,
@@ -421,13 +471,11 @@ end
 
 -- main evaluation
 local function evaluateClash(t, snapshot)
-        if not (
-                R.boundRoot
-                and R.boundRoot.Parent
-                and snapshot
-                and snapshot.ball
-                and snapshot.ball.Parent
-        ) then
+        if not R.boundRoot
+                or not R.boundRoot.Parent
+                or not snapshot
+                or not snapshot.ball
+                or not snapshot.ball.Parent then
                 return
         end
 
@@ -438,10 +486,6 @@ local function evaluateClash(t, snapshot)
                         setActive(false, "target_deactivated")
                         clearReturnState()
                 end
-        elseif tryInstantReactivate() then
-                R.instantReactReady = false
-                R.instantReactPending = false
-                setActive(true, "instant_reactivate")
         elseif tryReturnActivate(snapshot) then
                 clearReturnState()
                 setActive(true, "activated")
@@ -450,7 +494,9 @@ end
 
 -- heartbeat
 local function heartbeatStep(generation, character, root)
-        if generation ~= R.generation or not (character.Parent and root.Parent) then
+        if generation ~= R.generation
+                or not character.Parent
+                or not root.Parent then
                 return
         end
 
@@ -458,6 +504,7 @@ local function heartbeatStep(generation, character, root)
                 if R.active then
                         setActive(false, "manual_spam")
                 end
+
                 resetTargetState()
                 R.lastGate = "manual_spam"
                 return
@@ -467,6 +514,7 @@ local function heartbeatStep(generation, character, root)
                 if R.active then
                         setActive(false, "hub_inactive")
                 end
+
                 resetTargetState()
                 R.lastGate = "hub_inactive"
                 return
@@ -478,6 +526,7 @@ local function heartbeatStep(generation, character, root)
                 if R.active then
                         setActive(false, "hub_disabled")
                 end
+
                 resetTargetState()
                 R.lastGate = "hub_disabled"
                 return
@@ -519,7 +568,9 @@ local function bindCharacter(character)
         local root = character:FindFirstChild("HumanoidRootPart")
                 or character:WaitForChild("HumanoidRootPart", 1)
 
-        if not (generation == R.generation and root and root.Parent) then
+        if not (generation == R.generation
+                and root
+                and root.Parent) then
                 return false
         end
 
@@ -578,7 +629,8 @@ function AutoClash.setup(deps)
         for _, requirement in ipairs(required) do
                 local object = deps[requirement[1]]
 
-                if not object or type(object[requirement[2]]) ~= "function" then
+                if not object
+                        or type(object[requirement[2]]) ~= "function" then
                         return false
                 end
         end
@@ -628,7 +680,9 @@ function AutoClash.teardown()
 end
 
 function AutoClash.onBallSync(data)
-        if type(data) ~= "table" or not Utils or not R.localUserId then
+        if type(data) ~= "table"
+                or not Utils
+                or not R.localUserId then
                 return
         end
 
@@ -674,8 +728,6 @@ function AutoClash.onBallSync(data)
                         end
                 else
                         R.clashPartnerId = target
-                        R.instantReactPending = true
-                        R.instantReactReady = false
                 end
 
                 R.lostMeAt = getNow()
@@ -683,13 +735,11 @@ function AutoClash.onBallSync(data)
                 R.lastGate = "target_lost"
 
         elseif not wasMe and isMe then
-                R.becameTargetAt = nil
-
-                if previousTargetId ~= -1 and previousTargetId ~= R.localUserId then
+                if previousTargetId ~= -1
+                        and previousTargetId ~= R.localUserId then
                         R.clashPartnerId = previousTargetId
                 end
 
-                -- Return activation window.
                 local lostAt = R.lostMeAt
 
                 if lostAt > 0 then
@@ -708,38 +758,6 @@ function AutoClash.onBallSync(data)
                 else
                         R.returnPending = false
                         R.lastGate = "return_without_loss"
-                end
-
-                -- Instant react:
-                -- only ME -> NOT-ME -> ME can arm it.
-                -- The distance is sampled exactly at this target transition.
-                if R.instantReactPending then
-                        local rootPos = getRootPosition()
-                        local position = typeof(data.RealPosition) == "Vector3"
-                                and data.RealPosition
-                                or nil
-
-                        local parryRadius = math.max(
-                                tonumber(R.parryRadius) or 0,
-                                0
-                        )
-
-                        if rootPos and position and parryRadius > 0 then
-                                local distance = (rootPos - position).Magnitude
-                                local instantRadius = parryRadius * T.INSTANT_REACT_FACTOR
-
-                                R.instantReactReady = distance <= instantRadius
-                        else
-                                R.instantReactReady = false
-                        end
-
-                        R.instantReactPending = false
-
-                        if R.instantReactReady then
-                                R.lastGate = "instant_react_ready"
-                        end
-                else
-                        R.instantReactReady = false
                 end
         end
 
