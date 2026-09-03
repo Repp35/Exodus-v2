@@ -674,15 +674,12 @@ function AutoClash.onBallSync(data)
                         end
                 else
                         R.clashPartnerId = target
+                        R.instantReactPending = true
+                        R.instantReactReady = false
                 end
 
                 R.lostMeAt = getNow()
                 R.returnPending = false
-
-                -- Arm instant react only after ME -> NOT-ME.
-                R.instantReactPending = true
-                R.instantReactReady = false
-
                 R.lastGate = "target_lost"
 
         elseif not wasMe and isMe then
