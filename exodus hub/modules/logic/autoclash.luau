@@ -15,6 +15,7 @@ local T = {
         PING_FACTOR = 0.3,
         ACT_RADIUS_EXTRA_WINDOW = 0.150,
         REACTIVATE_COOLDOWN = 0.25,
+        INSTANT_REACT_FACTOR = 0.50,
 
         -- deactivation
         DEACT_TRAVEL_GUARD_WINDOW = 0.130,
@@ -22,7 +23,7 @@ local T = {
         DEACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
         DEACT_TRAVEL_SPD_LO = 60,
         DEACT_TRAVEL_SPD_HI = 600,
-        DEACT_TRAVEL_HOLD = 0.015,
+        DEACT_TRAVEL_HOLD = 0.020,
         DEACT_APPROACH_WINDOW = 0.65,
         DEACT_RADIUS_FACTOR = 1.65,
         DEACT_RADIUS_EXTRA_WINDOW = 0.090,
@@ -50,6 +51,7 @@ local R = {
         outSince = 0,
         travelSince = 0,
         wasMeTarget = nil,
+        becameTargetAt = 0,
         lastEvalAt = 0,
         reactivateBlockedUntil = 0,
         connections = {},
@@ -116,6 +118,7 @@ local function resetTargetState()
         R.lastTarget = -1
         R.clashPartnerId = -1
         R.wasMeTarget = nil
+        R.becameTargetAt = 0
         clearReturnState()
         resetDeactivationState()
 end
@@ -250,6 +253,32 @@ end
 local function tryReturnActivate(snapshot)
         return R.returnPending and canReactivate() and shouldActivate(snapshot)
 end
+local function tryInstantReactivate(snapshot)
+        if not (snapshot and snapshot.targeted == true) then
+                return false
+        end
+        if R.becameTargetAt <= 0 then
+                return false
+        end
+        if not canReactivate() then
+                return false
+        end
+        local rootPos = getRootPosition()
+        local position = getSnapshotPosition(snapshot)
+        if not (rootPos and position) then
+                return false
+        end
+        local parryRadius = math.max(tonumber(R.parryRadius) or 0, 0)
+        if parryRadius <= 0 then
+                return false
+        end
+        local distance = (rootPos - position).Magnitude
+        local instantRadius = parryRadius * T.INSTANT_REACT_FACTOR
+        if distance > instantRadius then
+                return false
+        end
+        return true
+end
 
 -- deactivation
 local function shouldDeactivate(t, snapshot)
@@ -344,6 +373,9 @@ local function evaluateClash(t, snapshot)
                         setActive(false, "target_deactivated")
                         clearReturnState()
                 end
+        elseif tryInstantReactivate(snapshot) then
+                R.becameTargetAt = 0
+                setActive(true, "instant_reactivate")
         elseif tryReturnActivate(snapshot) then
                 clearReturnState()
                 setActive(true, "activated")
@@ -533,6 +565,7 @@ function AutoClash.onBallSync(data)
                 R.returnPending = false
                 R.lastGate = "target_lost"
         elseif not wasMe and isMe then
+                R.becameTargetAt = getNow()
                 if previousTargetId ~= -1 and previousTargetId ~= R.localUserId then
                         R.clashPartnerId = previousTargetId
                 end
