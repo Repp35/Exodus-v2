@@ -309,26 +309,26 @@ local function shouldDeactivate(t, snapshot)
 	end
 	local speed = math.max(tonumber(R.lastSpeed) or 0, 0)
 	local distance = (rootPos - position).Magnitude
+
+	if speed > 0 then
+		local travelTime = distance / speed
+		if travelTime <= T.DEACT_TRAVEL_MAX then
+			R.outSinceAt = 0
+			return true
+		end
+	end
+
 	if snapshot and snapshot.targeted == true then
 		R.outSinceAt = 0
 		return false
 	end
 	local deactRadius = parryRadius + speed * T.DEACT_RADIUS_EXTRA_WINDOW
-	if distance <= deactRadius then
-		R.outSinceAt = 0
-		return false
-	end
-	if speed <= 0 then
-		R.outSinceAt = 0
-		return true
-	end
-	local travelTime = distance / speed
-	if travelTime <= T.DEACT_TRAVEL_MAX then
+	if distance > deactRadius then
 		R.outSinceAt = 0
 		return true
 	end
 	R.outSinceAt = 0
-	return true
+	return false
 end
 
 -- main evaluation
