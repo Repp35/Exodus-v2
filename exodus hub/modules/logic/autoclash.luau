@@ -17,8 +17,8 @@ local T = {
         REACTIVATE_COOLDOWN = 0.25,
 
         -- deactivation
-        DEACT_TRAVEL_GUARD_WINDOW = 0.150,
-        DEACT_TRAVEL_MAX = 0.035,
+        DEACT_TRAVEL_GUARD_WINDOW = 0.17,
+        DEACT_TRAVEL_MAX = 0.036,
         DEACT_APPROACH_WINDOW = 0.65,
         DEACT_RADIUS_FACTOR = 1.65,
         DEACT_RADIUS_EXTRA_WINDOW = 0.090,
