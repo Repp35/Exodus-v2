@@ -21,15 +21,9 @@ local T = {
 	ACT_DEACT_LOCK_TIME = 0.050,
 
 	-- deactivation
-	DEACT_TRAVEL_MAX_LO = 0.150,
-	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
-	DEACT_TRAVEL_SPD_LO = 60,
-	DEACT_TRAVEL_SPD_HI = 600,
+	DEACT_TRAVEL_MS_PER_STUD = 0.020,
+	DEACT_TRAVEL_MULT = 1.0,
 	DEACT_TRAVEL_HOLD = 0.015,
-	DEACT_TRAVEL_HYSTERESIS = 1.20,
-	DEACT_RADIUS_FACTOR = 1.65,
-	DEACT_RADIUS_EXTRA_WINDOW = 0.090,
-	DEACT_OUT_WINDOW = 0.100,
 
 	-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
@@ -358,6 +352,10 @@ local function tryReturnActivate(snapshot)
 end
 
 -- deactivation
+local function getDeactTravelMax(parryRadius)
+	return parryRadius * T.DEACT_TRAVEL_MS_PER_STUD * T.DEACT_TRAVEL_MULT
+end
+
 local function shouldDeactivate(t, snapshot)
 	-- trava qualquer gate de desativação durante o lock
 	-- criado na ativação.
@@ -380,49 +378,32 @@ local function shouldDeactivate(t, snapshot)
 	end
 
 	local speed = math.max(tonumber(R.lastSpeed) or 0, 0)
+
+	if speed <= 0 then
+		return false
+	end
+
 	local distance = (rootPos - position).Magnitude
-	local travelRadius = parryRadius
 
-	if distance > travelRadius and speed > 0 then
-		local travelMax = lerp(
-			speed,
-			T.DEACT_TRAVEL_MAX_LO,
-			T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
-			T.DEACT_TRAVEL_SPD_LO,
-			T.DEACT_TRAVEL_SPD_HI
-		)
-
-		if distance / speed > travelMax * T.DEACT_TRAVEL_HYSTERESIS then
-			R.travelSince = R.travelSince > 0 and R.travelSince or t
-
-			if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
-				R.lastGate = "deact_travel"
-				R.travelSince = 0
-				return true
-			end
-		end
-	end
-
-	if distance <= travelRadius * 0.85 then
+	if distance <= parryRadius then
 		R.travelSince = 0
+		R.lastGate = "deact_none"
+		return false
 	end
 
-	if distance > parryRadius * T.DEACT_RADIUS_FACTOR then
-		R.lastGate = "deact_radius_factor"
-		return true
-	end
+	local timeToReach = distance / speed
+	local travelMax = getDeactTravelMax(parryRadius)
 
-	local deactOutRadius = parryRadius + speed * T.DEACT_RADIUS_EXTRA_WINDOW
+	if timeToReach > travelMax then
+		R.travelSince = R.travelSince > 0 and R.travelSince or t
 
-	if distance > deactOutRadius then
-		R.outSince = R.outSince > 0 and R.outSince or t
-
-		if t - R.outSince >= T.DEACT_OUT_WINDOW then
-			R.lastGate = "deact_out_window"
+		if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
+			R.lastGate = "deact_travel"
+			R.travelSince = 0
 			return true
 		end
 	else
-		R.outSince = 0
+		R.travelSince = 0
 	end
 
 	R.lastGate = "deact_none"
