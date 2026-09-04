@@ -14,6 +14,11 @@ local T = {
 	RETURN_SPD_HI = 600,
 	PING_FACTOR = 0.3,
 	ACT_RADIUS_EXTRA_WINDOW = 0.150,
+	ACT_TRAVEL_MAX_LO = 0.150,
+	ACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
+	ACT_TRAVEL_SPD_LO = 60,
+	ACT_TRAVEL_SPD_HI = 600,
+	ACT_TRAVEL_HYSTERESIS = 1.20,
 	REACTIVATE_COOLDOWN = 0.25,
 	-- deactivation
 	DEACT_TRAVEL_MAX_LO = 0.150,
@@ -98,6 +103,20 @@ end
 local function getReturnWindow(speed)
 	local base = lerp(speed, T.RETURN_WIN_LO, T.RETURN_WIN_LO * T.RETURN_WIN_MIN_FACTOR, T.RETURN_SPD_LO, T.RETURN_SPD_HI)
 	return math.max(base + getPingOneWay() * T.PING_FACTOR, 0)
+end
+local function getActTravelMax(speed)
+	return lerp(speed, T.ACT_TRAVEL_MAX_LO, T.ACT_TRAVEL_MAX_LO * T.ACT_TRAVEL_MAX_MIN_FACTOR, T.ACT_TRAVEL_SPD_LO, T.ACT_TRAVEL_SPD_HI)
+end
+-- mirror of deactivation travel: returns true when the ball is in the
+-- "clash zone" for this player at the current speed. Same arithmetic the
+-- deactivation uses to declare a target out, so the activation gate
+-- accepts exactly the cases the deactivation would not yet flag.
+local function isBallInClashZone(distance, speed)
+	if speed <= 0 then
+		return true
+	end
+	local travelMax = getActTravelMax(speed)
+	return distance / speed <= travelMax * T.ACT_TRAVEL_HYSTERESIS
 end
 local function clearReturnState()
 	R.lostMeAt = 0
@@ -231,8 +250,13 @@ local function shouldActivate(snapshot)
 		return false
 	end
 	local effectiveRadius = parryRadius + R.lastSpeed * T.ACT_RADIUS_EXTRA_WINDOW
-	if (rootPos - position).Magnitude > effectiveRadius then
+	local distance = (rootPos - position).Magnitude
+	if distance > effectiveRadius then
 		R.lastGate = "outside_effective_radius"
+		return false
+	end
+	if not isBallInClashZone(distance, R.lastSpeed) then
+		R.lastGate = "outside_clash_zone"
 		return false
 	end
 	R.lastGate = "activation_ready"
