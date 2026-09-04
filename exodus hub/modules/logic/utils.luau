@@ -1,5 +1,12 @@
 -- [[ Utils ]]
 
+-- disable client-side CPS filter, server handles it
+task.defer(function()
+    pcall(function()
+        workspace:SetAttribute("CPS_LIMIT", 9999)
+    end)
+end)
+
 local Utils = {}
 
 -- services
