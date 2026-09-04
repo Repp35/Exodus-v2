@@ -17,13 +17,12 @@ local T = {
         REACTIVATE_COOLDOWN = 0.25,
 
         -- deactivation
-        DEACT_TRAVEL_GUARD_WINDOW = 0.100,
+        DEACT_TRAVEL_GUARD_WINDOW = 0.130,
         DEACT_TRAVEL_MAX_LO = 0.034,
         DEACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
         DEACT_TRAVEL_SPD_LO = 60,
         DEACT_TRAVEL_SPD_HI = 600,
         DEACT_TRAVEL_HOLD = 0.015,
-        DEACT_APPROACH_WINDOW = 0.65,
         DEACT_RADIUS_FACTOR = 1.65,
         DEACT_RADIUS_EXTRA_WINDOW = 0.090,
         DEACT_OUT_WINDOW = 0.100,
@@ -46,7 +45,6 @@ local R = {
         parryRadius = 0,
         lostMeAt = 0,
         returnPending = false,
-        approachNegSince = 0,
         outSince = 0,
         travelSince = 0,
         wasMeTarget = nil,
@@ -61,6 +59,7 @@ local function normalizeTarget(target)
         if type(target) == "string" then
                 target = tonumber(target)
         end
+
         return type(target) == "number" and target or nil
 end
 
@@ -70,6 +69,7 @@ local function getNow()
         end
 
         local ok, value = pcall(Utils.now)
+
         return ok and tonumber(value) or 0
 end
 
@@ -79,6 +79,7 @@ local function getPingOneWay()
         end
 
         local ok, value = pcall(AutoParry.getPingOneWay)
+
         return ok and math.max(tonumber(value) or 0, 0) or 0
 end
 
@@ -98,6 +99,7 @@ end
 
 local function getSnapshotPosition(snapshot)
         local position = snapshot and snapshot.position
+
         return typeof(position) == "Vector3" and position or nil
 end
 
@@ -138,7 +140,6 @@ local function clearReturnState()
 end
 
 local function resetDeactivationState()
-        R.approachNegSince = 0
         R.outSince = 0
         R.travelSince = 0
 end
@@ -181,7 +182,8 @@ local function setActive(active, reason)
         resetDeactivationState()
 
         if active then
-                if R.clashPartnerId == -1 and R.lastTarget ~= R.localUserId then
+                if R.clashPartnerId == -1
+                        and R.lastTarget ~= R.localUserId then
                         R.clashPartnerId = R.lastTarget
                 end
         else
@@ -278,6 +280,7 @@ local function rallyCheck(data)
         end
 
         R.clashPartnerId = newTarget
+
         return true
 end
 
@@ -328,6 +331,7 @@ local function shouldActivate(snapshot)
         end
 
         R.lastGate = "activation_ready"
+
         return true
 end
 
@@ -341,9 +345,33 @@ local function canReactivate()
 end
 
 local function tryReturnActivate(snapshot)
-        return R.returnPending
-                and canReactivate()
-                and shouldActivate(snapshot)
+        if not R.returnPending then
+                return false
+        end
+
+        if not canReactivate() then
+                return false
+        end
+
+        local lostAt = R.lostMeAt
+
+        if lostAt <= 0 then
+                clearReturnState()
+                R.lastGate = "return_without_loss"
+                return false
+        end
+
+        local now = getNow()
+        local elapsed = now - lostAt
+        local window = getReturnWindow(R.lastSpeed)
+
+        if elapsed < 0 or elapsed > window then
+                clearReturnState()
+                R.lastGate = "return_too_late"
+                return false
+        end
+
+        return shouldActivate(snapshot)
 end
 
 -- deactivation
@@ -403,25 +431,6 @@ local function shouldDeactivate(t, snapshot)
                 R.travelSince = 0
         end
 
-        local approachingSpeed = snapshot.approachingSpeed
-
-        if type(approachingSpeed) == "number" then
-                if approachingSpeed < 0 then
-                        R.approachNegSince =
-                                R.approachNegSince > 0
-                                and R.approachNegSince
-                                or t
-
-                        if t - R.approachNegSince
-                                >= getReturnWindow(speed) * T.DEACT_APPROACH_WINDOW then
-                                R.lastGate = "deact_approach"
-                                return true
-                        end
-                else
-                        R.approachNegSince = 0
-                end
-        end
-
         if distance > parryRadius * T.DEACT_RADIUS_FACTOR then
                 R.lastGate = "deact_radius_factor"
                 return true
@@ -445,6 +454,7 @@ local function shouldDeactivate(t, snapshot)
         end
 
         R.lastGate = "deact_none"
+
         return false
 end
 
