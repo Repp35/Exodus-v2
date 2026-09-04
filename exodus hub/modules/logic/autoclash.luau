@@ -17,7 +17,7 @@ local T = {
         REACTIVATE_COOLDOWN = 0.25,
 
         -- deactivation / travel
-        DEACT_TRAVEL_MAX_LO = 0.075,
+        DEACT_TRAVEL_MAX_LO = 0.10,
         DEACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
         DEACT_TRAVEL_CONFIRM_LO = 0.120,
         DEACT_TRAVEL_CONFIRM_MIN_FACTOR = 0.50,
