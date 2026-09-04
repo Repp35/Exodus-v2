@@ -13,6 +13,7 @@ local T = {
         RETURN_SPD_LO = 60,
         RETURN_SPD_HI = 600,
         PING_FACTOR = 0.3,
+        RETURN_DIRECT_GATE_FACTOR = 0.90,
         ACT_RADIUS_EXTRA_WINDOW = 0.150,
         REACTIVATE_COOLDOWN = 0.25,
         -- deactivation
@@ -683,24 +684,35 @@ function AutoClash.onBallSync(data)
                         R.clashPartnerId = previousTargetId
                 end
 
-                local lostAt = R.lostMeAt
-
-                if lostAt > 0 then
-                        local now = getNow()
-                        local elapsed = now - lostAt
-                        local window = getReturnWindow(R.lastSpeed)
-
-                        if elapsed >= 0 and elapsed <= window then
-                                R.returnPending = true
-                                R.lastGate = "target_return"
-                        else
-                                R.lostMeAt = 0
-                                R.returnPending = false
-                                R.lastGate = "return_too_late"
-                        end
-                else
+                if not canReactivate() then
                         R.returnPending = false
-                        R.lastGate = "return_without_loss"
+                        R.lostMeAt = 0
+                        R.lastGate = "direct_return_cooldown"
+                else
+                        local rootPos = getRootPosition()
+                        local realPosition = data.RealPosition
+                        local parryRadius = math.max(tonumber(R.parryRadius) or 0, 0)
+
+                        if rootPos
+                                and typeof(realPosition) == "Vector3"
+                                and parryRadius > 0 then
+                                local distance = (rootPos - realPosition).Magnitude
+                                local directRadius = parryRadius * (1 - T.RETURN_DIRECT_GATE_FACTOR)
+
+                                if distance <= directRadius then
+                                        clearReturnState()
+                                        setActive(true, "direct_return")
+                                        R.lastGate = "direct_return"
+                                else
+                                        R.returnPending = false
+                                        R.lostMeAt = 0
+                                        R.lastGate = "direct_return_outside"
+                                end
+                        else
+                                R.returnPending = false
+                                R.lostMeAt = 0
+                                R.lastGate = "direct_return_invalid"
+                        end
                 end
         end
 
