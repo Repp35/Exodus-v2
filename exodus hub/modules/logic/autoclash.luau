@@ -22,7 +22,7 @@ local T = {
 
 	-- deactivation
 	DEACT_TRAVEL_MS_PER_STUD = 0.020,
-	DEACT_TRAVEL_MULT = 1.5,
+	DEACT_TRAVEL_MULT = 1.0,
 	DEACT_TRAVEL_HOLD = 0.015,
 
 	-- system
@@ -384,13 +384,6 @@ local function shouldDeactivate(t, snapshot)
 	end
 
 	local distance = (rootPos - position).Magnitude
-
-	if distance <= parryRadius then
-		R.travelSince = 0
-		R.lastGate = "deact_none"
-		return false
-	end
-
 	local timeToReach = distance / speed
 	local travelMax = getDeactTravelMax(parryRadius)
 
@@ -402,8 +395,6 @@ local function shouldDeactivate(t, snapshot)
 			R.travelSince = 0
 			return true
 		end
-	else
-		R.travelSince = 0
 	end
 
 	R.lastGate = "deact_none"
