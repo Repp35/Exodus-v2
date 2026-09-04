@@ -189,6 +189,10 @@ local function setActive(active, reason)
         else
                 R.clashPartnerId = -1
                 R.reactivateBlockedUntil = getNow() + T.REACTIVATE_COOLDOWN
+
+                if reason == "target_deactivated" then
+                        clearReturnState()
+                end
         end
 
         if Utils and type(Utils.setAutoSpamActive) == "function" then
@@ -424,10 +428,12 @@ local function shouldDeactivate(t, snapshot)
                                 R.travelSince = 0
                                 return true
                         end
-                else
-                        R.travelSince = 0
                 end
-        else
+        end
+
+        -- Só considera que a bola "voltou de verdade"
+        -- quando retorna para 85% ou menos do guard radius.
+        if distance <= travelGuardRadius * 0.85 then
                 R.travelSince = 0
         end
 
@@ -494,7 +500,6 @@ local function evaluateClash(t, snapshot)
         if R.active then
                 if shouldDeactivate(t, snapshot) then
                         setActive(false, "target_deactivated")
-                        clearReturnState()
                 end
         elseif tryReturnActivate(snapshot) then
                 clearReturnState()
