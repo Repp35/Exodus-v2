@@ -15,7 +15,7 @@ local Tuning = {
 
 	RES_PER_PARRY = 0.225,
 
-	HITBOX_OWN_WINDOW = 0.5,
+	-- hitbox detection
 	HITBOX_PROXIMITY = 12,
 }
 
@@ -47,11 +47,9 @@ local ParryState = {
 local Resilience = {
 	stack = 0,
 
-	-- primeiro HitboxGrow válido detectado
+	-- fica true depois que um HitboxGrow válido
+	-- for detectado durante a vida atual
 	detected = false,
-
-	-- controla qual fired já foi contabilizado
-	lastCountedFireAt = 0,
 
 	lastFireBall = nil,
 	lastFireAt = 0,
@@ -130,7 +128,6 @@ local function clearRuntimeCycle()
 
 	Resilience.lastFireBall = nil
 	Resilience.lastFireAt = 0
-	Resilience.lastCountedFireAt = 0
 
 	Runtime.parryRadius = 0
 end
@@ -169,7 +166,7 @@ local function getResilienceBonus()
 		return Runtime.resilienceBonus
 	end
 
-	-- SEM CAP
+	-- SEM LIMITE
 	Runtime.resilienceBonus =
 		Resilience.stack * Tuning.RES_PER_PARRY
 
@@ -178,23 +175,16 @@ local function getResilienceBonus()
 	return Runtime.resilienceBonus
 end
 
--- conta um fired bem-sucedido
+-- registra UM fired bem-sucedido
 local function registerSuccessfulFire()
-	-- ainda não detectou a mecânica de resiliência
 	if not Resilience.detected then
 		return
 	end
 
-	-- garante que o mesmo fired não seja contado duas vezes
-	if Resilience.lastCountedFireAt == ParryState.firedAt then
-		return
-	end
+	-- cada fired válido = +1 stack
+	Resilience.stack =
+		Resilience.stack + 1
 
-	Resilience.lastCountedFireAt = ParryState.firedAt
-
-	Resilience.stack = Resilience.stack + 1
-
-	-- força recálculo do bônus
 	Runtime.resilienceBonusAt = -1
 end
 
@@ -240,14 +230,14 @@ local function onBallSync(data)
 	local time = now()
 
 	if data.Teleported == true then
-		Runtime.teleportLockUntil = time + 0.20
+		Runtime.teleportLockUntil =
+			time + 0.20
 
 		ParryState.fired = false
 		clearArmedState()
 
 		Resilience.lastFireBall = nil
 		Resilience.lastFireAt = 0
-		Resilience.lastCountedFireAt = 0
 
 		return
 	end
@@ -258,12 +248,13 @@ local function onBallSync(data)
 		targetId = data.TargetPlayerID
 
 	elseif type(data.TargetPlayerID) == "string" then
-		local parsedTarget = tonumber(data.TargetPlayerID)
+		local parsedTarget =
+			tonumber(data.TargetPlayerID)
 
-		targetId = Utils.isFiniteNumber(parsedTarget)
+		targetId =
+			Utils.isFiniteNumber(parsedTarget)
 			and parsedTarget
 			or -1
-
 	else
 		targetId = -1
 	end
@@ -272,7 +263,9 @@ local function onBallSync(data)
 		return
 	end
 
-	local previousTarget = Runtime.lastTarget
+	local previousTarget =
+		Runtime.lastTarget
+
 	Runtime.lastTarget = targetId
 
 	if targetId == Runtime.localUserId
@@ -287,18 +280,27 @@ local function requestParry()
 	local time = now()
 
 	if not Remote.fireParry(1) then
-		if Utils and type(Utils.recordError) == "function" then
+		if Utils
+			and type(Utils.recordError) == "function"
+		then
 			Utils.recordError(
 				"AutoParry",
 				"Remote.fireParry falhou"
 			)
 		end
 
-		setPhase("waiting", "remote_failed")
+		setPhase(
+			"waiting",
+			"remote_failed"
+		)
+
 		return false
 	end
 
-	setPhase("fired", "parry_requested")
+	setPhase(
+		"fired",
+		"parry_requested"
+	)
 
 	local ball = GameInfo.getBall()
 
@@ -322,16 +324,9 @@ local function handleHitbox(instance)
 		return
 	end
 
-	local time = now()
-
-	-- precisa existir um fired recente
-	if time - Resilience.lastFireAt > Tuning.HITBOX_OWN_WINDOW then
-		return
-	end
-
-	local ball = Resilience.lastFireBall
-
-	if not (ball and ball.Parent) then
+	-- Depois que já detectou uma vez,
+	-- não precisa detectar novamente.
+	if Resilience.detected then
 		return
 	end
 
@@ -339,13 +334,22 @@ local function handleHitbox(instance)
 		return instance.Position
 	end)
 
-	if not ok or typeof(position) ~= "Vector3" then
+	if not ok
+		or typeof(position) ~= "Vector3"
+	then
 		return
 	end
 
-	local okBallPosition, ballPosition = pcall(function()
-		return ball.Position
-	end)
+	local ball = GameInfo.getBall()
+
+	if not (ball and ball.Parent) then
+		return
+	end
+
+	local okBallPosition, ballPosition =
+		pcall(function()
+			return ball.Position
+		end)
 
 	if not okBallPosition
 		or typeof(ballPosition) ~= "Vector3"
@@ -353,15 +357,19 @@ local function handleHitbox(instance)
 		return
 	end
 
+	-- confirma que esse HitboxGrow pertence
+	-- à bola que está sendo processada
 	if (ballPosition - position).Magnitude
 		> Tuning.HITBOX_PROXIMITY
 	then
 		return
 	end
 
-	-- PRIMEIRO HitboxGrow válido:
-	-- a partir daqui a resiliência está ativa.
+	-- A partir daqui a resiliência foi detectada.
 	Resilience.detected = true
+
+	-- força atualização do raio
+	Runtime.resilienceBonusAt = -1
 end
 
 local function installHitboxHook()
@@ -369,12 +377,14 @@ local function installHitboxHook()
 		return true
 	end
 
-	local workspaceService = Utils.getWorkspace()
+	local workspaceService =
+		Utils.getWorkspace()
 
 	local ok, connection = pcall(function()
 		return workspaceService.DescendantAdded:Connect(
 			function(instance)
-				local handler = HitboxState.handler
+				local handler =
+					HitboxState.handler
 
 				if type(handler) == "function" then
 					handler(instance)
@@ -395,13 +405,18 @@ end
 
 -- character runtime
 local function bindCharacter(character)
-	Runtime.generation = Runtime.generation + 1
+	Runtime.generation =
+		Runtime.generation + 1
 
-	local generation = Runtime.generation
+	local generation =
+		Runtime.generation
 
 	Runtime.bound = false
 
-	setPhase("detached", "rebind_start")
+	setPhase(
+		"detached",
+		"rebind_start"
+	)
 
 	disconnectConnections()
 	clearRuntimeCycle()
@@ -411,7 +426,9 @@ local function bindCharacter(character)
 	end
 
 	local root =
-		character:FindFirstChild("HumanoidRootPart")
+		character:FindFirstChild(
+			"HumanoidRootPart"
+		)
 		or character:WaitForChild(
 			"HumanoidRootPart",
 			1
@@ -445,30 +462,38 @@ local function bindCharacter(character)
 
 				if config.AutoParry ~= true then
 					clearRuntimeCycle()
+
 					setPhase(
 						"waiting",
 						"disabled_or_locked"
 					)
+
 					return
 				end
 
 				local timeNow = now()
 
-				if timeNow < Runtime.teleportLockUntil then
+				if timeNow <
+					Runtime.teleportLockUntil
+				then
 					clearRuntimeCycle()
+
 					setPhase(
 						"waiting",
 						"disabled_or_locked"
 					)
+
 					return
 				end
 
 				if isSpamActive() then
 					clearRuntimeCycle()
+
 					setPhase(
 						"waiting",
 						"spam_active"
 					)
+
 					return
 				end
 
@@ -478,7 +503,8 @@ local function bindCharacter(character)
 					or 0
 
 				Runtime.pingTimer =
-					Runtime.pingTimer + frameDelta
+					Runtime.pingTimer
+					+ frameDelta
 
 				if Runtime.pingTimer
 					>= PING_SAMPLE_INTERVAL
@@ -501,13 +527,16 @@ local function bindCharacter(character)
 						"waiting",
 						"snapshot_invalid"
 					)
+
 					return
 				end
 
 				local ball = snapshot.ball
+
 				local deflectCooldown =
 					GameInfo.getDeflectCD()
 
+				-- armed
 				if ParryState.armed then
 					local sameBall =
 						ball == ParryState.armedBall
@@ -535,7 +564,6 @@ local function bindCharacter(character)
 						)
 
 						return
-
 					else
 						local canRetry =
 							not ParryState.fired
@@ -548,8 +576,7 @@ local function bindCharacter(character)
 								ParryState.fired = true
 								ParryState.firedAt = timeNow
 
-								-- Cada fired depois da
-								-- detecção conta +1
+								-- +0.225
 								registerSuccessfulFire()
 							else
 								ParryState.fired = false
@@ -561,6 +588,7 @@ local function bindCharacter(character)
 					end
 				end
 
+				-- ball / target
 				if not (
 					ball
 					and ball.Parent
@@ -571,6 +599,7 @@ local function bindCharacter(character)
 						"waiting",
 						"ball_or_target_invalid"
 					)
+
 					return
 				end
 
@@ -581,16 +610,19 @@ local function bindCharacter(character)
 						"waiting",
 						"ball_too_slow"
 					)
+
 					return
 				end
 
-				local position = snapshot.position
+				local position =
+					snapshot.position
 
 				if not position then
 					setPhase(
 						"waiting",
 						"position_unavailable"
 					)
+
 					return
 				end
 
@@ -618,6 +650,7 @@ local function bindCharacter(character)
 						"waiting",
 						"outside_detection_radius"
 					)
+
 					return
 				end
 
@@ -640,9 +673,11 @@ local function bindCharacter(character)
 						"waiting",
 						"outside_early_window"
 					)
+
 					return
 				end
 
+				-- deflect cooldown
 				if deflectCooldown > 0 then
 					ParryState.armed = true
 					ParryState.armedBall = ball
@@ -656,9 +691,11 @@ local function bindCharacter(character)
 					return
 				end
 
+				-- fired lock
 				if ParryState.fired then
 					local elapsed =
-						timeNow - ParryState.firedAt
+						timeNow
+						- ParryState.firedAt
 
 					if elapsed
 						< Tuning.FIRE_LOCK_TIME
@@ -667,6 +704,7 @@ local function bindCharacter(character)
 							"cooldown",
 							"fire_lock"
 						)
+
 						return
 					end
 
@@ -677,6 +715,7 @@ local function bindCharacter(character)
 							"cooldown",
 							"fire_timeout"
 						)
+
 						return
 					end
 
@@ -688,12 +727,16 @@ local function bindCharacter(character)
 					)
 				end
 
+				-- FIRE
 				if requestParry() then
+					-- IMPORTANTE:
+					-- atualiza firedAt ANTES de registrar
+					-- o fired na resiliência.
 					ParryState.fired = true
 					ParryState.firedAt = timeNow
 
-					-- Cada fired depois que o primeiro
-					-- HitboxGrow foi detectado.
+					-- cada fired bem-sucedido
+					-- após a detecção = +0.225
 					registerSuccessfulFire()
 				else
 					ParryState.fired = false
@@ -705,7 +748,9 @@ local function bindCharacter(character)
 		#Runtime.connections + 1
 	] = heartbeatConnection
 
-	Utils.trackCharacter(heartbeatConnection)
+	Utils.trackCharacter(
+		heartbeatConnection
+	)
 
 	local ancestryConnection =
 		character.AncestryChanged:Connect(
@@ -721,7 +766,9 @@ local function bindCharacter(character)
 		#Runtime.connections + 1
 	] = ancestryConnection
 
-	Utils.trackCharacter(ancestryConnection)
+	Utils.trackCharacter(
+		ancestryConnection
+	)
 
 	Runtime.bound = true
 
@@ -737,12 +784,12 @@ end
 local function resetState()
 	clearRuntimeCycle()
 
-	-- resiliência só zera aqui
+	-- MORTE / RESET:
+	-- aqui sim a resiliência volta para zero.
 	Resilience.stack = 0
 	Resilience.detected = false
 	Resilience.lastFireBall = nil
 	Resilience.lastFireAt = 0
-	Resilience.lastCountedFireAt = 0
 
 	Runtime.teleportLockUntil = 0
 	Runtime.lastTarget = -1
@@ -807,7 +854,8 @@ function AutoParry.setup(deps)
 		and localPlayer.UserId
 		or -1
 
-	HitboxState.handler = handleHitbox
+	HitboxState.handler =
+		handleHitbox
 
 	resetState()
 
@@ -872,7 +920,8 @@ function AutoParry.getStatus()
 		fired = ParryState.fired == true,
 
 		resilienceStack = Resilience.stack,
-		resilienceDetected = Resilience.detected == true,
+		resilienceDetected =
+			Resilience.detected == true,
 
 		parryRadius = Runtime.parryRadius,
 		additionalWindow =
