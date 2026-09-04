@@ -17,15 +17,14 @@ local T = {
 	REACTIVATE_COOLDOWN = 0.25,
 
 	-- deactivation
-	DEACT_TRAVEL_MAX_LO = 0.110,
+	DEACT_TRAVEL_MAX_LO = 0.090,
 	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
 	DEACT_TRAVEL_SPD_LO = 60,
 	DEACT_TRAVEL_SPD_HI = 600,
 	DEACT_TRAVEL_HOLD = 0.015,
-	DEACT_TRAVEL_HYSTERESIS = 1.20,
 
 	-- only affects the travel guard
-	DEACT_TRAVEL_REDUCTION_WINDOW = 0.100,
+	DEACT_TRAVEL_REDUCTION_WINDOW = 0.090,
 
 	DEACT_RADIUS_FACTOR = 1.65,
 	DEACT_RADIUS_EXTRA_WINDOW = 0.090,
@@ -406,16 +405,12 @@ local function shouldDeactivate(t, snapshot)
 
 	local distance = (rootPos - position).Magnitude
 
-	-- Travel guard only:
-	-- reduce the travel radius by speed * 130ms.
+	-- Travel guard.
 	--
-	-- Example:
-	-- speed = 100
-	-- reduction = 100 * 0.130 = 13 studs
-	--
-	-- So the travel guard starts 13 studs before
-	-- the normal parry radius, equivalent to 130ms
-	-- of travel at that speed.
+	-- No hysteresis:
+	-- the same travel condition is used both to
+	-- start and cancel the hold timer.
+
 	local travelRadius = math.max(
 		parryRadius
 			- speed * T.DEACT_TRAVEL_REDUCTION_WINDOW,
@@ -432,9 +427,7 @@ local function shouldDeactivate(t, snapshot)
 			T.DEACT_TRAVEL_SPD_HI
 		)
 
-		if distance / speed
-			> travelMax * T.DEACT_TRAVEL_HYSTERESIS then
-
+		if distance / speed > travelMax then
 			R.travelSince =
 				R.travelSince > 0
 				and R.travelSince
@@ -445,10 +438,10 @@ local function shouldDeactivate(t, snapshot)
 				R.travelSince = 0
 				return true
 			end
+		else
+			R.travelSince = 0
 		end
-	end
-
-	if distance <= travelRadius * 0.85 then
+	else
 		R.travelSince = 0
 	end
 
