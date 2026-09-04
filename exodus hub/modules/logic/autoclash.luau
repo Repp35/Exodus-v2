@@ -21,9 +21,12 @@ local T = {
 	ACT_DEACT_LOCK_TIME = 0.050,
 
 	-- deactivation
-	DEACT_TRAVEL_TIME_PRODUCT = 0.7,
-	DEACT_TRAVEL_RADIUS_FACTOR = 0.80,
+	DEACT_TRAVEL_TIME_PRODUCT = 2.25,
 	DEACT_TRAVEL_HOLD = 0.015,
+	DEACT_TRAVEL_HYSTERESIS = 1.20,
+	DEACT_RADIUS_FACTOR = 1.65,
+	DEACT_RADIUS_EXTRA_WINDOW = 0.090,
+	DEACT_OUT_WINDOW = 0.100,
 
 	-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
@@ -352,13 +355,6 @@ local function tryReturnActivate(snapshot)
 end
 
 -- deactivation
-local function getDeactTravelMax(parryRadius)
-	if parryRadius <= 0 then
-		return math.huge
-	end
-	return T.DEACT_TRAVEL_TIME_PRODUCT / parryRadius
-end
-
 local function shouldDeactivate(t, snapshot)
 	-- trava qualquer gate de desativação durante o lock
 	-- criado na ativação.
@@ -381,19 +377,13 @@ local function shouldDeactivate(t, snapshot)
 	end
 
 	local speed = math.max(tonumber(R.lastSpeed) or 0, 0)
-
-	if speed <= 0 then
-		return false
-	end
-
 	local distance = (rootPos - position).Magnitude
-	local travelRadius = parryRadius * T.DEACT_TRAVEL_RADIUS_FACTOR
-	local travelMax = getDeactTravelMax(parryRadius)
+	local travelRadius = parryRadius
 
-	if distance > travelRadius then
-		local timeToReach = distance / speed
+	if distance > travelRadius and speed > 0 then
+		local travelMax = T.DEACT_TRAVEL_TIME_PRODUCT / parryRadius
 
-		if timeToReach > travelMax then
+		if distance / speed > travelMax * T.DEACT_TRAVEL_HYSTERESIS then
 			R.travelSince = R.travelSince > 0 and R.travelSince or t
 
 			if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
@@ -402,6 +392,28 @@ local function shouldDeactivate(t, snapshot)
 				return true
 			end
 		end
+	end
+
+	if distance <= travelRadius * 0.85 then
+		R.travelSince = 0
+	end
+
+	if distance > parryRadius * T.DEACT_RADIUS_FACTOR then
+		R.lastGate = "deact_radius_factor"
+		return true
+	end
+
+	local deactOutRadius = parryRadius + speed * T.DEACT_RADIUS_EXTRA_WINDOW
+
+	if distance > deactOutRadius then
+		R.outSince = R.outSince > 0 and R.outSince or t
+
+		if t - R.outSince >= T.DEACT_OUT_WINDOW then
+			R.lastGate = "deact_out_window"
+			return true
+		end
+	else
+		R.outSince = 0
 	end
 
 	R.lastGate = "deact_none"
