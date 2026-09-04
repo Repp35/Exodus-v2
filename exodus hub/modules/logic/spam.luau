@@ -15,10 +15,14 @@ local acumulador = 0
 local cpfFps
 local cpfCredits = 0
 local cpfSent = 0
+local cpfFracCarry = 0
 local lastMode
 local lastRate
 local chainRunning = false
 local EMA = 0.08
+-- distribution tweaks
+local JITTER_MIN = 0.85
+local JITTER_RANGE = 0.30
 local Scheduler = {
     phase = "stopped",
     lastRequestAt = 0,
@@ -33,6 +37,7 @@ local function invalidate(reason)
     cpfFps = nil
     cpfCredits = 0
     cpfSent = 0
+    cpfFracCarry = 0
     lastMode = nil
     lastRate = nil
     chainRunning = false
@@ -70,11 +75,19 @@ local function scheduleCPF(rate, dt)
         cpfFps = cpfFps + (fpsNow - cpfFps) * EMA
     end
     local fps = math_max(cpfFps, 1)
-    local clicks = rate * math_max(60, fps) / fps
+    local clicks = rate * math_max(60, fps) / fps + cpfFracCarry
+    cpfFracCarry = clicks - math.floor(clicks)
     local scheduled = math.floor(clicks)
-    for _ = 1, scheduled do
-        requestParry()
+    if scheduled <= 0 then
+        return
     end
+    local batched = 0
+    task.spawn(function()
+        for _ = 1, scheduled do
+            requestParry()
+            batched = batched + 1
+        end
+    end)
 end
 
 local function scheduleChain()
@@ -169,12 +182,25 @@ local function tick(dt)
     acumulador = acumulador + dt
     local currentGeneration = generation
 
+    local scheduled = 0
     while acumulador >= intervaloEntreClicks do
         if currentGeneration ~= generation or not isActive() then
-            return
+            break
         end
-        task.spawn(requestParry)
-        acumulador = acumulador - intervaloEntreClicks
+        scheduled = scheduled + 1
+        local jitter = JITTER_MIN + JITTER_RANGE * math.random()
+        acumulador = acumulador - intervaloEntreClicks * jitter
+    end
+
+    if scheduled > 0 then
+        task.spawn(function()
+            for _ = 1, scheduled do
+                if currentGeneration ~= generation or not isActive() then
+                    return
+                end
+                requestParry()
+            end
+        end)
     end
 end
 
@@ -220,6 +246,7 @@ function Spam.resetState()
     cpfFps = nil
     cpfCredits = 0
     cpfSent = 0
+    cpfFracCarry = 0
     lastMode = nil
     lastRate = nil
     chainRunning = false
