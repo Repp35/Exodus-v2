@@ -14,10 +14,6 @@ local T = {
 	RETURN_SPD_HI = 600,
 	PING_FACTOR = 0.3,
 	ACT_RADIUS_EXTRA_WINDOW = 0.150,
-	ACT_TRAVEL_MAX_LO = 0.080,
-	ACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
-	ACT_TRAVEL_SPD_LO = 60,
-	ACT_TRAVEL_SPD_HI = 600,
 	REACTIVATE_COOLDOWN = 0.25,
 	-- deactivation
 	DEACT_TRAVEL_MAX_LO = 0.150,
@@ -29,11 +25,6 @@ local T = {
 	DEACT_RADIUS_FACTOR = 1.65,
 	DEACT_RADIUS_EXTRA_WINDOW = 0.090,
 	DEACT_OUT_WINDOW = 0.100,
-	-- activation lock: once active, hold for at least this long even if
-	-- the deactivation travel check would normally fire. Prevents flicker
-	-- from the ball being 1 stud past the edge for a frame.
-	ACT_LOCK_DURATION = 0.050,
-	ACT_LOCK_RADIUS_FACTOR = 0.60,
 	-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
 }
@@ -57,8 +48,6 @@ local R = {
 	wasMeTarget = nil,
 	lastEvalAt = 0,
 	reactivateBlockedUntil = 0,
-	activatedAt = 0,
-	activationLocked = false,
 	connections = {},
 	lastGate = "none",
 }
@@ -110,20 +99,6 @@ local function getReturnWindow(speed)
 	local base = lerp(speed, T.RETURN_WIN_LO, T.RETURN_WIN_LO * T.RETURN_WIN_MIN_FACTOR, T.RETURN_SPD_LO, T.RETURN_SPD_HI)
 	return math.max(base + getPingOneWay() * T.PING_FACTOR, 0)
 end
-local function getActTravelMax(speed)
-	return lerp(speed, T.ACT_TRAVEL_MAX_LO, T.ACT_TRAVEL_MAX_LO * T.ACT_TRAVEL_MAX_MIN_FACTOR, T.ACT_TRAVEL_SPD_LO, T.ACT_TRAVEL_SPD_HI)
-end
--- activation gate that mirrors the deactivation travel check: only
--- activate when the ball is actually on a clash trajectory for this
--- player at the current speed. Same arithmetic the deactivation uses
--- to declare a target out, so we accept exactly the cases the
--- deactivation would not yet flag.
-local function isBallInClashZone(distance, speed)
-	if speed <= 0 then
-		return true
-	end
-	return distance / speed <= getActTravelMax(speed)
-end
 local function clearReturnState()
 	R.lostMeAt = 0
 	R.returnPending = false
@@ -149,7 +124,7 @@ local function setPhase(phase, reason)
 		pcall(Utils.recordTransition, "AutoClash", previous, phase, reason)
 	end
 end
-local function setActive(active, reason, snapshot)
+local function setActive(active, reason)
 	active = active == true
 	if R.active == active then
 		return
@@ -157,15 +132,11 @@ local function setActive(active, reason, snapshot)
 	R.active = active
 	resetDeactivationState()
 	if active then
-		R.activatedAt = getNow()
-		R.activationLocked = computeActivationLock(snapshot)
 		if R.clashPartnerId == -1 and R.lastTarget ~= R.localUserId then
 			R.clashPartnerId = R.lastTarget
 		end
 	else
 		R.clashPartnerId = -1
-		R.activatedAt = 0
-		R.activationLocked = false
 		R.reactivateBlockedUntil = getNow() + T.REACTIVATE_COOLDOWN
 		if reason == "target_deactivated" then
 			clearReturnState()
@@ -200,8 +171,6 @@ local function resetRuntime(reason)
 	R.parryRadius = 0
 	R.lastEvalAt = 0
 	R.reactivateBlockedUntil = 0
-	R.activatedAt = 0
-	R.activationLocked = false
 	resetTargetState()
 	R.lastGate = "detached"
 	setPhase("detached", reason or "reset")
@@ -262,22 +231,13 @@ local function shouldActivate(snapshot)
 		return false
 	end
 	local effectiveRadius = parryRadius + R.lastSpeed * T.ACT_RADIUS_EXTRA_WINDOW
-	local distance = (rootPos - position).Magnitude
-	if distance > effectiveRadius then
+	if (rootPos - position).Magnitude > effectiveRadius then
 		R.lastGate = "outside_effective_radius"
-		return false
-	end
-	if not isBallInClashZone(distance, R.lastSpeed) then
-		R.lastGate = "outside_clash_zone"
 		return false
 	end
 	R.lastGate = "activation_ready"
 	return true
 end
--- travel-only activation: instant early warning, no target required,
--- no hold. Bigger radius window + tight travel time = catches the
--- "ball is already on top of me" case before target sync catches up.
--- (removed — target=me remains a hard requirement for activation)
 local function canReactivate()
 	if getNow() < R.reactivateBlockedUntil then
 		R.lastGate = "reactivate_cooldown"
@@ -307,34 +267,6 @@ local function tryReturnActivate(snapshot)
 		return false
 	end
 	return shouldActivate(snapshot)
-end
-
--- activation lock: if the ball was inside the inner parry core at the
--- moment of activation, prevent deactivation for ACT_LOCK_DURATION.
--- Inner core = ACT_LOCK_RADIUS_FACTOR * parryRadius (no speed bonus, no
--- extra window). Stops the deactivation travel check from killing
--- a fresh activation just because the ball is 1 stud past the edge.
-local function computeActivationLock(snapshot)
-	local rootPos = getRootPosition()
-	local position = getSnapshotPosition(snapshot)
-	if not rootPos or not position then
-		return false
-	end
-	local parryRadius = math.max(tonumber(R.parryRadius) or 0, 0)
-	if parryRadius <= 0 then
-		return false
-	end
-	local coreRadius = parryRadius * T.ACT_LOCK_RADIUS_FACTOR
-	return (rootPos - position).Magnitude <= coreRadius
-end
-local function isInActivationLock(t)
-	if not R.activationLocked then
-		return false
-	end
-	if R.activatedAt <= 0 then
-		return false
-	end
-	return t - R.activatedAt < T.ACT_LOCK_DURATION
 end
 
 -- deactivation
@@ -404,15 +336,11 @@ local function evaluateClash(t, snapshot)
 	updateParryState(t, snapshot)
 	if R.active then
 		if shouldDeactivate(t, snapshot) then
-			if isInActivationLock(t, snapshot) then
-				R.lastGate = "locked_active"
-			else
-				setActive(false, "target_deactivated")
-			end
+			setActive(false, "target_deactivated")
 		end
 	elseif tryReturnActivate(snapshot) then
 		clearReturnState()
-		setActive(true, "activated", snapshot)
+		setActive(true, "activated")
 	end
 end
 
