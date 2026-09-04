@@ -8,7 +8,7 @@ local Utils
 -- tuning
 local T = {
         -- activation
-        RETURN_WIN_LO = 0.095,
+        RETURN_WIN_LO = 0.090,
         RETURN_WIN_MIN_FACTOR = 0.50,
         RETURN_SPD_LO = 60,
         RETURN_SPD_HI = 600,
@@ -18,7 +18,7 @@ local T = {
 
         -- deactivation
         DEACT_TRAVEL_GUARD_WINDOW = 0.130,
-        DEACT_TRAVEL_MAX_LO = 0.095,
+        DEACT_TRAVEL_MAX_LO = 0.110,
         DEACT_TRAVEL_MAX_MIN_FACTOR = 0.50,
         DEACT_TRAVEL_SPD_LO = 60,
         DEACT_TRAVEL_SPD_HI = 600,
