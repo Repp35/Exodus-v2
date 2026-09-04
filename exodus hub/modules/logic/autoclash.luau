@@ -22,7 +22,7 @@ local T = {
 
 	-- deactivation
 	DEACT_TRAVEL_MS_PER_STUD = 0.020,
-	DEACT_TRAVEL_MULT = 1.0,
+	DEACT_TRAVEL_MULT = 1.5,
 	DEACT_TRAVEL_HOLD = 0.015,
 
 	-- system
