@@ -21,7 +21,7 @@ local T = {
 	ACT_DEACT_LOCK_TIME = 0.050,
 
 	-- deactivation
-	DEACT_TRAVEL_CONFIRM_FACTOR = 1.5,  -- múltiplo do tempo de trânsito pra confirmar
+	DEACT_TRAVEL_CONFIRM_FACTOR = 1.7,  -- múltiplo do tempo de trânsito pra confirmar
 	DEACT_TRAVEL_HOLD = 0.015,
 	DEACT_RADIUS_FACTOR = 1.65,
 	DEACT_RADIUS_EXTRA_WINDOW = 0.090,
