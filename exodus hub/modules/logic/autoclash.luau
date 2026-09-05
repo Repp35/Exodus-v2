@@ -388,16 +388,22 @@ local distance = (rootPos - position).Magnitude
 local travelRadius = parryRadius
 
 if distance > travelRadius and speed > 0 then
-	local factor = lerp(
+	local baseMax = lerp(
 		speed,
-		1.0,
-		T.DEACT_TRAVEL_MAX_MIN_FACTOR,
+		T.DEACT_TRAVEL_MAX_LO,
+		T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
 		T.DEACT_TRAVEL_SPD_LO,
 		T.DEACT_TRAVEL_SPD_HI
 	)
 
-	local baseMax = T.DEACT_TRAVEL_MAX_LO * factor
-	local radiusMax = (parryRadius * T.DEACT_TRAVEL_RADIUS_FACTOR) / speed * factor
+	local radiusMax = lerp(
+		speed,
+		parryRadius * T.DEACT_TRAVEL_RADIUS_FACTOR,
+		parryRadius * T.DEACT_TRAVEL_RADIUS_FACTOR * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
+		T.DEACT_TRAVEL_SPD_LO,
+		T.DEACT_TRAVEL_SPD_HI
+	)
+
 	local travelMax = math.max(baseMax, radiusMax)
 
 	if distance / speed > travelMax * T.DEACT_TRAVEL_HYSTERESIS then
