@@ -139,23 +139,16 @@ Runtime.resilienceBonusAt = time
 return Runtime.resilienceBonus
 end
 local function tickResilience(time)
-if Resilience.stack <= 0 then
 return
 end
-local elapsed = time - Resilience.lastStackAt
-if elapsed > Tuning.RES_HOLD_TIME + Tuning.RES_DECAY_TIME then
+local function resetResilience()
 Resilience.stack = 0
+Resilience.lastFireBall = nil
+Resilience.lastFireAt = 0
+Resilience.lastHitboxAt = 0
+Resilience.lastStackAt = 0
+Runtime.resilienceBonus = 0
 Runtime.resilienceBonusAt = -1
-return
-end
-if elapsed > Tuning.RES_HOLD_TIME then
-local fraction = 1 - (elapsed - Tuning.RES_HOLD_TIME) / Tuning.RES_DECAY_TIME
-local decayed = math.max(0, math.floor(Resilience.stack * fraction + 0.5))
-if decayed ~= Resilience.stack then
-Resilience.stack = decayed
-Runtime.resilienceBonusAt = -1
-end
-end
 end
 
 -- radius
@@ -244,41 +237,41 @@ end
 local time = now()
 
 if time - Resilience.lastFireAt > Tuning.HITBOX_OWN_WINDOW then
-    return
+return
 end
 
 local ball = Resilience.lastFireBall
 if not (ball and ball.Parent) then
-    return
+return
 end
 
 if time - Resilience.lastHitboxAt < Tuning.HITBOX_GAP then
-    return
+return
 end
 
 local ok, position = pcall(function()
-    return instance.Position
+return instance.Position
 end)
 if not ok or typeof(position) ~= "Vector3" then
-    return
+return
 end
 
 local okBallPosition, ballPosition = pcall(function()
-    return ball.Position
+return ball.Position
 end)
 if not okBallPosition or typeof(ballPosition) ~= "Vector3" then
-    return
+return
 end
 
 if (ballPosition - position).Magnitude > Tuning.HITBOX_PROXIMITY then
-    return
+return
 end
 
 Resilience.lastHitboxAt = time
 Resilience.lastStackAt = time
 Resilience.stack = math.min(
-    Resilience.stack + 1,
-    math.floor(Tuning.RES_CAP_STUDS / Tuning.RES_PER_PARRY)
+Resilience.stack + 1,
+math.floor(Tuning.RES_CAP_STUDS / Tuning.RES_PER_PARRY)
 )
 Runtime.resilienceBonusAt = -1
 
@@ -320,6 +313,14 @@ local root = character:FindFirstChild("HumanoidRootPart")
 or character:WaitForChild("HumanoidRootPart", 1)
 if generation ~= Runtime.generation or not (root and root.Parent) then
 return false
+end
+local humanoid = character:FindFirstChildOfClass("Humanoid")
+if humanoid then
+local deathConnection = humanoid.Died:Connect(function()
+resetResilience()
+end)
+Runtime.connections[#Runtime.connections + 1] = deathConnection
+Utils.trackCharacter(deathConnection)
 end
 local getConfig = Utils.getConfig
 local isSpamActive = Utils.isSpamActive
@@ -463,17 +464,13 @@ end
 -- lifecycle
 local function resetState()
 clearRuntimeCycle()
-Resilience.stack = 0
 Resilience.lastFireBall = nil
 Resilience.lastFireAt = 0
-Resilience.lastHitboxAt = 0
-Resilience.lastStackAt = 0
 Runtime.teleportLockUntil = 0
 Runtime.lastTarget = -1
 Runtime.pingTimer = 0
 Runtime.minPing = nil
 Runtime.pingOneWay = 0.030
-Runtime.resilienceBonus = 0
 Runtime.resilienceBonusAt = -1
 Runtime.parryRadius = 0
 Runtime.additionalWindow = Tuning.ADDITIONAL_WINDOW
@@ -514,6 +511,7 @@ Utils = deps.Utils
 local localPlayer = Utils.getLocalPlayer()
 Runtime.localUserId = localPlayer and localPlayer.UserId or -1
 HitboxState.handler = handleHitbox
+resetResilience()
 resetState()
 if not installHitboxHook() then
 Utils.warn("hook de hitbox indisponível")
