@@ -21,11 +21,8 @@ local T = {
 	ACT_DEACT_LOCK_TIME = 0.050,
 
 	-- deactivation
-	DEACT_TRAVEL_SAFETY_FACTOR = 0.80,  -- quanto % do raio antes de desativar
-	DEACT_TRAVEL_SPD_LO = 60,
-	DEACT_TRAVEL_SPD_HI = 600,
+	DEACT_TRAVEL_CONFIRM_FACTOR = 1.5,  -- múltiplo do tempo de trânsito pra confirmar
 	DEACT_TRAVEL_HOLD = 0.015,
-	DEACT_TRAVEL_HYSTERESIS = 1.20,
 	DEACT_RADIUS_FACTOR = 1.65,
 	DEACT_RADIUS_EXTRA_WINDOW = 0.090,
 	DEACT_OUT_WINDOW = 0.100,
@@ -383,12 +380,14 @@ local function shouldDeactivate(t, snapshot)
 	local travelRadius = parryRadius
 
 	if distance > travelRadius and speed > 0 then
-		local travelMax = (parryRadius * T.DEACT_TRAVEL_SAFETY_FACTOR) / speed
+		local travelMax = parryRadius / speed
+		local travelConfirm = travelMax * T.DEACT_TRAVEL_CONFIRM_FACTOR
 
 		if distance / speed > travelMax then
 			R.travelSince = R.travelSince > 0 and R.travelSince or t
 
-			if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
+			if t - R.travelSince >= T.DEACT_TRAVEL_HOLD
+				and distance / speed > travelConfirm then
 				R.lastGate = "deact_travel"
 				R.travelSince = 0
 				return true
