@@ -21,8 +21,12 @@ local T = {
 	ACT_DEACT_LOCK_TIME = 0.050,
 
 	-- deactivation
-	DEACT_TRAVEL_CONFIRM_FACTOR = 1.7,  -- múltiplo do tempo de trânsito pra confirmar
+	DEACT_TRAVEL_MAX_LO = 0.150,
+	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
+	DEACT_TRAVEL_SPD_LO = 60,
+	DEACT_TRAVEL_SPD_HI = 600,
 	DEACT_TRAVEL_HOLD = 0.015,
+	DEACT_TRAVEL_HYSTERESIS = 1.20,
 	DEACT_RADIUS_FACTOR = 1.65,
 	DEACT_RADIUS_EXTRA_WINDOW = 0.090,
 	DEACT_OUT_WINDOW = 0.100,
@@ -380,22 +384,26 @@ local function shouldDeactivate(t, snapshot)
 	local travelRadius = parryRadius
 
 	if distance > travelRadius and speed > 0 then
-		local travelMax = parryRadius / speed
-		local travelConfirm = travelMax * T.DEACT_TRAVEL_CONFIRM_FACTOR
+		local travelMax = lerp(
+			speed,
+			T.DEACT_TRAVEL_MAX_LO,
+			T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
+			T.DEACT_TRAVEL_SPD_LO,
+			T.DEACT_TRAVEL_SPD_HI
+		)
 
-		if distance / speed > travelMax then
+		if distance / speed > travelMax * T.DEACT_TRAVEL_HYSTERESIS then
 			R.travelSince = R.travelSince > 0 and R.travelSince or t
 
-			if t - R.travelSince >= T.DEACT_TRAVEL_HOLD
-				and distance / speed > travelConfirm then
+			if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
 				R.lastGate = "deact_travel"
 				R.travelSince = 0
 				return true
 			end
-		else
-			R.travelSince = 0
 		end
-	else
+	end
+
+	if distance <= travelRadius * 0.85 then
 		R.travelSince = 0
 	end
 
