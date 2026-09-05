@@ -25,9 +25,14 @@ local T = {
 	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
 	DEACT_TRAVEL_SPD_LO = 60,
 	DEACT_TRAVEL_SPD_HI = 600,
+
+	-- raio usado somente como margem adicional
 	DEACT_TRAVEL_RADIUS_FACTOR = 1.10,
+
 	DEACT_TRAVEL_HOLD = 0.015,
 	DEACT_TRAVEL_HYSTERESIS = 1.20,
+
+	-- fallback / outras condições
 	DEACT_RADIUS_FACTOR = 1.65,
 	DEACT_RADIUS_EXTRA_WINDOW = 0.090,
 	DEACT_OUT_WINDOW = 0.100,
@@ -213,6 +218,7 @@ local function setActive(active, reason, snapshot)
 		R.clashPartnerId = -1
 		R.reactivateBlockedUntil =
 			getNow() + T.REACTIVATE_COOLDOWN
+
 		R.activationDeactLockedUntil = 0
 
 		if reason == "target_deactivated" then
@@ -449,13 +455,17 @@ local function shouldDeactivate(t, snapshot)
 	local distance = (rootPos - position).Magnitude
 	local travelRadius = parryRadius
 
-	-- travel = tempo que a bola levaria para percorrer
-	-- a distância atual até o jogador.
+	-- [[ TRAVEL ]]
 	--
-	-- baseMax = limite de tempo puro.
-	-- radiusMax = limite de tempo derivado do raio.
+	-- baseMax:
+	--   limite de tempo puro do v6.
 	--
-	-- Ambos ficam em SEGUNDOS antes do math.max().
+	-- radiusExtra:
+	--   somente os 10% adicionais do raio,
+	--   convertidos em tempo pela velocidade.
+	--
+	-- travelMax:
+	--   nunca menor que o baseMax.
 	if distance > travelRadius and speed > 0 then
 
 		local baseMax = lerp(
@@ -467,27 +477,25 @@ local function shouldDeactivate(t, snapshot)
 			T.DEACT_TRAVEL_SPD_HI
 		)
 
-		local radiusDistance =
+		local extraRadius =
 			parryRadius
-			* T.DEACT_TRAVEL_RADIUS_FACTOR
+			* (T.DEACT_TRAVEL_RADIUS_FACTOR - 1)
 
-		local radiusMax = lerp(
-			speed,
-			radiusDistance / speed,
-			(radiusDistance / speed)
-				* T.DEACT_TRAVEL_MAX_MIN_FACTOR,
-			T.DEACT_TRAVEL_SPD_LO,
-			T.DEACT_TRAVEL_SPD_HI
-		)
+		local radiusExtraTime =
+			extraRadius / speed
 
-		local travelMax = math.max(
-			baseMax,
-			radiusMax
-		)
+		local travelMax =
+			math.max(
+				baseMax,
+				radiusExtraTime
+			)
 
-		local travelTime = distance / speed
+		local travelTime =
+			distance / speed
 
-		if travelTime > travelMax * T.DEACT_TRAVEL_HYSTERESIS then
+		if travelTime >
+			travelMax * T.DEACT_TRAVEL_HYSTERESIS then
+
 			R.travelSince =
 				R.travelSince > 0
 				and R.travelSince
@@ -498,6 +506,8 @@ local function shouldDeactivate(t, snapshot)
 				R.travelSince = 0
 				return true
 			end
+		else
+			R.travelSince = 0
 		end
 	end
 
@@ -505,7 +515,7 @@ local function shouldDeactivate(t, snapshot)
 		R.travelSince = 0
 	end
 
-	-- Mantido exatamente como estava.
+	-- Mantido como fallback.
 	if distance > parryRadius * T.DEACT_RADIUS_FACTOR then
 		R.lastGate = "deact_radius_factor"
 		return true
