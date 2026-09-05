@@ -21,7 +21,8 @@ local T = {
 	ACT_DEACT_LOCK_TIME = 0.050,
 
 	-- deactivation
-	DEACT_TRAVEL_MAX_LO = 0.170,
+	DEACT_TRAVEL_BASE_RADIUS = 8,
+	DEACT_TRAVEL_MAX_LO = 0.150,
 	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
 	DEACT_TRAVEL_SPD_LO = 60,
 	DEACT_TRAVEL_SPD_HI = 600,
@@ -390,7 +391,7 @@ local function shouldDeactivate(t, snapshot)
 			T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
 			T.DEACT_TRAVEL_SPD_LO,
 			T.DEACT_TRAVEL_SPD_HI
-		)
+		) * math.max(parryRadius / T.DEACT_TRAVEL_BASE_RADIUS, 1.0)
 
 		if distance / speed > travelMax * T.DEACT_TRAVEL_HYSTERESIS then
 			R.travelSince = R.travelSince > 0 and R.travelSince or t
