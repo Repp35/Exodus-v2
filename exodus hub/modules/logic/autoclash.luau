@@ -11,7 +11,7 @@ local T = {
 	ENTRY_RATIO = 0.75,
 	ENTRY_WINDOW = 0.10,
 	-- activation: return (secundário, safety)
-	RETURN_WIN_LO = 0.070,
+	RETURN_WIN_LO = 0.090,
 	RETURN_WIN_MIN_FACTOR = 0.10,
 	RETURN_SPD_LO = 60,
 	RETURN_SPD_HI = 600,
