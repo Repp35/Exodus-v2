@@ -1,4 +1,4 @@
--- [[ Auto Clash v6 ]]
+-- [[ Auto Clash ]]
 
 local AutoClash = {}
 local AutoParry
