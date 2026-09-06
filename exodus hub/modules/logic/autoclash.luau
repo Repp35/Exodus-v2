@@ -582,9 +582,12 @@ local function updateParryState(t, snapshot)
         if AutoParry
                 and type(AutoParry.getParryRadius) == "function"
         then
-                -- API nova: o AutoParry fornece o raio atual.
+                -- API nova: passa speed e time para obter
+                -- o raio atual do AutoParry.
                 local ok, radius = pcall(
-                        AutoParry.getParryRadius
+                        AutoParry.getParryRadius,
+                        R.lastSpeed,
+                        t
                 )
 
                 radius = ok and tonumber(radius)
