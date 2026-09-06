@@ -7,12 +7,16 @@ local Utils
 
 -- tuning
 local T = {
-	-- activation
-	RETURN_WIN_LO = 0.090,
+	-- activation: entry proximity (principal, instantâneo)
+	ENTRY_RATIO = 0.75,
+	ENTRY_WINDOW = 0.10,
+	-- activation: return (secundário, safety)
+	RETURN_WIN_LO = 0.070,
 	RETURN_WIN_MIN_FACTOR = 0.10,
 	RETURN_SPD_LO = 60,
 	RETURN_SPD_HI = 600,
 	PING_FACTOR = 0.3,
+	-- activation: legacy
 	ACT_RADIUS_EXTRA_WINDOW = 0.150,
 	REACTIVATE_COOLDOWN = 0.25,
 	-- activation deactivation lock
@@ -31,6 +35,9 @@ local T = {
 	DEACT_OUT_WINDOW = 0.100,
 	-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
+	-- parry radius derivation (espelha constantes do autoparry)
+	AP_PING_FALLBACK = 0.030,
+	AP_ADDITIONAL_WINDOW = 0.110,
 }
 
 -- runtime
@@ -55,6 +62,10 @@ local R = {
 	activationDeactLockedUntil = 0,
 	connections = {},
 	lastGate = "none",
+	-- entry proximity
+	entryAt = 0,
+	entryDistance = 0,
+	entryRadiusAt = 0,
 }
 
 -- helpers
@@ -117,6 +128,21 @@ local function getReturnWindow(speed)
 	return math.max(base + getPingOneWay() * T.PING_FACTOR, 0)
 end
 
+-- raio de parry puro (sem buffer de speed) derivado do R.parryRadius (que é detectionRadius)
+-- depende de constantes do autoparry: pingOneWay + ADDITIONAL_WINDOW
+-- se o AP mudar essas constantes, atualizar AP_PING_FALLBACK / AP_ADDITIONAL_WINDOW
+local function getParryRadiusPure(speed)
+	local detection = tonumber(R.parryRadius) or 0
+	if detection <= 0 then
+		return 0
+	end
+	local buffer = speed * (
+		(getPingOneWay() > 0 and getPingOneWay() or T.AP_PING_FALLBACK)
+		+ T.AP_ADDITIONAL_WINDOW
+	)
+	return math.max(detection - buffer, 0)
+end
+
 local function clearReturnState()
 	R.lostMeAt = 0
 	R.returnPending = false
@@ -131,6 +157,9 @@ local function resetTargetState()
 	R.lastTarget = -1
 	R.clashPartnerId = -1
 	R.wasMeTarget = nil
+	R.entryAt = 0
+	R.entryDistance = 0
+	R.entryRadiusAt = 0
 	clearReturnState()
 	resetDeactivationState()
 end
@@ -165,7 +194,8 @@ local function setActive(active, reason, snapshot)
 
 		local rootPos = getRootPosition()
 		local position = getSnapshotPosition(snapshot)
-		local radius = math.max(tonumber(R.parryRadius) or 0, 0)
+		local speed = math.max(tonumber(R.lastSpeed) or 0, 0)
+		local radius = getParryRadiusPure(speed)
 
 		if rootPos and position and radius > 0 then
 			if (rootPos - position).Magnitude <= radius * T.ACT_DEACT_LOCK_RADIUS_FACTOR then
@@ -250,7 +280,7 @@ local function rallyCheck(data)
 	end
 
 	local speed = math.max(tonumber(R.lastSpeed) or tonumber(data.Speed) or 0, 0)
-	local radius = math.max(tonumber(R.parryRadius) or 0, 0)
+	local radius = getParryRadiusPure(speed)
 
 	if radius <= 0 then
 		return true
@@ -290,19 +320,38 @@ local function shouldActivate(snapshot)
 		return false
 	end
 
-	local radius = math.max(tonumber(R.parryRadius) or 0, 0)
-	if radius <= 0 then
+	local speed = math.max(tonumber(snapshot.speed) or tonumber(R.lastSpeed) or 0, 0)
+	local parryRadius = getParryRadiusPure(speed)
+	if parryRadius <= 0 then
 		R.lastGate = "no_effective_radius"
 		return false
 	end
 
-	if (rootPos - position).Magnitude > radius + R.lastSpeed * T.ACT_RADIUS_EXTRA_WINDOW then
-		R.lastGate = "outside_effective_radius"
-		return false
+	local distance = (rootPos - position).Magnitude
+
+	-- GATE 1: entry proximity (principal, instantâneo)
+	-- válido por ENTRY_WINDOW após virar target; ativo se bola já estava dentro do ratio
+	if R.entryAt > 0 then
+		local now = getNow()
+		local elapsed = now - R.entryAt
+		if elapsed <= T.ENTRY_WINDOW and distance <= parryRadius * T.ENTRY_RATIO then
+			R.lastGate = "entry_proximity"
+			return true
+		end
+		if elapsed > T.ENTRY_WINDOW then
+			R.entryAt = 0
+		end
 	end
 
-	R.lastGate = "activation_ready"
-	return true
+	-- GATE 2: return (secundário, safety)
+	-- válido se bola voltou a ser minha dentro da janela de tempo
+	if tryReturnActivate(snapshot) then
+		R.lastGate = "return"
+		return true
+	end
+
+	R.lastGate = "no_gate_matched"
+	return false
 end
 
 local function canReactivate()
@@ -358,6 +407,7 @@ local function shouldDeactivate(t, snapshot)
 	end
 
 	local speed = math.max(tonumber(R.lastSpeed) or 0, 0)
+	local pureRadius = getParryRadiusPure(speed)
 	local distance = (rootPos - position).Magnitude
 
 	if distance > radius and speed > 0 then
@@ -389,16 +439,16 @@ local function shouldDeactivate(t, snapshot)
 		end
 	end
 
-	if distance <= radius * 0.85 then
+	if distance <= pureRadius * 0.85 then
 		R.travelSince = 0
 	end
 
-	if distance > radius * T.DEACT_RADIUS_FACTOR then
+	if distance > pureRadius * T.DEACT_RADIUS_FACTOR then
 		R.lastGate = "deact_radius_factor"
 		return true
 	end
 
-	if distance > radius + speed * T.DEACT_RADIUS_EXTRA_WINDOW then
+	if distance > pureRadius + speed * T.DEACT_RADIUS_EXTRA_WINDOW then
 		R.outSince = R.outSince > 0 and R.outSince or t
 
 		if t - R.outSince >= T.DEACT_OUT_WINDOW then
@@ -443,7 +493,9 @@ local function evaluateClash(t, snapshot)
 		if shouldDeactivate(t, snapshot) then
 			setActive(false, "target_deactivated")
 		end
-	elseif tryReturnActivate(snapshot) then
+	elseif shouldActivate(snapshot) then
+		-- consumiu o entry gate
+		R.entryAt = 0
 		clearReturnState()
 		setActive(true, "activated", snapshot)
 	end
@@ -674,6 +726,15 @@ function AutoClash.onBallSync(data)
 	elseif not wasMe and isMe then
 		if previousTargetId ~= -1 and previousTargetId ~= R.localUserId then
 			R.clashPartnerId = previousTargetId
+		end
+
+		-- entry proximity: arma o gate no instante que viro target
+		R.entryAt = getNow()
+		local rootPos = getRootPosition()
+		local ballPos = data.RealPosition
+		if rootPos and typeof(ballPos) == "Vector3" then
+			R.entryDistance = (rootPos - ballPos).Magnitude
+			R.entryRadiusAt = getParryRadiusPure(R.lastSpeed)
 		end
 
 		local lostAt = R.lostMeAt
