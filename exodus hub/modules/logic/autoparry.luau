@@ -14,8 +14,6 @@ DEFLECT_RADIUS = 8.5,
 ADDITIONAL_WINDOW = 0.110,
 RES_PER_PARRY = 0.225,
 RES_CAP_STUDS = 32,
-RES_HOLD_TIME = 1.2,
-RES_DECAY_TIME = 4.0,
 HITBOX_OWN_WINDOW = 0.5,
 HITBOX_PROXIMITY = 12,
 HITBOX_GAP = 0.4,
@@ -100,7 +98,6 @@ ParryState.fired = false
 ParryState.firedAt = 0
 Resilience.lastFireBall = nil
 Resilience.lastFireAt = 0
-Runtime.parryRadius = 0
 end
 local function samplePing()
 local ok, ping = pcall(function()
@@ -138,8 +135,8 @@ Tuning.RES_CAP_STUDS
 Runtime.resilienceBonusAt = time
 return Runtime.resilienceBonus
 end
-local function tickResilience(time)
-return
+local function tickResilience(_time)
+-- resi é permanente até morrer; não decai, não hold, não reseta por ciclo
 end
 local function resetResilience()
 Resilience.stack = 0
@@ -464,15 +461,11 @@ end
 -- lifecycle
 local function resetState()
 clearRuntimeCycle()
-Resilience.lastFireBall = nil
-Resilience.lastFireAt = 0
 Runtime.teleportLockUntil = 0
 Runtime.lastTarget = -1
 Runtime.pingTimer = 0
 Runtime.minPing = nil
 Runtime.pingOneWay = 0.030
-Runtime.resilienceBonusAt = -1
-Runtime.parryRadius = 0
 Runtime.additionalWindow = Tuning.ADDITIONAL_WINDOW
 Runtime.stationary = false
 Runtime.bound = false
