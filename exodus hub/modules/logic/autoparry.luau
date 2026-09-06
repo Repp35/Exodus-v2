@@ -20,6 +20,21 @@ HITBOX_GAP = 0.4,
 }
 local PING_SAMPLE_INTERVAL = 1.5
 
+-- phase constants (evita alocação de string em setPhase)
+local PHASE_DETACHED = 1
+local PHASE_WAITING = 2
+local PHASE_COOLDOWN = 3
+local PHASE_ARMED = 4
+local PHASE_FIRED = 5
+local PHASE_STRINGS = {
+	[PHASE_DETACHED] = "detached",
+	[PHASE_WAITING] = "waiting",
+	[PHASE_COOLDOWN] = "cooldown",
+	[PHASE_ARMED] = "armed",
+	[PHASE_FIRED] = "fired",
+}
+local phaseString = PHASE_STRINGS[PHASE_DETACHED] -- string inicial
+
 -- shared hitbox hook
 local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
 local HitboxState = type(namespace.AutoParryHitbox) == "table"
@@ -60,7 +75,7 @@ resilienceBonusAt = -1,
 parryRadius = 0,
 additionalWindow = Tuning.ADDITIONAL_WINDOW,
 stationary = false,
-phase = "detached",
+phase = PHASE_DETACHED,
 bound = false,
 }
 local Stats = game:GetService("Stats")
@@ -75,8 +90,9 @@ return
 end
 local previous = Runtime.phase
 Runtime.phase = phase
+phaseString = PHASE_STRINGS[phase] or "detached"
 if Utils and type(Utils.recordTransition) == "function" then
-Utils.recordTransition("AutoParry", previous, phase, reason)
+Utils.recordTransition("AutoParry", PHASE_STRINGS[previous] or "detached", phaseString, reason)
 end
 end
 local function clearArmedState()
@@ -207,10 +223,10 @@ if not Remote.fireParry(1) then
 if Utils and type(Utils.recordError) == "function" then
 Utils.recordError("AutoParry", "Remote.fireParry falhou")
 end
-setPhase("waiting", "remote_failed")
+setPhase(PHASE_WAITING, "remote_failed")
 return false
 end
-setPhase("fired", "parry_requested")
+setPhase(PHASE_FIRED, "parry_requested")
 local ball = GameInfo.getBall()
 if ball and ball.Parent then
 Resilience.lastFireBall = ball
@@ -300,7 +316,7 @@ local function bindCharacter(character)
 Runtime.generation = Runtime.generation + 1
 local generation = Runtime.generation
 Runtime.bound = false
-setPhase("detached", "rebind_start")
+setPhase(PHASE_DETACHED, "rebind_start")
 disconnectConnections()
 clearRuntimeCycle()
 if not (character and character.Parent) then
@@ -321,7 +337,6 @@ Utils.trackCharacter(deathConnection)
 end
 local getConfig = Utils.getConfig
 local isSpamActive = Utils.isSpamActive
-local isFiniteNumber = Utils.isFiniteNumber
 local heartbeatConnection = Utils.getRunService().Heartbeat:Connect(function(dt)
 if generation ~= Runtime.generation then
 return
@@ -332,21 +347,21 @@ end
 local config = getConfig()
 if config.AutoParry ~= true then
 clearRuntimeCycle()
-setPhase("waiting", "disabled_or_locked")
+setPhase(PHASE_WAITING, "disabled_or_locked")
 return
 end
 local timeNow = now()
 if timeNow < Runtime.teleportLockUntil then
 clearRuntimeCycle()
-setPhase("waiting", "disabled_or_locked")
+setPhase(PHASE_WAITING, "disabled_or_locked")
 return
 end
 if isSpamActive() then
 clearRuntimeCycle()
-setPhase("waiting", "spam_active")
+setPhase(PHASE_WAITING, "spam_active")
 return
 end
-local frameDelta = isFiniteNumber(dt) and math.max(0, dt) or 0
+local frameDelta = dt > 0 and dt or 0
 tickResilience(timeNow)
 Runtime.pingTimer = Runtime.pingTimer + frameDelta
 if Runtime.pingTimer >= PING_SAMPLE_INTERVAL then
@@ -355,7 +370,7 @@ samplePing()
 end
 local snapshot = GameInfo.getSnapshot(Runtime.lastTarget, timeNow)
 if not GameInfo.isSnapshotValid(snapshot, timeNow) then
-setPhase("waiting", "snapshot_invalid")
+setPhase(PHASE_WAITING, "snapshot_invalid")
 return
 end
 local ball = snapshot.ball
@@ -365,9 +380,9 @@ local sameBall = ball == ParryState.armedBall
 local validBall = ball and ball.Parent and sameBall
 if not (validBall and snapshot.targeted == true) then
 clearArmedState()
-setPhase("waiting", "armed_context_invalid")
+setPhase(PHASE_WAITING, "armed_context_invalid")
 elseif deflectCooldown > 0 then
-setPhase("cooldown", "deflect_cooldown")
+setPhase(PHASE_COOLDOWN, "deflect_cooldown")
 return
 else
 local canRetry = not ParryState.fired
@@ -385,19 +400,21 @@ return
 end
 end
 if not (ball and ball.Parent) or snapshot.targeted ~= true then
-setPhase("waiting", "ball_or_target_invalid")
+setPhase(PHASE_WAITING, "ball_or_target_invalid")
 return
 end
 local speed = snapshot.speed
 if speed < Tuning.MIN_BALL_SPEED then
-setPhase("waiting", "ball_too_slow")
+setPhase(PHASE_WAITING, "ball_too_slow")
 return
 end
 local position = snapshot.position
 if not position then
-setPhase("waiting", "position_unavailable")
+setPhase(PHASE_WAITING, "position_unavailable")
 return
 end
+-- cacheia pingOneWay (1 chamada em vez de 2)
+local cachedPing = getPingOneWay()
 local parryRadius, detectionRadius = computeParryRadius(
 speed,
 timeNow,
@@ -407,35 +424,35 @@ Runtime.parryRadius = detectionRadius
 local offset = root.Position - position
 local distanceSquared = offset:Dot(offset)
 if distanceSquared > detectionRadius * detectionRadius then
-setPhase("waiting", "outside_detection_radius")
+setPhase(PHASE_WAITING, "outside_detection_radius")
 return
 end
 local distance = math.sqrt(distanceSquared)
 local impactTime = math.max(0, (distance - parryRadius) / speed)
-local earlyWindow = Tuning.ADDITIONAL_WINDOW + getPingOneWay()
+local earlyWindow = Tuning.ADDITIONAL_WINDOW + cachedPing
 if impactTime > earlyWindow then
-setPhase("waiting", "outside_early_window")
+setPhase(PHASE_WAITING, "outside_early_window")
 return
 end
 if deflectCooldown > 0 then
 ParryState.armed = true
 ParryState.armedBall = ball
 ParryState.armedAt = timeNow
-setPhase("armed", "awaiting_deflect_cooldown")
+setPhase(PHASE_ARMED, "awaiting_deflect_cooldown")
 return
 end
 if ParryState.fired then
 local elapsed = timeNow - ParryState.firedAt
 if elapsed < Tuning.FIRE_LOCK_TIME then
-setPhase("cooldown", "fire_lock")
+setPhase(PHASE_COOLDOWN, "fire_lock")
 return
 end
 if elapsed < Tuning.FIRE_TIMEOUT then
-setPhase("cooldown", "fire_timeout")
+setPhase(PHASE_COOLDOWN, "fire_timeout")
 return
 end
 ParryState.fired = false
-setPhase("waiting", "fire_retry_window")
+setPhase(PHASE_WAITING, "fire_retry_window")
 end
 if requestParry() then
 ParryState.fired = true
@@ -454,7 +471,7 @@ end)
 Runtime.connections[#Runtime.connections + 1] = ancestryConnection
 Utils.trackCharacter(ancestryConnection)
 Runtime.bound = true
-setPhase("waiting", "character_bound")
+setPhase(PHASE_WAITING, "character_bound")
 return true
 end
 
@@ -469,7 +486,7 @@ Runtime.pingOneWay = 0.030
 Runtime.additionalWindow = Tuning.ADDITIONAL_WINDOW
 Runtime.stationary = false
 Runtime.bound = false
-setPhase("detached", "reset")
+setPhase(PHASE_DETACHED, "reset")
 end
 
 -- setup
@@ -543,7 +560,7 @@ end
 function AutoParry.getStatus()
 return {
 schema = Utils.apiVersion(),
-phase = Runtime.phase,
+phase = phaseString,
 bound = Runtime.bound == true,
 armed = ParryState.armed == true,
 fired = ParryState.fired == true,
