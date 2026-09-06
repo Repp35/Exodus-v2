@@ -22,15 +22,11 @@ local T = {
 	ACT_DEACT_LOCK_TIME = 0.050,
 
 	-- deactivation
-	DEACT_TRAVEL_RADIUS_SCALE = 30,
-	DEACT_TRAVEL_MAX_LO = 0.090,
-	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
+	DEACT_GEO_FACTOR_LO = 1.15,
+	DEACT_GEO_FACTOR_HI = 0.90,
+	DEACT_GEO_MIN_TTI = 0.090,
 	DEACT_TRAVEL_SPD_LO = 60,
 	DEACT_TRAVEL_SPD_HI = 600,
-	DEACT_TRAVEL_RADIUS_FACTOR = 1.10,
-	DEACT_RADIUS_FACTOR = 1.65,
-	DEACT_RADIUS_EXTRA_WINDOW = 0.090,
-	DEACT_OUT_WINDOW = 0.100,
 
 	-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
@@ -52,8 +48,6 @@ local R = {
 
 	lostMeAt = 0,
 	returnPending = false,
-	outSince = 0,
-	travelSince = 0,
 	wasMeTarget = nil,
 
 	lastEvalAt = 0,
@@ -113,6 +107,7 @@ end
 
 local function lerp(speed, lo, hi, speedLo, speedHi)
 	speed = tonumber(speed) or 0
+
 	if speedHi <= speedLo then
 		return lo
 	end
@@ -145,14 +140,6 @@ local function resetTargetState()
 
 	R.lostMeAt = 0
 	R.returnPending = false
-
-	R.outSince = 0
-	R.travelSince = 0
-end
-
-local function resetDeactivationState()
-	R.outSince = 0
-	R.travelSince = 0
 end
 
 local function setPhase(phase, reason)
@@ -182,7 +169,6 @@ local function setActive(active, reason, snapshot)
 	end
 
 	R.active = active
-	resetDeactivationState()
 
 	local t = now()
 
@@ -421,65 +407,30 @@ local function shouldDeactivate(t, snapshot)
 		return false
 	end
 
-	local speed = R.lastSpeed
+	local speed = math.max(R.lastSpeed, 0)
 	local distance = (root - position).Magnitude
 
-	-- travel-based deactivation
-	if distance > radius and speed > 0 then
-		local travelRadius = radius * T.DEACT_TRAVEL_RADIUS_SCALE
-		local baseMax = lerp(
-			speed,
-			T.DEACT_TRAVEL_MAX_LO,
-			T.DEACT_TRAVEL_MAX_LO
-				* T.DEACT_TRAVEL_MAX_MIN_FACTOR,
-			T.DEACT_TRAVEL_SPD_LO,
-			T.DEACT_TRAVEL_SPD_HI
-		)
-
-		local radiusTime =
-			(travelRadius * T.DEACT_TRAVEL_RADIUS_FACTOR) / speed
-
-		local radiusMax = lerp(
-			speed,
-			radiusTime,
-			radiusTime * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
-			T.DEACT_TRAVEL_SPD_LO,
-			T.DEACT_TRAVEL_SPD_HI
-		)
-
-		local travelMax = math.max(baseMax, radiusMax)
-
-		if distance / speed > travelMax then
-			R.lastGate = "deact_travel"
-			return true
-		end
+	if speed <= 0 then
+		R.lastGate = "deact_none"
+		return false
 	end
 
-	if distance <= radius * 0.85 then
-		R.travelSince = 0
-	end
+	local factor = lerp(
+		speed,
+		T.DEACT_GEO_FACTOR_LO,
+		T.DEACT_GEO_FACTOR_HI,
+		T.DEACT_TRAVEL_SPD_LO,
+		T.DEACT_TRAVEL_SPD_HI
+	)
 
-	-- hard radius
-	if distance > radius * T.DEACT_RADIUS_FACTOR then
-		R.lastGate = "deact_radius_factor"
+	local threshold = math.max(
+		radius * factor,
+		speed * T.DEACT_GEO_MIN_TTI
+	)
+
+	if distance > threshold then
+		R.lastGate = "deact_geo"
 		return true
-	end
-
-	-- extra radius + hold window
-	local deactOutRadius =
-		radius + speed * T.DEACT_RADIUS_EXTRA_WINDOW
-
-	if distance > deactOutRadius then
-		if R.outSince <= 0 then
-			R.outSince = t
-		end
-
-		if t - R.outSince >= T.DEACT_OUT_WINDOW then
-			R.lastGate = "deact_out_window"
-			return true
-		end
-	else
-		R.outSince = 0
 	end
 
 	R.lastGate = "deact_none"
