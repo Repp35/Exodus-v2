@@ -64,8 +64,6 @@ local R = {
 	lastGate = "none",
 	-- entry proximity
 	entryAt = 0,
-	entryDistance = 0,
-	entryRadiusAt = 0,
 }
 
 -- helpers
@@ -136,10 +134,11 @@ local function getParryRadiusPure(speed)
 	if detection <= 0 then
 		return 0
 	end
-	local buffer = speed * (
-		(getPingOneWay() > 0 and getPingOneWay() or T.AP_PING_FALLBACK)
-		+ T.AP_ADDITIONAL_WINDOW
-	)
+	local ping = getPingOneWay()
+	if ping <= 0 then
+		ping = T.AP_PING_FALLBACK
+	end
+	local buffer = speed * (ping + T.AP_ADDITIONAL_WINDOW)
 	return math.max(detection - buffer, 0)
 end
 
@@ -158,8 +157,6 @@ local function resetTargetState()
 	R.clashPartnerId = -1
 	R.wasMeTarget = nil
 	R.entryAt = 0
-	R.entryDistance = 0
-	R.entryRadiusAt = 0
 	clearReturnState()
 	resetDeactivationState()
 end
@@ -328,12 +325,13 @@ local function shouldActivate(snapshot)
 	end
 
 	local distance = (rootPos - position).Magnitude
+	local now = getNow()
 
 	-- GATE 1: entry proximity (principal, instantâneo)
 	-- válido por ENTRY_WINDOW após virar target; ativo se bola já estava dentro do ratio
-	if R.entryAt > 0 then
-		local now = getNow()
-		local elapsed = now - R.entryAt
+	local entryAt = R.entryAt
+	if entryAt > 0 then
+		local elapsed = now - entryAt
 		if elapsed <= T.ENTRY_WINDOW and distance <= parryRadius * T.ENTRY_RATIO then
 			R.lastGate = "entry_proximity"
 			return true
@@ -345,7 +343,8 @@ local function shouldActivate(snapshot)
 
 	-- GATE 2: return (secundário, safety)
 	-- válido se bola voltou a ser minha dentro da janela de tempo
-	if tryReturnActivate(snapshot) then
+	if R.returnPending and tryReturnActivate(snapshot) then
+		-- ainda dentro da janela de tempo, ativa direto
 		R.lastGate = "return"
 		return true
 	end
@@ -354,8 +353,8 @@ local function shouldActivate(snapshot)
 	return false
 end
 
-local function canReactivate()
-	if getNow() < R.reactivateBlockedUntil then
+local function canReactivate(now)
+	if now < R.reactivateBlockedUntil then
 		R.lastGate = "reactivate_cooldown"
 		return false
 	end
@@ -363,7 +362,16 @@ local function canReactivate()
 end
 
 local function tryReturnActivate(snapshot)
-	if not R.returnPending or not canReactivate() then
+	-- short-circuit: se não tem return pendente nem tenta
+	if not R.returnPending then
+		return false
+	end
+
+	local now = getNow()
+
+	-- cooldown check
+	if now < R.reactivateBlockedUntil then
+		R.lastGate = "reactivate_cooldown"
 		return false
 	end
 
@@ -374,7 +382,6 @@ local function tryReturnActivate(snapshot)
 		return false
 	end
 
-	local now = getNow()
 	local elapsed = now - lostAt
 	local window = getReturnWindow(R.lastSpeed)
 
@@ -384,7 +391,9 @@ local function tryReturnActivate(snapshot)
 		return false
 	end
 
-	return shouldActivate(snapshot)
+	-- passou a janela de tempo, mas ainda precisa checar proximidade no shouldActivate
+	-- (chamado de lá como gate, não recursivo)
+	return true
 end
 
 -- deactivation
@@ -729,19 +738,14 @@ function AutoClash.onBallSync(data)
 		end
 
 		-- entry proximity: arma o gate no instante que viro target
-		R.entryAt = getNow()
-		local rootPos = getRootPosition()
-		local ballPos = data.RealPosition
-		if rootPos and typeof(ballPos) == "Vector3" then
-			R.entryDistance = (rootPos - ballPos).Magnitude
-			R.entryRadiusAt = getParryRadiusPure(R.lastSpeed)
-		end
+		local nowSync = getNow()
+		R.entryAt = nowSync
+		-- (entryDistance/entryRadiusAt removidos: o shouldActivate usa distance+radius do snapshot atual)
 
 		local lostAt = R.lostMeAt
 
 		if lostAt > 0 then
-			local now = getNow()
-			local elapsed = now - lostAt
+			local elapsed = nowSync - lostAt
 			local window = getReturnWindow(R.lastSpeed)
 
 			if elapsed >= 0 and elapsed <= window then
