@@ -8,7 +8,7 @@ local Tuning = {
         -- radius
         DEFLECT_RADIUS = 8.5,
         DETECTION_RADIUS_FACTOR = 1.50,
-        PARRY_WINDOW = 0.10,
+        PARRY_WINDOW = 0.15,
         MIN_BALL_SPEED = 6,
         RES_PER_PARRY = 0.225,
         RES_CAP_STUDS = 32,
