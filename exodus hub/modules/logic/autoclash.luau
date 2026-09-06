@@ -448,18 +448,9 @@ local function shouldDeactivate(t, snapshot)
 
 		local travelMax = math.max(baseMax, radiusMax)
 
-		if distance / speed
-			> travelMax * T.DEACT_TRAVEL_HYSTERESIS
-		then
-			if R.travelSince <= 0 then
-				R.travelSince = t
-			end
-
-			if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
-				R.lastGate = "deact_travel"
-				R.travelSince = 0
-				return true
-			end
+		if distance / speed > travelMax then
+			R.lastGate = "deact_travel"
+			return true
 		end
 	end
 
