@@ -113,12 +113,13 @@ local function snapshotPosition(snapshot)
 end
 
 local function lerp(speed, lo, hi, speedLo, speedHi)
+	speed = tonumber(speed) or 0
 	if speedHi <= speedLo then
 		return lo
 	end
 
 	local alpha = math.clamp(
-		(tonumber(speed) or 0 - speedLo) / (speedHi - speedLo),
+		(speed - speedLo) / (speedHi - speedLo),
 		0,
 		1
 	)
