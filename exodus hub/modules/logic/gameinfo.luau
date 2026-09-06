@@ -25,9 +25,9 @@ local State = {
     positionAt = 0,
     deflectDirection = Vector3.new(0, 0, 0),
 }
-local deflectAbility
-local abilityAttempted = false
-local abilityCheckedAt = 0
+-- cache de character/root (evita lookup toda hora, atualiza por ancestry)
+local cachedCharacter = nil
+local cachedRoot = nil
 local function clearSyncState()
     State.speed = 0
     State.speedAt = 0
@@ -45,9 +45,8 @@ local function resetState()
     State.ball = nil
     State.ballAt = 0
     clearSyncState()
-    deflectAbility = nil
-    abilityAttempted = false
-    abilityCheckedAt = 0
+    cachedCharacter = nil
+    cachedRoot = nil
 end
 
 -- ball
@@ -75,29 +74,31 @@ local function clearBall(ball)
 end
 local function getBall()
     local time = Utils.now()
-    if isBall(State.ball) and time - State.ballAt < BALL_CACHE_TTL then
-        return State.ball
+    local cached = State.ball
+    if cached and cached.Parent ~= nil and time - State.ballAt < BALL_CACHE_TTL then
+        return cached
     end
-    local ball = Workspace:FindFirstChild("GameBall", true)
+    -- checa rápido (não recursivo) antes de pagar o preço do recursivo
+    local ball = Workspace:FindFirstChild("GameBall")
+    if not ball then
+        -- fallback recursivo só se não achou direto (1x por spawn)
+        ball = Workspace:FindFirstChild("GameBall", true)
+    end
     if isBall(ball) then
         setBall(ball)
         return ball
     end
     State.ball = nil
     State.ballAt = time
-    clearSyncState()
     return nil
 end
 
 -- motion
+local ZERO_VELOCITY = Vector3.new(0, 0, 0)
 local function getAssemblyVelocity(ball)
-    local ok, velocity = pcall(function()
-        return ball.AssemblyLinearVelocity
-    end)
-    if ok and typeof(velocity) == "Vector3" then
-        return velocity
-    end
-    return Vector3.new(0, 0, 0)
+    -- sem pcall: BasePart garante AssemblyLinearVelocity
+    local velocity = ball.AssemblyLinearVelocity
+    return typeof(velocity) == "Vector3" and velocity or ZERO_VELOCITY
 end
 local function resolveTime(time)
     return Utils.isFiniteNumber(time) and time or Utils.now()
@@ -125,7 +126,9 @@ local function ballPosition(ball, time, velocity)
         and positionAge >= 0
         and positionAge < SYNC_FRESH_TIME
     then
-        velocity = velocity or getAssemblyVelocity(ball)
+        if not velocity then
+            velocity = getAssemblyVelocity(ball)
+        end
         local direction = State.deflectDirection
         if direction.Magnitude <= 0.1 and velocity.Magnitude > 1 then
             direction = velocity
@@ -135,13 +138,7 @@ local function ballPosition(ball, time, velocity)
         end
         return State.realPosition
     end
-    local ok, position = pcall(function()
-        return ball.Position
-    end)
-    if ok and typeof(position) == "Vector3" then
-        return position
-    end
-    return nil
+    return ball.Position
 end
 
 -- target
@@ -158,75 +155,80 @@ end
 local function getTargetAttribute()
     return normalizeTargetId(Workspace:GetAttribute("GameBallTarget"))
 end
-local function isTargeted(lastTarget)
-    local player = Players.LocalPlayer
-    if not player then
-        return false
+local function isTargeted(lastTarget, userId)
+    -- short-circuit se State.target já bate (caso comum)
+    if State.target == userId then
+        return true
     end
-    local userId = player.UserId
-    return State.target == userId
-        or normalizeTargetId(lastTarget) == userId
-        or getTargetAttribute() == userId
+    if normalizeTargetId(lastTarget) == userId then
+        return true
+    end
+    return getTargetAttribute() == userId
 end
 local function getSnapshot(lastTarget, time)
     time = resolveTime(time)
     local ball = getBall()
     local ballValid = ball ~= nil and ball.Parent ~= nil
-    local rawVelocity = ballValid and getAssemblyVelocity(ball) or nil
-    local rawSpeed = ballSpeed(ball, time, rawVelocity)
-    local rawPosition = ballPosition(ball, time, rawVelocity)
-    local validPosition = ballValid and rawPosition ~= nil
+    local rawVelocity
+    local rawSpeed = 0
+    local rawPosition
+    if ballValid then
+        rawVelocity = getAssemblyVelocity(ball)
+        rawSpeed = ballSpeed(ball, time, rawVelocity)
+        rawPosition = ballPosition(ball, time, rawVelocity)
+    end
+    local validPosition = rawPosition ~= nil
     local rawSyncAge = State.lastSyncAt > 0
         and math.max(0, time - State.lastSyncAt)
         or nil
     local syncFresh = rawSyncAge ~= nil and rawSyncAge <= SYNC_FRESH_TIME
     local syncValid = syncFresh and ballValid
-    local syncAt = syncFresh and State.lastSyncAt or nil
-    local syncAge = syncFresh and rawSyncAge or nil
-    local position = validPosition and rawPosition or nil
-    local velocity = ballValid and rawVelocity or nil
-    local speed = ballValid and rawSpeed or nil
     local normalizedLastTarget = normalizeTargetId(lastTarget)
-    local targetId = syncValid
-        and State.targetAt == State.lastSyncAt
-        and State.target
-        or nil
-    local targeted = syncValid
-        and targetId ~= nil
-        and isTargeted(lastTarget)
-        or false
+    local targetId
+    if syncValid and State.targetAt == State.lastSyncAt then
+        targetId = State.target
+    end
+    local player = Players.LocalPlayer
+    local userId = player and player.UserId or -1
+    local targeted = syncValid and targetId ~= nil and isTargeted(lastTarget, userId) or false
+
+    -- approachingSpeed só calcula se tem player e root (cacheados)
     local approachingSpeed
-    if position and velocity then
-        local player = Players.LocalPlayer
-        local character = player and player.Character
-        local root = character and character:FindFirstChild("HumanoidRootPart")
+    if rawPosition and rawVelocity and player then
+        local root = cachedRoot
+        if not root or not root.Parent then
+            local character = player.Character
+            if character then
+                cachedCharacter = character
+                root = character:FindFirstChild("HumanoidRootPart")
+                cachedRoot = root
+            end
+        end
         if root and root.Parent then
-            local ok, playerPosition = pcall(function()
-                return root.Position
-            end)
-            if ok and typeof(playerPosition) == "Vector3" then
-                local direction = playerPosition - position
-                if direction.Magnitude > 0 then
-                    approachingSpeed = velocity:Dot(direction.Unit)
-                end
+            local playerPosition = root.Position
+            local direction = playerPosition - rawPosition
+            local dirMag = direction.Magnitude
+            if dirMag > 0 then
+                approachingSpeed = rawVelocity:Dot(direction / dirMag)
             end
         end
     end
+
     return {
         schema = SNAPSHOT_SCHEMA,
         generatedAt = time,
         valid = ballValid and validPosition,
         ball = ballValid and ball or nil,
         ballValid = ballValid,
-        position = position,
-        velocity = velocity,
-        speed = speed,
+        position = ballValid and rawPosition or nil,
+        velocity = ballValid and rawVelocity or nil,
+        speed = ballValid and rawSpeed or nil,
         approachingSpeed = approachingSpeed,
         targetId = targetId,
         lastTarget = normalizedLastTarget,
         targeted = targeted,
-        syncAt = syncAt,
-        syncAge = syncAge,
+        syncAt = syncFresh and State.lastSyncAt or nil,
+        syncAge = syncFresh and rawSyncAge or nil,
         syncFresh = syncFresh,
         syncValid = syncValid,
     }
@@ -309,10 +311,8 @@ local function getDeflectCooldown()
     if not ability then
         return 0
     end
-    local ok, cooldown = pcall(function()
-        return ability.Cooldown
-    end)
-    if ok and Utils.isFiniteNumber(cooldown) then
+    local cooldown = ability.Cooldown
+    if Utils.isFiniteNumber(cooldown) then
         return math.max(0, cooldown)
     end
     return 0
