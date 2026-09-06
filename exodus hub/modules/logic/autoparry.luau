@@ -620,7 +620,12 @@ function AutoParry.onBallSync(data)
 end
 
 function AutoParry.getParryRadius(speed, time)
-        return computeParryRadius(speed, time)
+        time = Utils.isFiniteNumber(time) and time or now()
+        speed = type(speed) == "number" and speed or 0
+
+        local radius = Tuning.DEFLECT_RADIUS + getResilienceBonus(time)
+        local ping = Runtime.pingOneWay or DEFAULT_PING_ONE_WAY
+        return radius + speed * (Tuning.PARRY_WINDOW + ping)
 end
 
 function AutoParry.getPingOneWay()
