@@ -22,9 +22,10 @@ local T = {
 	ACT_DEACT_LOCK_TIME = 0.050,
 
 	-- deactivation
-	DEACT_GEO_FACTOR_LO = 1.15,
+	DEACT_GEO_FACTOR_LO = 1.05,
 	DEACT_GEO_FACTOR_HI = 0.90,
 	DEACT_GEO_MIN_TTI = 0.090,
+	DEACT_GEO_HOLD = 0.020,
 	DEACT_TRAVEL_SPD_LO = 60,
 	DEACT_TRAVEL_SPD_HI = 600,
 
@@ -53,6 +54,7 @@ local R = {
 	lastEvalAt = 0,
 	reactivateBlockedUntil = 0,
 	activationDeactLockedUntil = 0,
+	geoSince = 0,
 
 	connections = {},
 	lastGate = "none",
@@ -165,10 +167,12 @@ local function setActive(active, reason, snapshot)
 	active = active == true
 
 	if R.active == active then
+		R.geoSince = 0
 		return
 	end
 
 	R.active = active
+	R.geoSince = 0
 
 	local t = now()
 
@@ -246,6 +250,7 @@ local function resetRuntime(reason)
 	R.lastEvalAt = 0
 	R.reactivateBlockedUntil = 0
 	R.activationDeactLockedUntil = 0
+	R.geoSince = 0
 
 	resetTargetState()
 
@@ -391,6 +396,7 @@ end
 local function shouldDeactivate(t, snapshot)
 	if t < R.activationDeactLockedUntil then
 		R.lastGate = "deact_activation_lock"
+		R.geoSince = 0
 		return false
 	end
 
@@ -398,12 +404,14 @@ local function shouldDeactivate(t, snapshot)
 	local position = snapshotPosition(snapshot)
 
 	if not root or not position then
+		R.geoSince = 0
 		return false
 	end
 
 	local radius = R.parryRadius
 
 	if radius <= 0 then
+		R.geoSince = 0
 		return false
 	end
 
@@ -411,6 +419,7 @@ local function shouldDeactivate(t, snapshot)
 	local distance = (root - position).Magnitude
 
 	if speed <= 0 then
+		R.geoSince = 0
 		R.lastGate = "deact_none"
 		return false
 	end
@@ -429,8 +438,17 @@ local function shouldDeactivate(t, snapshot)
 	)
 
 	if distance > threshold then
-		R.lastGate = "deact_geo"
-		return true
+		if R.geoSince <= 0 then
+			R.geoSince = t
+		end
+
+		if t - R.geoSince >= T.DEACT_GEO_HOLD then
+			R.lastGate = "deact_geo"
+			R.geoSince = 0
+			return true
+		end
+	else
+		R.geoSince = 0
 	end
 
 	R.lastGate = "deact_none"
@@ -667,6 +685,7 @@ function AutoClash.setup(deps)
 	R.lastEvalAt = 0
 	R.reactivateBlockedUntil = 0
 	R.activationDeactLockedUntil = 0
+	R.geoSince = 0
 	R.connections = {}
 
 	resetTargetState()
