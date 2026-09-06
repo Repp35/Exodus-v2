@@ -22,13 +22,12 @@ local T = {
 	ACT_DEACT_LOCK_TIME = 0.050,
 
 	-- deactivation
-	DEACT_TRAVEL_MAX_LO = 0.090,
+	DEACT_TRAVEL_RADIUS_SCALE = 0.60,
+	DEACT_TRAVEL_MAX_LO = 0.130,
 	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
 	DEACT_TRAVEL_SPD_LO = 60,
 	DEACT_TRAVEL_SPD_HI = 600,
 	DEACT_TRAVEL_RADIUS_FACTOR = 1.10,
-	DEACT_TRAVEL_HOLD = 0.015,
-	DEACT_TRAVEL_HYSTERESIS = 1.20,
 	DEACT_RADIUS_FACTOR = 1.65,
 	DEACT_RADIUS_EXTRA_WINDOW = 0.090,
 	DEACT_OUT_WINDOW = 0.100,
@@ -427,6 +426,7 @@ local function shouldDeactivate(t, snapshot)
 
 	-- travel-based deactivation
 	if distance > radius and speed > 0 then
+		local travelRadius = radius * T.DEACT_TRAVEL_RADIUS_SCALE
 		local baseMax = lerp(
 			speed,
 			T.DEACT_TRAVEL_MAX_LO,
@@ -437,7 +437,7 @@ local function shouldDeactivate(t, snapshot)
 		)
 
 		local radiusTime =
-			(radius * T.DEACT_TRAVEL_RADIUS_FACTOR) / speed
+			(travelRadius * T.DEACT_TRAVEL_RADIUS_FACTOR) / speed
 
 		local radiusMax = lerp(
 			speed,
