@@ -22,12 +22,15 @@ local T = {
 	ACT_DEACT_LOCK_TIME = 0.050,
 
 	-- deactivation
-	DEACT_GEO_FACTOR_LO = 1.05,
-	DEACT_GEO_FACTOR_HI = 0.90,
-	DEACT_GEO_MIN_TTI = 0.090,
-	DEACT_GEO_HOLD = 0.020,
+	DEACT_TRAVEL_RADIUS_SCALE = 30,
+	DEACT_TRAVEL_MAX_LO = 0.090,
+	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
 	DEACT_TRAVEL_SPD_LO = 60,
 	DEACT_TRAVEL_SPD_HI = 600,
+	DEACT_TRAVEL_RADIUS_FACTOR = 1.10,
+
+	DEACT_DIRECTION_MAX_LO = 0.130,
+	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 
 	-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
@@ -49,12 +52,14 @@ local R = {
 
 	lostMeAt = 0,
 	returnPending = false,
+	outSince = 0,
+	travelSince = 0,
 	wasMeTarget = nil,
+	lastDirectionSwitchAt = 0,
 
 	lastEvalAt = 0,
 	reactivateBlockedUntil = 0,
 	activationDeactLockedUntil = 0,
-	geoSince = 0,
 
 	connections = {},
 	lastGate = "none",
@@ -142,6 +147,15 @@ local function resetTargetState()
 
 	R.lostMeAt = 0
 	R.returnPending = false
+
+	R.outSince = 0
+	R.travelSince = 0
+	R.lastDirectionSwitchAt = 0
+end
+
+local function resetDeactivationState()
+	R.outSince = 0
+	R.travelSince = 0
 end
 
 local function setPhase(phase, reason)
@@ -167,16 +181,18 @@ local function setActive(active, reason, snapshot)
 	active = active == true
 
 	if R.active == active then
-		R.geoSince = 0
 		return
 	end
 
 	R.active = active
-	R.geoSince = 0
+	resetDeactivationState()
 
 	local t = now()
 
 	if active then
+		-- reset direction timer whenever Auto Clash activates
+		R.lastDirectionSwitchAt = 0
+
 		if R.clashPartnerId == -1
 			and R.lastTarget ~= R.localUserId
 		then
@@ -250,7 +266,7 @@ local function resetRuntime(reason)
 	R.lastEvalAt = 0
 	R.reactivateBlockedUntil = 0
 	R.activationDeactLockedUntil = 0
-	R.geoSince = 0
+	R.lastDirectionSwitchAt = 0
 
 	resetTargetState()
 
@@ -394,61 +410,73 @@ end
 
 -- deactivation
 local function shouldDeactivate(t, snapshot)
-	if t < R.activationDeactLockedUntil then
-		R.lastGate = "deact_activation_lock"
-		R.geoSince = 0
-		return false
-	end
-
 	local root = rootPosition()
 	local position = snapshotPosition(snapshot)
 
 	if not root or not position then
-		R.geoSince = 0
 		return false
 	end
 
 	local radius = R.parryRadius
 
 	if radius <= 0 then
-		R.geoSince = 0
 		return false
 	end
 
-	local speed = math.max(R.lastSpeed, 0)
+	local speed = R.lastSpeed
 	local distance = (root - position).Magnitude
 
-	if speed <= 0 then
-		R.geoSince = 0
-		R.lastGate = "deact_none"
-		return false
+	-- travel-based deactivation
+	if distance > radius and speed > 0 then
+		local travelRadius =
+			radius * T.DEACT_TRAVEL_RADIUS_SCALE
+
+		local baseMax = lerp(
+			speed,
+			T.DEACT_TRAVEL_MAX_LO,
+			T.DEACT_TRAVEL_MAX_LO
+				* T.DEACT_TRAVEL_MAX_MIN_FACTOR,
+			T.DEACT_TRAVEL_SPD_LO,
+			T.DEACT_TRAVEL_SPD_HI
+		)
+
+		local radiusTime =
+			(travelRadius * T.DEACT_TRAVEL_RADIUS_FACTOR) / speed
+
+		local radiusMax = lerp(
+			speed,
+			radiusTime,
+			radiusTime * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
+			T.DEACT_TRAVEL_SPD_LO,
+			T.DEACT_TRAVEL_SPD_HI
+		)
+
+		local travelMax = math.max(
+			baseMax,
+			radiusMax
+		)
+
+		if distance / speed > travelMax then
+			R.lastGate = "deact_travel"
+			return true
+		end
 	end
 
-	local factor = lerp(
+	-- direction-based deactivation
+	local directionMax = lerp(
 		speed,
-		T.DEACT_GEO_FACTOR_LO,
-		T.DEACT_GEO_FACTOR_HI,
+		T.DEACT_DIRECTION_MAX_LO,
+		T.DEACT_DIRECTION_MAX_LO
+			* T.DEACT_DIRECTION_MAX_MIN_FACTOR,
 		T.DEACT_TRAVEL_SPD_LO,
 		T.DEACT_TRAVEL_SPD_HI
 	)
 
-	local threshold = math.max(
-		radius * factor,
-		speed * T.DEACT_GEO_MIN_TTI
-	)
-
-	if distance > threshold then
-		if R.geoSince <= 0 then
-			R.geoSince = t
-		end
-
-		if t - R.geoSince >= T.DEACT_GEO_HOLD then
-			R.lastGate = "deact_geo"
-			R.geoSince = 0
-			return true
-		end
-	else
-		R.geoSince = 0
+	if R.lastDirectionSwitchAt > 0
+		and (t - R.lastDirectionSwitchAt) > directionMax
+	then
+		R.lastGate = "deact_direction"
+		return true
 	end
 
 	R.lastGate = "deact_none"
@@ -685,7 +713,7 @@ function AutoClash.setup(deps)
 	R.lastEvalAt = 0
 	R.reactivateBlockedUntil = 0
 	R.activationDeactLockedUntil = 0
-	R.geoSince = 0
+	R.lastDirectionSwitchAt = 0
 	R.connections = {}
 
 	resetTargetState()
@@ -751,6 +779,11 @@ function AutoClash.onBallSync(data)
 		R.wasMeTarget = isMe
 		R.lastGate = isMe and "initial_me" or "initial_not_me"
 		return
+	end
+
+	-- direction switched
+	if wasMe ~= isMe then
+		R.lastDirectionSwitchAt = now()
 	end
 
 	-- lost target
