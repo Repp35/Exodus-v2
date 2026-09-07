@@ -26,12 +26,13 @@ local T = {
 	OWN_DASH_ESCAPE_DELAY = 0.030,
 	OWN_DASH_TTI_MIN_GAIN = 30,
 	-- own dash aggressive activation (mirror of anti-dash, you are the dasher)
-	OWN_DASH_AGGRESSIVE_TARGET_LOCK = 0.250,
+	OWN_DASH_AGGRESSIVE_TARGET_LOCK = 0.350,
+	OWN_DASH_AGGRESSIVE_DASH_AGE_MIN = 0.080,
 	-- own dash anticipation activation (tight, TTI-sustained)
-	OWN_DASH_PROXIMITY_BASE = 8.5,
-	OWN_DASH_PROXIMITY_SPD_K = 0.05,
-	OWN_DASH_PROXIMITY_HOLD = 0.065,
-	OWN_DASH_PROXIMITY_SAMPLES = 4,
+	OWN_DASH_PROXIMITY_BASE = 10.0,
+	OWN_DASH_PROXIMITY_SPD_K = 0.04,
+	OWN_DASH_PROXIMITY_HOLD = 0.120,
+	OWN_DASH_PROXIMITY_SAMPLES = 6,
 	OWN_DASH_PROXIMITY_DOT = 0.5,
 	-- deactivation: travel
 	DEACT_TRAVEL_RADIUS_SCALE = 1.2,
@@ -41,8 +42,8 @@ local T = {
 	DEACT_TRAVEL_SPD_HI = 600,
 	DEACT_TRAVEL_RADIUS_FACTOR = 1.10,
 	-- deactivation: direction
-	DEACT_DIRECTION_MAX_LO = 0.035,
-	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
+	DEACT_DIRECTION_MAX_LO = 0.250,
+	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.20,
 	DEACT_DIRECTION_MIN_RADIUS_FACTOR = 0.55,
 	-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
@@ -819,6 +820,13 @@ local function tryOwnDashEscapeDeactivate(t)
 		resetDeactivationState()
 		return false
 	end
+	-- do not escape-deactivate while you are the target: in close clash the
+	-- ball TTI floats a lot and would falsely trip the gate
+	if R.wasMeTarget then
+		resetDeactivationState()
+		R.lastGate = "own_dash_escape_targeted_skip"
+		return false
+	end
 	local event = getOwnDashThreat(t)
 	if not event then
 		return false
@@ -993,6 +1001,8 @@ local function tryOwnDashAggressiveActivate(snapshot)
 		R.lastGate = "own_dash_no_recent_switch"
 		return false
 	end
+	-- require at least OWN_DASH_AGGRESSIVE_DASH_AGE_MIN since your dash,
+	-- so you must still be in motion when the switch happens
 	local ownRoot = rootPosition()
 	if not ownRoot then
 		R.lastGate = "own_dash_no_root"
@@ -1017,6 +1027,14 @@ local function tryOwnDashAggressiveActivate(snapshot)
 		end
 		local age = t - ev.detectedAt
 		if age < 0 or age > T.DASH_DETECT_WINDOW then
+			continue
+		end
+		-- require the target switch happened AFTER this dash (not before)
+		if R.lastDirectionSwitchAt <= ev.detectedAt then
+			continue
+		end
+		-- require your dash has been alive long enough to prove sustained approach
+		if age < T.OWN_DASH_AGGRESSIVE_DASH_AGE_MIN then
 			continue
 		end
 		-- find a candidate opponent: prefer clash partner, else last target if it's not me
