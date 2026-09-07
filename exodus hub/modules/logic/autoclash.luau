@@ -1129,6 +1129,3 @@ AutoClash.__contract = {
 
 return AutoClash
 
-A parte principal ficou assim: se o "directionMax" normal fosse "30 ms", com o debuff ele vira 37,5 ms. Se a bola começar a se afastar, o debuff é zerado imediatamente e volta ao "directionMax" normal.
-
-Também deixei o estado "directionDebuff" no "getStatus()" para você conseguir verificar se o debuff está realmente ativo.
