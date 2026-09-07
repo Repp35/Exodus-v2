@@ -20,11 +20,19 @@ local T = {
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.60,
 	ACT_DEACT_LOCK_TIME = 0.050,
 	-- dash-threat gate
-	DASH_DETECT_WINDOW = 0.450,
+	DASH_DETECT_WINDOW = 0.250,
 	DEACT_COOLDOWN = 0.100,
 	-- own dash escape deactivation
 	OWN_DASH_ESCAPE_DELAY = 0.030,
 	OWN_DASH_TTI_MIN_GAIN = 30,
+	-- own dash aggressive activation (mirror of anti-dash, you are the dasher)
+	OWN_DASH_AGGRESSIVE_TARGET_LOCK = 0.250,
+	-- own dash anticipation activation (tight, TTI-sustained)
+	OWN_DASH_PROXIMITY_BASE = 8.5,
+	OWN_DASH_PROXIMITY_SPD_K = 0.05,
+	OWN_DASH_PROXIMITY_HOLD = 0.065,
+	OWN_DASH_PROXIMITY_SAMPLES = 4,
+	OWN_DASH_PROXIMITY_DOT = 0.5,
 	-- deactivation: travel
 	DEACT_TRAVEL_RADIUS_SCALE = 1.2,
 	DEACT_TRAVEL_MAX_LO = 0.090,
@@ -78,6 +86,10 @@ local R = {
 	ownDashEscapeSince = 0,
 	ownDashEscapeDetectedAt = 0,
 	ownDashEscapeInitialTti = nil,
+	-- own dash anticipation proximity state (per opponent)
+	ownDashProximity = {},
+	-- own dash TTI snapshot at register time (per opponent)
+	ownDashTtiAtRegister = {},
 	-- dash detection state
 	dashEvents = {},
 	dashCooldown = {},
@@ -251,6 +263,8 @@ local function setActive(active, reason, snapshot)
 		R.dashGateActive = false
 		R.dashGateTriggerUserId = nil
 		R.deactivateCooldownUntil = 0
+		R.ownDashProximity = {}
+		R.ownDashTtiAtRegister = {}
 	end
 	if Utils and type(Utils.setAutoSpamActive) == "function" then
 		pcall(Utils.setAutoSpamActive, active)
@@ -286,6 +300,8 @@ local function resetRuntime(reason, keepDashDetection)
 	R.dashTrackSnap = {}
 	R.dashVelAnterior = {}
 	R.dashVelFrames = {}
+	R.ownDashProximity = {}
+	R.ownDashTtiAtRegister = {}
 	R.lastGate = "detached"
 	setPhase("detached", reason or "reset")
 end
@@ -708,6 +724,63 @@ local function getOwnDashTti()
 	local distance = (ballPosition - ownPosition).Magnitude
 	return (distance / ballSpeed) * 1000
 end
+local function getPlayerRootByUserId(userId)
+	if not userId or userId == R.localUserId then
+		return nil
+	end
+	local playersService
+	if Utils and type(Utils.getPlayers) == "function" then
+		local ok, service = pcall(Utils.getPlayers)
+		if ok then
+			playersService = service
+		end
+	end
+	if not playersService then
+		return nil
+	end
+	local player = playersService:GetPlayerByUserId(userId)
+	if not player or not player.Parent then
+		return nil
+	end
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or not root.Parent then
+		return nil
+	end
+	return root
+end
+local function getPlayerTtiMs(userId, speedRef)
+	local ownPosition = rootPosition()
+	local targetRoot = getPlayerRootByUserId(userId)
+	if not ownPosition or not targetRoot then
+		return nil
+	end
+	local speed = tonumber(speedRef) or 0
+	if speed < 1 then
+		speed = 1
+	end
+	local distance = (ownPosition - targetRoot.Position).Magnitude
+	return (distance / speed) * 1000
+end
+local function getPlayerDirectionDot(velocity, fromPos, toPos)
+	if typeof(velocity) ~= "Vector3" then
+		return 1
+	end
+	local vMag = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
+	if vMag <= 0 then
+		return 1
+	end
+	local delta = toPos - fromPos
+	local dMag = math.sqrt(delta.X * delta.X + delta.Z * delta.Z)
+	if dMag <= 0 then
+		return 1
+	end
+	local nx = velocity.X / vMag
+	local nz = velocity.Z / vMag
+	local rx = delta.X / dMag
+	local rz = delta.Z / dMag
+	return nx * rx + nz * rz
+end
 local function getOwnDashThreat(t)
 	if not R.active then
 		return nil
@@ -906,6 +979,212 @@ local function tryReturnActivate(snapshot)
 	return shouldActivate(snapshot)
 end
 
+-- own-dash aggressive activation: mirror of anti-dash, you are the dasher
+local function tryOwnDashAggressiveActivate(snapshot)
+	if R.active then
+		return false
+	end
+	local t = now()
+	dashCleanExpired(t)
+	if #R.dashEvents == 0 then
+		return false
+	end
+	if R.lastDirectionSwitchAt <= 0 or t - R.lastDirectionSwitchAt > T.OWN_DASH_AGGRESSIVE_TARGET_LOCK then
+		R.lastGate = "own_dash_no_recent_switch"
+		return false
+	end
+	local ownRoot = rootPosition()
+	if not ownRoot then
+		R.lastGate = "own_dash_no_root"
+		return false
+	end
+	local ownHrp = R.boundRoot
+	local ownVelocity = ownHrp and ownHrp.AssemblyLinearVelocity or Vector3.zero
+	local ownSpeed = math.sqrt(ownVelocity.X * ownVelocity.X + ownVelocity.Z * ownVelocity.Z)
+	if ownSpeed < 1 then
+		ownSpeed = 1
+	end
+	local bestEvent = nil
+	local bestPartnerId = nil
+	local bestScore = -math.huge
+	for i = 1, #R.dashEvents do
+		local ev = R.dashEvents[i]
+		if not ev then
+			continue
+		end
+		if ev.userId ~= R.localUserId then
+			continue
+		end
+		local age = t - ev.detectedAt
+		if age < 0 or age > T.DASH_DETECT_WINDOW then
+			continue
+		end
+		-- find a candidate opponent: prefer clash partner, else last target if it's not me
+		local candidates = {}
+		if R.clashPartnerId and R.clashPartnerId ~= -1 and R.clashPartnerId ~= R.localUserId then
+			candidates[#candidates + 1] = R.clashPartnerId
+		end
+		if R.lastTarget and R.lastTarget ~= -1 and R.lastTarget ~= R.localUserId then
+			local already = false
+			for _, c in ipairs(candidates) do
+				if c == R.lastTarget then
+					already = true
+					break
+				end
+			end
+			if not already then
+				candidates[#candidates + 1] = R.lastTarget
+			end
+		end
+		for _, partnerId in ipairs(candidates) do
+			local targetRoot = getPlayerRootByUserId(partnerId)
+			if not targetRoot then
+				continue
+			end
+			local targetPos = targetRoot.Position
+			local toTarget = targetPos - ownRoot
+			local dist = toTarget.Magnitude
+			if dist <= 0 then
+				continue
+			end
+			local dirDot = getPlayerDirectionDot(ownVelocity, ownRoot, targetPos)
+			if dirDot < T.OWN_DASH_PROXIMITY_DOT then
+				continue
+			end
+			-- TTI at dash register time (approximation: distance at register / own speed now, since own velocity is roughly constant during a dash)
+			-- we don't have the exact targetPos at register time, so we use the candidate's current speed-adjusted TTI vs a snapshot
+			-- snapshot: store tti at register keyed by partnerId, lazily capture on first evaluation
+			local snap = R.ownDashTtiAtRegister[partnerId]
+			if not snap or snap.detectedAt ~= ev.detectedAt then
+				R.ownDashTtiAtRegister[partnerId] = {
+					detectedAt = ev.detectedAt,
+					ttiMs = (dist / ownSpeed) * 1000,
+				}
+				snap = R.ownDashTtiAtRegister[partnerId]
+			end
+			local currentTti = (dist / ownSpeed) * 1000
+			if currentTti >= snap.ttiMs - T.OWN_DASH_TTI_MIN_GAIN then
+				continue
+			end
+			local score = dirDot * 0.5 - age * 0.5
+			if score > bestScore then
+				bestScore = score
+				bestEvent = ev
+				bestPartnerId = partnerId
+			end
+		end
+	end
+	if not bestEvent then
+		R.lastGate = "own_dash_no_match"
+		return false
+	end
+	R.dashGateActive = true
+	R.dashGateTriggerUserId = bestPartnerId
+	R.lastGate = "own_dash_aggressive"
+	return true
+end
+
+-- own-dash anticipation activation: tight, TTI-sustained proximity
+local function tryOwnDashAnticipateActivate(snapshot)
+	if R.active then
+		return false
+	end
+	if not R.wasMeTarget then
+		R.lastGate = "own_dash_anticipate_not_target"
+		return false
+	end
+	local t = now()
+	dashCleanExpired(t)
+	-- candidate opponent: prefer clash partner, else last target if not me
+	local partnerId = nil
+	if R.clashPartnerId and R.clashPartnerId ~= -1 and R.clashPartnerId ~= R.localUserId then
+		partnerId = R.clashPartnerId
+	elseif R.lastTarget and R.lastTarget ~= -1 and R.lastTarget ~= R.localUserId then
+		partnerId = R.lastTarget
+	end
+	if not partnerId then
+		R.lastGate = "own_dash_anticipate_no_partner"
+		return false
+	end
+	local targetRoot = getPlayerRootByUserId(partnerId)
+	local ownRoot = rootPosition()
+	if not targetRoot or not ownRoot then
+		R.lastGate = "own_dash_anticipate_no_root"
+		return false
+	end
+	-- ball must be close
+	local ballPos = snapshotPosition(snapshot)
+	local ballSpeed = math.max(tonumber(snapshot.speed) or R.lastSpeed or 0, 1)
+	if not ballPos then
+		R.lastGate = "own_dash_anticipate_no_ball"
+		return false
+	end
+	local ballArrival = (ownRoot - ballPos).Magnitude / ballSpeed
+	if ballArrival > T.DASH_DETECT_WINDOW then
+		R.lastGate = "own_dash_anticipate_ball_far"
+		return false
+	end
+	-- you must have an active recent own-dash event (proves intent)
+	local hasOwnDash = false
+	for i = 1, #R.dashEvents do
+		local ev = R.dashEvents[i]
+		if ev and ev.userId == R.localUserId then
+			local age = t - ev.detectedAt
+			if age >= 0 and age <= T.DASH_DETECT_WINDOW then
+				hasOwnDash = true
+				break
+			end
+		end
+	end
+	if not hasOwnDash then
+		R.lastGate = "own_dash_anticipate_no_event"
+		return false
+	end
+	-- direction dot from own velocity to partner
+	local ownVelocity = R.boundRoot and R.boundRoot.AssemblyLinearVelocity or Vector3.zero
+	local dirDot = getPlayerDirectionDot(ownVelocity, ownRoot, targetRoot.Position)
+	if dirDot < T.OWN_DASH_PROXIMITY_DOT then
+		-- reset buffer when not facing partner
+		R.ownDashProximity[partnerId] = nil
+		R.lastGate = "own_dash_anticipate_no_dot"
+		return false
+	end
+	-- TTI sustained
+	local ownSpeed = math.sqrt(ownVelocity.X * ownVelocity.X + ownVelocity.Z * ownVelocity.Z)
+	if ownSpeed < 1 then
+		ownSpeed = 1
+	end
+	local currentTti = (ownRoot - targetRoot.Position).Magnitude / ownSpeed * 1000
+	local distance = (ownRoot - targetRoot.Position).Magnitude
+	local radius = T.OWN_DASH_PROXIMITY_BASE + ownSpeed * T.OWN_DASH_PROXIMITY_SPD_K
+	local inside = distance <= radius
+	local buf = R.ownDashProximity[partnerId]
+	if not buf then
+		buf = { since = t, samples = 0, lastSampleAt = 0 }
+		R.ownDashProximity[partnerId] = buf
+	end
+	if not inside then
+		-- one bad frame resets the streak
+		buf.since = t
+		buf.samples = 0
+		R.lastGate = "own_dash_anticipate_outside"
+		return false
+	end
+	if t ~= buf.lastSampleAt then
+		buf.samples = buf.samples + 1
+		buf.lastSampleAt = t
+	end
+	local held = t - buf.since
+	if buf.samples < T.OWN_DASH_PROXIMITY_SAMPLES or held < T.OWN_DASH_PROXIMITY_HOLD then
+		R.lastGate = "own_dash_anticipate_holding"
+		return false
+	end
+	R.dashGateActive = true
+	R.dashGateTriggerUserId = partnerId
+	R.lastGate = "own_dash_anticipate"
+	return true
+end
+
 -- deactivation
 local function shouldDeactivate(t, snapshot)
 	if tryOwnDashEscapeDeactivate(t) then
@@ -1014,6 +1293,18 @@ local function evaluateClash(t, snapshot)
 		R.lostMeAt = 0
 		R.returnPending = false
 		setActive(true, "dash_threat", snapshot)
+		return
+	end
+	if tryOwnDashAggressiveActivate(snapshot) then
+		R.lostMeAt = 0
+		R.returnPending = false
+		setActive(true, "own_dash_aggressive", snapshot)
+		return
+	end
+	if tryOwnDashAnticipateActivate(snapshot) then
+		R.lostMeAt = 0
+		R.returnPending = false
+		setActive(true, "own_dash_anticipate", snapshot)
 	end
 end
 
