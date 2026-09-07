@@ -26,8 +26,8 @@ local T = {
 	DEACT_COOLDOWN = 0.100,
 
 	-- own dash escape deactivation
-	OWN_DASH_ESCAPE_DOT = -0.50,
 	OWN_DASH_ESCAPE_DELAY = 0.030,
+	OWN_DASH_TTI_MIN_GAIN = 5,
 
 	-- deactivation: travel
 	DEACT_TRAVEL_RADIUS_SCALE = 1.2,
@@ -95,6 +95,7 @@ local R = {
 	ownDashEscapePending = false,
 	ownDashEscapeSince = 0,
 	ownDashEscapeDetectedAt = 0,
+	ownDashEscapeInitialTti = nil,
 
 	-- internal dash detection state
 	dashEvents = {},
@@ -232,6 +233,7 @@ local function resetDeactivationState()
 	R.ownDashEscapePending = false
 	R.ownDashEscapeSince = 0
 	R.ownDashEscapeDetectedAt = 0
+	R.ownDashEscapeInitialTti = nil
 end
 
 local function setPhase(phase, reason)
@@ -565,7 +567,7 @@ end
 -- This function DOES NOT ignore the local player.
 -- Filtering local/enemy player is done by the individual gate
 -- that consumes the dash event.
-local function dashRegister(player, position)
+local function dashRegister(player, position, velocity)
 	if not player or not player.Parent then
 		return
 	end
@@ -582,18 +584,24 @@ local function dashRegister(player, position)
 
 	R.dashCooldown[player] = ts
 
-	if typeof(position) ~= "Vector3" then
-		local character = player.Character
-		local hrp = character
-			and character:FindFirstChild(
-				"HumanoidRootPart"
-			)
+	local character = player.Character
+	local hrp = character
+		and character:FindFirstChild(
+			"HumanoidRootPart"
+		)
 
+	if typeof(position) ~= "Vector3" then
 		if hrp then
 			position = hrp.Position
 		else
 			position = nil
 		end
+	end
+
+	if typeof(velocity) ~= "Vector3"
+		and hrp
+	then
+		velocity = hrp.AssemblyLinearVelocity
 	end
 
 	dashCleanExpired(ts)
@@ -603,6 +611,7 @@ local function dashRegister(player, position)
 		userId = player.UserId,
 		detectedAt = ts,
 		position = position,
+		velocity = velocity,
 	}
 end
 
@@ -810,7 +819,8 @@ local function dashScanVelocity(playersService)
 			if R.dashVelFrames[player] >= 1 then
 				dashRegister(
 					player,
-					hrp.Position
+					hrp.Position,
+					velocity
 				)
 
 				R.dashVelFrames[player] = 0
@@ -1044,14 +1054,131 @@ end
 
 -- [[ Own dash escape detection ]]
 
+local function getOpponentForOwnDash()
+	if R.clashPartnerId == -1
+		or R.clashPartnerId == R.localUserId
+	then
+		return nil
+	end
+
+	local playersService =
+		game:GetService("Players")
+
+	local opponent =
+		playersService:GetPlayerByUserId(
+			R.clashPartnerId
+		)
+
+	if not opponent
+		or not opponent.Parent
+	then
+		return nil
+	end
+
+	local character = opponent.Character
+
+	local root =
+		character
+		and character:FindFirstChild(
+			"HumanoidRootPart"
+		)
+
+	if not root
+		or not root.Parent
+	then
+		return nil
+	end
+
+	return opponent, root
+end
+
+local function getBallPositionForTti()
+	if not GameInfo
+		or type(GameInfo.getSnapshot)
+			~= "function"
+	then
+		return nil
+	end
+
+	local t = now()
+
+	local ok, snapshot =
+		pcall(
+			GameInfo.getSnapshot,
+			R.lastTarget,
+			t
+		)
+
+	if not ok
+		or type(snapshot) ~= "table"
+	then
+		return nil
+	end
+
+	if not snapshot.ball
+		or not snapshot.ball.Parent
+	then
+		return nil
+	end
+
+	local position =
+		snapshotPosition(snapshot)
+
+	if not position then
+		return nil
+	end
+
+	local speed =
+		math.max(
+			tonumber(snapshot.speed)
+				or R.lastSpeed
+				or 0,
+			0
+		)
+
+	if speed <= 0 then
+		return nil
+	end
+
+	return position, speed
+end
+
+local function getOwnDashTti()
+	local ballPosition, ballSpeed =
+		getBallPositionForTti()
+
+	local ownPosition =
+		rootPosition()
+
+	if not ballPosition
+		or not ownPosition
+		or ballSpeed <= 0
+	then
+		return nil
+	end
+
+	local distance =
+		(ballPosition - ownPosition).Magnitude
+
+	return (distance / ballSpeed) * 1000
+end
+
 local function getOwnDashThreat(t)
 	if not R.active then
 		return nil
 	end
 
-	if R.clashPartnerId == -1
+	if not R.clashPartnerId
+		or R.clashPartnerId == -1
 		or R.clashPartnerId == R.localUserId
 	then
+		return nil
+	end
+
+	local _, opponentRoot =
+		getOpponentForOwnDash()
+
+	if not opponentRoot then
 		return nil
 	end
 
@@ -1065,7 +1192,6 @@ local function getOwnDashThreat(t)
 			continue
 		end
 
-		-- This gate specifically wants OUR dash.
 		if ev.userId ~= R.localUserId then
 			continue
 		end
@@ -1078,85 +1204,8 @@ local function getOwnDashThreat(t)
 			continue
 		end
 
-		local character =
-			game:GetService("Players")
-				:GetPlayerByUserId(
-					R.clashPartnerId
-				)
-
-		if not character
-			or not character.Parent
-		then
-			continue
-		end
-
-		local opponentCharacter =
-			character.Character
-
-		local opponentRoot =
-			opponentCharacter
-			and opponentCharacter:FindFirstChild(
-				"HumanoidRootPart"
-			)
-
-		local ownRoot = R.boundRoot
-
-		if not ownRoot
-			or not ownRoot.Parent
-			or not opponentRoot
-			or not opponentRoot.Parent
-		then
-			continue
-		end
-
-		local velocity =
-			ownRoot.AssemblyLinearVelocity
-
-		local vx = velocity.X
-		local vz = velocity.Z
-
-		local speed = math.sqrt(
-			vx * vx + vz * vz
-		)
-
-		if speed < 1 then
-			continue
-		end
-
-		local dx =
-			opponentRoot.Position.X
-			- ownRoot.Position.X
-
-		local dz =
-			opponentRoot.Position.Z
-			- ownRoot.Position.Z
-
-		local distance =
-			math.sqrt(dx * dx + dz * dz)
-
-		if distance < 1 then
-			continue
-		end
-
-		local nx = vx / speed
-		local nz = vz / speed
-
-		local rx = dx / distance
-		local rz = dz / distance
-
-		-- +1 = moving toward opponent
-		-- -1 = moving directly away
-		local dot =
-			nx * rx + nz * rz
-
-		if dot > T.OWN_DASH_ESCAPE_DOT then
-			continue
-		end
-
 		local score =
-			(-dot * 2)
-			+ (speed / 100)
-			- age
+			-age
 
 		if score > bestScore then
 			bestScore = score
@@ -1171,6 +1220,8 @@ local function tryOwnDashEscapeDeactivate(t)
 	if not R.active then
 		R.ownDashEscapePending = false
 		R.ownDashEscapeSince = 0
+		R.ownDashEscapeDetectedAt = 0
+		R.ownDashEscapeInitialTti = nil
 		return false
 	end
 
@@ -1181,30 +1232,65 @@ local function tryOwnDashEscapeDeactivate(t)
 		return false
 	end
 
-	if not R.ownDashEscapePending then
+	if not R.ownDashEscapePending
+		or R.ownDashEscapeDetectedAt
+			~= event.detectedAt
+	then
+		local initialTti =
+			getOwnDashTti()
+
+		if not initialTti then
+			return false
+		end
+
 		R.ownDashEscapePending = true
 		R.ownDashEscapeSince = t
 		R.ownDashEscapeDetectedAt =
 			event.detectedAt
+		R.ownDashEscapeInitialTti =
+			initialTti
 
 		R.lastGate =
 			"own_dash_escape_pending"
-
-		return false
 	end
 
 	local elapsed =
 		t - R.ownDashEscapeSince
 
-	if elapsed >= T.OWN_DASH_ESCAPE_DELAY then
+	if elapsed < T.OWN_DASH_ESCAPE_DELAY then
+		R.lastGate =
+			"own_dash_escape_delay"
+
+		return false
+	end
+
+	local currentTti =
+		getOwnDashTti()
+
+	if not currentTti then
+		R.lastGate =
+			"own_dash_escape_no_tti"
+
+		return false
+	end
+
+	if currentTti
+		>= R.ownDashEscapeInitialTti
+			+ T.OWN_DASH_TTI_MIN_GAIN
+	then
 		R.lastGate =
 			"own_dash_escape"
 
 		return true
 	end
 
+	R.ownDashEscapePending = false
+	R.ownDashEscapeSince = 0
+	R.ownDashEscapeDetectedAt = 0
+	R.ownDashEscapeInitialTti = nil
+
 	R.lastGate =
-		"own_dash_escape_delay"
+		"own_dash_escape_no_gain"
 
 	return false
 end
@@ -1466,6 +1552,12 @@ local function tryReturnActivate(snapshot)
 end
 
 local function shouldDeactivate(t, snapshot)
+	-- Own dash escape by real TTI has priority over
+	-- cooldown and activation deactivation lock.
+	if tryOwnDashEscapeDeactivate(t) then
+		return true
+	end
+
 	if t < R.deactivateCooldownUntil then
 		R.lastGate = "deact_cooldown"
 		return false
@@ -1476,13 +1568,6 @@ local function shouldDeactivate(t, snapshot)
 			"deact_activation_lock"
 
 		return false
-	end
-
-	-- NEW:
-	-- Own dash escape gate.
-	-- This is independent from the normal direction gate.
-	if tryOwnDashEscapeDeactivate(t) then
-		return true
 	end
 
 	local root = rootPosition()
@@ -1843,7 +1928,7 @@ local function bindCharacter(character)
 		)
 		or character:WaitForChild(
 			"HumanoidRootPart",
-			1
+					1
 		)
 
 	if not (
@@ -2010,6 +2095,7 @@ function AutoClash.setup(deps)
 	R.ownDashEscapePending = false
 	R.ownDashEscapeSince = 0
 	R.ownDashEscapeDetectedAt = 0
+	R.ownDashEscapeInitialTti = nil
 
 	R.dashEvents = {}
 	R.dashCooldown = {}
