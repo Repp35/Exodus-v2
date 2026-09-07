@@ -137,7 +137,8 @@ local function returnWindow(speed)
 		T.RETURN_SPD_HI
 	)
 
-	return math.max(base + pingOneWay() * T.PING_FACTOR, 0)
+	local raw = base + pingOneWay() * T.PING_FACTOR
+	return math.max(raw, T.MIN_EVAL_INTERVAL * 1.5)
 end
 
 local function resetTargetState()
@@ -463,13 +464,16 @@ local function shouldDeactivate(t, snapshot)
 	end
 
 	-- direction-based deactivation
-	local directionMax = lerp(
-		speed,
-		T.DEACT_DIRECTION_MAX_LO,
-		T.DEACT_DIRECTION_MAX_LO
-			* T.DEACT_DIRECTION_MAX_MIN_FACTOR,
-		T.DEACT_TRAVEL_SPD_LO,
-		T.DEACT_TRAVEL_SPD_HI
+	local directionMax = math.max(
+		lerp(
+			speed,
+			T.DEACT_DIRECTION_MAX_LO,
+			T.DEACT_DIRECTION_MAX_LO
+				* T.DEACT_DIRECTION_MAX_MIN_FACTOR,
+			T.DEACT_TRAVEL_SPD_LO,
+			T.DEACT_TRAVEL_SPD_HI
+		),
+		T.MIN_EVAL_INTERVAL * 1.5
 	)
 
 	if R.lastDirectionSwitchAt > 0
