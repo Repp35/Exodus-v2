@@ -27,7 +27,7 @@ local T = {
 
 	-- own dash escape deactivation
 	OWN_DASH_ESCAPE_DELAY = 0.030,
-	OWN_DASH_TTI_MIN_GAIN = 5,
+	OWN_DASH_TTI_MIN_GAIN = 30,
 
 	-- deactivation: travel
 	DEACT_TRAVEL_RADIUS_SCALE = 1.2,
