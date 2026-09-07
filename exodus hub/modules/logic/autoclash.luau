@@ -22,7 +22,7 @@ local T = {
 	-- dash detection window
 	DASH_DETECT_WINDOW = 0.250,
 	-- own dash escape deactivation
-	OWN_DASH_ESCAPE_CONFIRM_FRAMES = 3,
+	OWN_DASH_ESCAPE_CONFIRM_FRAMES = 2,
 	OWN_DASH_ESCAPE_DOT = -0.30,
 	-- deactivation: travel
 	DEACT_TRAVEL_RADIUS_SCALE = 1.2,
@@ -79,6 +79,8 @@ local R = {
 	ownDashEscapeSince = 0,
 	ownDashEscapeDetectedAt = 0,
 	ownDashEscapeConfirmFrames = 0,
+	ownDashEscapeLastDist = nil,
+	ownDashEscapeFartherStreak = 0,
 	-- dash detection state
 	dashEvents = {},
 	dashCooldown = {},
@@ -175,6 +177,8 @@ local function resetDeactivationState()
 	R.ownDashEscapeSince = 0
 	R.ownDashEscapeDetectedAt = 0
 	R.ownDashEscapeConfirmFrames = 0
+	R.ownDashEscapeLastDist = nil
+	R.ownDashEscapeFartherStreak = 0
 	R.stoppedBallFrames = 0
 end
 local function setPhase(phase, reason)
@@ -725,6 +729,9 @@ local function getOwnDashThreat(t)
 	end
 	return bestEvent
 end
+-- own-dash escape por distância:
+-- se em N frames consecutivos a distância eu<->oponente CRESCEU, desliga.
+-- dash pra trás = distância aumenta = desativa. dash pra frente = não desativa.
 local function tryOwnDashEscapeDeactivate(t)
 	if not R.active then
 		resetDeactivationState()
@@ -735,56 +742,40 @@ local function tryOwnDashEscapeDeactivate(t)
 		R.lastGate = "own_dash_escape_targeted_skip"
 		return false
 	end
-	local event = getOwnDashThreat(t)
-	if not event then
-		resetDeactivationState()
-		return false
-	end
-	if not R.ownDashEscapePending or R.ownDashEscapeDetectedAt ~= event.detectedAt then
-		R.ownDashEscapePending = true
-		R.ownDashEscapeSince = t
-		R.ownDashEscapeDetectedAt = event.detectedAt
-		R.ownDashEscapeConfirmFrames = 0
-		R.lastGate = "own_dash_escape_pending"
-		return false
-	end
 	local ownRoot = rootPosition()
 	if not ownRoot then
-		R.ownDashEscapeConfirmFrames = 0
+		resetDeactivationState()
 		R.lastGate = "own_dash_escape_no_root"
 		return false
 	end
 	local opponent, opponentRoot = getOpponentForOwnDash()
 	if not opponent or not opponentRoot then
-		R.ownDashEscapeConfirmFrames = 0
+		resetDeactivationState()
 		R.lastGate = "own_dash_escape_no_opponent"
 		return false
 	end
-	local ownHrp = R.boundRoot
-	if not ownHrp or not ownHrp.Parent then
-		R.ownDashEscapeConfirmFrames = 0
-		R.lastGate = "own_dash_escape_no_hrp"
+	local currentDist = (ownRoot - opponentRoot.Position).Magnitude
+	-- primeiro frame: só guarda a distância, não confirma
+	if not R.ownDashEscapeLastDist then
+		R.ownDashEscapeLastDist = currentDist
+		R.ownDashEscapeFartherStreak = 0
+		R.lastGate = "own_dash_escape_first"
 		return false
 	end
-	local velocity = ownHrp.AssemblyLinearVelocity
-	local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
-	if horizontalSpeed < 1 then
-		R.ownDashEscapeConfirmFrames = 0
-		R.lastGate = "own_dash_escape_no_motion"
-		return false
-	end
-	local dirDot = getPlayerDirectionDot(velocity, ownRoot, opponentRoot.Position)
-	if dirDot <= T.OWN_DASH_ESCAPE_DOT then
-		R.ownDashEscapeConfirmFrames = R.ownDashEscapeConfirmFrames + 1
-		R.lastGate = "own_dash_escape_confirm_" .. tostring(R.ownDashEscapeConfirmFrames)
-		if R.ownDashEscapeConfirmFrames >= T.OWN_DASH_ESCAPE_CONFIRM_FRAMES then
+	if currentDist > R.ownDashEscapeLastDist then
+		R.ownDashEscapeFartherStreak = R.ownDashEscapeFartherStreak + 1
+		R.lastGate = "own_dash_escape_farther_" .. tostring(R.ownDashEscapeFartherStreak)
+		R.ownDashEscapeLastDist = currentDist
+		if R.ownDashEscapeFartherStreak >= T.OWN_DASH_ESCAPE_CONFIRM_FRAMES then
 			R.lastGate = "own_dash_escape"
 			return true
 		end
 		return false
 	end
-	R.ownDashEscapeConfirmFrames = 0
-	R.lastGate = "own_dash_escape_no_opposite"
+	-- não tá se afastando: reseta
+	R.ownDashEscapeFartherStreak = 0
+	R.ownDashEscapeLastDist = currentDist
+	R.lastGate = "own_dash_escape_not_farther"
 	return false
 end
 
