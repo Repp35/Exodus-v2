@@ -794,11 +794,14 @@ local function tryOwnDashEscapeDeactivate(t)
 	return false
 end
 
--- [[ Anti-dash: adaptativo por TTI ]]
--- Regra: o player que dashou é o target da bola
--- E o tempo-de-impacto (dist / componente da velocidade na minha direção)
--- está caindo, ou seja, ele tá de fato se aproximando.
--- Sem raio, sem dot solto, sem score, sem gate de cooldown.
+-- [[ Anti-dash: TTI adaptativo ]]
+-- Regra dura: o player que dashou é o target da bola
+--  + tá dentro de 1.3x do raio de parry (perto, não de qualquer distância)
+--  + dot velocity-vs-toMe > 0.95 (vindo quase reto pra mim, não de raspão)
+--  + TTI caindo = tá de fato fechando
+local ANTI_DASH_RADIUS_FACTOR = 1.30
+local ANTI_DASH_DOT_MIN = 0.95
+
 local function tryDashActivate(snapshot)
 	local root = rootPosition()
 	if not root then
@@ -810,6 +813,12 @@ local function tryDashActivate(snapshot)
 		R.lastGate = "anti_dash_no_enemy"
 		return false
 	end
+	local radius = R.parryRadius
+	if radius <= 0 then
+		R.lastGate = "anti_dash_no_radius"
+		return false
+	end
+	local maxRange = radius * ANTI_DASH_RADIUS_FACTOR
 	local t = now()
 	dashCleanExpired(t)
 	if #R.dashEvents == 0 then
@@ -834,24 +843,29 @@ local function tryDashActivate(snapshot)
 		if dMag <= 0 then
 			continue
 		end
-		local vel = hrp.AssemblyLinearVelocity
-		-- componente da velocidade na direção até mim
-		local radial = (vel.X * toMe.X + vel.Z * toMe.Z) / dMag
-		if radial <= 0 then
-			-- tá se afastando ou passando de lado -> ignora
+		-- perto o suficiente? senão ignora
+		if dMag > maxRange then
 			continue
 		end
-		-- TTI atual: tempo até me alcançar se mantiver essa radial
-		local tti = dMag / radial
+		local vel = hrp.AssemblyLinearVelocity
+		local vMag = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
+		if vMag < 1 then
+			continue
+		end
+		-- dot: o dash tem que estar apontado quase reto pra mim
+		local dot = (vel.X * toMe.X + vel.Z * toMe.Z) / (vMag * dMag)
+		if dot < ANTI_DASH_DOT_MIN then
+			continue
+		end
+		-- TTI caindo = tá fechando
+		local tti = dMag / (vMag * dot)
 		local lastTti = R.dashLastTTI[ev.userId]
 		R.dashLastTTI[ev.userId] = tti
-		-- se TTI caiu em relação ao tick anterior, ele tá fechando -> é dash em mim
 		if lastTti and tti < lastTti then
 			R.lastGate = "anti_dash_hit"
 			return true
 		end
-		-- primeiro frame do dash: se radial > 0 e tá perto, já considera
-		if not lastTti and radial > 0 then
+		if not lastTti then
 			R.lastGate = "anti_dash_hit_first"
 			return true
 		end
