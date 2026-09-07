@@ -85,6 +85,7 @@ local R = {
 	dashTrackSnap = {},
 	dashVelAnterior = {},
 	dashVelFrames = {},
+	dashLastTTI = {},
 }
 local DASH_DETECT_PARTS = {
 	DashEffect = true,
@@ -282,6 +283,7 @@ local function resetRuntime(reason, keepDashDetection)
 	R.dashTrackSnap = {}
 	R.dashVelAnterior = {}
 	R.dashVelFrames = {}
+	R.dashLastTTI = {}
 	R.lastGate = "detached"
 	setPhase("detached", reason or "reset")
 end
@@ -366,6 +368,9 @@ local function dashCleanExpired(atTs)
 	for i = #R.dashEvents, 1, -1 do
 		local ev = R.dashEvents[i]
 		if not ev or not ev.player or not ev.player.Parent or atTs - ev.detectedAt > T.DASH_DETECT_WINDOW then
+			if ev and ev.userId then
+				R.dashLastTTI[ev.userId] = nil
+			end
 			table.remove(R.dashEvents, i)
 		end
 	end
@@ -625,6 +630,7 @@ local function dashDetectionInit(playersService)
 		R.dashTrackSnap[player] = nil
 		R.dashVelAnterior[player] = nil
 		R.dashVelFrames[player] = nil
+		R.dashLastTTI[player.UserId] = nil
 		for i = #R.dashEvents, 1, -1 do
 			local ev = R.dashEvents[i]
 			if ev and ev.player == player then
@@ -788,10 +794,11 @@ local function tryOwnDashEscapeDeactivate(t)
 	return false
 end
 
--- [[ Anti-dash: adaptativo ]]
--- Regra única: o player que dashou é o target da bola
--- E o dash está indo na minha direção (dot > 0).
--- Sem raio, sem arrival, sem score, sem gate de cooldown.
+-- [[ Anti-dash: adaptativo por TTI ]]
+-- Regra: o player que dashou é o target da bola
+-- E o tempo-de-impacto (dist / componente da velocidade na minha direção)
+-- está caindo, ou seja, ele tá de fato se aproximando.
+-- Sem raio, sem dot solto, sem score, sem gate de cooldown.
 local function tryDashActivate(snapshot)
 	local root = rootPosition()
 	if not root then
@@ -817,15 +824,9 @@ local function tryDashActivate(snapshot)
 		if ev.userId ~= currentTarget then
 			continue
 		end
-		-- dot: velocidade do dasher apontada pra mim
 		local char = ev.player.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
 		if not hrp then
-			continue
-		end
-		local vel = hrp.AssemblyLinearVelocity
-		local vMag = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
-		if vMag < 1 then
 			continue
 		end
 		local toMe = root - hrp.Position
@@ -833,13 +834,29 @@ local function tryDashActivate(snapshot)
 		if dMag <= 0 then
 			continue
 		end
-		local dot = (vel.X * toMe.X + vel.Z * toMe.Z) / (vMag * dMag)
-		if dot > 0 then
+		local vel = hrp.AssemblyLinearVelocity
+		-- componente da velocidade na direção até mim
+		local radial = (vel.X * toMe.X + vel.Z * toMe.Z) / dMag
+		if radial <= 0 then
+			-- tá se afastando ou passando de lado -> ignora
+			continue
+		end
+		-- TTI atual: tempo até me alcançar se mantiver essa radial
+		local tti = dMag / radial
+		local lastTti = R.dashLastTTI[ev.userId]
+		R.dashLastTTI[ev.userId] = tti
+		-- se TTI caiu em relação ao tick anterior, ele tá fechando -> é dash em mim
+		if lastTti and tti < lastTti then
 			R.lastGate = "anti_dash_hit"
 			return true
 		end
+		-- primeiro frame do dash: se radial > 0 e tá perto, já considera
+		if not lastTti and radial > 0 then
+			R.lastGate = "anti_dash_hit_first"
+			return true
+		end
 	end
-	R.lastGate = "anti_dash_not_toward_me"
+	R.lastGate = "anti_dash_not_closing"
 	return false
 end
 local function tryReturnActivate(snapshot)
@@ -1201,6 +1218,7 @@ function AutoClash.setup(deps)
 	R.dashTrackSnap = {}
 	R.dashVelAnterior = {}
 	R.dashVelFrames = {}
+	R.dashLastTTI = {}
 	resetTargetState()
 	resetDeactivationState()
 	R.lastGate = "none"
