@@ -382,23 +382,15 @@ local function shouldDeactivate(t, snapshot)
 end
 local function updateParryState(t, snapshot)
 	R.lastSpeed = math.max(tonumber(snapshot.speed) or 0, 0)
-
 	if not AutoParry or type(AutoParry.getParryRadius) ~= "function" then
-		warn("[AutoClash] AutoParry.getParryRadius não existe")
 		return
 	end
-
 	local ok, radius = pcall(AutoParry.getParryRadius, t)
-
 	if not ok then
-		warn("[AutoClash] getParryRadius falhou:", radius)
+		R.lastGate = "parry_radius_error"
 		return
 	end
-
 	radius = tonumber(radius)
-
-	warn("[AutoClash] parryRadius =", radius, "| speed =", R.lastSpeed)
-
 	if radius and radius >= 0 then
 		R.parryRadius = radius
 	end
