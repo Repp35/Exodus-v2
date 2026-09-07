@@ -40,10 +40,10 @@ local T = {
 	-- deactivation: direction
 	-- lógica antiga:
 	-- target saiu de mim -> espera 50 ms -> desativa
-	DEACT_DIRECTION_MAX_TIME = 0.050,
+	DEACT_DIRECTION_MAX_TIME = 0.040,
 
 	-- raio em que direction nunca pode desativar
-	DEACT_DIRECTION_MIN_RADIUS_FACTOR = 0.55,
+	DEACT_DIRECTION_MIN_RADIUS_FACTOR = 0.30,
 
 	-- bola parada
 	-- precisa ficar parada por 4 avaliações consecutivas
