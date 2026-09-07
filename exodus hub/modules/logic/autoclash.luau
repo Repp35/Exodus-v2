@@ -38,16 +38,17 @@ local T = {
 	DEACT_TRAVEL_RADIUS_FACTOR = 1.10,
 
 	-- deactivation: direction
-	-- 50 ms base -> pode cair 90% com speed máxima
-	-- mas nunca fica abaixo de 12.5 ms
-	DEACT_DIRECTION_MAX_LO = 0.050,
-	DEACT_DIRECTION_MAX_FACTOR = 0.10,
-	DEACT_DIRECTION_MIN_TIME = 0.0125,
-	DEACT_DIRECTION_SPD_LO = 60,
-	DEACT_DIRECTION_SPD_HI = 600,
+	-- lógica antiga:
+	-- target saiu de mim -> espera 50 ms -> desativa
+	DEACT_DIRECTION_MAX_TIME = 0.050,
 
 	-- raio em que direction nunca pode desativar
 	DEACT_DIRECTION_MIN_RADIUS_FACTOR = 0.55,
+
+	-- bola parada
+	-- precisa ficar parada por 4 avaliações consecutivas
+	BALL_STOPPED_CONFIRM_FRAMES = 4,
+	BALL_STOPPED_SPEED = 0,
 
 	-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
@@ -73,6 +74,9 @@ local R = {
 
 	-- direction state
 	lastDirectionSwitchAt = 0,
+
+	-- stopped ball state
+	stoppedBallFrames = 0,
 
 	-- evaluation
 	lastEvalAt = 0,
@@ -245,26 +249,6 @@ local function returnWindow(speed)
 	)
 end
 
--- Direction timeout:
--- 60 speed  -> 50 ms
--- 600 speed -> 5 ms
--- absolute floor -> 12.5 ms
-local function directionTimeout(speed)
-	local raw = lerp(
-		speed,
-		T.DEACT_DIRECTION_MAX_LO,
-		T.DEACT_DIRECTION_MAX_LO
-			* T.DEACT_DIRECTION_MAX_FACTOR,
-		T.DEACT_DIRECTION_SPD_LO,
-		T.DEACT_DIRECTION_SPD_HI
-	)
-
-	return math.max(
-		raw,
-		T.DEACT_DIRECTION_MIN_TIME
-	)
-end
-
 local function resetTargetState()
 	R.lastTarget = -1
 	R.clashPartnerId = -1
@@ -279,6 +263,7 @@ local function resetDeactivationState()
 	R.ownDashEscapeSince = 0
 	R.ownDashEscapeDetectedAt = 0
 	R.ownDashEscapeConfirmFrames = 0
+	R.stoppedBallFrames = 0
 end
 
 local function setPhase(phase, reason)
@@ -405,6 +390,7 @@ local function setActive(
 
 	if active then
 		R.lastDirectionSwitchAt = 0
+		R.stoppedBallFrames = 0
 
 		R.deactivateCooldownUntil =
 			t + T.DEACT_COOLDOWN
@@ -1837,7 +1823,7 @@ local function shouldDeactivate(
 	snapshot
 )
 	-- próprio dash continua sendo uma
-	-- saída independente da direction normal
+	-- saída independente da direction
 	if tryOwnDashEscapeDeactivate(t) then
 		return true
 	end
@@ -1884,6 +1870,26 @@ local function shouldDeactivate(
 
 	local distance =
 		(root - position).Magnitude
+
+	-- =========================================================
+	-- BOLA PARADA
+	-- =========================================================
+
+	if speed <= T.BALL_STOPPED_SPEED then
+		R.stoppedBallFrames =
+			R.stoppedBallFrames + 1
+
+		if R.stoppedBallFrames
+			>= T.BALL_STOPPED_CONFIRM_FRAMES
+		then
+			R.lastGate =
+				"deact_ball_stopped"
+
+			return true
+		end
+	else
+		R.stoppedBallFrames = 0
+	end
 
 	-- =========================================================
 	-- TRAVEL
@@ -1941,22 +1947,14 @@ local function shouldDeactivate(
 	-- =========================================================
 	-- DIRECTION
 	--
-	-- O target saiu de mim.
-	-- lastDirectionSwitchAt marca exatamente essa troca.
+	-- Mesma lógica antiga:
 	--
-	-- Se voltar para mim antes do timeout:
-	-- continua clash.
+	-- 1. A bola deixa de estar targetada em mim.
+	-- 2. lastDirectionSwitchAt registra a troca.
+	-- 3. Se voltar para mim antes de 50 ms, não desativa.
+	-- 4. Se passar de 50 ms sem voltar, desativa.
 	--
-	-- Se ficar mais que o timeout sem voltar:
-	-- desativa.
-	--
-	-- O timeout:
-	--   speed <= 60  -> 50 ms
-	--   speed >= 600 -> 5 ms
-	--   mínimo       -> 12.5 ms
-	--
-	-- Dentro de 55% do parry radius:
-	-- NUNCA desativa por direction.
+	-- Não usa speed para alterar o tempo.
 	-- =========================================================
 
 	if snapshot.targeted == true then
@@ -1977,14 +1975,11 @@ local function shouldDeactivate(
 		return false
 	end
 
-	local directionMax =
-		directionTimeout(speed)
-
 	if R.lastDirectionSwitchAt > 0 then
 		local elapsed =
 			t - R.lastDirectionSwitchAt
 
-		if elapsed > directionMax then
+		if elapsed > T.DEACT_DIRECTION_MAX_TIME then
 			R.lastGate =
 				"deact_direction"
 
@@ -2479,6 +2474,7 @@ function AutoClash.setup(deps)
 	R.reactivateBlockedUntil = 0
 	R.activationDeactLockedUntil = 0
 	R.lastDirectionSwitchAt = 0
+	R.stoppedBallFrames = 0
 
 	R.connections = {}
 	R.dashConnections = {}
@@ -2606,8 +2602,7 @@ function AutoClash.onBallSync(data)
 	local t = now()
 
 	-- Toda troca de target atualiza
-	-- o instante usado pela lógica de
-	-- direction deactivation.
+	-- o instante usado pela direction.
 	if wasMe ~= isMe then
 		R.lastDirectionSwitchAt = t
 	end
@@ -2759,6 +2754,9 @@ function AutoClash.getStatus()
 
 		deactivateCooldownUntil =
 			R.deactivateCooldownUntil,
+
+		stoppedBallFrames =
+			R.stoppedBallFrames,
 	}
 end
 
