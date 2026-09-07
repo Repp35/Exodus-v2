@@ -19,9 +19,8 @@ local T = {
 	-- activation -> deactivation lock
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
 	ACT_DEACT_LOCK_TIME = 0.050,
-	-- dash-threat gate
+	-- dash detection window
 	DASH_DETECT_WINDOW = 0.250,
-	DEACT_COOLDOWN = 0.075,
 	-- own dash escape deactivation
 	OWN_DASH_ESCAPE_CONFIRM_FRAMES = 3,
 	OWN_DASH_ESCAPE_DOT = -0.30,
@@ -75,10 +74,6 @@ local R = {
 	dashConnections = {},
 	dashGeneration = 0,
 	lastGate = "none",
-	-- dash-threat gate
-	dashGateActive = false,
-	dashGateTriggerUserId = nil,
-	deactivateCooldownUntil = 0,
 	-- own dash escape gate
 	ownDashEscapePending = false,
 	ownDashEscapeSince = 0,
@@ -247,7 +242,6 @@ local function setActive(active, reason, snapshot)
 	if active then
 		R.lastDirectionSwitchAt = 0
 		R.stoppedBallFrames = 0
-		R.deactivateCooldownUntil = reason == "dash_threat" and t + T.DEACT_COOLDOWN or 0
 		if R.clashPartnerId == -1 and R.lastTarget ~= R.localUserId and R.lastTarget ~= -1 then
 			R.clashPartnerId = R.lastTarget
 		end
@@ -256,9 +250,6 @@ local function setActive(active, reason, snapshot)
 		R.clashPartnerId = -1
 		R.reactivateBlockedUntil = t + T.REACTIVATE_COOLDOWN
 		R.activationDeactLockedUntil = 0
-		R.dashGateActive = false
-		R.dashGateTriggerUserId = nil
-		R.deactivateCooldownUntil = 0
 	end
 	if Utils and type(Utils.setAutoSpamActive) == "function" then
 		pcall(Utils.setAutoSpamActive, active)
@@ -286,9 +277,6 @@ local function resetRuntime(reason, keepDashDetection)
 	R.activationDeactLockedUntil = 0
 	resetTargetState()
 	resetDeactivationState()
-	R.dashGateActive = false
-	R.dashGateTriggerUserId = nil
-	R.deactivateCooldownUntil = 0
 	R.dashEvents = {}
 	R.dashCooldown = {}
 	R.dashTrackSnap = {}
@@ -800,105 +788,59 @@ local function tryOwnDashEscapeDeactivate(t)
 	return false
 end
 
--- dash-threat gate
+-- [[ Anti-dash: adaptativo ]]
+-- Regra única: o player que dashou é o target da bola
+-- E o dash está indo na minha direção (dot > 0).
+-- Sem raio, sem arrival, sem score, sem gate de cooldown.
 local function tryDashActivate(snapshot)
 	local root = rootPosition()
-	local position = snapshotPosition(snapshot)
-	if not root or not position then
-		R.lastGate = "dash_no_root_or_pos"
+	if not root then
+		R.lastGate = "anti_dash_no_root"
 		return false
 	end
-	local radius = R.parryRadius
-	if radius <= 0 then
-		R.lastGate = "dash_no_radius"
+	local currentTarget = normalizeTarget(snapshot and snapshot.targetId)
+	if not currentTarget or currentTarget == R.localUserId then
+		R.lastGate = "anti_dash_no_enemy"
 		return false
 	end
 	local t = now()
 	dashCleanExpired(t)
 	if #R.dashEvents == 0 then
+		R.lastGate = "anti_dash_no_events"
 		return false
 	end
-	local ballSpeed = math.max(tonumber(snapshot.speed) or R.lastSpeed or 0, 1)
-	local ballDistance = (root - position).Magnitude
-	local ballArrival = ballDistance / ballSpeed
-	if ballArrival > T.DASH_DETECT_WINDOW then
-		R.lastGate = "dash_ball_too_far"
-		return false
-	end
-	local bestUserId = nil
-	local bestEvent = nil
-	local bestScore = -math.huge
 	for i = 1, #R.dashEvents do
 		local ev = R.dashEvents[i]
-		if not ev then
+		if not ev or not ev.player or not ev.player.Parent then
 			continue
 		end
-		local userId = ev.userId
-		if not userId or userId == R.localUserId then
+		if ev.userId ~= currentTarget then
 			continue
 		end
-		local player = ev.player
-		if not player or not player.Parent then
-			continue
-		end
-		local dasherPos = ev.position
-		if typeof(dasherPos) ~= "Vector3" then
-			local char = player.Character
-			local hrp = char and char:FindFirstChild("HumanoidRootPart")
-			if hrp then
-				dasherPos = hrp.Position
-			end
-		end
-		if typeof(dasherPos) ~= "Vector3" then
-			continue
-		end
-		local toRoot = root - dasherPos
-		local distToRoot = toRoot.Magnitude
-		if distToRoot <= 0 then
-			continue
-		end
-		local char = player.Character
+		-- dot: velocidade do dasher apontada pra mim
+		local char = ev.player.Character
 		local hrp = char and char:FindFirstChild("HumanoidRootPart")
 		if not hrp then
 			continue
 		end
-		local velocity = hrp.AssemblyLinearVelocity
-		local dasherSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
-		if dasherSpeed < 1 then
-			dasherSpeed = 1
-		end
-		local arrival = distToRoot / dasherSpeed
-		if arrival > T.DASH_DETECT_WINDOW then
+		local vel = hrp.AssemblyLinearVelocity
+		local vMag = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
+		if vMag < 1 then
 			continue
 		end
-		local dirDot = 1
-		local vMag = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
-		if vMag > 0 then
-			local nx = velocity.X / vMag
-			local nz = velocity.Z / vMag
-			local rx = toRoot.X / distToRoot
-			local rz = toRoot.Z / distToRoot
-			dirDot = nx * rx + nz * rz
-		end
-		if dirDot < 0.5 then
+		local toMe = root - hrp.Position
+		local dMag = math.sqrt(toMe.X * toMe.X + toMe.Z * toMe.Z)
+		if dMag <= 0 then
 			continue
 		end
-		local age = t - ev.detectedAt
-		local score = (1 + dirDot * 0.3) - arrival * 0.5 - age * 0.5
-		if score > bestScore then
-			bestScore = score
-			bestUserId = userId
-			bestEvent = ev
+		local dot = (vel.X * toMe.X + vel.Z * toMe.Z) / (vMag * dMag)
+		if dot > 0 then
+			R.lastGate = "anti_dash_hit"
+			return true
 		end
 	end
-	if not bestEvent then
-		R.lastGate = "dash_no_match"
-		return false
-	end
-	R.dashGateActive = true
-	R.dashGateTriggerUserId = bestUserId
-	R.lastGate = "dash_gate_activate"
-	return true
+	R.lastGate = "anti_dash_not_toward_me"
+	return false
 end
 local function tryReturnActivate(snapshot)
 	if not R.returnPending then
@@ -928,10 +870,6 @@ end
 
 -- deactivation
 local function shouldDeactivate(t, snapshot)
-	if t < R.deactivateCooldownUntil then
-		R.lastGate = "deact_cooldown"
-		return false
-	end
 	if tryOwnDashEscapeDeactivate(t) then
 		return true
 	end
@@ -1254,9 +1192,6 @@ function AutoClash.setup(deps)
 	R.connections = {}
 	R.dashConnections = {}
 	R.dashGeneration = 0
-	R.dashGateActive = false
-	R.dashGateTriggerUserId = nil
-	R.deactivateCooldownUntil = 0
 	R.ownDashEscapePending = false
 	R.ownDashEscapeSince = 0
 	R.ownDashEscapeDetectedAt = 0
@@ -1395,11 +1330,8 @@ function AutoClash.getStatus()
 		lastTarget = R.lastTarget,
 		clashPartnerId = R.clashPartnerId,
 		lastGate = R.lastGate,
-		dashGateActive = R.dashGateActive == true,
-		dashGateTriggerUserId = R.dashGateTriggerUserId,
 		ownDashEscapePending = R.ownDashEscapePending == true,
 		ownDashEscapeConfirmFrames = R.ownDashEscapeConfirmFrames,
-		deactivateCooldownUntil = R.deactivateCooldownUntil,
 		stoppedBallFrames = R.stoppedBallFrames,
 	}
 end
