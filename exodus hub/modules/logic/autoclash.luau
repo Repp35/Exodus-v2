@@ -14,7 +14,6 @@ local T = {
 	RETURN_SPD_HI = 600,
 	PING_FACTOR = 0.3,
 	ACT_RADIUS_EXTRA_WINDOW = 0.150,
-	ACT_INSTANT_RADIUS_FACTOR = 0.20,
 	REACTIVATE_COOLDOWN = 0.25,
 	-- activation -> deactivation lock
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
@@ -1202,25 +1201,6 @@ function AutoClash.onBallSync(data)
 	elseif not wasMe and isMe then
 		if previousTargetId ~= -1 and previousTargetId ~= R.localUserId then
 			R.clashPartnerId = previousTargetId
-		end
-		local position = dataPosition(data)
-		local root = rootPosition()
-		refreshParryRadius(t)
-		local radius = R.parryRadius
-		if root and position and radius > 0 then
-			local distance = (root - position).Magnitude
-			if distance <= radius * T.ACT_INSTANT_RADIUS_FACTOR then
-				if previousTargetId ~= -1 and previousTargetId ~= R.localUserId then
-					R.clashPartnerId = previousTargetId
-				end
-				setActive(true, "instant_activate", {
-					position = position,
-				})
-				R.lostMeAt = 0
-				R.returnPending = false
-				R.wasMeTarget = isMe
-				return
-			end
 		end
 		local lostAt = R.lostMeAt
 		if lostAt > 0 then
