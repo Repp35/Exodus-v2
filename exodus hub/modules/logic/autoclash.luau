@@ -85,7 +85,6 @@ local R = {
 	dashTrackSnap = {},
 	dashVelAnterior = {},
 	dashVelFrames = {},
-	dashLastTTI = {},
 }
 local DASH_DETECT_PARTS = {
 	DashEffect = true,
@@ -283,7 +282,6 @@ local function resetRuntime(reason, keepDashDetection)
 	R.dashTrackSnap = {}
 	R.dashVelAnterior = {}
 	R.dashVelFrames = {}
-	R.dashLastTTI = {}
 	R.lastGate = "detached"
 	setPhase("detached", reason or "reset")
 end
@@ -368,9 +366,6 @@ local function dashCleanExpired(atTs)
 	for i = #R.dashEvents, 1, -1 do
 		local ev = R.dashEvents[i]
 		if not ev or not ev.player or not ev.player.Parent or atTs - ev.detectedAt > T.DASH_DETECT_WINDOW then
-			if ev and ev.userId then
-				R.dashLastTTI[ev.userId] = nil
-			end
 			table.remove(R.dashEvents, i)
 		end
 	end
@@ -630,7 +625,6 @@ local function dashDetectionInit(playersService)
 		R.dashTrackSnap[player] = nil
 		R.dashVelAnterior[player] = nil
 		R.dashVelFrames[player] = nil
-		R.dashLastTTI[player.UserId] = nil
 		for i = #R.dashEvents, 1, -1 do
 			local ev = R.dashEvents[i]
 			if ev and ev.player == player then
@@ -794,85 +788,6 @@ local function tryOwnDashEscapeDeactivate(t)
 	return false
 end
 
--- [[ Anti-dash: TTI adaptativo ]]
--- Regra dura: o player que dashou é o target da bola
---  + tá dentro de 1.3x do raio de parry (perto, não de qualquer distância)
---  + dot velocity-vs-toMe > 0.95 (vindo quase reto pra mim, não de raspão)
---  + TTI caindo = tá de fato fechando
-local ANTI_DASH_RADIUS_FACTOR = 1.30
-local ANTI_DASH_DOT_MIN = 0.95
-
-local function tryDashActivate(snapshot)
-	local root = rootPosition()
-	if not root then
-		R.lastGate = "anti_dash_no_root"
-		return false
-	end
-	local currentTarget = normalizeTarget(snapshot and snapshot.targetId)
-	if not currentTarget or currentTarget == R.localUserId then
-		R.lastGate = "anti_dash_no_enemy"
-		return false
-	end
-	local radius = R.parryRadius
-	if radius <= 0 then
-		R.lastGate = "anti_dash_no_radius"
-		return false
-	end
-	local maxRange = radius * ANTI_DASH_RADIUS_FACTOR
-	local t = now()
-	dashCleanExpired(t)
-	if #R.dashEvents == 0 then
-		R.lastGate = "anti_dash_no_events"
-		return false
-	end
-	for i = 1, #R.dashEvents do
-		local ev = R.dashEvents[i]
-		if not ev or not ev.player or not ev.player.Parent then
-			continue
-		end
-		if ev.userId ~= currentTarget then
-			continue
-		end
-		local char = ev.player.Character
-		local hrp = char and char:FindFirstChild("HumanoidRootPart")
-		if not hrp then
-			continue
-		end
-		local toMe = root - hrp.Position
-		local dMag = math.sqrt(toMe.X * toMe.X + toMe.Z * toMe.Z)
-		if dMag <= 0 then
-			continue
-		end
-		-- perto o suficiente? senão ignora
-		if dMag > maxRange then
-			continue
-		end
-		local vel = hrp.AssemblyLinearVelocity
-		local vMag = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
-		if vMag < 1 then
-			continue
-		end
-		-- dot: o dash tem que estar apontado quase reto pra mim
-		local dot = (vel.X * toMe.X + vel.Z * toMe.Z) / (vMag * dMag)
-		if dot < ANTI_DASH_DOT_MIN then
-			continue
-		end
-		-- TTI caindo = tá fechando
-		local tti = dMag / (vMag * dot)
-		local lastTti = R.dashLastTTI[ev.userId]
-		R.dashLastTTI[ev.userId] = tti
-		if lastTti and tti < lastTti then
-			R.lastGate = "anti_dash_hit"
-			return true
-		end
-		if not lastTti then
-			R.lastGate = "anti_dash_hit_first"
-			return true
-		end
-	end
-	R.lastGate = "anti_dash_not_closing"
-	return false
-end
 local function tryReturnActivate(snapshot)
 	if not R.returnPending then
 		return false
@@ -1009,12 +924,6 @@ local function evaluateClash(t, snapshot)
 		R.lostMeAt = 0
 		R.returnPending = false
 		setActive(true, "activated", snapshot)
-		return
-	end
-	if tryDashActivate(snapshot) then
-		R.lostMeAt = 0
-		R.returnPending = false
-		setActive(true, "dash_threat", snapshot)
 		return
 	end
 end
@@ -1232,7 +1141,6 @@ function AutoClash.setup(deps)
 	R.dashTrackSnap = {}
 	R.dashVelAnterior = {}
 	R.dashVelFrames = {}
-	R.dashLastTTI = {}
 	resetTargetState()
 	resetDeactivationState()
 	R.lastGate = "none"
