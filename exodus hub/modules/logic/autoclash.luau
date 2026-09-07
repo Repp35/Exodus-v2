@@ -839,7 +839,7 @@ function Deactivation.travel(distance, radius, speed)
 	end
 	local travelRadius = radius * T.DEACT_TRAVEL_RADIUS_SCALE
 	local baseMax = lerpBySpeed(speed, T.DEACT_TRAVEL_MAX_LO, T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR, T.DEACT_TRAVEL_SPD_LO, T.DEACT_TRAVEL_SPD_HI)
-	local radiusTime = (travelRadius * T.DEACT_TRAVEL_RADIUS_FACTOR) / speed
+	local radiusTime = travelRadius / speed
 	local radiusMax = lerpBySpeed(speed, radiusTime, radiusTime * T.DEACT_TRAVEL_MAX_MIN_FACTOR, T.DEACT_TRAVEL_SPD_LO, T.DEACT_TRAVEL_SPD_HI)
 	local maxTravelTime = math.max(baseMax, radiusMax)
 	return distance / speed > maxTravelTime
