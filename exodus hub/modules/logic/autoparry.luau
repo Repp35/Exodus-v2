@@ -191,14 +191,13 @@ local function resetResilience()
 end
 
 -- radius
-local function computeParryRadius(speed, time)
+-- Retorna SOMENTE o raio físico de parry.
+-- Não existe mais detectionRadius.
+local function computeParryRadius(time)
         time = Utils.isFiniteNumber(time) and time or now()
 
-        local radius =
-                Tuning.DEFLECT_RADIUS
+        return Tuning.DEFLECT_RADIUS
                 + getResilienceBonus(time)
-
-        return radius
 end
 
 -- targeting
@@ -405,10 +404,12 @@ local function bindCharacter(character)
 
                 if config.AutoParry ~= true then
                         clearCycle()
+
                         setPhase(
                                 PHASE_WAITING,
                                 "disabled_or_locked"
                         )
+
                         return
                 end
 
@@ -416,19 +417,23 @@ local function bindCharacter(character)
 
                 if timeNow < Runtime.teleportLockUntil then
                         clearCycle()
+
                         setPhase(
                                 PHASE_WAITING,
                                 "disabled_or_locked"
                         )
+
                         return
                 end
 
                 if isSpamActive() then
                         clearCycle()
+
                         setPhase(
                                 PHASE_WAITING,
                                 "spam_active"
                         )
+
                         return
                 end
 
@@ -452,11 +457,13 @@ local function bindCharacter(character)
                                 PHASE_WAITING,
                                 "snapshot_invalid"
                         )
+
                         return
                 end
 
                 local ball = snapshot.ball
                 local targeted = snapshot.targeted == true
+
                 local deflectCooldown =
                         GameInfo.getDeflectCD()
 
@@ -479,6 +486,7 @@ local function bindCharacter(character)
                                         PHASE_COOLDOWN,
                                         "deflect_cooldown"
                                 )
+
                                 return
                         else
                                 if requestParry() then
@@ -488,6 +496,7 @@ local function bindCharacter(character)
                                 end
 
                                 clearArmed()
+
                                 return
                         end
                 end
@@ -502,6 +511,7 @@ local function bindCharacter(character)
                                 PHASE_WAITING,
                                 "ball_or_target_invalid"
                         )
+
                         return
                 end
 
@@ -512,6 +522,7 @@ local function bindCharacter(character)
                                 PHASE_WAITING,
                                 "ball_too_slow"
                         )
+
                         return
                 end
 
@@ -522,29 +533,26 @@ local function bindCharacter(character)
                                 PHASE_WAITING,
                                 "position_unavailable"
                         )
+
                         return
                 end
 
-                -- Calcula o raio real de parry.
-                -- NÃO existe mais raio de detecção.
+                -- Raio físico real.
+                -- Nenhum raio de detecção é usado.
                 local parryRadius =
-                        computeParryRadius(
-                                speed,
-                                timeNow
-                        )
+                        computeParryRadius(timeNow)
 
                 Runtime.parryRadius = parryRadius
+
+                -- A janela de parry continua sendo convertida
+                -- para distância conforme a velocidade.
+                local effectiveParryRadius =
+                        parryRadius
+                        + speed * Tuning.PARRY_WINDOW
 
                 local delta = root.Position - position
                 local distanceSquared = delta:Dot(delta)
                 local distance = math.sqrt(distanceSquared)
-
-                -- Janela adicional convertida para studs.
-                -- A bola pode estar a qualquer distância;
-                -- o cálculo é feito mesmo que esteja extremamente longe.
-                local effectiveParryRadius =
-                        parryRadius
-                        + speed * Tuning.PARRY_WINDOW
 
                 local impactTime = math.max(
                         0,
@@ -556,6 +564,7 @@ local function bindCharacter(character)
                                 PHASE_WAITING,
                                 "outside_ping_window"
                         )
+
                         return
                 end
 
@@ -578,6 +587,7 @@ local function bindCharacter(character)
                                 PHASE_WAITING,
                                 "ball_already_fired"
                         )
+
                         return
                 end
 
@@ -702,30 +712,15 @@ function AutoParry.onBallSync(data)
         onBallSync(data)
 end
 
-function AutoParry.getParryRadius(speed, time)
+-- API simplificada:
+-- recebe apenas time e retorna somente o raio físico.
+function AutoParry.getParryRadius(time)
         time =
                 Utils.isFiniteNumber(time)
                 and time
                 or now()
 
-        speed =
-                type(speed) == "number"
-                and speed
-                or 0
-
-        local radius =
-                Tuning.DEFLECT_RADIUS
-                + getResilienceBonus(time)
-
-        local ping =
-                Runtime.pingOneWay
-                or DEFAULT_PING_ONE_WAY
-
-        return radius
-                + speed * (
-                        Tuning.PARRY_WINDOW
-                        + ping
-                )
+        return computeParryRadius(time)
 end
 
 function AutoParry.getPingOneWay()
