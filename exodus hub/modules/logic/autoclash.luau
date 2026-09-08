@@ -25,12 +25,10 @@ local T = {
         OWN_DASH_ESCAPE_CONFIRM_FRAMES = 2,
         OWN_DASH_ESCAPE_DOT = -0.30,
         -- deactivation / travel
-        DEACT_TRAVEL_RADIUS_SCALE = 1.2,
-        DEACT_TRAVEL_MAX_LO = 0.070,
+        DEACT_TRAVEL_MAX_LO = 0.10,
         DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
         DEACT_TRAVEL_SPD_LO = 60,
         DEACT_TRAVEL_SPD_HI = 600,
-        DEACT_TRAVEL_RADIUS_FACTOR = 1.10,
         -- system
         MIN_EVAL_INTERVAL = 1 / 120,
 }
@@ -818,12 +816,14 @@ function Deactivation.travel(distance, radius, speed)
         if distance <= radius or speed <= 0 then
                 return false
         end
-        local travelRadius = radius * T.DEACT_TRAVEL_RADIUS_SCALE
-        local baseMax = lerpBySpeed(speed, T.DEACT_TRAVEL_MAX_LO, T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR, T.DEACT_TRAVEL_SPD_LO, T.DEACT_TRAVEL_SPD_HI)
-        local radiusTime = travelRadius / speed
-        local radiusMax = lerpBySpeed(speed, radiusTime, radiusTime * T.DEACT_TRAVEL_MAX_MIN_FACTOR, T.DEACT_TRAVEL_SPD_LO, T.DEACT_TRAVEL_SPD_HI)
-        local maxTravelTime = math.max(baseMax, radiusMax)
-        return distance / speed > maxTravelTime
+        local maxTime = lerpBySpeed(
+                speed,
+                T.DEACT_TRAVEL_MAX_LO,
+                T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
+                T.DEACT_TRAVEL_SPD_LO,
+                T.DEACT_TRAVEL_SPD_HI
+        )
+        return distance / speed > maxTime
 end
 function Deactivation.shouldDeactivate(t, snapshot)
         -- 1. own dash
