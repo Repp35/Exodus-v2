@@ -19,23 +19,15 @@ local T = {
 	REACTIVATE_COOLDOWN = 0.25,
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
 	ACT_DEACT_LOCK_TIME = 0.050,
-	-- dash detection
 	DASH_DETECT_WINDOW = 0.250,
-	-- own dash escape
 	OWN_DASH_ESCAPE_CONFIRM_FRAMES = 2,
 	OWN_DASH_ESCAPE_DOT = -0.30,
-	-- deactivation / travel
-	DEACT_TRAVEL_MAX_LO = 0.10,
-	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.13,
-	DEACT_TRAVEL_SPD_LO = 60,
-	DEACT_TRAVEL_SPD_HI = 600,
-	-- deactivation / escape detector (fast-path for abrupt departures)
-	ESCAPE_DOT_AWAY = -0.45,
-	ESCAPE_TTI_BURST = 0.17,
-	ESCAPE_PROGRESS_BURST = 1.20,
-	ESCAPE_MAX_DT = 0.050,
-	ESCAPE_SPD_LO = 60,
-	ESCAPE_SPD_HI = 600,
+	-- deactivation / direction
+	DEACT_DIRECTION_MAX_LO = 0.060,
+	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
+	DEACT_DIRECTION_SPD_LO = 60,
+	DEACT_DIRECTION_SPD_HI = 600,
+	DEACT_DIRECTION_MIN_RADIUS_FACTOR = 0.40,
 	-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
 }
@@ -68,11 +60,8 @@ local R = {
 	-- deactivation
 	activationDeactLockedUntil = 0,
 	reactivateBlockedUntil = 0,
+	lastDirectionSwitchAt = 0,
 	-- escape detector
-	escapePrevPos = nil,
-	escapePrevRel = nil,
-	escapeLastT = nil,
-	escapeLastDot = nil,
 	-- evaluation
 	lastEvalAt = 0,
 	lastDashScanAt = 0,
@@ -104,14 +93,12 @@ local function now()
 	local ok, value = pcall(Utils.now)
 	return ok and tonumber(value) or 0
 end
-
 local function normalizeTarget(target)
 	if type(target) == "string" then
 		target = tonumber(target)
 	end
 	return type(target) == "number" and target or nil
 end
-
 local function lerpBySpeed(speed, low, high, speedLow, speedHigh)
 	speed = tonumber(speed) or 0
 	if speedHigh <= speedLow then
@@ -120,7 +107,6 @@ local function lerpBySpeed(speed, low, high, speedLow, speedHigh)
 	local alpha = math.clamp((speed - speedLow) / (speedHigh - speedLow), 0, 1)
 	return low + (high - low) * alpha
 end
-
 local function horizontalSpeed(velocity)
 	if typeof(velocity) ~= "Vector3" then
 		return 0
@@ -139,17 +125,14 @@ local function getRootPosition()
 	end)
 	return ok and typeof(position) == "Vector3" and position or nil
 end
-
 local function getSnapshotPosition(snapshot)
 	local position = snapshot and snapshot.position
 	return typeof(position) == "Vector3" and position or nil
 end
-
 local function getDataPosition(data)
 	local position = data and data.RealPosition
 	return typeof(position) == "Vector3" and position or nil
 end
-
 local function getDistance(position)
 	local root = getRootPosition()
 	if not root or typeof(position) ~= "Vector3" then
@@ -166,15 +149,8 @@ local function getPingOneWay()
 	local ok, value = pcall(AutoParry.getPingOneWay)
 	return ok and math.max(tonumber(value) or 0, 0) or 0
 end
-
 local function getReturnWindow(speed)
-	local base = lerpBySpeed(
-		speed,
-		T.RETURN_WIN_LO,
-		T.RETURN_WIN_LO * T.RETURN_WIN_MIN_FACTOR,
-		T.RETURN_SPD_LO,
-		T.RETURN_SPD_HI
-	)
+	local base = lerpBySpeed(speed, T.RETURN_WIN_LO, T.RETURN_WIN_LO * T.RETURN_WIN_MIN_FACTOR, T.RETURN_SPD_LO, T.RETURN_SPD_HI)
 	return math.max(base + getPingOneWay() * T.PING_FACTOR, T.MIN_EVAL_INTERVAL * 1.5)
 end
 
@@ -197,7 +173,6 @@ local function addConnection(list, connection)
 	end
 	return connection
 end
-
 local function disconnectList(list, trackCharacter)
 	for i = #list, 1, -1 do
 		local connection = list[i]
@@ -212,11 +187,9 @@ local function disconnectList(list, trackCharacter)
 		end
 	end
 end
-
 local function disconnectCharacterConnections()
 	disconnectList(R.connections, true)
 end
-
 local function disconnectDashConnections()
 	disconnectList(R.dashConnections, false)
 	R.dashGeneration += 1
@@ -229,8 +202,8 @@ local function resetTargetState()
 	R.wasMeTarget = nil
 	R.lostMeAt = 0
 	R.returnPending = false
+	R.lastDirectionSwitchAt = 0
 end
-
 local function resetOwnDashState()
 	R.ownDashEscapePending = false
 	R.ownDashEscapeSince = 0
@@ -239,15 +212,9 @@ local function resetOwnDashState()
 	R.ownDashEscapeLastDist = nil
 	R.ownDashEscapeFartherStreak = 0
 end
-
 local function resetDeactivationState()
 	resetOwnDashState()
-	R.escapePrevPos = nil
-	R.escapePrevRel = nil
-	R.escapeLastT = nil
-	R.escapeLastDot = nil
 end
-
 local function clearDashState()
 	R.dashEvents = {}
 	R.dashCooldown = {}
@@ -268,19 +235,16 @@ local function setActivationLock(t, snapshot)
 		R.activationDeactLockedUntil = t + T.ACT_DEACT_LOCK_TIME
 	end
 end
-
 local function setActive(active, reason, snapshot)
 	active = active == true
 	if R.active == active then
 		return
 	end
-
 	R.active = active
 	resetDeactivationState()
-
 	local t = now()
-
 	if active then
+		R.lastDirectionSwitchAt = 0
 		if R.clashPartnerId == -1 and R.lastTarget ~= R.localUserId and R.lastTarget ~= -1 then
 			R.clashPartnerId = R.lastTarget
 		end
@@ -290,28 +254,22 @@ local function setActive(active, reason, snapshot)
 		R.reactivateBlockedUntil = t + T.REACTIVATE_COOLDOWN
 		R.activationDeactLockedUntil = 0
 	end
-
 	if Utils and type(Utils.setAutoSpamActive) == "function" then
 		pcall(Utils.setAutoSpamActive, active)
 	end
-
 	setPhase(active and "active" or "idle", reason)
 end
 
 -- full runtime reset
 local function resetRuntime(reason, keepDashDetection)
 	R.generation += 1
-
 	if R.active then
 		setActive(false, reason or "reset")
 	end
-
 	disconnectCharacterConnections()
-
 	if not keepDashDetection then
 		disconnectDashConnections()
 	end
-
 	R.bound = false
 	R.boundRoot = nil
 	R.lastSpeed = 0
@@ -320,11 +278,9 @@ local function resetRuntime(reason, keepDashDetection)
 	R.lastDashScanAt = 0
 	R.reactivateBlockedUntil = 0
 	R.activationDeactLockedUntil = 0
-
 	resetTargetState()
 	resetDeactivationState()
 	clearDashState()
-
 	R.lastGate = "detached"
 	setPhase("detached", reason or "reset")
 end
@@ -340,7 +296,6 @@ local function refreshParryRadius(t)
 		R.parryRadius = radius
 	end
 end
-
 local function updateParryState(t, snapshot)
 	R.lastSpeed = math.max(tonumber(snapshot and snapshot.speed) or 0, 0)
 	refreshParryRadius(t)
@@ -354,44 +309,36 @@ local function canReactivate()
 	end
 	return true
 end
-
 local function activationRadius()
 	return R.parryRadius + R.lastSpeed * T.ACT_RADIUS_EXTRA_WINDOW
 end
-
 local function shouldActivate(snapshot)
 	if not snapshot or not snapshot.ball or not snapshot.ball.Parent then
 		R.lastGate = "no_ball"
 		return false
 	end
-
 	local root = getRootPosition()
 	if not root then
 		R.lastGate = "no_root"
 		return false
 	end
-
 	if snapshot.targeted ~= true then
 		R.lastGate = "target_not_me"
 		return false
 	end
-
 	local position = getSnapshotPosition(snapshot)
 	if not position then
 		R.lastGate = "no_position"
 		return false
 	end
-
 	if R.parryRadius <= 0 then
 		R.lastGate = "no_effective_radius"
 		return false
 	end
-
 	if (root - position).Magnitude > activationRadius() then
 		R.lastGate = "outside_effective_radius"
 		return false
 	end
-
 	R.lastGate = "activation_ready"
 	return true
 end
@@ -401,24 +348,20 @@ local function tryReturnActivate(snapshot)
 	if not R.returnPending or not canReactivate() then
 		return false
 	end
-
 	if R.lostMeAt <= 0 then
 		R.returnPending = false
 		R.lostMeAt = 0
 		R.lastGate = "return_without_loss"
 		return false
 	end
-
 	local elapsed = now() - R.lostMeAt
 	local window = getReturnWindow(R.lastSpeed)
-
 	if elapsed < 0 or elapsed > window then
 		R.returnPending = false
 		R.lostMeAt = 0
 		R.lastGate = "return_too_late"
 		return false
 	end
-
 	return shouldActivate(snapshot)
 end
 
@@ -427,27 +370,22 @@ local function rallyCheck(data)
 	if not R.active or type(data) ~= "table" then
 		return true
 	end
-
 	local target = normalizeTarget(data.TargetPlayerID)
 	if not target or target == R.localUserId or target == R.clashPartnerId then
 		return true
 	end
-
 	local position = getDataPosition(data)
 	if not position then
 		return true
 	end
-
 	local root = getRootPosition()
 	if not root then
 		return true
 	end
-
 	local speed = math.max(R.lastSpeed, tonumber(data.Speed) or 0, 0)
 	if R.parryRadius <= 0 then
 		return true
 	end
-
 	local effectiveRadius = R.parryRadius + speed * T.ACT_RADIUS_EXTRA_WINDOW
 	if (root - position).Magnitude > effectiveRadius then
 		setActive(false, "rally_outside_effective_radius")
@@ -455,53 +393,39 @@ local function rallyCheck(data)
 		R.returnPending = false
 		return false
 	end
-
 	R.clashPartnerId = target
 	return true
 end
 
 -- dash detection
 local Dash = {}
-
 function Dash.cleanExpired(t)
 	for i = #R.dashEvents, 1, -1 do
 		local event = R.dashEvents[i]
-		if not event
-			or not event.player
-			or not event.player.Parent
-			or t - event.detectedAt > T.DASH_DETECT_WINDOW then
+		if not event or not event.player or not event.player.Parent or t - event.detectedAt > T.DASH_DETECT_WINDOW then
 			table.remove(R.dashEvents, i)
 		end
 	end
 end
-
 function Dash.register(player, position, velocity)
 	if not player or not player.Parent then
 		return
 	end
-
 	local t = now()
 	local last = R.dashCooldown[player]
-
 	if last and t - last < T.DASH_DETECT_WINDOW then
 		return
 	end
-
 	R.dashCooldown[player] = t
-
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
-
 	if typeof(position) ~= "Vector3" and root then
 		position = root.Position
 	end
-
 	if typeof(velocity) ~= "Vector3" and root then
 		velocity = root.AssemblyLinearVelocity
 	end
-
 	Dash.cleanExpired(t)
-
 	R.dashEvents[#R.dashEvents + 1] = {
 		player = player,
 		userId = player.UserId,
@@ -510,148 +434,112 @@ function Dash.register(player, position, velocity)
 		velocity = velocity,
 	}
 end
-
 function Dash.isTrack(track)
 	if not track or not track:IsA("AnimationTrack") then
 		return false
 	end
-
 	local animation = track.Animation
 	if not animation then
 		return false
 	end
-
 	local name = string.lower(animation.Name or "")
 	local id = string.lower(animation.AnimationId or "")
-
-	return name:find("dash", 1, true) ~= nil
-		or id:find("dash", 1, true) ~= nil
+	return name:find("dash", 1, true) ~= nil or id:find("dash", 1, true) ~= nil
 end
-
 function Dash.hookAnimator(animator, player, character, generation)
 	if not animator or not player then
 		return
 	end
-
 	local connection = animator.AnimationPlayed:Connect(function(track)
-		if generation ~= R.dashGeneration
-			or not player.Parent
-			or player.Character ~= character then
+		if generation ~= R.dashGeneration or not player.Parent or player.Character ~= character then
 			return
 		end
-
 		if Dash.isTrack(track) then
 			Dash.register(player)
 		end
 	end)
-
 	addConnection(R.dashConnections, connection)
-
 	local snapshot = R.dashTrackSnap[player]
 	if not snapshot then
 		snapshot = {}
 		R.dashTrackSnap[player] = snapshot
 	end
-
 	table.clear(snapshot)
-
 	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 		snapshot[track] = true
 	end
 end
-
 function Dash.scanTracks(players)
 	if not players then
 		return
 	end
-
 	for _, player in ipairs(players:GetPlayers()) do
 		if not player.Parent then
 			continue
 		end
-
 		local character = player.Character
 		if not character then
 			continue
 		end
-
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if not humanoid then
 			continue
 		end
-
 		local animator = humanoid:FindFirstChildOfClass("Animator")
 		if not animator then
 			continue
 		end
-
 		local current = animator:GetPlayingAnimationTracks()
 		local snapshot = R.dashTrackSnap[player]
-
 		if not snapshot then
 			snapshot = {}
 			R.dashTrackSnap[player] = snapshot
 		end
-
 		for _, track in ipairs(current) do
 			if not snapshot[track] and Dash.isTrack(track) then
 				Dash.register(player)
 			end
 		end
-
 		table.clear(snapshot)
-
 		for _, track in ipairs(current) do
 			snapshot[track] = true
 		end
 	end
 end
-
 function Dash.hookRoot(root, player, character, generation)
 	if not root or not player then
 		return
 	end
-
 	local connection = root.ChildAdded:Connect(function(child)
-		if generation ~= R.dashGeneration
-			or not player.Parent
-			or player.Character ~= character then
+		if generation ~= R.dashGeneration or not player.Parent or player.Character ~= character then
 			return
 		end
-
 		if DASH_PARTS[child.Name] then
 			Dash.register(player)
 		end
 	end)
-
 	addConnection(R.dashConnections, connection)
 end
-
 function Dash.scanVelocity(players)
 	if not players then
 		return
 	end
-
 	for _, player in ipairs(players:GetPlayers()) do
 		if not player.Parent then
 			continue
 		end
-
 		local character = player.Character
 		if not character then
 			continue
 		end
-
 		local root = character:FindFirstChild("HumanoidRootPart")
 		if not root then
 			continue
 		end
-
 		local velocity = root.AssemblyLinearVelocity
 		local speed = horizontalSpeed(velocity)
 		local previous = R.dashVelAnterior[player] or 0
 		local delta = speed - previous
-
 		if speed >= 80 and delta >= 15 then
 			R.dashVelFrames[player] = (R.dashVelFrames[player] or 0) + 1
 			Dash.register(player, root.Position, velocity)
@@ -659,90 +547,60 @@ function Dash.scanVelocity(players)
 		else
 			R.dashVelFrames[player] = 0
 		end
-
 		R.dashVelAnterior[player] = speed
 	end
 end
-
 function Dash.attachCharacter(character, player, generation)
-	if generation ~= R.dashGeneration
-		or not character
-		or not player
-		or not player.Parent
-		or player.Character ~= character then
+	if generation ~= R.dashGeneration or not character or not player or not player.Parent or player.Character ~= character then
 		return
 	end
-
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-		or character:WaitForChild("Humanoid", 5)
-
-	if generation ~= R.dashGeneration
-		or player.Character ~= character
-		or not humanoid then
+	local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
+	if generation ~= R.dashGeneration or player.Character ~= character or not humanoid then
 		return
 	end
-
-	local animator = humanoid:FindFirstChildOfClass("Animator")
-		or humanoid:WaitForChild("Animator", 5)
-
+	local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator", 5)
 	if generation ~= R.dashGeneration or player.Character ~= character then
 		return
 	end
-
-	local root = character:FindFirstChild("HumanoidRootPart")
-		or character:WaitForChild("HumanoidRootPart", 5)
-
-	if generation ~= R.dashGeneration
-		or player.Character ~= character then
+	local root = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 5)
+	if generation ~= R.dashGeneration or player.Character ~= character then
 		return
 	end
-
 	if animator then
 		Dash.hookAnimator(animator, player, character, generation)
 	end
-
 	if root then
 		Dash.hookRoot(root, player, character, generation)
 	end
-
 	R.dashVelAnterior[player] = nil
 	R.dashVelFrames[player] = 0
 end
-
 function Dash.hookPlayer(player, generation)
 	if generation ~= R.dashGeneration or not player or not player.Parent then
 		return
 	end
-
 	R.dashTrackSnap[player] = {}
 	R.dashVelAnterior[player] = nil
 	R.dashVelFrames[player] = 0
-
 	if player.Character then
 		task.spawn(Dash.attachCharacter, player.Character, player, generation)
 	end
-
 	local connection = player.CharacterAdded:Connect(function(character)
 		if generation == R.dashGeneration then
 			task.spawn(Dash.attachCharacter, character, player, generation)
 		end
 	end)
-
 	addConnection(R.dashConnections, connection)
 end
-
 function Dash.init(players)
 	if not players then
 		return
 	end
-
 	R.dashGeneration += 1
 	local generation = R.dashGeneration
-
 	for _, player in ipairs(players:GetPlayers()) do
 		Dash.hookPlayer(player, generation)
 	end
-
 	addConnection(
 		R.dashConnections,
 		players.PlayerAdded:Connect(function(player)
@@ -751,7 +609,6 @@ function Dash.init(players)
 			end
 		end)
 	)
-
 	addConnection(
 		R.dashConnections,
 		players.PlayerRemoving:Connect(function(player)
@@ -759,7 +616,6 @@ function Dash.init(players)
 			R.dashTrackSnap[player] = nil
 			R.dashVelAnterior[player] = nil
 			R.dashVelFrames[player] = nil
-
 			for i = #R.dashEvents, 1, -1 do
 				local event = R.dashEvents[i]
 				if event and event.player == player then
@@ -769,12 +625,10 @@ function Dash.init(players)
 		end)
 	)
 end
-
 function Dash.tick(players, t)
 	if not players or t - R.lastDashScanAt < T.MIN_EVAL_INTERVAL then
 		return
 	end
-
 	R.lastDashScanAt = t
 	Dash.cleanExpired(t)
 	Dash.scanTracks(players)
@@ -783,134 +637,96 @@ end
 
 -- own dash escape
 local OwnDash = {}
-
 function OwnDash.getOpponent()
 	if R.clashPartnerId == -1 or R.clashPartnerId == R.localUserId then
 		return nil
 	end
-
 	if not Utils or type(Utils.getPlayers) ~= "function" then
 		return nil
 	end
-
 	local ok, players = pcall(Utils.getPlayers)
 	if not ok or not players then
 		return nil
 	end
-
 	local opponent = players:GetPlayerByUserId(R.clashPartnerId)
 	if not opponent or not opponent.Parent then
 		return nil
 	end
-
 	local character = opponent.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
-
 	if not root or not root.Parent then
 		return nil
 	end
-
 	return opponent, root
 end
-
 function OwnDash.directionDot(velocity, fromPosition, toPosition)
-	if typeof(velocity) ~= "Vector3"
-		or typeof(fromPosition) ~= "Vector3"
-		or typeof(toPosition) ~= "Vector3" then
+	if typeof(velocity) ~= "Vector3" or typeof(fromPosition) ~= "Vector3" or typeof(toPosition) ~= "Vector3" then
 		return nil
 	end
-
 	local velocityMagnitude = horizontalSpeed(velocity)
 	if velocityMagnitude <= 0 then
 		return nil
 	end
-
 	local delta = toPosition - fromPosition
 	local distance = math.sqrt(delta.X * delta.X + delta.Z * delta.Z)
-
 	if distance <= 0 then
 		return nil
 	end
-
-	return (velocity.X / velocityMagnitude) * (delta.X / distance)
-		+ (velocity.Z / velocityMagnitude) * (delta.Z / distance)
+	return (velocity.X / velocityMagnitude) * (delta.X / distance) + (velocity.Z / velocityMagnitude) * (delta.Z / distance)
 end
-
 function OwnDash.getRecentThreat(t)
-	if not R.active
-		or R.clashPartnerId == -1
-		or R.clashPartnerId == R.localUserId then
+	if not R.active or R.clashPartnerId == -1 or R.clashPartnerId == R.localUserId then
 		return nil
 	end
-
 	local _, opponentRoot = OwnDash.getOpponent()
 	if not opponentRoot then
 		return nil
 	end
-
 	local latest
-
 	for i = #R.dashEvents, 1, -1 do
 		local event = R.dashEvents[i]
-
 		if event and event.userId == R.localUserId then
 			local age = t - event.detectedAt
-
 			if age >= 0 and age <= T.DASH_DETECT_WINDOW then
 				latest = event
 				break
 			end
 		end
 	end
-
 	if not latest then
 		return nil
 	end
-
-	if typeof(latest.velocity) == "Vector3"
-		and typeof(latest.position) == "Vector3" then
-		local dot = OwnDash.directionDot(
-			latest.velocity,
-			latest.position,
-			opponentRoot.Position
-		)
-
+	if typeof(latest.velocity) == "Vector3" and typeof(latest.position) == "Vector3" then
+		local dot = OwnDash.directionDot(latest.velocity, latest.position, opponentRoot.Position)
 		if dot ~= nil and dot > T.OWN_DASH_ESCAPE_DOT then
 			return nil
 		end
 	end
-
 	return latest
 end
-
 function OwnDash.shouldDeactivate(t)
 	if not R.active then
 		resetOwnDashState()
 		return false
 	end
-
 	if R.wasMeTarget then
 		resetOwnDashState()
 		R.lastGate = "own_dash_escape_targeted_skip"
 		return false
 	end
-
 	local ownRoot = getRootPosition()
 	if not ownRoot then
 		resetOwnDashState()
 		R.lastGate = "own_dash_escape_no_root"
 		return false
 	end
-
 	local opponent, opponentRoot = OwnDash.getOpponent()
 	if not opponent or not opponentRoot then
 		resetOwnDashState()
 		R.lastGate = "own_dash_escape_no_opponent"
 		return false
 	end
-
 	local event = OwnDash.getRecentThreat(t)
-
 	-- no recent dash
 	if not event then
 		if R.ownDashEscapePending then
@@ -924,10 +740,8 @@ function OwnDash.shouldDeactivate(t)
 		end
 		return false
 	end
-
 	-- new dash
-	if not R.ownDashEscapePending
-		or R.ownDashEscapeDetectedAt ~= event.detectedAt then
+	if not R.ownDashEscapePending or R.ownDashEscapeDetectedAt ~= event.detectedAt then
 		R.ownDashEscapePending = true
 		R.ownDashEscapeSince = t
 		R.ownDashEscapeDetectedAt = event.detectedAt
@@ -937,18 +751,15 @@ function OwnDash.shouldDeactivate(t)
 		R.lastGate = "own_dash_escape_detected"
 		return false
 	end
-
 	-- confirm distance increase
 	local currentDistance = (ownRoot - opponentRoot.Position).Magnitude
 	local previousDistance = R.ownDashEscapeLastDist
-
 	if not previousDistance then
 		R.ownDashEscapeLastDist = currentDistance
 		R.ownDashEscapeFartherStreak = 0
 		R.lastGate = "own_dash_escape_first"
 		return false
 	end
-
 	if currentDistance > previousDistance then
 		R.ownDashEscapeFartherStreak += 1
 		R.ownDashEscapeConfirmFrames = R.ownDashEscapeFartherStreak
@@ -956,7 +767,6 @@ function OwnDash.shouldDeactivate(t)
 		R.lastGate = "own_dash_escape_farther_" .. R.ownDashEscapeFartherStreak
 		return R.ownDashEscapeFartherStreak >= T.OWN_DASH_ESCAPE_CONFIRM_FRAMES
 	end
-
 	-- distance stopped / decreased
 	R.ownDashEscapeFartherStreak = 0
 	R.ownDashEscapeConfirmFrames = 0
@@ -967,199 +777,68 @@ end
 
 -- deactivation
 local Deactivation = {}
-
 function Deactivation.ballStopped(speed)
 	return speed == 0
 end
-
-function Deactivation.travel(distance, radius, speed)
-	if distance <= radius or speed <= 0 then
+function Deactivation.direction(t, snapshot, distance, radius, speed)
+	if snapshot.targeted == true then
+		R.lastGate = "deact_direction_targeted"
 		return false
 	end
-
-	local maxTime = lerpBySpeed(
-		speed,
-		T.DEACT_TRAVEL_MAX_LO,
-		T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
-		T.DEACT_TRAVEL_SPD_LO,
-		T.DEACT_TRAVEL_SPD_HI
-	)
-
-	return distance / speed > maxTime
-end
-
-local function dotAway(rel, vel)
-	if typeof(rel) ~= "Vector3" or typeof(vel) ~= "Vector3" then
-		return 0
-	end
-
-	local relMag = rel.Magnitude
-	local velMag = vel.Magnitude
-
-	if relMag <= 0 or velMag <= 0 then
-		return 0
-	end
-
-	local n = rel / relMag
-	local v = vel / velMag
-
-	return n.X * v.X + n.Y * v.Y + n.Z * v.Z
-end
-
-function Deactivation.escape(t, snapshot, distance, radius, speed, root, position)
-	if speed <= 0 or distance <= 0 then
-		R.escapePrevPos = nil
-		R.escapePrevRel = nil
-		R.lastGate = "deact_escape_invalid"
+	local minimumRadius = radius * T.DEACT_DIRECTION_MIN_RADIUS_FACTOR
+	if distance <= minimumRadius then
+		R.lastGate = "deact_direction_inside_radius"
 		return false
 	end
-
-	local rel = position - root
-
-	if rel.Magnitude <= 0 then
-		R.escapePrevPos = nil
-		R.escapePrevRel = nil
-		R.lastGate = "deact_escape_invalid"
+	local directionMax = math.max(lerpBySpeed(speed, T.DEACT_DIRECTION_MAX_LO, T.DEACT_DIRECTION_MAX_LO * T.DEACT_DIRECTION_MAX_MIN_FACTOR, T.DEACT_DIRECTION_SPD_LO, T.DEACT_DIRECTION_SPD_HI), T.MIN_EVAL_INTERVAL * 1.5)
+	if R.lastDirectionSwitchAt <= 0 then
 		return false
 	end
-
-	local dt = 0
-
-	if R.escapePrevPos
-		and typeof(R.escapePrevPos) == "Vector3"
-		and R.escapeLastT then
-		dt = t - R.escapeLastT
-
-		if dt < 0 or dt > T.ESCAPE_MAX_DT then
-			dt = 0
-		end
-	end
-
-	local vel = Vector3.zero
-
-	if dt > 0 then
-		vel = (position - R.escapePrevPos) / dt
-	end
-
-	local relSpeed = 0
-
-	if dt > 0
-		and R.escapePrevRel
-		and typeof(R.escapePrevRel) == "Vector3" then
-		relSpeed = (rel - R.escapePrevRel).Magnitude / dt
-	end
-
-	local closingSpeed = math.max(speed, relSpeed)
-	local tti = closingSpeed > 0 and distance / closingSpeed or math.huge
-	local dot = dotAway(rel, vel)
-	local away = dot <= T.ESCAPE_DOT_AWAY
-
-	local awayStep = 0
-
-	if away and dt > 0 then
-		awayStep = -dot * vel.Magnitude * dt
-		if awayStep < 0 then
-			awayStep = 0
-		end
-	end
-
-	local progressGain = awayStep / math.max(radius, 0.0001)
-
-	local ttiBurst = lerpBySpeed(
-		speed,
-		T.ESCAPE_TTI_BURST,
-		T.ESCAPE_TTI_BURST * 1.5,
-		T.ESCAPE_SPD_LO,
-		T.ESCAPE_SPD_HI
-	)
-
-	local progressBurst = lerpBySpeed(
-		speed,
-		T.ESCAPE_PROGRESS_BURST,
-		T.ESCAPE_PROGRESS_BURST * 0.7,
-		T.ESCAPE_SPD_LO,
-		T.ESCAPE_SPD_HI
-	)
-
-	R.escapePrevPos = position
-	R.escapePrevRel = rel
-	R.escapeLastT = t
-	R.escapeLastDot = dot
-
-	if away and tti >= ttiBurst and progressGain >= progressBurst then
-		R.lastGate = "deact_escape"
+	if t - R.lastDirectionSwitchAt > directionMax then
+		R.lastGate = "deact_direction"
 		return true
 	end
-
-	R.lastGate = "deact_escape_none"
 	return false
 end
-
 function Deactivation.shouldDeactivate(t, snapshot)
-	-- 1. own dash
 	if OwnDash.shouldDeactivate(t) then
 		R.lastGate = "own_dash_escape"
 		return true
 	end
-
-	-- 2. activation lock
 	if t < R.activationDeactLockedUntil then
 		R.lastGate = "deact_activation_lock"
 		return false
 	end
-
-	-- 3. position
 	local root = getRootPosition()
 	local position = getSnapshotPosition(snapshot)
-
 	if not root or not position then
 		R.lastGate = "deact_no_position"
 		return false
 	end
-
 	local radius = R.parryRadius
-
 	if radius <= 0 then
 		R.lastGate = "deact_no_radius"
 		return false
 	end
-
 	local speed = math.max(R.lastSpeed, 0)
 	local distance = (root - position).Magnitude
-
-	-- 4. ball stopped
 	if Deactivation.ballStopped(speed) then
 		R.lastGate = "deact_ball_stopped"
 		return true
 	end
-
-	-- 5. travel
-	if Deactivation.travel(distance, radius, speed) then
-		R.lastGate = "deact_travel"
+	if Deactivation.direction(t, snapshot, distance, radius, speed) then
 		return true
 	end
-
-	-- 6. escape detector
-	if Deactivation.escape(t, snapshot, distance, radius, speed, root, position) then
-		return true
-	end
-
 	R.lastGate = "deact_none"
 	return false
 end
 
 -- main clash evaluation
 local function evaluateClash(t, snapshot)
-	if not R.boundRoot
-		or not R.boundRoot.Parent
-		or not snapshot
-		or not snapshot.ball
-		or not snapshot.ball.Parent then
+	if not R.boundRoot or not R.boundRoot.Parent or not snapshot or not snapshot.ball or not snapshot.ball.Parent then
 		return
 	end
-
 	updateParryState(t, snapshot)
-
 	-- active
 	if R.active then
 		if Deactivation.shouldDeactivate(t, snapshot) then
@@ -1167,7 +846,6 @@ local function evaluateClash(t, snapshot)
 		end
 		return
 	end
-
 	-- return activation
 	if tryReturnActivate(snapshot) then
 		R.lostMeAt = 0
@@ -1181,7 +859,6 @@ local function getPlayersService()
 	if not Utils or type(Utils.getPlayers) ~= "function" then
 		return nil
 	end
-
 	local ok, players = pcall(Utils.getPlayers)
 	return ok and players or nil
 end
@@ -1192,9 +869,7 @@ local function checkHubState()
 		R.lastGate = "no_utils"
 		return false
 	end
-
 	local ok, manual = pcall(Utils.isManualSpamActive)
-
 	if not ok or manual then
 		if R.active then
 			setActive(false, "manual_spam")
@@ -1203,9 +878,7 @@ local function checkHubState()
 		R.lastGate = "manual_spam"
 		return false
 	end
-
 	ok, manual = pcall(Utils.isActive)
-
 	if not ok or not manual then
 		if R.active then
 			setActive(false, "hub_inactive")
@@ -1214,10 +887,8 @@ local function checkHubState()
 		R.lastGate = "hub_inactive"
 		return false
 	end
-
 	local config
 	ok, config = pcall(Utils.getConfig)
-
 	if not ok or type(config) ~= "table" or not config.AutoClash then
 		if R.active then
 			setActive(false, "hub_disabled")
@@ -1226,142 +897,101 @@ local function checkHubState()
 		R.lastGate = "hub_disabled"
 		return false
 	end
-
 	return true
 end
 
 -- heartbeat
 local function heartbeatStep(generation, character, root, _dt)
-	if generation ~= R.generation
-		or not character.Parent
-		or not root.Parent then
+	if generation ~= R.generation or not character.Parent or not root.Parent then
 		return
 	end
-
 	local t = now()
-
 	if not checkHubState() then
 		return
 	end
-
 	local players = getPlayersService()
-
 	if players then
 		Dash.tick(players, t)
 	end
-
 	if t - R.lastEvalAt < T.MIN_EVAL_INTERVAL then
 		return
 	end
-
 	R.lastEvalAt = t
-
-	if not GameInfo
-		or type(GameInfo.getSnapshot) ~= "function"
-		or type(GameInfo.isSnapshotValid) ~= "function" then
+	if not GameInfo or type(GameInfo.getSnapshot) ~= "function" or type(GameInfo.isSnapshotValid) ~= "function" then
 		R.lastGate = "no_gameinfo"
 		return
 	end
-
 	local ok, snapshot = pcall(GameInfo.getSnapshot, R.lastTarget, t)
-
 	if not ok or type(snapshot) ~= "table" then
 		R.lastGate = "snapshot_error"
 		return
 	end
-
 	ok = pcall(GameInfo.isSnapshotValid, snapshot, t)
-
 	if not ok then
 		return
 	end
-
 	local valid
 	local validOk, validResult = pcall(GameInfo.isSnapshotValid, snapshot, t)
-
 	if not validOk or validResult ~= true then
 		return
 	end
-
 	valid = true
-
 	if not valid then
 		return
 	end
-
 	local target = normalizeTarget(snapshot.targetId)
-
 	if target then
 		R.lastTarget = target
 	end
-
 	evaluateClash(t, snapshot)
 end
 
 -- character binding
 local function bindCharacter(character)
 	resetRuntime("rebind", true)
-
 	local generation = R.generation
-
 	if not character or not character.Parent then
 		return false
 	end
-
-	local root = character:FindFirstChild("HumanoidRootPart")
-		or character:WaitForChild("HumanoidRootPart", 1)
-
+	local root = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 1)
 	if generation ~= R.generation or not root or not root.Parent then
 		return false
 	end
-
 	R.boundRoot = root
 	R.lastGate = "waiting_for_character"
-
 	if not Utils or type(Utils.getRunService) ~= "function" then
 		R.boundRoot = nil
 		R.lastGate = "no_run_service"
 		return false
 	end
-
 	local ok, runService = pcall(Utils.getRunService)
-
 	if not ok or not runService or not runService.Heartbeat then
 		R.boundRoot = nil
 		R.lastGate = "no_run_service"
 		return false
 	end
-
 	-- heartbeat
 	local heartbeat = runService.Heartbeat:Connect(function(dt)
 		heartbeatStep(generation, character, root, dt)
 	end)
-
 	addConnection(R.connections, heartbeat)
-
 	if type(Utils.trackCharacter) == "function" then
 		pcall(Utils.trackCharacter, heartbeat)
 	end
-
 	-- character lifetime
 	local ancestry = character.AncestryChanged:Connect(function(_, parent)
 		if parent then
 			return
 		end
-
 		resetRuntime("character_removed", false)
 		R.lastGate = "character_removed"
 	end)
-
 	addConnection(R.connections, ancestry)
-
 	if type(Utils.trackCharacter) == "function" then
 		pcall(Utils.trackCharacter, ancestry)
 	end
-
 	R.bound = true
 	setPhase("waiting", "character_bound")
-
 	-- dash system
 	if #R.dashConnections == 0 then
 		local players = getPlayersService()
@@ -1369,7 +999,6 @@ local function bindCharacter(character)
 			Dash.init(players)
 		end
 	end
-
 	return true
 end
 
@@ -1378,46 +1007,40 @@ function AutoClash.onBallSync(data)
 	if type(data) ~= "table" or not Utils or not R.localUserId then
 		return
 	end
-
 	-- teleport
 	if data.Teleported == true then
 		if R.active then
 			setActive(false, "teleported")
 		end
-
 		resetTargetState()
 		R.lastGate = "teleported"
 		return
 	end
-
 	-- target
 	local target = normalizeTarget(data.TargetPlayerID)
-
 	if not target then
 		if R.active then
 			setActive(false, "invalid_target")
 		end
-
 		resetTargetState()
 		R.lastGate = "invalid_target"
 		return
 	end
-
 	local previousTarget = R.lastTarget
 	R.lastTarget = target
-
 	local wasMe = R.wasMeTarget
 	local isMe = target == R.localUserId
-
 	-- first sync
 	if wasMe == nil then
 		R.wasMeTarget = isMe
 		R.lastGate = isMe and "initial_me" or "initial_not_me"
 		return
 	end
-
 	local t = now()
-
+	-- target switch
+	if wasMe ~= isMe then
+		R.lastDirectionSwitchAt = t
+	end
 	-- we lost the ball
 	if wasMe and not isMe then
 		if R.active then
@@ -1428,24 +1051,20 @@ function AutoClash.onBallSync(data)
 		else
 			R.clashPartnerId = target
 		end
-
 		R.lostMeAt = t
 		R.returnPending = false
 		R.lastGate = "target_lost"
-
 	-- ball returned to us
 	elseif not wasMe and isMe then
 		if previousTarget ~= -1 and previousTarget ~= R.localUserId then
 			R.clashPartnerId = previousTarget
 		end
-
 		if R.lostMeAt <= 0 then
 			R.returnPending = false
 			R.lastGate = "return_without_loss"
 		else
 			local elapsed = t - R.lostMeAt
 			local window = getReturnWindow(R.lastSpeed)
-
 			if elapsed >= 0 and elapsed <= window then
 				R.returnPending = true
 				R.lastGate = "target_return"
@@ -1456,7 +1075,6 @@ function AutoClash.onBallSync(data)
 			end
 		end
 	end
-
 	R.wasMeTarget = isMe
 end
 
@@ -1465,7 +1083,6 @@ function AutoClash.setup(deps)
 	if type(deps) ~= "table" then
 		return false
 	end
-
 	local required = {
 		{ "AutoParry", "getParryRadius" },
 		{ "AutoParry", "getPingOneWay" },
@@ -1484,15 +1101,12 @@ function AutoClash.setup(deps)
 		{ "Utils", "getLocalPlayer" },
 		{ "Utils", "apiVersion" },
 	}
-
 	for _, requirement in ipairs(required) do
 		local object = deps[requirement[1]]
-
 		if not object or type(object[requirement[2]]) ~= "function" then
 			return false
 		end
 	end
-
 	-- clean old instance
 	if Utils then
 		resetRuntime("setup", false)
@@ -1500,27 +1114,22 @@ function AutoClash.setup(deps)
 		disconnectDashConnections()
 		disconnectCharacterConnections()
 	end
-
 	-- dependencies
 	AutoParry = deps.AutoParry
 	GameInfo = deps.GameInfo
 	Utils = deps.Utils
-
 	-- local player
 	local player
 	local ok = pcall(function()
 		player = Utils.getLocalPlayer()
 	end)
-
 	if not ok or not player then
 		AutoParry = nil
 		GameInfo = nil
 		Utils = nil
 		return false
 	end
-
 	R.localUserId = player.UserId
-
 	-- state
 	R.generation = 0
 	R.bound = false
@@ -1536,20 +1145,15 @@ function AutoClash.setup(deps)
 	R.connections = {}
 	R.dashConnections = {}
 	R.dashGeneration = 0
-
 	resetTargetState()
 	resetDeactivationState()
 	clearDashState()
-
 	R.lastGate = "none"
-
 	-- dash init
 	local players = getPlayersService()
-
 	if players then
 		Dash.init(players)
 	end
-
 	return true
 end
 
@@ -1557,11 +1161,9 @@ end
 function AutoClash.bindCharacter(character)
 	return bindCharacter(character)
 end
-
 function AutoClash.detachCharacter()
 	resetRuntime("detach", false)
 end
-
 function AutoClash.teardown()
 	resetRuntime("teardown", false)
 	AutoParry = nil
@@ -1573,17 +1175,14 @@ end
 function AutoClash.isActive()
 	return R.active == true
 end
-
 function AutoClash.getStatus()
 	local schema
-
 	if Utils and type(Utils.apiVersion) == "function" then
 		local ok, value = pcall(Utils.apiVersion)
 		if ok then
 			schema = value
 		end
 	end
-
 	return {
 		schema = schema,
 		phase = R.phase,
@@ -1595,7 +1194,6 @@ function AutoClash.getStatus()
 		lastGate = R.lastGate,
 		ownDashEscapePending = R.ownDashEscapePending == true,
 		ownDashEscapeConfirmFrames = R.ownDashEscapeConfirmFrames,
-		escapeLastDot = R.escapeLastDot,
 	}
 end
 
