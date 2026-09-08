@@ -26,7 +26,7 @@ local T = {
         OWN_DASH_ESCAPE_DOT = -0.30,
         -- deactivation / travel
         DEACT_TRAVEL_MAX_LO = 0.10,
-        DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
+        DEACT_TRAVEL_MAX_MIN_FACTOR = 0.13,
         DEACT_TRAVEL_SPD_LO = 60,
         DEACT_TRAVEL_SPD_HI = 600,
         -- system
