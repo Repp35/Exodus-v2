@@ -39,7 +39,7 @@ local T = {
 	DEACT_DIRECTION_MIN_RADIUS_FACTOR = 0.30,
 	-- deactivation / escape detector (fast-path for abrupt departures)
 	ESCAPE_DOT_AWAY = -0.45,
-	ESCAPE_TTI_BURST = 0.120,
+	ESCAPE_TTI_BURST = 0.200,
 	ESCAPE_PROGRESS_BURST = 1.20,
 	ESCAPE_MAX_DT = 0.050,
 	ESCAPE_SPD_LO = 60,
