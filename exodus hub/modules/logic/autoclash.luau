@@ -16,7 +16,7 @@ local T = {
 	RETURN_SPD_HI = 600,
 	PING_FACTOR = 0.3,
 	ACT_RADIUS_EXTRA_WINDOW = 0.150,
-	REACTIVATE_COOLDOWN = 0.25,
+	REACTIVATE_COOLDOWN = 0.10,
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
 	ACT_DEACT_LOCK_TIME = 0.050,
 	DASH_DETECT_WINDOW = 0.250,
@@ -389,8 +389,6 @@ local function rallyCheck(data)
 	local effectiveRadius = R.parryRadius + speed * T.ACT_RADIUS_EXTRA_WINDOW
 	if (root - position).Magnitude > effectiveRadius then
 		setActive(false, "rally_outside_effective_radius")
-		R.lostMeAt = 0
-		R.returnPending = false
 		return false
 	end
 	R.clashPartnerId = target
@@ -1043,6 +1041,7 @@ function AutoClash.onBallSync(data)
 	end
 	-- we lost the ball
 	if wasMe and not isMe then
+		R.lostMeAt = t
 		if R.active then
 			if not rallyCheck(data) then
 				R.wasMeTarget = isMe
@@ -1051,7 +1050,6 @@ function AutoClash.onBallSync(data)
 		else
 			R.clashPartnerId = target
 		end
-		R.lostMeAt = t
 		R.returnPending = false
 		R.lastGate = "target_lost"
 	-- ball returned to us
