@@ -268,7 +268,6 @@ local function setActive(active, reason, snapshot)
         resetDeactivationState()
         local t = now()
         if active then
-                R.stoppedBallFrames = 0
                 if R.clashPartnerId == -1 and R.lastTarget ~= R.localUserId and R.lastTarget ~= -1 then
                         R.clashPartnerId = R.lastTarget
                 end
@@ -1213,7 +1212,6 @@ function AutoClash.setup(deps)
         R.lastDashScanAt = 0
         R.reactivateBlockedUntil = 0
         R.activationDeactLockedUntil = 0
-        R.stoppedBallFrames = 0
         R.connections = {}
         R.dashConnections = {}
         R.dashGeneration = 0
@@ -1266,7 +1264,6 @@ function AutoClash.getStatus()
                 lastGate = R.lastGate,
                 ownDashEscapePending = R.ownDashEscapePending == true,
                 ownDashEscapeConfirmFrames = R.ownDashEscapeConfirmFrames,
-                stoppedBallFrames = R.stoppedBallFrames,
                 escapeLastDot = R.escapeLastDot,
         }
 end
