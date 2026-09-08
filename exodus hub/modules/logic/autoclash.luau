@@ -29,8 +29,13 @@ local T = {
         DEACT_TRAVEL_MAX_MIN_FACTOR = 0.13,
         DEACT_TRAVEL_SPD_LO = 60,
         DEACT_TRAVEL_SPD_HI = 600,
-        -- deactivation / escape
-        ESCAPE_CONFIRM_FRAMES = 3,
+        -- deactivation / escape detector (fast-path for abrupt departures)
+        ESCAPE_DOT_AWAY = -0.45,
+        ESCAPE_TTI_BURST = 0.17,
+        ESCAPE_PROGRESS_BURST = 1.20,
+        ESCAPE_MAX_DT = 0.050,
+        ESCAPE_SPD_LO = 60,
+        ESCAPE_SPD_HI = 600,
         -- system
         MIN_EVAL_INTERVAL = 1 / 120,
 }
@@ -61,10 +66,13 @@ local R = {
         lostMeAt = 0,
         returnPending = false,
         -- deactivation
-        escapeFrames = 0,
-        escapeLastDist = nil,
         activationDeactLockedUntil = 0,
         reactivateBlockedUntil = 0,
+        -- escape detector
+        escapePrevPos = nil,
+        escapePrevRel = nil,
+        escapeLastT = nil,
+        escapeLastDot = nil,
         -- evaluation
         lastEvalAt = 0,
         lastDashScanAt = 0,
@@ -225,8 +233,10 @@ local function resetOwnDashState()
 end
 local function resetDeactivationState()
         resetOwnDashState()
-        R.escapeFrames = 0
-        R.escapeLastDist = nil
+        R.escapePrevPos = nil
+        R.escapePrevRel = nil
+        R.escapeLastT = nil
+        R.escapeLastDot = nil
 end
 local function clearDashState()
         R.dashEvents = {}
@@ -831,24 +841,72 @@ function Deactivation.travel(distance, radius, speed)
         )
         return distance / speed > maxTime
 end
-function Deactivation.escape(distance, radius)
-        if distance <= radius then
-                R.escapeFrames = 0
-                R.escapeLastDist = nil
+local function dotAway(rel, vel)
+        if typeof(rel) ~= "Vector3" or typeof(vel) ~= "Vector3" then
+                return 0
+        end
+        local relMag = rel.Magnitude
+        local velMag = vel.Magnitude
+        if relMag <= 0 or velMag <= 0 then
+                return 0
+        end
+        local n = rel.Unit
+        local v = vel.Unit
+        return n.X * v.X + n.Y * v.Y + n.Z * v.Z
+end
+function Deactivation.escape(t, snapshot, distance, radius, speed, root, position)
+        if speed <= 0 or distance <= 0 then
+                R.escapePrevPos = nil
+                R.escapePrevRel = nil
+                R.lastGate = "deact_escape_invalid"
                 return false
         end
-        local prev = R.escapeLastDist
-        R.escapeLastDist = distance
-        if prev == nil then
-                R.escapeFrames = 0
+        local rel = position - root
+        if rel.Magnitude <= 0 then
+                R.escapePrevPos = nil
+                R.escapePrevRel = nil
+                R.lastGate = "deact_escape_invalid"
                 return false
         end
-        if distance > prev then
-                R.escapeFrames += 1
-        else
-                R.escapeFrames = 0
+        local dt = 0
+        if R.escapePrevPos and typeof(R.escapePrevPos) == "Vector3" and R.escapeLastT then
+                dt = t - R.escapeLastT
+                if dt < 0 or dt > T.ESCAPE_MAX_DT then
+                        dt = 0
+                end
         end
-        return R.escapeFrames >= T.ESCAPE_CONFIRM_FRAMES
+        local vel = Vector3.zero
+        if dt > 0 then
+                vel = (position - R.escapePrevPos) / dt
+        end
+        local relSpeed = 0
+        if dt > 0 and R.escapePrevRel and typeof(R.escapePrevRel) == "Vector3" then
+                relSpeed = ((rel - R.escapePrevRel).Magnitude) / dt
+        end
+        local closingSpeed = math.max(speed, relSpeed)
+        local tti = closingSpeed > 0 and (distance / closingSpeed) or math.huge
+        local dot = dotAway(rel, vel)
+        local away = dot <= T.ESCAPE_DOT_AWAY
+        local awayStep = 0
+        if away and dt > 0 then
+                awayStep = -dot * vel.Magnitude * dt
+                if awayStep < 0 then
+                        awayStep = 0
+                end
+        end
+        local progressGain = awayStep / math.max(radius, 0.0001)
+        local ttiBurst = lerpBySpeed(speed, T.ESCAPE_TTI_BURST, T.ESCAPE_TTI_BURST * 1.5, T.ESCAPE_SPD_LO, T.ESCAPE_SPD_HI)
+        local progressBurst = lerpBySpeed(speed, T.ESCAPE_PROGRESS_BURST, T.ESCAPE_PROGRESS_BURST * 0.7, T.ESCAPE_SPD_LO, T.ESCAPE_SPD_HI)
+        R.escapePrevPos = position
+        R.escapePrevRel = rel
+        R.escapeLastT = t
+        R.escapeLastDot = dot
+        if away and tti >= ttiBurst and progressGain >= progressBurst then
+                R.lastGate = "deact_escape"
+                return true
+        end
+        R.lastGate = "deact_escape_none"
+        return false
 end
 function Deactivation.shouldDeactivate(t, snapshot)
         -- 1. own dash
@@ -885,9 +943,8 @@ function Deactivation.shouldDeactivate(t, snapshot)
                 R.lastGate = "deact_travel"
                 return true
         end
-        -- 6. escape
-        if Deactivation.escape(distance, radius) then
-                R.lastGate = "deact_escape"
+        -- 6. escape detector
+        if Deactivation.escape(t, snapshot, distance, radius, speed, root, position) then
                 return true
         end
         R.lastGate = "deact_none"
@@ -1210,6 +1267,7 @@ function AutoClash.getStatus()
                 ownDashEscapePending = R.ownDashEscapePending == true,
                 ownDashEscapeConfirmFrames = R.ownDashEscapeConfirmFrames,
                 stoppedBallFrames = R.stoppedBallFrames,
+                escapeLastDot = R.escapeLastDot,
         }
 end
 
