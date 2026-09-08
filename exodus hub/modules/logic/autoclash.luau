@@ -29,6 +29,8 @@ local T = {
         DEACT_TRAVEL_MAX_MIN_FACTOR = 0.13,
         DEACT_TRAVEL_SPD_LO = 60,
         DEACT_TRAVEL_SPD_HI = 600,
+        -- deactivation / escape
+        ESCAPE_CONFIRM_FRAMES = 3,
         -- system
         MIN_EVAL_INTERVAL = 1 / 120,
 }
@@ -59,6 +61,8 @@ local R = {
         lostMeAt = 0,
         returnPending = false,
         -- deactivation
+        escapeFrames = 0,
+        escapeLastDist = nil,
         activationDeactLockedUntil = 0,
         reactivateBlockedUntil = 0,
         -- evaluation
@@ -221,6 +225,8 @@ local function resetOwnDashState()
 end
 local function resetDeactivationState()
         resetOwnDashState()
+        R.escapeFrames = 0
+        R.escapeLastDist = nil
 end
 local function clearDashState()
         R.dashEvents = {}
@@ -825,6 +831,25 @@ function Deactivation.travel(distance, radius, speed)
         )
         return distance / speed > maxTime
 end
+function Deactivation.escape(distance, radius)
+        if distance <= radius then
+                R.escapeFrames = 0
+                R.escapeLastDist = nil
+                return false
+        end
+        local prev = R.escapeLastDist
+        R.escapeLastDist = distance
+        if prev == nil then
+                R.escapeFrames = 0
+                return false
+        end
+        if distance > prev then
+                R.escapeFrames += 1
+        else
+                R.escapeFrames = 0
+        end
+        return R.escapeFrames >= T.ESCAPE_CONFIRM_FRAMES
+end
 function Deactivation.shouldDeactivate(t, snapshot)
         -- 1. own dash
         if OwnDash.shouldDeactivate(t) then
@@ -858,6 +883,11 @@ function Deactivation.shouldDeactivate(t, snapshot)
         -- 5. travel
         if Deactivation.travel(distance, radius, speed) then
                 R.lastGate = "deact_travel"
+                return true
+        end
+        -- 6. escape
+        if Deactivation.escape(distance, radius) then
+                R.lastGate = "deact_escape"
                 return true
         end
         R.lastGate = "deact_none"
