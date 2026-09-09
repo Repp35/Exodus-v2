@@ -1060,11 +1060,14 @@ function AutoClash.onBallSync(data)
 	R.lastTarget = target
 	local isMe = target == R.localUserId
 	local wasMe = R.wasMeTarget
-	-- any targetId change counts as a flip (clash, rally, or first sync after
-	-- startup/bind); the deactivation path is what actually decides whether we
-	-- should still be active after the flip
-	if previousTarget ~= target then
+	-- Only count a direction switch if the flip TOUCHES my target (was me,
+	-- or is me now). Flips between other players are ignored: if the ball
+	-- hovered on someone else for 300ms and only then came back to me, the
+	-- activation window must NOT reset — that target switch is stale.
+	if previousTarget ~= target and (isMe or wasMe == true) then
 		R.lastDirectionSwitchAt = now()
+	end
+	if previousTarget ~= target then
 		if wasMe == nil then
 			R.lastGate = isMe and "initial_me" or "initial_not_me"
 		else
