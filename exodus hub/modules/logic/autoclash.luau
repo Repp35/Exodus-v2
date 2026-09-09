@@ -10,13 +10,9 @@ local Utils
 -- configuration
 local T = {
 	-- activation
-	RETURN_WIN_LO = 0.10,
-	RETURN_WIN_MIN_FACTOR = 0.10,
-	RETURN_SPD_LO = 60,
-	RETURN_SPD_HI = 600,
-	PING_FACTOR = 0.3,
 	ACT_RADIUS_EXTRA_WINDOW = 0.15,
 	REACTIVATE_COOLDOWN = 0.25,
+	ACT_PING_FACTOR = 0.3,
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
 	ACT_DEACT_LOCK_TIME = 0.05,
 	DASH_DETECT_WINDOW = 0.25,
@@ -55,8 +51,6 @@ local R = {
 	parryRadius = 0,
 	-- target return
 	wasMeTarget = nil,
-	lostMeAt = 0,
-	returnPending = false,
 	-- deactivation
 	activationDeactLockedUntil = 0,
 	reactivateBlockedUntil = 0,
@@ -139,9 +133,18 @@ local function getPingOneWay()
 	local ok, value = pcall(AutoParry.getPingOneWay)
 	return ok and math.max(tonumber(value) or 0, 0) or 0
 end
-local function getReturnWindow(speed)
-	local base = lerpBySpeed(speed, T.RETURN_WIN_LO, T.RETURN_WIN_LO * T.RETURN_WIN_MIN_FACTOR, T.RETURN_SPD_LO, T.RETURN_SPD_HI)
-	return math.max(base + getPingOneWay() * T.PING_FACTOR, 2 / 60)
+-- direction-switch window, shared by activation and deactivation
+-- activation includes a small ping pad (late activation costs parry,
+-- late deactivation is harmless); minimum clamp of 2/60s
+local function switchWindowMax(speed)
+	local base = lerpBySpeed(
+		speed,
+		T.DEACT_DIRECTION_MAX_LO,
+		T.DEACT_DIRECTION_MAX_LO * T.DEACT_DIRECTION_MAX_MIN_FACTOR,
+		T.DEACT_DIRECTION_SPD_LO,
+		T.DEACT_DIRECTION_SPD_HI
+	)
+	return math.max(base + getPingOneWay() * T.ACT_PING_FACTOR, 2 / 60)
 end
 
 -- phase
@@ -190,8 +193,6 @@ local function resetTargetState()
 	R.lastTarget = -1
 	R.clashPartnerId = -1
 	R.wasMeTarget = nil
-	R.lostMeAt = 0
-	R.returnPending = false
 	R.lastDirectionSwitchAt = 0
 end
 local function resetOwnDashState()
@@ -233,7 +234,6 @@ local function setActive(active, reason, snapshot)
 	resetDeactivationState()
 	local t = now()
 	if active then
-		R.lastDirectionSwitchAt = 0
 		if R.clashPartnerId == -1 and R.lastTarget ~= R.localUserId and R.lastTarget ~= -1 then
 			R.clashPartnerId = R.lastTarget
 		end
@@ -301,7 +301,11 @@ end
 local function activationRadius()
 	return R.parryRadius + R.lastSpeed * T.ACT_RADIUS_EXTRA_WINDOW
 end
-local function shouldActivate(snapshot)
+local function shouldActivate(t, snapshot)
+	if R.lastDirectionSwitchAt <= 0 or t - R.lastDirectionSwitchAt > switchWindowMax(R.lastSpeed) then
+		R.lastGate = "no_recent_switch"
+		return false
+	end
 	if not snapshot or not snapshot.ball or not snapshot.ball.Parent then
 		R.lastGate = "no_ball"
 		return false
@@ -332,57 +336,8 @@ local function shouldActivate(snapshot)
 	return true
 end
 
--- target return
-local function tryReturnActivate(snapshot)
-	if not R.returnPending or not canReactivate() then
-		return false
-	end
-	if R.lostMeAt <= 0 then
-		R.returnPending = false
-		R.lostMeAt = 0
-		R.lastGate = "return_without_loss"
-		return false
-	end
-	local elapsed = now() - R.lostMeAt
-	local window = getReturnWindow(R.lastSpeed)
-	if elapsed < 0 or elapsed > window then
-		R.returnPending = false
-		R.lostMeAt = 0
-		R.lastGate = "return_too_late"
-		return false
-	end
-	return shouldActivate(snapshot)
-end
-
--- rally check
-local function rallyCheck(data)
-	if not R.active or type(data) ~= "table" then
-		return true
-	end
-	local target = normalizeTarget(data.TargetPlayerID)
-	if not target or target == R.localUserId or target == R.clashPartnerId then
-		return true
-	end
-	local position = getDataPosition(data)
-	if not position then
-		return true
-	end
-	local root = getRootPosition()
-	if not root then
-		return true
-	end
-	local speed = math.max(R.lastSpeed, tonumber(data.Speed) or 0, 0)
-	if R.parryRadius <= 0 then
-		return true
-	end
-	local effectiveRadius = R.parryRadius + speed * T.ACT_RADIUS_EXTRA_WINDOW
-	if (root - position).Magnitude > effectiveRadius then
-		setActive(false, "rally_outside_effective_radius")
-		return false
-	end
-	R.clashPartnerId = target
-	return true
-end
+-- rally handling: now lives entirely in Deactivation.direction (the activation
+-- path is driven by lastDirectionSwitchAt, so no explicit rally branch is needed)
 
 -- dash detection
 local Dash = {}
@@ -826,9 +781,7 @@ local function evaluateClash(t, snapshot)
 		end
 		return
 	end
-	if tryReturnActivate(snapshot) then
-		R.lostMeAt = 0
-		R.returnPending = false
+	if canReactivate() and shouldActivate(t, snapshot) then
 		setActive(true, "activated", snapshot)
 	end
 end
@@ -993,47 +946,17 @@ function AutoClash.onBallSync(data)
 	end
 	local previousTarget = R.lastTarget
 	R.lastTarget = target
-	local wasMe = R.wasMeTarget
 	local isMe = target == R.localUserId
-	if wasMe == nil then
-		R.wasMeTarget = isMe
-		R.lastGate = isMe and "initial_me" or "initial_not_me"
-		return
-	end
-	local t = now()
-	if wasMe ~= isMe then
-		R.lastDirectionSwitchAt = t
-	end
-	if wasMe and not isMe then
-		R.lostMeAt = t
-		if R.active then
-			if not rallyCheck(data) then
-				R.wasMeTarget = isMe
-				return
-			end
+	local wasMe = R.wasMeTarget
+	-- any targetId change counts as a flip (clash, rally, or first sync after
+	-- startup/bind); the deactivation path is what actually decides whether we
+	-- should still be active after the flip
+	if previousTarget ~= target then
+		R.lastDirectionSwitchAt = now()
+		if wasMe == nil then
+			R.lastGate = isMe and "initial_me" or "initial_not_me"
 		else
-			R.clashPartnerId = target
-		end
-		R.returnPending = false
-		R.lastGate = "target_lost"
-	elseif not wasMe and isMe then
-		if previousTarget ~= -1 and previousTarget ~= R.localUserId then
-			R.clashPartnerId = previousTarget
-		end
-		if R.lostMeAt <= 0 then
-			R.returnPending = false
-			R.lastGate = "return_without_loss"
-		else
-			local elapsed = t - R.lostMeAt
-			local window = getReturnWindow(R.lastSpeed)
-			if elapsed >= 0 and elapsed <= window then
-				R.returnPending = true
-				R.lastGate = "target_return"
-			else
-				R.lostMeAt = 0
-				R.returnPending = false
-				R.lastGate = "return_too_late"
-			end
+			R.lastGate = "target_switched"
 		end
 	end
 	R.wasMeTarget = isMe
