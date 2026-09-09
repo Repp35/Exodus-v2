@@ -14,11 +14,20 @@ local T = {
 	ACT_PING_FACTOR = 0.3,
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
 	ACT_DEACT_LOCK_TIME = 0.05,
+	-- activation direction-switch window: 50ms at spd 60, scales the same
+	-- way as the deactivation return (MIN_FACTOR 0.10, floor 2/60s).
+	ACT_DIRECTION_MAX_LO = 0.05,
+	ACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
+	ACT_DIRECTION_SPD_LO = 60,
+	ACT_DIRECTION_SPD_HI = 600,
+	ACT_DIRECTION_MIN_FLOOR = 2 / 60,
 	DASH_DETECT_WINDOW = 0.25,
 	OWN_DASH_ESCAPE_CONFIRM_FRAMES = 2,
 	OWN_DASH_ESCAPE_DOT = -0.3,
 
 	-- deactivation / direction
+	-- deactivation is harmless when late, so the window can shrink with
+	-- speed (rally at spd 600 should release in a few ms).
 	DEACT_DIRECTION_MAX_LO = 0.10,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DEACT_DIRECTION_SPD_LO = 60,
@@ -147,18 +156,17 @@ local function getPingOneWay()
 	return ok and math.max(tonumber(value) or 0, 0) or 0
 end
 
--- direction-switch window, shared by activation and deactivation
--- activation includes a small ping pad (late activation costs parry,
--- late deactivation is harmless); minimum clamp of 2/60s
+-- activation direction-switch window: 50ms at spd 60, scales like the
+-- deactivation return (factor 0.10, floor 2/60s). Ping pad on top.
 local function switchWindowMax(speed)
 	local base = lerpBySpeed(
 		speed,
-		T.DEACT_DIRECTION_MAX_LO,
-		T.DEACT_DIRECTION_MAX_LO * T.DEACT_DIRECTION_MAX_MIN_FACTOR,
-		T.DEACT_DIRECTION_SPD_LO,
-		T.DEACT_DIRECTION_SPD_HI
+		T.ACT_DIRECTION_MAX_LO,
+		T.ACT_DIRECTION_MAX_LO * T.ACT_DIRECTION_MAX_MIN_FACTOR,
+		T.ACT_DIRECTION_SPD_LO,
+		T.ACT_DIRECTION_SPD_HI
 	)
-	return math.max(base + getPingOneWay() * T.ACT_PING_FACTOR, 2 / 60)
+	return math.max(base + getPingOneWay() * T.ACT_PING_FACTOR, T.ACT_DIRECTION_MIN_FLOOR)
 end
 
 -- phase
