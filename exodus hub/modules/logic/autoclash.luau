@@ -598,7 +598,7 @@ end
 
 function Dash.isTrack(track)
         if not track
-                or not track:IsA("AnimationTrack") then {
+                or not track:IsA("AnimationTrack") then
                 return false
         end
 
@@ -656,6 +656,25 @@ function Dash.hookAnimator(animator, player, character, generation)
         ) do
                 snapshot[track] = true
         end
+end
+
+function Dash.hookRoot(root, player, character, generation)
+        if not root
+                or not player
+                or not character then
+                return
+        end
+
+        if generation ~= R.dashGeneration
+                or player.Character ~= character
+                or not player.Parent then
+                return
+        end
+
+        R.dashVelAnterior[player] =
+                horizontalSpeed(root.AssemblyLinearVelocity)
+
+        R.dashVelFrames[player] = 0
 end
 
 function Dash.scanTracks(players)
@@ -801,7 +820,8 @@ function Dash.attachCharacter(character, player, generation)
                 or character:WaitForChild("HumanoidRootPart", 5)
 
         if generation ~= R.dashGeneration
-                or player.Character ~= character then
+                or player.Character ~= character
+                or not root then
                 return
         end
 
@@ -814,14 +834,12 @@ function Dash.attachCharacter(character, player, generation)
                 )
         end
 
-        if root then
-                Dash.hookRoot(
-                        root,
-                        player,
-                        character,
-                        generation
-                )
-        end
+        Dash.hookRoot(
+                root,
+                player,
+                character,
+                generation
+        )
 
         R.dashVelAnterior[player] = nil
         R.dashVelFrames[player] = 0
@@ -1462,7 +1480,7 @@ local function heartbeatStep(
                 )
 
         if not ok
-                or type(snapshot) ~= "table" then {
+                or type(snapshot) ~= "table" then
                 R.lastGate = "snapshot_error"
                 return
         end
@@ -1510,7 +1528,7 @@ local function bindCharacter(character)
 
         if generation ~= R.generation
                 or not root
-                or not root.Parent then {
+                or not root.Parent then
                 return false
         end
 
