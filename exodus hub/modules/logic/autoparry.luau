@@ -1,13 +1,14 @@
--- [[ Auto Parry ]]
+-- [[ autoparry ]]
 
 local AutoParry = {}
 local Remote, GameInfo, Utils
 
 -- tuning
 local Tuning = {
+
 	-- radius
 	DEFLECT_RADIUS = 8.5,
-	PARRY_WINDOW = 0.15,
+	PARRY_WINDOW = 0.12,
 	MIN_BALL_SPEED = 7,
 	RES_PER_PARRY = 0.225,
 	RES_CAP_STUDS = 32,
@@ -15,11 +16,14 @@ local Tuning = {
 	HITBOX_PROXIMITY = 12,
 	HITBOX_GAP = 0.4,
 }
+
+local BACKWARDS_MULT = 0.80
+local STATIONARY_MULT = 1.60
+local STATIONARY_SPEED = 1.5
+local STATIONARY_DWELL = 0.20
 local PING_SAMPLE_INTERVAL = 1.5
 local DEFAULT_PING_ONE_WAY = 0.030
 local TELEPORT_LOCK = 0.20
-
--- phase constants
 local PHASE_DETACHED = 1
 local PHASE_WAITING = 2
 local PHASE_COOLDOWN = 3
@@ -32,9 +36,8 @@ local PHASE_STRINGS = {
 	[PHASE_ARMED] = "armed",
 	[PHASE_FIRED] = "fired",
 }
-local phaseString = PHASE_STRINGS[PHASE_DETACHED]
 
--- shared hitbox hook
+local phaseString = PHASE_STRINGS[PHASE_DETACHED]
 local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
 local HitboxState = type(namespace.AutoParryHitbox) == "table" and namespace.AutoParryHitbox or {
 	connection = nil,
@@ -51,12 +54,14 @@ local ParryState = {
 	firedBall = nil,
 	firedAt = 0,
 }
+
 local Resilience = {
 	stack = 0,
 	lastFireBall = nil,
 	lastFireAt = 0,
 	lastHitboxAt = 0,
 }
+
 local Runtime = {
 	generation = 0,
 	localUserId = -1,
@@ -70,9 +75,13 @@ local Runtime = {
 	resilienceBonusAt = -1,
 	parryRadius = 0,
 	stationary = false,
+	stationarySince = 0,
+	lastRootPos = nil,
+	lastRootPosAt = 0,
 	phase = PHASE_DETACHED,
 	bound = false,
 }
+
 local Stats = game:GetService("Stats")
 local PingItem = Stats.Network.ServerStatsItem["Data Ping"]
 
@@ -183,8 +192,6 @@ local function onBallSync(data)
 		clearFired()
 	end
 end
-
--- parry request
 local function requestParry()
 	local time = now()
 	if not Remote.fireParry(1) then
@@ -253,8 +260,6 @@ local function installHitboxHook()
 	Utils.trackGlobal(connection)
 	return true
 end
-
--- character runtime
 local function bindCharacter(character)
 	Runtime.generation += 1
 	local generation = Runtime.generation
@@ -312,7 +317,6 @@ local function bindCharacter(character)
 		local ball = snapshot.ball
 		local targeted = snapshot.targeted == true
 		local deflectCooldown = GameInfo.getDeflectCD()
-		-- armed state
 		if ParryState.armed then
 			if not (ball and ball.Parent and ball == ParryState.armedBall and targeted) then
 				clearArmed()
@@ -330,7 +334,6 @@ local function bindCharacter(character)
 				return
 			end
 		end
-		-- basic validation
 		if not (ball and ball.Parent and targeted) then
 			setPhase(PHASE_WAITING, "ball_or_target_invalid")
 			return
@@ -346,7 +349,41 @@ local function bindCharacter(character)
 			return
 		end
 		local parryRadius = computeParryRadius(timeNow)
-		local effectiveParryRadius = parryRadius + speed * Tuning.PARRY_WINDOW
+		local rootPos = root.Position
+		local parryWindow = Tuning.PARRY_WINDOW
+		do
+			local dtRoot = math.max(timeNow - Runtime.lastRootPosAt, 0)
+			local rootVel = Vector3.zero
+			if Runtime.lastRootPos and dtRoot > 0 then
+				rootVel = (rootPos - Runtime.lastRootPos) / dtRoot
+			end
+			Runtime.lastRootPos = rootPos
+			Runtime.lastRootPosAt = timeNow
+			local horizontalVel = Vector3.new(rootVel.X, 0, rootVel.Z)
+			local horizontalSpeed = horizontalVel.Magnitude
+			if horizontalSpeed < STATIONARY_SPEED then
+				if Runtime.stationarySince == 0 then
+					Runtime.stationarySince = timeNow
+				end
+			else
+				Runtime.stationarySince = 0
+			end
+			local isStationary = Runtime.stationarySince > 0 and (timeNow - Runtime.stationarySince) >= STATIONARY_DWELL
+			Runtime.stationary = isStationary
+			local toBall = position - rootPos
+			toBall = Vector3.new(toBall.X, 0, toBall.Z)
+			local isBackwards = false
+			if horizontalSpeed > STATIONARY_SPEED and toBall.Magnitude > 0 then
+				local dot = horizontalVel.Unit:Dot(toBall.Unit)
+				isBackwards = dot < 0
+			end
+			if isStationary then
+				parryWindow = Tuning.PARRY_WINDOW * STATIONARY_MULT
+			elseif isBackwards then
+				parryWindow = Tuning.PARRY_WINDOW * BACKWARDS_MULT
+			end
+		end
+		local effectiveParryRadius = parryRadius + speed * parryWindow
 		Runtime.parryRadius = effectiveParryRadius
 		local delta = root.Position - position
 		local distanceSquared = delta:Dot(delta)
@@ -398,6 +435,9 @@ local function resetState()
 	Runtime.pingOneWay = DEFAULT_PING_ONE_WAY
 	Runtime.parryRadius = 0
 	Runtime.stationary = false
+	Runtime.stationarySince = 0
+	Runtime.lastRootPos = nil
+	Runtime.lastRootPosAt = 0
 	Runtime.bound = false
 	setPhase(PHASE_DETACHED, "reset")
 end
