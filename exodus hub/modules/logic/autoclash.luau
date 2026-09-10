@@ -1058,6 +1058,8 @@ function AutoClash.onBallSync(data)
 			if previousTarget ~= -1 and previousTarget ~= R.localUserId then
 				R.clashPartnerId = previousTarget
 			end
+			local cooldownEnd = math.max(t, R.reactivateBlockedUntil)
+			R.returnExpiresAt = cooldownEnd + R.returnWindow
 			R.returnPending = true
 			R.lastGate = "target_return"
 		end
