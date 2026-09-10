@@ -388,8 +388,8 @@ local function bindCharacter(character)
 		local delta = root.Position - position
 		local distanceSquared = delta:Dot(delta)
 		local distance = math.sqrt(distanceSquared)
-		local impactTime = math.max(0, (distance - effectiveParryRadius) / speed)
-		if impactTime > getPingOneWay() then
+		local tti = math.max(0, (distance - parryRadius) / speed)
+		if tti > parryWindow then
 			setPhase(PHASE_WAITING, "outside_ping_window")
 			return
 		end
