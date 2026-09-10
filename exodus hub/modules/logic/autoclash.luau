@@ -1,4 +1,4 @@
--- [[ Auto Clash ]]
+-- [[ autoclash ]]
 
 local AutoClash = {}
 
@@ -22,24 +22,22 @@ local T = {
 	DASH_DETECT_WINDOW = 0.25,
 	OWN_DASH_ESCAPE_CONFIRM_FRAMES = 2,
 	OWN_DASH_ESCAPE_DOT = -0.3,
+
 	-- deactivation
 	DEACT_DIRECTION_MAX_LO = 0.055,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DEACT_DIRECTION_SPD_LO = 60,
 	DEACT_DIRECTION_SPD_HI = 600,
 	DEACT_DIRECTION_MIN_RADIUS_FACTOR = 0.50,
+
 	-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
 }
 
 -- constants
-local DASH_PARTS = {
-	DashEffect = true,
-	WindDash = true,
-	Dash = true,
-}
+local DASH_PARTS = { DashEffect = true, WindDash = true, Dash = true }
 
--- runtime state
+-- runtime
 local R = {
 	-- lifecycle
 	generation = 0,
@@ -48,12 +46,14 @@ local R = {
 	phase = "detached",
 	boundRoot = nil,
 	localUserId = nil,
-	-- ball / clash
+
+	-- ball
 	lastTarget = -1,
 	clashPartnerId = -1,
 	lastSpeed = 0,
 	parryRadius = 0,
-	-- target return
+
+	-- target
 	wasMeTarget = nil,
 	lostMeAt = 0,
 	returnExpiresAt = 0,
@@ -61,25 +61,30 @@ local R = {
 	returnPending = false,
 	returnFromTarget = -1,
 	returnToken = 0,
+
 	-- deactivation
 	activationDeactLockedUntil = 0,
 	reactivateBlockedUntil = 0,
 	lastDirectionSwitchAt = 0,
+
 	-- evaluation
 	lastEvalAt = 0,
 	lastDashScanAt = 0,
 	lastGate = "none",
-	-- own dash escape
+
+	-- escape
 	ownDashEscapePending = false,
 	ownDashEscapeDetectedAt = 0,
 	ownDashEscapeConfirmFrames = 0,
 	ownDashEscapeLastDist = nil,
 	ownDashEscapeFartherStreak = 0,
+
 	-- connections
 	connections = {},
 	dashConnections = {},
 	dashGeneration = 0,
-	-- dash cache
+
+	-- cache
 	dashEvents = {},
 	dashCooldown = {},
 	dashTrackSnap = {},
@@ -87,7 +92,7 @@ local R = {
 	dashVelFrames = {},
 }
 
--- basic helpers
+-- helpers
 local function now()
 	if not Utils or type(Utils.now) ~= "function" then
 		return 0
@@ -116,7 +121,7 @@ local function horizontalSpeed(velocity)
 	return math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
 end
 
--- position helpers
+-- position
 local function getRootPosition()
 	local root = R.boundRoot
 	if not root or not root.Parent then
@@ -161,7 +166,7 @@ local function setPhase(phase, reason)
 	end
 end
 
--- connection management
+-- connections
 local function addConnection(list, connection)
 	if connection then
 		list[#list + 1] = connection
@@ -190,7 +195,7 @@ local function disconnectDashConnections()
 	R.dashGeneration += 1
 end
 
--- state reset
+-- reset
 local function clearReturnState()
 	R.lostMeAt = 0
 	R.returnExpiresAt = 0
@@ -224,7 +229,7 @@ local function clearDashState()
 	R.dashVelFrames = {}
 end
 
--- active state
+-- active
 local function setActivationLock(t, snapshot)
 	R.activationDeactLockedUntil = 0
 	local root = getRootPosition()
@@ -248,6 +253,7 @@ local function setActive(active, reason, snapshot)
 		if R.clashPartnerId == -1 and R.lastTarget ~= R.localUserId and R.lastTarget ~= -1 then
 			R.clashPartnerId = R.lastTarget
 		end
+		R.lastDirectionSwitchAt = t
 		setActivationLock(t, snapshot)
 	else
 		R.clashPartnerId = -1
@@ -260,7 +266,7 @@ local function setActive(active, reason, snapshot)
 	setPhase(active and "active" or "idle", reason)
 end
 
--- full runtime reset
+-- runtime
 local function resetRuntime(reason, keepDashDetection)
 	R.generation += 1
 	if R.active then
@@ -285,7 +291,7 @@ local function resetRuntime(reason, keepDashDetection)
 	setPhase("detached", reason or "reset")
 end
 
--- parry state
+-- parry
 local function refreshParryRadius(t)
 	if not AutoParry or type(AutoParry.getParryRadius) ~= "function" then
 		return
@@ -343,7 +349,7 @@ local function shouldActivate(snapshot)
 	return true
 end
 
--- target return
+-- target
 local function tryReturnActivate(snapshot)
 	if not R.returnPending then
 		return false
@@ -370,7 +376,7 @@ local function tryReturnActivate(snapshot)
 	return shouldActivate(snapshot)
 end
 
--- rally check
+-- rally
 local function rallyCheck(data)
 	if not R.active or type(data) ~= "table" then
 		return true
@@ -400,7 +406,7 @@ local function rallyCheck(data)
 	return true
 end
 
--- dash detection
+-- dash
 local Dash = {}
 function Dash.cleanExpired(t)
 	for i = #R.dashEvents, 1, -1 do
@@ -429,13 +435,7 @@ function Dash.register(player, position, velocity)
 		velocity = root.AssemblyLinearVelocity
 	end
 	Dash.cleanExpired(t)
-	R.dashEvents[#R.dashEvents + 1] = {
-		player = player,
-		userId = player.UserId,
-		detectedAt = t,
-		position = position,
-		velocity = velocity,
-	}
+	R.dashEvents[#R.dashEvents + 1] = { player = player, userId = player.UserId, detectedAt = t, position = position, velocity = velocity }
 end
 function Dash.isTrack(track)
 	if not track or not track:IsA("AnimationTrack") then
@@ -631,7 +631,7 @@ function Dash.tick(players, t)
 	Dash.scanVelocity(players)
 end
 
--- own dash escape
+-- escape
 local OwnDash = {}
 function OwnDash.getOpponent()
 	if R.clashPartnerId == -1 or R.clashPartnerId == R.localUserId then
@@ -824,7 +824,7 @@ function Deactivation.shouldDeactivate(t, snapshot)
 	return false
 end
 
--- main clash evaluation
+-- evaluation
 local function evaluateClash(t, snapshot)
 	if not R.boundRoot or not R.boundRoot.Parent or not snapshot or not snapshot.ball or not snapshot.ball.Parent then
 		return
@@ -847,7 +847,7 @@ local function evaluateClash(t, snapshot)
 	end
 end
 
--- player service
+-- players
 local function getPlayersService()
 	if not Utils or type(Utils.getPlayers) ~= "function" then
 		return nil
@@ -856,7 +856,7 @@ local function getPlayersService()
 	return ok and players or nil
 end
 
--- hub state
+-- hub
 local function checkHubState()
 	if not Utils then
 		R.lastGate = "no_utils"
@@ -934,7 +934,7 @@ local function heartbeatStep(generation, character, root)
 	evaluateClash(t, snapshot)
 end
 
--- character binding
+-- character
 local function bindCharacter(character)
 	resetRuntime("rebind", true)
 	local generation = R.generation
@@ -987,7 +987,7 @@ local function bindCharacter(character)
 	return true
 end
 
--- ball sync
+-- sync
 function AutoClash.onBallSync(data)
 	if type(data) ~= "table" or not Utils or not R.localUserId then
 		return
@@ -1071,24 +1071,7 @@ function AutoClash.setup(deps)
 	if type(deps) ~= "table" then
 		return false
 	end
-	local required = {
-		{ "AutoParry", "getParryRadius" },
-		{ "AutoParry", "getPingOneWay" },
-		{ "GameInfo", "getSnapshot" },
-		{ "GameInfo", "isSnapshotValid" },
-		{ "Utils", "now" },
-		{ "Utils", "getConfig" },
-		{ "Utils", "getRunService" },
-		{ "Utils", "getPlayers" },
-		{ "Utils", "recordTransition" },
-		{ "Utils", "setAutoSpamActive" },
-		{ "Utils", "trackCharacter" },
-		{ "Utils", "untrackCharacter" },
-		{ "Utils", "isActive" },
-		{ "Utils", "isManualSpamActive" },
-		{ "Utils", "getLocalPlayer" },
-		{ "Utils", "apiVersion" },
-	}
+	local required = { { "AutoParry", "getParryRadius" }, { "AutoParry", "getPingOneWay" }, { "GameInfo", "getSnapshot" }, { "GameInfo", "isSnapshotValid" }, { "Utils", "now" }, { "Utils", "getConfig" }, { "Utils", "getRunService" }, { "Utils", "getPlayers" }, { "Utils", "recordTransition" }, { "Utils", "setAutoSpamActive" }, { "Utils", "trackCharacter" }, { "Utils", "untrackCharacter" }, { "Utils", "isActive" }, { "Utils", "isManualSpamActive" }, { "Utils", "getLocalPlayer" }, { "Utils", "apiVersion" } }
 	for _, requirement in ipairs(required) do
 		local object = deps[requirement[1]]
 		if not object or type(object[requirement[2]]) ~= "function" then
@@ -1140,7 +1123,7 @@ function AutoClash.setup(deps)
 	return true
 end
 
--- public character api
+-- character
 function AutoClash.bindCharacter(character)
 	return bindCharacter(character)
 end
@@ -1154,7 +1137,7 @@ function AutoClash.teardown()
 	Utils = nil
 end
 
--- public state api
+-- state
 function AutoClash.isActive()
 	return R.active == true
 end
@@ -1166,34 +1149,10 @@ function AutoClash.getStatus()
 			schema = value
 		end
 	end
-	return {
-		schema = schema,
-		phase = R.phase,
-		bound = R.bound == true,
-		active = R.active == true,
-		parryRadius = R.parryRadius,
-		lastTarget = R.lastTarget,
-		clashPartnerId = R.clashPartnerId,
-		lastGate = R.lastGate,
-		ownDashEscapePending = R.ownDashEscapePending == true,
-		ownDashEscapeConfirmFrames = R.ownDashEscapeConfirmFrames,
-		returnPending = R.returnPending == true,
-		returnWindow = R.returnWindow,
-		returnExpiresAt = R.returnExpiresAt,
-		returnFromTarget = R.returnFromTarget,
-		returnToken = R.returnToken,
-	}
+	return { schema = schema, phase = R.phase, bound = R.bound == true, active = R.active == true, parryRadius = R.parryRadius, lastTarget = R.lastTarget, clashPartnerId = R.clashPartnerId, lastGate = R.lastGate, ownDashEscapePending = R.ownDashEscapePending == true, ownDashEscapeConfirmFrames = R.ownDashEscapeConfirmFrames, returnPending = R.returnPending == true, returnWindow = R.returnWindow, returnExpiresAt = R.returnExpiresAt, returnFromTarget = R.returnFromTarget, returnToken = R.returnToken }
 end
 
 -- contract
-AutoClash.__contract = {
-	requires = {
-		AutoParry = "autoparry",
-		GameInfo = "gameinfo",
-		Utils = "utils",
-	},
-	onBallSync = true,
-	bindCharacter = true,
-}
+AutoClash.__contract = { requires = { AutoParry = "autoparry", GameInfo = "gameinfo", Utils = "utils" }, onBallSync = true, bindCharacter = true }
 
 return AutoClash
