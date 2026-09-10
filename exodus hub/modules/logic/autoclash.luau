@@ -245,7 +245,6 @@ local function setActive(active, reason, snapshot)
 	resetDeactivationState()
 	local t = now()
 	if active then
-		R.lastDirectionSwitchAt = 0
 		if R.clashPartnerId == -1 and R.lastTarget ~= R.localUserId and R.lastTarget ~= -1 then
 			R.clashPartnerId = R.lastTarget
 		end
