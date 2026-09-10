@@ -8,19 +8,21 @@ local Tuning = {
 
 	-- radius
 	DEFLECT_RADIUS = 8.5,
-	PARRY_WINDOW = 0.12,
+	PARRY_WINDOW = 0.135,
 	MIN_BALL_SPEED = 7,
 	RES_PER_PARRY = 0.225,
 	RES_CAP_STUDS = 32,
 	HITBOX_OWN_WINDOW = 0.5,
 	HITBOX_PROXIMITY = 12,
 	HITBOX_GAP = 0.4,
+
+	-- movement
+	BACKWARDS_MULT = 0.80,
+	STATIONARY_MULT = 1.60,
+	STATIONARY_SPEED = 1.5,
+	STATIONARY_DWELL = 0.20,
 }
 
-local BACKWARDS_MULT = 0.80
-local STATIONARY_MULT = 1.60
-local STATIONARY_SPEED = 1.5
-local STATIONARY_DWELL = 0.20
 local PING_SAMPLE_INTERVAL = 1.5
 local DEFAULT_PING_ONE_WAY = 0.030
 local TELEPORT_LOCK = 0.20
@@ -361,26 +363,26 @@ local function bindCharacter(character)
 			Runtime.lastRootPosAt = timeNow
 			local horizontalVel = Vector3.new(rootVel.X, 0, rootVel.Z)
 			local horizontalSpeed = horizontalVel.Magnitude
-			if horizontalSpeed < STATIONARY_SPEED then
+			if horizontalSpeed < Tuning.STATIONARY_SPEED then
 				if Runtime.stationarySince == 0 then
 					Runtime.stationarySince = timeNow
 				end
 			else
 				Runtime.stationarySince = 0
 			end
-			local isStationary = Runtime.stationarySince > 0 and (timeNow - Runtime.stationarySince) >= STATIONARY_DWELL
+			local isStationary = Runtime.stationarySince > 0 and (timeNow - Runtime.stationarySince) >= Tuning.STATIONARY_DWELL
 			Runtime.stationary = isStationary
 			local toBall = position - rootPos
 			toBall = Vector3.new(toBall.X, 0, toBall.Z)
 			local isBackwards = false
-			if horizontalSpeed > STATIONARY_SPEED and toBall.Magnitude > 0 then
+			if horizontalSpeed > Tuning.STATIONARY_SPEED and toBall.Magnitude > 0 then
 				local dot = horizontalVel.Unit:Dot(toBall.Unit)
 				isBackwards = dot < 0
 			end
 			if isStationary then
-				parryWindow = Tuning.PARRY_WINDOW * STATIONARY_MULT
+				parryWindow = Tuning.PARRY_WINDOW * Tuning.STATIONARY_MULT
 			elseif isBackwards then
-				parryWindow = Tuning.PARRY_WINDOW * BACKWARDS_MULT
+				parryWindow = Tuning.PARRY_WINDOW * Tuning.BACKWARDS_MULT
 			end
 		end
 		local effectiveParryRadius = parryRadius + speed * parryWindow
