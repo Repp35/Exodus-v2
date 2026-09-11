@@ -20,6 +20,7 @@ local Tuning = {
  STATIONARY_MULT = 1.50,
  STATIONARY_SPEED = 1.5,
  STATIONARY_DWELL = 0.20,
+        DOT_WINDOW_MIN_MULT = 0.50,
 }
 
 local PING_SAMPLE_INTERVAL = 1.5
@@ -374,6 +375,16 @@ local function bindCharacter(character)
                         if isStationary then
                                 parryWindow = Tuning.PARRY_WINDOW * Tuning.STATIONARY_MULT
                         end
+                end
+                do
+                        local toBall = position - rootPos
+                        local toBallH = Vector3.new(toBall.X, 0, toBall.Z)
+                        local velH = Vector3.new(snapshot.velocity.X, 0, snapshot.velocity.Z)
+                        local dot = 0
+                        if toBallH.Magnitude > 0 and velH.Magnitude > 0 then
+                                dot = math.clamp(velH.Unit:Dot(toBallH.Unit), 0, 1)
+                        end
+                        parryWindow = parryWindow * (Tuning.DOT_WINDOW_MIN_MULT + (1 - Tuning.DOT_WINDOW_MIN_MULT) * dot)
                 end
                 local effectiveParryRadius = parryRadius + speed * parryWindow
                 Runtime.parryRadius = effectiveParryRadius
