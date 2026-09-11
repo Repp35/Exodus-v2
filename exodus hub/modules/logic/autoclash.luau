@@ -10,7 +10,7 @@ local Utils
 -- configuration
 local T = {
         -- activation
-        RETURN_WIN_LO = 0.105,
+        RETURN_WIN_LO = 0.110,
         RETURN_WIN_MIN_FACTOR = 0.10,
         RETURN_SPD_LO = 60,
         RETURN_SPD_HI = 600,
@@ -24,6 +24,7 @@ local T = {
         DASH_RETURN_WINDOW = 0.400,
         DASH_RETURN_DOT = 0.3,
         DASH_RETURN_RADIUS_MULT = 3.0,
+        DASH_ACTIVATE_COOLDOWN = 0.060,
         OWN_DASH_ESCAPE_DOT = -0.3,
 
         -- deactivation
@@ -61,6 +62,7 @@ local R = {
         lastSpeed = 0,
         parryRadius = 0,
         dashBonusUntil = 0,
+        dashActivateCooldown = 0,
 
         -- target
         wasMeTarget = nil,
@@ -219,6 +221,7 @@ local function resetTargetState()
         R.lastTarget = -1
         R.clashPartnerId = -1
         R.dashBonusUntil = 0
+        R.dashActivateCooldown = 0
         R.wasMeTarget = nil
         clearReturnState()
         R.lastDirectionSwitchAt = 0
@@ -233,7 +236,6 @@ end
 local function resetDeactivationState()
         resetOwnDashState()
         R.travelSince = 0
-        R.dashBonusUntil = 0
 end
 local function clearDashState()
         R.dashEvents = {}
@@ -269,6 +271,9 @@ local function setActive(active, reason, snapshot)
                 end
                 R.lastDirectionSwitchAt = t
                 setActivationLock(t, snapshot)
+                if now() < R.dashBonusUntil then
+                        R.dashActivateCooldown = now() + T.DASH_ACTIVATE_COOLDOWN
+                end
         else
                 R.clashPartnerId = -1
                 R.reactivateBlockedUntil = t + T.REACTIVATE_COOLDOWN
@@ -849,17 +854,21 @@ function Deactivation.shouldDeactivate(t, snapshot)
                 return true
         end
         local travelMax = lerpBySpeed(speed, T.DEACT_TRAVEL_MAX_LO, T.DEACT_TRAVEL_MAX_LO * T.DEACT_TRAVEL_MAX_MIN_FACTOR, T.DEACT_TRAVEL_SPD_LO, T.DEACT_TRAVEL_SPD_HI)
-        if speed > 0 and distance / speed > travelMax then
-                if R.travelSince == 0 then
-                        R.travelSince = t
-                end
-                if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
+        if now() >= R.dashActivateCooldown then
+                if speed > 0 and distance / speed > travelMax then
+                        if R.travelSince == 0 then
+                                R.travelSince = t
+                        end
+                        if t - R.travelSince >= T.DEACT_TRAVEL_HOLD then
+                                R.travelSince = 0
+                                R.lastGate = "deact_travel"
+                                return true
+                        end
+                else
                         R.travelSince = 0
-                        R.lastGate = "deact_travel"
-                        return true
                 end
         else
-                R.travelSince = 0
+                R.lastGate = "deact_dash_cooldown"
         end
         if Deactivation.direction(t, snapshot, distance, radius, speed) then
                 return true
