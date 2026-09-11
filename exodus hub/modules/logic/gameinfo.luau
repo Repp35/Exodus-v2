@@ -25,6 +25,9 @@ local State = {
     positionAt = 0,
     deflectDirection = Vector3.new(0, 0, 0),
 }
+local deflectAbility = nil
+local abilityAttempted = false
+local abilityCheckedAt = 0
 -- cache de character/root (evita lookup toda hora, atualiza por ancestry)
 local cachedCharacter = nil
 local cachedRoot = nil
