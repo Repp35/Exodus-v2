@@ -10,7 +10,7 @@ local Utils
 -- configuration
 local T = {
         -- activation
-        RETURN_WIN_LO = 0.105,
+        RETURN_WIN_LO = 0.11,
         RETURN_WIN_MIN_FACTOR = 0.10,
         RETURN_SPD_LO = 60,
         RETURN_SPD_HI = 600,
@@ -69,6 +69,7 @@ local R = {
 
         -- deactivation
         travelSince = 0,
+        lastSyncAt = 0,
         activationDeactLockedUntil = 0,
         reactivateBlockedUntil = 0,
         lastDirectionSwitchAt = 0,
@@ -287,6 +288,7 @@ local function resetRuntime(reason, keepDashDetection)
         R.boundRoot = nil
         R.lastSpeed = 0
         R.parryRadius = 0
+        R.lastSyncAt = 0
         R.lastEvalAt = 0
         R.lastDashScanAt = 0
         R.reactivateBlockedUntil = 0
@@ -789,7 +791,7 @@ function Deactivation.direction(t, snapshot, distance, radius, speed)
         if R.lastDirectionSwitchAt <= 0 then
                 return false
         end
-        if t - R.lastDirectionSwitchAt > directionMax then
+        if R.lastSyncAt - R.lastDirectionSwitchAt > directionMax then
                 R.lastGate = "deact_direction"
                 return true
         end
@@ -1009,6 +1011,8 @@ function AutoClash.onBallSync(data)
         if type(data) ~= "table" or not Utils or not R.localUserId then
                 return
         end
+        local t = now()
+        R.lastSyncAt = t
         if data.Teleported == true then
                 if R.active then
                         setActive(false, "teleported")
@@ -1029,7 +1033,6 @@ function AutoClash.onBallSync(data)
         local previousTarget = R.lastTarget
         local wasMe = R.wasMeTarget
         local isMe = target == R.localUserId
-        local t = now()
         R.lastTarget = target
         if wasMe == nil then
                 R.wasMeTarget = isMe
@@ -1122,6 +1125,7 @@ function AutoClash.setup(deps)
         R.boundRoot = nil
         R.lastSpeed = 0
         R.parryRadius = 0
+        R.lastSyncAt = 0
         R.lastEvalAt = 0
         R.lastDashScanAt = 0
         R.reactivateBlockedUntil = 0
