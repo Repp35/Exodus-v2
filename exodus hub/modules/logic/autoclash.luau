@@ -24,7 +24,7 @@ local T = {
         OWN_DASH_ESCAPE_DOT = -0.3,
 
         -- deactivation
-        DEACT_DIRECTION_MAX_LO = 0.055,
+        DEACT_DIRECTION_MAX_LO = 0.030,
         DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
         DEACT_DIRECTION_SPD_LO = 60,
         DEACT_DIRECTION_SPD_HI = 600,
