@@ -21,6 +21,9 @@ local T = {
         ACT_DEACT_LOCK_TIME = 0.05,
         DASH_DETECT_WINDOW = 0.25,
         OWN_DASH_ESCAPE_CONFIRM_FRAMES = 2,
+        DASH_RETURN_WINDOW = 0.400,
+        DASH_RETURN_DOT = 0.3,
+        DASH_RETURN_RADIUS_MULT = 3.0,
         OWN_DASH_ESCAPE_DOT = -0.3,
 
         -- deactivation
@@ -57,6 +60,7 @@ local R = {
         clashPartnerId = -1,
         lastSpeed = 0,
         parryRadius = 0,
+        dashBonusUntil = 0,
 
         -- target
         wasMeTarget = nil,
@@ -214,6 +218,7 @@ end
 local function resetTargetState()
         R.lastTarget = -1
         R.clashPartnerId = -1
+        R.dashBonusUntil = 0
         R.wasMeTarget = nil
         clearReturnState()
         R.lastDirectionSwitchAt = 0
@@ -228,6 +233,7 @@ end
 local function resetDeactivationState()
         resetOwnDashState()
         R.travelSince = 0
+        R.dashBonusUntil = 0
 end
 local function clearDashState()
         R.dashEvents = {}
@@ -347,7 +353,11 @@ local function shouldActivate(snapshot)
                 R.lastGate = "no_effective_radius"
                 return false
         end
-        local effectiveRadius = math.max(R.parryRadius, T.ACT_RADIUS_MIN)
+        local bonus = 0
+        if now() < R.dashBonusUntil and R.lastSpeed > 0 then
+                bonus = R.lastSpeed * T.DASH_RETURN_WINDOW
+        end
+        local effectiveRadius = math.max(R.parryRadius, T.ACT_RADIUS_MIN) + bonus
         if (root - position).Magnitude > effectiveRadius then
                 R.lastGate = "outside_effective_radius"
                 return false
@@ -442,6 +452,21 @@ function Dash.register(player, position, velocity)
         end
         Dash.cleanExpired(t)
         R.dashEvents[#R.dashEvents + 1] = { player = player, userId = player.UserId, detectedAt = t, position = position, velocity = velocity }
+        if R.clashPartnerId ~= -1 and player.UserId == R.clashPartnerId then
+                local root = getRootPosition()
+                if root and typeof(position) == "Vector3" and typeof(velocity) == "Vector3" then
+                        local toRoot = root - position
+                        local toRootMag = math.sqrt(toRoot.X^2 + toRoot.Z^2)
+                        local velMag = math.sqrt(velocity.X^2 + velocity.Z^2)
+                        if toRootMag > 0 and velMag > 0 then
+                                local dot = (velocity.X/velMag)*(toRoot.X/toRootMag) + (velocity.Z/velMag)*(toRoot.Z/toRootMag)
+                                local distance = toRootMag
+                                if dot >= T.DASH_RETURN_DOT and distance <= R.parryRadius * T.DASH_RETURN_RADIUS_MULT then
+                                        R.dashBonusUntil = now() + T.DASH_RETURN_WINDOW
+                                end
+                        end
+                end
+        end
 end
 function Dash.isTrack(track)
         if not track or not track:IsA("AnimationTrack") then
