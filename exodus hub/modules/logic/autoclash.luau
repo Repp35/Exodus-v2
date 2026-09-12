@@ -34,15 +34,11 @@ local T = {
 	OWN_DASH_ESCAPE_DOT = -0.3,
 
 	-- deactivation
-	DEACT_DIRECTION_MAX_LO = 0.070,
+	DEACT_DIRECTION_MAX_LO = 0.050,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DEACT_DIRECTION_SPD_LO = 60,
 	DEACT_DIRECTION_SPD_HI = 600,
-	DEACT_TRAVEL_MAX_LO = 0.46,
-	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
-	DEACT_TRAVEL_SPD_LO = 60,
-	DEACT_TRAVEL_SPD_HI = 600,
-	DEACT_TRAVEL_HOLD = 0.015,
+	DEACT_DIRECTION_MIN_RADIUS_FACTOR = 0.26,
 	DEACT_CONFIRM_HOLD = 0.025,
 	DEACT_CONFIRM_FRAMES = 2,
 	DEACT_CONFIRM_MAX_GAP = 0.100,
@@ -81,7 +77,6 @@ local R = {
 	returnFromTarget = -1,
 	returnToken = 0,
 
-	travelSince = 0,
 	lastSyncAt = 0,
 	activationDeactLockedUntil = 0,
 	reactivateBlockedUntil = 0,
@@ -319,7 +314,6 @@ end
 
 local function resetDeactivationState()
 	resetOwnDashState()
-	R.travelSince = 0
 	R.dashDeactLockedUntil = 0
 	R.deactivationCandidate = nil
 	R.deactivationCandidateAt = 0
@@ -1073,13 +1067,19 @@ function Deactivation.confirm(t, reason)
 	return true
 end
 
-function Deactivation.direction(t, snapshot, speed)
+function Deactivation.direction(t, snapshot, speed, distance)
 	if snapshot.targeted == true then
 		R.lastGate = "deact_direction_targeted"
 		return false
 	end
 
 	if R.lastDirectionSwitchAt <= 0 then
+		return false
+	end
+
+	local minimumRadius = R.parryRadius * T.DEACT_DIRECTION_MIN_RADIUS_FACTOR
+	if distance <= minimumRadius then
+		R.lastGate = "deact_direction_inside_radius"
 		return false
 	end
 
@@ -1153,31 +1153,8 @@ function Deactivation.shouldDeactivate(t, snapshot)
 	end
 
 	local distance = (root - position).Magnitude
-	local ping = pingCompensation()
 
-	local travelMax = lerpBySpeed(
-		speed,
-		T.DEACT_TRAVEL_MAX_LO + ping,
-		(T.DEACT_TRAVEL_MAX_LO + ping) * T.DEACT_TRAVEL_MAX_MIN_FACTOR,
-		T.DEACT_TRAVEL_SPD_LO,
-		T.DEACT_TRAVEL_SPD_HI
-	)
-
-	if distance / speed > travelMax then
-		if R.travelSince == 0 then
-			R.travelSince = t
-		elseif t - R.travelSince >= T.DEACT_TRAVEL_HOLD + ping then
-			if Deactivation.confirm(t, "deact_travel") then
-				R.travelSince = 0
-				return true
-			end
-			return false
-		end
-	else
-		R.travelSince = 0
-	end
-
-	if Deactivation.direction(t, snapshot, speed) then
+	if Deactivation.direction(t, snapshot, speed, distance) then
 		return Deactivation.confirm(t, "deact_direction")
 	end
 
