@@ -34,7 +34,6 @@ local T = {
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DEACT_DIRECTION_SPD_LO = 60,
 	DEACT_DIRECTION_SPD_HI = 600,
-	DEACT_DIRECTION_MIN_RADIUS_FACTOR = 0.50,
 	DEACT_TRAVEL_MAX_LO = 0.46,
 	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
 	DEACT_TRAVEL_SPD_LO = 60,
@@ -977,11 +976,6 @@ end
 function Deactivation.direction(t, snapshot, distance, radius, speed)
 	if snapshot.targeted == true then
 		R.lastGate = "deact_direction_targeted"
-		return false
-	end
-	local minimumRadius = radius * T.DEACT_DIRECTION_MIN_RADIUS_FACTOR
-	if distance <= minimumRadius then
-		R.lastGate = "deact_direction_inside_radius"
 		return false
 	end
 	local ping = pingCompensation()
