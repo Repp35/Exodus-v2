@@ -19,6 +19,8 @@ local T = {
 	REACTIVATE_COOLDOWN = 0.070,
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
 	ACT_DEACT_LOCK_TIME = 0.05,
+	PROXIMITY_RADIUS = 6,
+	PROXIMITY_WINDOW_MULT = 2.0,
 	DASH_DETECT_WINDOW = 0.25,
 	OWN_DASH_ESCAPE_CONFIRM_FRAMES = 2,
 	DASH_RETURN_WINDOW = 0.400,
@@ -462,8 +464,12 @@ local function shouldActivate(snapshot, t)
 		R.lastGate = "no_effective_radius"
 		return false
 	end
+	local distance = (root - position).Magnitude
 	local effectiveRadius = getDashActivationRadius(t)
-	if (root - position).Magnitude > effectiveRadius then
+	if distance <= T.PROXIMITY_RADIUS then
+		effectiveRadius = effectiveRadius * T.PROXIMITY_WINDOW_MULT
+	end
+	if distance > effectiveRadius then
 		R.lastGate = "outside_effective_radius"
 		return false
 	end
