@@ -22,7 +22,6 @@ local Tuning = {
 
         -- cooldown propagation
         CLIENT_CD_PROPAGATION = 0.30,
-        APPROACH_REFIRE_COOLDOWN = 0.070,
 }
 
 local PING_SAMPLE_INTERVAL = 1.5
@@ -87,8 +86,6 @@ local Runtime = {
         lastRootPos = nil,
         lastRootPosAt = 0,
         lastFireAt = 0,
-        approachFireAt = 0,
-        approachFiredBall = nil,
         cooldownObservedAt = 0,
         phase = PHASE_DETACHED,
         bound = false,
@@ -132,8 +129,6 @@ end
 local function clearCycle()
         clearArmed()
         clearFired()
-        Runtime.approachFireAt = 0
-        Runtime.approachFiredBall = nil
         Resilience.lastFireBall = nil
         Resilience.lastFireAt = 0
 end
@@ -245,9 +240,6 @@ local function onBallSync(data)
                 clearArmed()
                 clearFired()
 
-                Runtime.approachFireAt = 0
-                Runtime.approachFiredBall = nil
-
                 Resilience.lastFireBall = nil
                 Resilience.lastFireAt = 0
 
@@ -260,7 +252,16 @@ local function onBallSync(data)
                 targetId = tonumber(targetId) or -1
         end
 
+        if targetId == Runtime.lastTarget then
+                return
+        end
+
+        local previousTarget = Runtime.lastTarget
         Runtime.lastTarget = targetId
+
+        if targetId == Runtime.localUserId and previousTarget ~= Runtime.localUserId then
+                clearFired()
+        end
 end
 
 local function requestParry()
@@ -491,6 +492,7 @@ local function bindCharacter(character)
                 end
 
                 local ball = snapshot.ball
+                local targeted = snapshot.targeted == true
 
                 local deflectCooldown = GameInfo.getDeflectCD()
 
@@ -513,6 +515,7 @@ local function bindCharacter(character)
                                 if not (
                                         isValidBall(ball)
                                         and ball == ParryState.armedBall
+                                        and targeted
                                 ) then
                                         clearArmed()
                                 end
@@ -527,6 +530,7 @@ local function bindCharacter(character)
                         if not (
                                 isValidBall(ball)
                                 and ball == ParryState.armedBall
+                                and targeted
                         ) then
                                 clearArmed()
                                 setPhase(PHASE_WAITING, "armed_context_invalid")
@@ -535,8 +539,6 @@ local function bindCharacter(character)
                                         ParryState.fired = true
                                         ParryState.firedBall = ball
                                         ParryState.firedAt = timeNow
-                                        Runtime.approachFireAt = timeNow
-                                        Runtime.approachFiredBall = ball
                                 end
 
                                 clearArmed()
@@ -544,8 +546,8 @@ local function bindCharacter(character)
                         end
                 end
 
-                if not isValidBall(ball) then
-                        setPhase(PHASE_WAITING, "ball_invalid")
+                if not (isValidBall(ball) and targeted) then
+                        setPhase(PHASE_WAITING, "ball_or_target_invalid")
                         return
                 end
 
@@ -614,22 +616,12 @@ local function bindCharacter(character)
                 Runtime.parryRadius =
                         parryRadius + speed * parryWindow
 
-                local distance = math.sqrt(
-                        getDistanceSquared(rootPos, position)
+                local distanceSquared = getDistanceSquared(
+                        rootPos,
+                        position
                 )
 
-                local toBall = rootPos - position
-                local dirMag = toBall.Magnitude
-                local approachingSpeed = 0
-
-                if dirMag > 0 and typeof(snapshot.velocity) == "Vector3" then
-                        approachingSpeed = snapshot.velocity:Dot(toBall / dirMag)
-                end
-
-                if approachingSpeed <= 0 then
-                        setPhase(PHASE_WAITING, "ball_not_approaching")
-                        return
-                end
+                local distance = math.sqrt(distanceSquared)
 
                 local tti = math.max(
                         0,
@@ -641,13 +633,21 @@ local function bindCharacter(character)
                         return
                 end
 
-                if ParryState.fired and ParryState.firedBall == ball then
-                        if timeNow - ParryState.firedAt < Tuning.APPROACH_REFIRE_COOLDOWN then
-                                setPhase(PHASE_WAITING, "approach_refire_cooldown")
-                                return
-                        end
+                if deflectCooldown > 0 then
+                        ParryState.armed = true
+                        ParryState.armedBall = ball
 
-                        clearFired()
+                        setPhase(
+                                PHASE_ARMED,
+                                "awaiting_deflect_cooldown"
+                        )
+
+                        return
+                end
+
+                if ParryState.fired and ParryState.firedBall == ball then
+                        setPhase(PHASE_FIRED, "ball_already_fired")
+                        return
                 end
 
                 if ParryState.fired and (
@@ -661,8 +661,6 @@ local function bindCharacter(character)
                         ParryState.fired = true
                         ParryState.firedBall = ball
                         ParryState.firedAt = timeNow
-                        Runtime.approachFireAt = timeNow
-                        Runtime.approachFiredBall = ball
                 end
         end)
 
@@ -704,8 +702,6 @@ local function resetState()
         Runtime.lastRootPos = nil
         Runtime.lastRootPosAt = 0
         Runtime.lastFireAt = 0
-        Runtime.approachFireAt = 0
-        Runtime.approachFiredBall = nil
         Runtime.cooldownObservedAt = 0
         Runtime.bound = false
 
