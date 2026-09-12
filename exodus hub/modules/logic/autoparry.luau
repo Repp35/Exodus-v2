@@ -618,7 +618,7 @@ local function bindCharacter(character)
                         getDistanceSquared(rootPos, position)
                 )
 
-                local toBall = position - rootPos
+                local toBall = rootPos - position
                 local dirMag = toBall.Magnitude
                 local approachingSpeed = 0
 
