@@ -614,16 +614,22 @@ local function bindCharacter(character)
                 Runtime.parryRadius =
                         parryRadius + speed * parryWindow
 
-                local approachingSpeed = snapshot.approachingSpeed or 0
+                local distance = math.sqrt(
+                        getDistanceSquared(rootPos, position)
+                )
+
+                local toBall = position - rootPos
+                local dirMag = toBall.Magnitude
+                local approachingSpeed = 0
+
+                if dirMag > 0 and typeof(snapshot.velocity) == "Vector3" then
+                        approachingSpeed = snapshot.velocity:Dot(toBall / dirMag)
+                end
 
                 if approachingSpeed <= 0 then
                         setPhase(PHASE_WAITING, "ball_not_approaching")
                         return
                 end
-
-                local distance = math.sqrt(
-                        getDistanceSquared(rootPos, position)
-                )
 
                 local tti = math.max(
                         0,
