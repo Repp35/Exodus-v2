@@ -6,8 +6,8 @@ local Remote, GameInfo, Utils
 -- tuning
 local Tuning = {
 	-- radius
-	DEFLECT_RADIUS = 8.5,
-	PARRY_WINDOW = 0.160,
+	DEFLECT_RADIUS = 7,
+	PARRY_WINDOW = 0.140,
 	MIN_BALL_SPEED = 8,
 	RES_PER_PARRY = 0.225,
 	RES_CAP_STUDS = 32,
