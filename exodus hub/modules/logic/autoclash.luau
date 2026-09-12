@@ -29,14 +29,16 @@ local T = {
 	DASH_DEACT_LOCK_TIME = 0.070,
 	DASH_RADIUS_BONUS_TIME = 0.400,
 	DASH_BONUS_RETURN_MULT = 3.0,
+	APPROACH_RETURN_MULT = 1.60,
+	APPROACH_BALL_WINDOW = 0.150,
 	OWN_DASH_ESCAPE_DOT = -0.3,
 
 	-- deactivation
-	DEACT_DIRECTION_MAX_LO = 0.070,
+	DEACT_DIRECTION_MAX_LO = 0.030,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DEACT_DIRECTION_SPD_LO = 60,
 	DEACT_DIRECTION_SPD_HI = 600,
-	DEACT_TRAVEL_MAX_LO = 0.170,
+	DEACT_TRAVEL_MAX_LO = 0.46,
 	DEACT_TRAVEL_MAX_MIN_FACTOR = 0.10,
 	DEACT_TRAVEL_SPD_LO = 60,
 	DEACT_TRAVEL_SPD_HI = 600,
@@ -98,6 +100,9 @@ local R = {
 	deactivationCandidateAt = 0,
 	deactivationConfirmFrames = 0,
 	deactivationLastConfirmAt = 0,
+	approachBonusUntil = 0,
+	opponentWasOutside = false,
+	ballLeftRadiusDuring = false,
 
 	-- evaluation
 	lastEvalAt = 0,
@@ -310,6 +315,9 @@ local function resetTargetState()
 	R.lastDirectionSwitchAt = 0
 	R.lastClashSwitchAt = 0
 	R.clashIntervalMs = 0
+	R.approachBonusUntil = 0
+	R.opponentWasOutside = false
+	R.ballLeftRadiusDuring = false
 end
 local function resetOwnDashState()
 	R.ownDashEscapePending = false
@@ -1080,6 +1088,28 @@ local function evaluateClash(t, snapshot)
 		return
 	end
 	updateParryState(t, snapshot)
+	if R.lastDirectionSwitchAt > 0 and R.parryRadius > 0 and R.lastSpeed > 0 then
+		local root = getRootPosition()
+		local position = getSnapshotPosition(snapshot)
+		local _, opponentRoot = OwnDash.getOpponent()
+		if root and position and opponentRoot then
+			local effectiveRadius = R.parryRadius + R.lastSpeed * T.APPROACH_BALL_WINDOW
+			local ballDistance = (root - position).Magnitude
+			local opponentDistance = (root - opponentRoot.Position).Magnitude
+			if ballDistance > effectiveRadius then
+				R.ballLeftRadiusDuring = true
+			end
+			if opponentDistance > effectiveRadius then
+				R.opponentWasOutside = true
+				R.ballLeftRadiusDuring = false
+			end
+			if R.opponentWasOutside and opponentDistance <= effectiveRadius and not R.ballLeftRadiusDuring then
+				R.approachBonusUntil = t + T.APPROACH_BALL_WINDOW
+				R.opponentWasOutside = false
+				R.ballLeftRadiusDuring = false
+			end
+		end
+	end
 	if R.active then
 		if Deactivation.shouldDeactivate(t, snapshot) then
 			setActive(false, "target_deactivated")
@@ -1293,6 +1323,9 @@ function AutoClash.onBallSync(data)
 		local returnWindow = getReturnWindow(R.lastSpeed)
 		if t < R.dashBonusUntil then
 			returnWindow *= T.DASH_BONUS_RETURN_MULT
+		end
+		if t < R.approachBonusUntil then
+			returnWindow *= T.APPROACH_RETURN_MULT
 		end
 		R.returnWindow = returnWindow
 		R.returnExpiresAt = t + returnWindow
