@@ -20,6 +20,9 @@ local Tuning = {
  STATIONARY_MULT = 1.50,
  STATIONARY_SPEED = 1.5,
  STATIONARY_DWELL = 0.20,
+
+        -- local rate limit (must be < server CPS_LIMIT-derived threshold)
+        LOCAL_FIRE_INTERVAL = 0.10,
 }
 
 local PING_SAMPLE_INTERVAL = 1.5
@@ -79,6 +82,7 @@ local Runtime = {
         stationarySince = 0,
         lastRootPos = nil,
         lastRootPosAt = 0,
+        lastFireAt = 0,
         phase = PHASE_DETACHED,
         bound = false,
 }
@@ -195,6 +199,12 @@ local function onBallSync(data)
 end
 local function requestParry()
         local time = now()
+        -- Local rate limit: don't fire faster than the server's CPS_LIMIT
+        -- (so ClickInstances never grow past the threshold where the server
+        -- silently drops all fires). Server cooldown is enforced by the game.
+        if Runtime.lastFireAt and (time - Runtime.lastFireAt) < Tuning.LOCAL_FIRE_INTERVAL then
+                return false
+        end
         if not Remote.fireParry(1) then
                 if Utils and type(Utils.recordError) == "function" then
                         Utils.recordError("AutoParry", "Remote.fireParry falhou")
@@ -202,6 +212,7 @@ local function requestParry()
                 setPhase(PHASE_WAITING, "remote_failed")
                 return false
         end
+        Runtime.lastFireAt = time
         setPhase(PHASE_FIRED, "parry_requested")
         local ball = GameInfo.getBall()
         if ball and ball.Parent then
@@ -391,6 +402,11 @@ local function bindCharacter(character)
                         setPhase(PHASE_ARMED, "awaiting_deflect_cooldown")
                         return
                 end
+                -- cooldown zered: clear any stale fired lock so we can retry.
+                -- without this, if we missed (server rejected) and the ball
+                -- stayed on us, ParryState.fired would stay true forever and
+                -- the app would never click again until the target switched.
+                clearFired()
                 if ParryState.fired and ParryState.firedBall == ball then
                         setPhase(PHASE_WAITING, "ball_already_fired")
                         return
@@ -399,8 +415,6 @@ local function bindCharacter(character)
                         ParryState.fired = true
                         ParryState.firedBall = ball
                         ParryState.firedAt = timeNow
-                else
-                        clearFired()
                 end
         end)
         Runtime.connections[#Runtime.connections + 1] = heartbeatConnection
