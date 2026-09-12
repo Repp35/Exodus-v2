@@ -22,7 +22,7 @@ local Tuning = {
  STATIONARY_DWELL = 0.20,
 
         -- local rate limit (must be < server CPS_LIMIT-derived threshold)
-        LOCAL_FIRE_INTERVAL = 0.10,
+        LOCAL_FIRE_INTERVAL = 0.050,
 }
 
 local PING_SAMPLE_INTERVAL = 1.5
