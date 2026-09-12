@@ -9,7 +9,7 @@ local Tuning = {
         -- radius
         DEFLECT_RADIUS = 8.5,
         PARRY_WINDOW = 0.160,
-        MIN_BALL_SPEED = 7,
+        MIN_BALL_SPEED = 8,
         RES_PER_PARRY = 0.225,
         RES_CAP_STUDS = 32,
         HITBOX_OWN_WINDOW = 0.5,
