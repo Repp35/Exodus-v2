@@ -10,7 +10,7 @@ local clock = os.clock
 -- tuning
 local DEFLECT_COOLDOWN_THRESHOLD = 0
 local EMA = 0.08
-local WINDOW_MARGIN = 0.07
+local WINDOW_MARGIN = 0.05
 
 -- state
 local heartbeatConnection
@@ -173,11 +173,6 @@ local function isBallInParryWindow(timeNow)
         if type(snapshot) ~= "table"
                 or not GameInfo.isSnapshotValid(snapshot, timeNow)
         then
-                Scheduler.inParryWindow = false
-                return false
-        end
-
-        if snapshot.targeted ~= true then
                 Scheduler.inParryWindow = false
                 return false
         end
