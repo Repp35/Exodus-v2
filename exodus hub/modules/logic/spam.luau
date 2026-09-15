@@ -1,7 +1,7 @@
 -- [[ spam ]]
 
 local Spam = {}
-local Remote, GameInfo, Utils
+local Remote, GameInfo, Utils, AutoParry
 
 local math_max = math.max
 local math_floor = math.floor
@@ -10,6 +10,7 @@ local clock = os.clock
 -- tuning
 local DEFLECT_COOLDOWN_THRESHOLD = 0
 local EMA = 0.08
+local WINDOW_MARGIN = 0.07
 
 -- state
 local heartbeatConnection
@@ -20,423 +21,557 @@ local cpfFps
 local lastMode
 local lastRate
 local chainRunning = false
+local parryWindowActive = false
 
 local Scheduler = {
-phase = "stopped",
-lastRequestAt = 0,
-lastError = nil,
-lastCooldownAt = 0,
-lastCooldownValue = 0,
-lastErrorAt = 0,
+        phase = "stopped",
+        lastRequestAt = 0,
+        lastError = nil,
+        lastCooldownAt = 0,
+        lastCooldownValue = 0,
+        lastErrorAt = 0,
+        lastDistance = 0,
+        parryRadius = 0,
+        inParryWindow = false,
 }
 
 -- helpers
 local function getNow()
-if Utils and type(Utils.now) == "function" then
-return Utils.now()
-end
+        if Utils and type(Utils.now) == "function" then
+                return Utils.now()
+        end
 
-    return clock()
-
+        return clock()
 end
 
 local function resetRuntime()
-accumulator = 0
-cpfFps = nil
-lastMode = nil
-lastRate = nil
-chainRunning = false
+        accumulator = 0
+        cpfFps = nil
+        lastMode = nil
+        lastRate = nil
+        chainRunning = false
+        parryWindowActive = false
+
+        Scheduler.lastDistance = 0
+        Scheduler.parryRadius = 0
+        Scheduler.inParryWindow = false
 end
 
 local function invalidate(reason)
-generation = generation + 1
-Scheduler.phase = "stopped"
+        generation = generation + 1
+        Scheduler.phase = "stopped"
 
-    resetRuntime()
+        resetRuntime()
 
-    if wasActive
-            and Utils
-            and type(Utils.recordTransition) == "function"
-    then
-            Utils.recordTransition(
-                    "Spam",
-                    "running",
-                    "stopped",
-                    reason or "invalidated"
-            )
-    end
-
+        if wasActive
+                and Utils
+                and type(Utils.recordTransition) == "function"
+        then
+                Utils.recordTransition(
+                        "Spam",
+                        "running",
+                        "stopped",
+                        reason or "invalidated"
+                )
+        end
 end
 
 local function isActive()
-if not Utils
-or type(Utils.isActive) ~= "function"
-or type(Utils.isSpamActive) ~= "function"
-then
-return false
-end
+        if not Utils
+                or type(Utils.isActive) ~= "function"
+                or type(Utils.isSpamActive) ~= "function"
+        then
+                return false
+        end
 
-    return Utils.isActive() and Utils.isSpamActive()
-
+        return Utils.isActive() and Utils.isSpamActive()
 end
 
 local function readDeflectCooldown()
-if not GameInfo
-or type(GameInfo.getDeflectCD) ~= "function"
-then
-return nil
-end
+        if not GameInfo
+                or type(GameInfo.getDeflectCD) ~= "function"
+        then
+                return nil
+        end
 
-    local ok, value = pcall(GameInfo.getDeflectCD)
+        local ok, value = pcall(GameInfo.getDeflectCD)
 
-    if not ok
-            or type(value) ~= "number"
-            or value ~= value
-            or value == math.huge
-            or value == -math.huge
-    then
-            return nil
-    end
+        if not ok
+                or type(value) ~= "number"
+                or value ~= value
+                or value == math.huge
+                or value == -math.huge
+        then
+                return nil
+        end
 
-    return value
-
+        return value
 end
 
 local function requestParry()
-local ok, result = pcall(Remote.fireParry, 1)
-local timestamp = getNow()
+        local ok, result = pcall(Remote.fireParry, 1)
+        local timestamp = getNow()
 
-    Scheduler.lastRequestAt = timestamp
+        Scheduler.lastRequestAt = timestamp
 
-    if ok and result ~= false then
-            Scheduler.lastError = nil
-            return true
-    end
+        if ok and result ~= false then
+                Scheduler.lastError = nil
+                return true
+        end
 
-    local errorMessage
+        local errorMessage
 
-    if not ok then
-            errorMessage = tostring(result)
-    else
-            errorMessage = "Remote.fireParry retornou false"
-    end
+        if not ok then
+                errorMessage = tostring(result)
+        else
+                errorMessage = "Remote.fireParry retornou false"
+        end
 
-    Scheduler.lastError = errorMessage
+        Scheduler.lastError = errorMessage
 
-    -- Evita spam de recordError em caso de falha contínua.
-    if timestamp - Scheduler.lastErrorAt >= 1 then
-            Scheduler.lastErrorAt = timestamp
+        if timestamp - Scheduler.lastErrorAt >= 1 then
+                Scheduler.lastErrorAt = timestamp
 
-            if type(Utils.recordError) == "function" then
-                    Utils.recordError("Spam", errorMessage)
-            end
-    end
+                if type(Utils.recordError) == "function" then
+                        Utils.recordError("Spam", errorMessage)
+                end
+        end
 
-    return false
+        return false
+end
 
+-- parry window
+local function isBallInParryWindow(timeNow)
+        if not AutoParry
+                or type(AutoParry.getParryRadius) ~= "function"
+                or not GameInfo
+                or type(GameInfo.getSnapshot) ~= "function"
+                or type(GameInfo.isSnapshotValid) ~= "function"
+        then
+                Scheduler.inParryWindow = false
+                return false
+        end
+
+        local status
+
+        if type(AutoParry.getStatus) == "function" then
+                status = AutoParry.getStatus()
+        end
+
+        if type(status) ~= "table"
+                or status.bound ~= true
+        then
+                Scheduler.inParryWindow = false
+                return false
+        end
+
+        local snapshot = GameInfo.getSnapshot(
+                -1,
+                timeNow
+        )
+
+        if type(snapshot) ~= "table"
+                or not GameInfo.isSnapshotValid(snapshot, timeNow)
+        then
+                Scheduler.inParryWindow = false
+                return false
+        end
+
+        if snapshot.targeted ~= true then
+                Scheduler.inParryWindow = false
+                return false
+        end
+
+        local position = snapshot.position
+        local speed = tonumber(snapshot.speed)
+
+        if typeof(position) ~= "Vector3"
+                or not speed
+                or speed <= 0
+                or speed ~= speed
+                or speed == math.huge
+                or speed == -math.huge
+        then
+                Scheduler.inParryWindow = false
+                return false
+        end
+
+        local localPlayer = Utils.getLocalPlayer()
+
+        if not localPlayer
+                or not localPlayer.Character
+        then
+                Scheduler.inParryWindow = false
+                return false
+        end
+
+        local root = localPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+        if not root then
+                Scheduler.inParryWindow = false
+                return false
+        end
+
+        local rootPosition = root.Position
+        local offset = position - rootPosition
+        local distance = offset.Magnitude
+
+        local parryRadius = tonumber(AutoParry.getParryRadius()) or 0
+
+        if parryRadius <= 0 then
+                Scheduler.inParryWindow = false
+                return false
+        end
+
+        local marginDistance = speed * WINDOW_MARGIN
+        local threshold = parryRadius + marginDistance
+
+        local inside = distance <= threshold
+
+        Scheduler.lastDistance = distance
+        Scheduler.parryRadius = parryRadius
+        Scheduler.inParryWindow = inside
+
+        return inside
 end
 
 -- [[ CPF ]]
 local function scheduleCPF(rate, dt)
-if rate <= 0 then
-return
-end
+        if rate <= 0 then
+                return
+        end
 
-    local fpsNow = 1 / dt
+        local fpsNow = 1 / dt
 
-    if not cpfFps then
-            cpfFps = fpsNow
-    else
-            cpfFps = cpfFps + (fpsNow - cpfFps) * EMA
-    end
+        if not cpfFps then
+                cpfFps = fpsNow
+        else
+                cpfFps = cpfFps + (fpsNow - cpfFps) * EMA
+        end
 
-    -- CPF representa chamadas por frame.
-    -- Não depende do FPS para determinar a quantidade.
-    local clicks = math_floor(rate)
+        local clicks = math_floor(rate)
 
-    for _ = 1, clicks do
-            requestParry()
-    end
-
+        for _ = 1, clicks do
+                requestParry()
+        end
 end
 
 -- [[ CHAIN ]]
 local function scheduleChain()
-local currentGeneration = generation
+        local currentGeneration = generation
 
-    while currentGeneration == generation and isActive() do
-            requestParry()
-            task.wait()
-    end
+        while currentGeneration == generation
+                and isActive()
+                and parryWindowActive
+        do
+                requestParry()
+                task.wait()
+        end
 
-    chainRunning = false
-
+        chainRunning = false
 end
 
 -- [[ CONFIG ]]
 local function getModeAndRate()
-local config
+        local config
 
-    if Utils and type(Utils.getConfig) == "function" then
-            config = Utils.getConfig()
-    end
+        if Utils and type(Utils.getConfig) == "function" then
+                config = Utils.getConfig()
+        end
 
-    if type(config) ~= "table" then
-            return "CPS", 1
-    end
+        if type(config) ~= "table" then
+                return "CPS", 1
+        end
 
-    local configuredMode = config.SpamRateMode
-    local mode
+        local configuredMode = config.SpamRateMode
+        local mode
 
-    if configuredMode == "CPF" then
-            mode = "CPF"
-    elseif configuredMode == "CHAIN" then
-            mode = "CHAIN"
-    else
-            mode = "CPS"
-    end
+        if configuredMode == "CPF" then
+                mode = "CPF"
+        elseif configuredMode == "CHAIN" then
+                mode = "CHAIN"
+        else
+                mode = "CPS"
+        end
 
-    local rateKey = mode == "CPF" and "CPF" or "CPS"
-    local rate = tonumber(config[rateKey]) or 1
+        local rateKey = mode == "CPF" and "CPF" or "CPS"
+        local rate = tonumber(config[rateKey]) or 1
 
-    return mode, math_max(rate, 0)
-
+        return mode, math_max(rate, 0)
 end
 
 -- runtime
 local function tick(dt)
-if type(dt) ~= "number"
-or dt <= 0
-or dt ~= dt
-or dt == math.huge
-or dt == -math.huge
-then
-return
-end
+        if type(dt) ~= "number"
+                or dt <= 0
+                or dt ~= dt
+                or dt == math.huge
+                or dt == -math.huge
+        then
+                return
+        end
 
-    if not isActive() then
-            if wasActive then
-                    invalidate("spam_disabled")
-            end
+        if not isActive() then
+                if wasActive then
+                        invalidate("spam_disabled")
+                end
 
-            wasActive = false
-            return
-    end
+                wasActive = false
+                return
+        end
 
-    -- [[ COOLDOWN GUARD ]]
-    local deflectCd = readDeflectCooldown()
+        local deflectCd = readDeflectCooldown()
 
-    if deflectCd ~= nil then
-            Scheduler.lastCooldownAt = clock()
-            Scheduler.lastCooldownValue = deflectCd
+        if deflectCd ~= nil then
+                Scheduler.lastCooldownAt = clock()
+                Scheduler.lastCooldownValue = deflectCd
 
-            if deflectCd > DEFLECT_COOLDOWN_THRESHOLD then
-                    if wasActive then
-                            invalidate("deflect_cooldown")
+                if deflectCd > DEFLECT_COOLDOWN_THRESHOLD then
+                        if wasActive then
+                                invalidate("deflect_cooldown")
 
-                            if type(Utils.recordError) == "function" then
-                                    Utils.recordError(
-                                            "Spam",
-                                            string.format(
-                                                    "deflect cooldown ativo (%.3fs) — spam desligado",
-                                                    deflectCd
-                                            )
-                                    )
-                            end
-                    end
+                                if type(Utils.recordError) == "function" then
+                                        Utils.recordError(
+                                                "Spam",
+                                                string.format(
+                                                        "deflect cooldown ativo (%.3fs) — spam desligado",
+                                                        deflectCd
+                                                )
+                                        )
+                                end
+                        end
 
-                    wasActive = false
-                    Scheduler.phase = "cooldown"
-                    return
-            end
-    end
+                        wasActive = false
+                        Scheduler.phase = "cooldown"
+                        return
+                end
+        end
 
-    local mode, rate = getModeAndRate()
+        local timeNow = getNow()
+        local inWindow = isBallInParryWindow(timeNow)
 
-    if not wasActive then
-            Scheduler.phase = "running"
+        if inWindow then
+                if not parryWindowActive then
+                        parryWindowActive = true
+                        accumulator = 0
+                end
+        else
+                if parryWindowActive then
+                        parryWindowActive = false
+                        accumulator = 0
+                        chainRunning = false
+                end
 
-            if type(Utils.recordTransition) == "function" then
-                    Utils.recordTransition(
-                            "Spam",
-                            "stopped",
-                            "running",
-                            "spam_enabled"
-                    )
-            end
-    end
+                Scheduler.phase = "waiting"
+                return
+        end
 
-    wasActive = true
+        local mode, rate = getModeAndRate()
 
-    -- [[ CHAIN ]]
-    if mode == "CHAIN" then
-            if not chainRunning then
-                    chainRunning = true
-                    task.spawn(scheduleChain)
-            end
+        if not wasActive then
+                Scheduler.phase = "running"
 
-            return
-    end
+                if type(Utils.recordTransition) == "function" then
+                        Utils.recordTransition(
+                                "Spam",
+                                "stopped",
+                                "running",
+                                "parry_window_entered"
+                        )
+                end
+        end
 
-    -- [[ MODE CHANGE ]]
-    if mode ~= lastMode then
-            lastMode = mode
-            lastRate = nil
-            accumulator = 0
-            cpfFps = nil
-    end
+        wasActive = true
 
-    -- [[ RATE CHANGE ]]
-    if rate ~= lastRate then
-            lastRate = rate
+        -- [[ CHAIN ]]
+        if mode == "CHAIN" then
+                if not chainRunning then
+                        chainRunning = true
+                        task.spawn(scheduleChain)
+                end
 
-            if mode == "CPF" then
-                    cpfFps = nil
-            else
-                    accumulator = 0
-            end
-    end
+                return
+        end
 
-    -- [[ CPF ]]
-    if mode == "CPF" then
-            scheduleCPF(rate, dt)
-            return
-    end
+        -- [[ MODE CHANGE ]]
+        if mode ~= lastMode then
+                lastMode = mode
+                lastRate = nil
+                accumulator = 0
+                cpfFps = nil
+        end
 
-    -- [[ CPS ]]
-    if rate <= 0 then
-            accumulator = 0
-            return
-    end
+        -- [[ RATE CHANGE ]]
+        if rate ~= lastRate then
+                lastRate = rate
 
-    local interval = 1 / rate
-    accumulator = accumulator + dt
+                if mode == "CPF" then
+                        cpfFps = nil
+                else
+                        accumulator = 0
+                end
+        end
 
-    local currentGeneration = generation
+        -- [[ CPF ]]
+        if mode == "CPF" then
+                scheduleCPF(rate, dt)
+                return
+        end
 
-    if accumulator < interval then
-            return
-    end
+        -- [[ CPS ]]
+        if rate <= 0 then
+                accumulator = 0
+                return
+        end
 
-    -- Calcula quantas execuções realmente estão atrasadas.
-    local clicks = math_floor(accumulator / interval)
+        local interval = 1 / rate
 
-    accumulator = accumulator - clicks * interval
+        accumulator = accumulator + dt
 
-    if accumulator < 0 then
-            accumulator = 0
-    end
+        local currentGeneration = generation
 
-    if currentGeneration ~= generation or not isActive() then
-            return
-    end
+        if accumulator < interval then
+                return
+        end
 
-    for _ = 1, clicks do
-            if currentGeneration ~= generation or not isActive() then
-                    return
-            end
+        local clicks = math_floor(accumulator / interval)
 
-            requestParry()
-    end
+        accumulator = accumulator - clicks * interval
 
+        if accumulator < 0 then
+                accumulator = 0
+        end
+
+        if currentGeneration ~= generation
+                or not isActive()
+                or not parryWindowActive
+        then
+                return
+        end
+
+        for _ = 1, clicks do
+                if currentGeneration ~= generation
+                        or not isActive()
+                        or not parryWindowActive
+                then
+                        return
+                end
+
+                requestParry()
+        end
 end
 
 -- setup
 function Spam.setup(deps)
-if type(deps) ~= "table"
-or type(deps.Remote) ~= "table"
-or type(deps.Remote.fireParry) ~= "function"
-or type(deps.Utils) ~= "table"
-then
-return false, "dependência ausente: Remote.fireParry ou Utils"
-end
+        if type(deps) ~= "table"
+                or type(deps.Remote) ~= "table"
+                or type(deps.Remote.fireParry) ~= "function"
+                or type(deps.Utils) ~= "table"
+        then
+                return false, "dependência ausente: Remote.fireParry ou Utils"
+        end
 
-    if heartbeatConnection then
-            pcall(
-                    heartbeatConnection.Disconnect,
-                    heartbeatConnection
-            )
+        if type(deps.AutoParry) ~= "table"
+                or type(deps.AutoParry.getParryRadius) ~= "function"
+        then
+                return false, "dependência ausente: AutoParry"
+        end
 
-            if Utils and type(Utils.untrackGlobal) == "function" then
-                    pcall(
-                            Utils.untrackGlobal,
-                            heartbeatConnection
-                    )
-            end
+        if heartbeatConnection then
+                pcall(
+                        heartbeatConnection.Disconnect,
+                        heartbeatConnection
+                )
 
-            heartbeatConnection = nil
-    end
+                if Utils and type(Utils.untrackGlobal) == "function" then
+                        pcall(
+                                Utils.untrackGlobal,
+                                heartbeatConnection
+                        )
+                end
 
-    Remote = deps.Remote
-    Utils = deps.Utils
+                heartbeatConnection = nil
+        end
 
-    GameInfo =
-            type(deps.GameInfo) == "table"
-            and deps.GameInfo
-            or nil
+        Remote = deps.Remote
+        Utils = deps.Utils
+        AutoParry = deps.AutoParry
 
-    Spam.resetState()
+        GameInfo =
+                type(deps.GameInfo) == "table"
+                and deps.GameInfo
+                or nil
 
-    local RunService
+        if not GameInfo then
+                return false, "dependência ausente: GameInfo"
+        end
 
-    if type(Utils.getRunService) == "function" then
-            RunService = Utils.getRunService()
-    end
+        Spam.resetState()
 
-    if not RunService then
-            RunService = game:GetService("RunService")
-    end
+        local RunService
 
-    local signal = RunService.RenderStepped or RunService.Heartbeat
+        if type(Utils.getRunService) == "function" then
+                RunService = Utils.getRunService()
+        end
 
-    heartbeatConnection = signal:Connect(tick)
+        if not RunService then
+                RunService = game:GetService("RunService")
+        end
 
-    if type(Utils.trackGlobal) == "function" then
-            Utils.trackGlobal(heartbeatConnection)
-    end
+        local signal = RunService.RenderStepped or RunService.Heartbeat
 
-    return true
+        heartbeatConnection = signal:Connect(tick)
 
+        if type(Utils.trackGlobal) == "function" then
+                Utils.trackGlobal(heartbeatConnection)
+        end
+
+        return true
 end
 
 -- lifecycle
 function Spam.resetState()
-invalidate("reset")
+        invalidate("reset")
 
-    wasActive = false
+        wasActive = false
 
-    Scheduler.phase = "stopped"
-    Scheduler.lastRequestAt = 0
-    Scheduler.lastError = nil
-    Scheduler.lastCooldownAt = 0
-    Scheduler.lastCooldownValue = 0
-    Scheduler.lastErrorAt = 0
-
+        Scheduler.phase = "stopped"
+        Scheduler.lastRequestAt = 0
+        Scheduler.lastError = nil
+        Scheduler.lastCooldownAt = 0
+        Scheduler.lastCooldownValue = 0
+        Scheduler.lastErrorAt = 0
+        Scheduler.lastDistance = 0
+        Scheduler.parryRadius = 0
+        Scheduler.inParryWindow = false
 end
 
 function Spam.getStatus()
-return {
-schema =
-Utils
-and type(Utils.apiVersion) == "function"
-and Utils.apiVersion()
-or 1,
+        return {
+                schema =
+                        Utils
+                        and type(Utils.apiVersion) == "function"
+                        and Utils.apiVersion()
+                        or 1,
 
-            phase = Scheduler.phase,
-            lastRequestAt = Scheduler.lastRequestAt,
-            lastError = Scheduler.lastError,
-            lastCooldownAt = Scheduler.lastCooldownAt,
-            lastCooldownValue = Scheduler.lastCooldownValue,
-    }
-
+                phase = Scheduler.phase,
+                lastRequestAt = Scheduler.lastRequestAt,
+                lastError = Scheduler.lastError,
+                lastCooldownAt = Scheduler.lastCooldownAt,
+                lastCooldownValue = Scheduler.lastCooldownValue,
+                lastDistance = Scheduler.lastDistance,
+                parryRadius = Scheduler.parryRadius,
+                inParryWindow = Scheduler.inParryWindow,
+        }
 end
 
 Spam.__contract = {
-requires = {
-Remote = "remote",
-Utils = "utils",
-GameInfo = "gameinfo",
-},
+        requires = {
+                Remote = "remote",
+                Utils = "utils",
+                GameInfo = "gameinfo",
+                AutoParry = "autoparry",
+        },
 }
 
 return Spam
