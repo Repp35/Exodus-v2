@@ -24,6 +24,13 @@ local Tuning = {
         CLIENT_CD_PROPAGATION = 0.30,
 }
 
+-- color targeting (Color3 da Mesh/Part da bola)
+local COLOR_SELF_R = 202 / 255
+local COLOR_SELF_G = 56 / 255
+local COLOR_SELF_B = 30 / 255
+local COLOR_SELF = Color3.new(COLOR_SELF_R, COLOR_SELF_G, COLOR_SELF_B) -- vermelha = minha
+local COLOR_ENEMY = Color3.new(153 / 255, 153 / 255, 153 / 255)        -- cinza = inimiga
+
 local PING_SAMPLE_INTERVAL = 1.5
 local DEFAULT_PING_ONE_WAY = 0.030
 local TELEPORT_LOCK = 0.20
@@ -77,7 +84,8 @@ local Resilience = {
 local Runtime = {
         generation = 0,
         localUserId = -1,
-        lastTarget = -1,
+        localColor = COLOR_SELF,
+        lastBallColor = nil,
         teleportLockUntil = 0,
         connections = {},
         minPing = nil,
@@ -95,6 +103,15 @@ local Runtime = {
         phase = PHASE_DETACHED,
         bound = false,
 }
+
+local function isSelfColor(color)
+        if typeof(color) ~= "Color3" then
+                return false
+        end
+        return math.abs(color.R - COLOR_SELF.R) < 0.02
+                and math.abs(color.G - COLOR_SELF.G) < 0.02
+                and math.abs(color.B - COLOR_SELF.B) < 0.02
+end
 
 local StatsService
 
@@ -232,6 +249,19 @@ local function computeParryRadius(time)
 end
 
 -- targeting
+local function getBallColor()
+        local ball = GameInfo and GameInfo.getBall and GameInfo.getBall()
+        if typeof(ball) ~= "Instance" then
+                return nil
+        end
+        local mesh = ball:IsA("MeshPart") and ball or ball:FindFirstChildWhichIsA("MeshPart", true)
+                or ball:FindFirstChildWhichIsA("BasePart", true)
+        if not mesh then
+                return nil
+        end
+        return mesh.Color
+end
+
 local function onBallSync(data)
         if typeof(data) ~= "table" then
                 return
@@ -245,18 +275,13 @@ local function onBallSync(data)
                 return
         end
 
-        local targetId = tonumber(data.TargetPlayerID) or -1
+        local currentColor = getBallColor()
+        local previousWasSelf = isSelfColor(Runtime.lastBallColor)
 
-        if targetId == Runtime.lastTarget then
-                return
-        end
+        Runtime.lastBallColor = currentColor
 
-        local previousTarget = Runtime.lastTarget
-        Runtime.lastTarget = targetId
-
-        if targetId == Runtime.localUserId
-                and previousTarget ~= Runtime.localUserId
-        then
+        local isSelfNow = isSelfColor(currentColor)
+        if isSelfNow and not previousWasSelf then
                 clearFired()
         end
 end
@@ -467,7 +492,7 @@ local function bindCharacter(character)
                 end
 
                 local snapshot = GameInfo.getSnapshot(
-                        Runtime.lastTarget,
+                        Runtime.localUserId or 0,
                         timeNow
                 )
 
@@ -479,7 +504,7 @@ local function bindCharacter(character)
                 end
 
                 local ball = snapshot.ball
-                local targeted = snapshot.targeted == true
+                local targeted = isSelfColor(getBallColor())
 
                 local deflectCooldown = tonumber(GameInfo.getDeflectCD()) or 0
 
@@ -648,7 +673,7 @@ local function resetState()
         clearCycle()
 
         Runtime.teleportLockUntil = 0
-        Runtime.lastTarget = -1
+        Runtime.lastBallColor = nil
         Runtime.pingTimer = 0
         Runtime.minPing = nil
         Runtime.pingOneWay = DEFAULT_PING_ONE_WAY
@@ -714,6 +739,7 @@ function AutoParry.setup(deps)
 
         local localPlayer = Utils.getLocalPlayer()
         Runtime.localUserId = localPlayer and tonumber(localPlayer.UserId) or -1
+        Runtime.localColor = COLOR_SELF
 
         HitboxState.handler = handleHitbox
 
