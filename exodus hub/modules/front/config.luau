@@ -12,7 +12,7 @@ end
 local DEFAULTS = {
     AutoParry = true,
     AutoClash = true,
-    CPS = 600,
+    CPS = 500,
     CPF = 8,
     SpamRateMode = "CPF",
     Keybind = Enum.KeyCode.F9,
