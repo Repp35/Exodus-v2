@@ -22,6 +22,12 @@ local Tuning = {
 
         -- cooldown propagation
         CLIENT_CD_PROPAGATION = 0.30,
+
+        -- target detection (sem previsão)
+        RED_COLOR_TOLERANCE = 0.08,        -- tolerância pra considerar "vermelho"
+        BRICKCOLOR_RED_NAME = "Bright red",-- nome exato que o servidor aplica
+        CHAR_HIGHLIGHT_RADIUS = 20,        -- studs: raio pra considerar
+                                           -- "sou o alvo de quem tá com highlight"
 }
 
 local PING_SAMPLE_INTERVAL = 1.5
@@ -30,6 +36,7 @@ local TELEPORT_LOCK = 0.20
 local MAX_RES_STACK = math.floor(Tuning.RES_CAP_STUDS / Tuning.RES_PER_PARRY)
 local HITBOX_PROXIMITY_SQ = Tuning.HITBOX_PROXIMITY ^ 2
 local STATIONARY_SPEED_SQ = Tuning.STATIONARY_SPEED ^ 2
+local CHAR_HIGHLIGHT_RADIUS_SQ = Tuning.CHAR_HIGHLIGHT_RADIUS ^ 2
 
 local PHASE_DETACHED = 1
 local PHASE_WAITING = 2
@@ -46,6 +53,15 @@ local PHASE_STRINGS = {
 }
 
 local phaseString = PHASE_STRINGS[PHASE_DETACHED]
+
+-- Target detection reasons
+local REASON_SERVER_TARGET = "server_target"
+local REASON_BALL_BRICKCOLOR = "ball_brickcolor_red"
+local REASON_BALL_HIGHLIGHT = "ball_highlight_red"
+local REASON_CHAR_HIGHLIGHT_NEAREST = "char_highlight_red_nearest"
+
+-- Names comuns do atributo que o servidor aplica no alvo
+local TARGET_ATTR_NAMES = { "target", "Target", "TargetPlayer", "TargetPlayerName" }
 
 local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
 local HitboxState = type(namespace.AutoParryHitbox) == "table"
@@ -94,6 +110,24 @@ local Runtime = {
         cooldownObservedAt = 0,
         phase = PHASE_DETACHED,
         bound = false,
+
+        -- target-detection runtime
+        detectedAsTarget = false,
+        detectionReason = nil,
+        detectionTickAt = 0,
+        detectionCounts = {
+                [REASON_SERVER_TARGET] = 0,
+                [REASON_BALL_BRICKCOLOR] = 0,
+                [REASON_BALL_HIGHLIGHT] = 0,
+                [REASON_CHAR_HIGHLIGHT_NEAREST] = 0,
+        },
+
+        -- one-shot por bola vermelha (estilo Phantom Lupa)
+        -- "última cor vista da bola" — se mudou desde a última vez que
+        -- eu registrei um parry, libera outro. Parecido com o
+        -- `lastBallColor` + `hasExecutedThisDetection` do lupa.
+        lastBallIdentity = nil, -- combina brickcolor/color3/highlight pra detectar mudança
+        lastParriedIdentity = nil,
 }
 
 local StatsService
@@ -170,6 +204,250 @@ local function getDistanceSquared(a, b)
         return dx * dx + dy * dy + dz * dz
 end
 
+-- ============================================================
+-- TARGET DETECTION — 4 sinais (sem previsão).
+-- Cada um exige uma verdade vinda do servidor. O primeiro que
+-- confirmar no tick trava os outros.
+-- ============================================================
+
+local function confirmTargetIfFirst(reason, time)
+        if Runtime.detectedAsTarget then
+                return true
+        end
+
+        Runtime.detectedAsTarget = true
+        Runtime.detectionReason = reason
+        Runtime.detectionTickAt = time
+        Runtime.detectionCounts[reason] = (Runtime.detectionCounts[reason] or 0) + 1
+        return true
+end
+
+local function resetTargetDetection(time)
+        Runtime.detectedAsTarget = false
+        Runtime.detectionReason = nil
+        Runtime.detectionTickAt = time
+end
+
+local function isRedColor(color)
+        if typeof(color) ~= "Color3" then
+                return false
+        end
+        local r, g, b = color.R, color.G, color.B
+        if r < 1 - Tuning.RED_COLOR_TOLERANCE then
+                return false
+        end
+        if g > Tuning.RED_COLOR_TOLERANCE then
+                return false
+        end
+        if b > Tuning.RED_COLOR_TOLERANCE then
+                return false
+        end
+        return true
+end
+
+local function getBallBrickColorName(ball)
+        -- BrickColor é uma das formas mais usadas pelo Bola Fantasma
+        -- pra sinalizar alvo. O nome exato é "Bright red" (BrickColor
+        -- number 21). Esse é o sinal mais forte e estável, sem
+        -- previsão: se a bola mudou de cor, o servidor já decidiu
+        -- quem é o alvo.
+        local ok, bc = pcall(function()
+                return ball.BrickColor
+        end)
+        if not ok or typeof(bc) ~= "BrickColor" then
+                return nil
+        end
+        return bc.Name
+end
+
+local function getBallHighlight(ball)
+        local direct = ball:FindFirstChildOfClass("Highlight")
+        if direct then
+                return direct
+        end
+        for _, desc in ipairs(ball:GetDescendants()) do
+                if desc:IsA("Highlight") then
+                        return desc
+                end
+        end
+        return nil
+end
+
+local function getBallIdentity(ball)
+        -- combina tudo que identifica a bola "nesse estado de alvo".
+        -- se QUALQUER coisa muda (cor, highlight, alvo), a identidade muda,
+        -- então o one-shot libera um novo parry (estilo lupa).
+        if not isValidBall(ball) then
+                return nil
+        end
+
+        local bcName = getBallBrickColorName(ball) or "?"
+        local highlightColor = "none"
+
+        local hl = getBallHighlight(ball)
+        if hl and isRedColor(hl.FillColor) and hl.FillTransparency < 1 then
+                highlightColor = "red"
+        end
+
+        local attrTarget = "?"
+        for _, attrName in ipairs(TARGET_ATTR_NAMES) do
+                local ok, val = pcall(function()
+                        return ball:GetAttribute(attrName)
+                end)
+                if ok and type(val) == "string" and val ~= "" then
+                        attrTarget = val
+                        break
+                end
+        end
+
+        return string.format("%s|%s|%s", bcName, highlightColor, attrTarget)
+end
+
+local function getPlayerRoot(player)
+        local character = player and player.Character
+        if not character then
+                return nil
+        end
+
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root then
+                return root
+        end
+
+        return character:FindFirstChildOfClass("BasePart")
+end
+
+local function getLocalPlayerRoot()
+        local lp = Utils.getLocalPlayer()
+        return getPlayerRoot(lp)
+end
+
+-- ============================================================
+-- SINAL A — server target (canônico, vem do servidor)
+-- ============================================================
+local function detectServerTarget(ball, time)
+        local targetName
+        for _, attrName in ipairs(TARGET_ATTR_NAMES) do
+                local ok, val = pcall(function()
+                        return ball:GetAttribute(attrName)
+                end)
+                if ok and type(val) == "string" and val ~= "" then
+                        targetName = val
+                        break
+                end
+        end
+
+        if not targetName then
+                return false
+        end
+
+        local lp = Utils.getLocalPlayer()
+        if not lp then
+                return false
+        end
+
+        if targetName == lp.Name then
+                return confirmTargetIfFirst(REASON_SERVER_TARGET, time)
+        end
+
+        return false
+end
+
+-- ============================================================
+-- SINAL B — BrickColor vermelho na bola
+-- MESMO método do Phantom Lupa v6.7:
+--   ball.BrickColor == BrickColor.new("Bright red")
+-- É o sinal mais direto e sem previsão.
+-- ============================================================
+local function detectBallBrickColor(ball, time)
+        local ok, isRed = pcall(function()
+                return ball.BrickColor == BrickColor.new(Tuning.BRICKCOLOR_RED_NAME)
+        end)
+        if not ok or not isRed then
+                return false
+        end
+
+        return confirmTargetIfFirst(REASON_BALL_BRICKCOLOR, time)
+end
+
+-- ============================================================
+-- SINAL C — Highlight vermelho NA BOLA
+-- Fallback pra forks do Bola Fantasma que usam Highlight em vez
+-- de BrickColor.
+-- ============================================================
+local function detectBallHighlight(ball, time)
+        local hl = getBallHighlight(ball)
+        if not hl then
+                return false
+        end
+
+        if not isRedColor(hl.FillColor) then
+                return false
+        end
+
+        if hl.FillTransparency >= 1 then
+                return false
+        end
+
+        return confirmTargetIfFirst(REASON_BALL_HIGHLIGHT, time)
+end
+
+-- ============================================================
+-- SINAL D — Character com Highlight vermelho é EU
+-- (não estou prevendo nada da bola — o servidor JÁ marcou alguém
+-- de vermelho, e checo se EU sou o marcado dentro de um raio curto.)
+-- ============================================================
+local function detectCharHighlightNearest(ball, time)
+        local lp = Utils.getLocalPlayer()
+        if not lp then
+                return false
+        end
+
+        local myChar = lp.Character
+        if not myChar then
+                return false
+        end
+
+        local hl = myChar:FindFirstChildOfClass("Highlight")
+        if not hl then
+                return false
+        end
+
+        if not isRedColor(hl.FillColor) then
+                return false
+        end
+
+        if hl.FillTransparency >= 1 then
+                return false
+        end
+
+        return confirmTargetIfFirst(REASON_CHAR_HIGHLIGHT_NEAREST, time)
+end
+
+-- Orquestrador. Itera os 4 na ordem de prioridade (lock no primeiro).
+local function runTargetDetection(ball, _ballVel, time)
+        resetTargetDetection(time)
+
+        if not isValidBall(ball) then
+                return false
+        end
+
+        if detectServerTarget(ball, time) then
+                return true
+        end
+        if detectBallBrickColor(ball, time) then
+                return true
+        end
+        if detectBallHighlight(ball, time) then
+                return true
+        end
+        if detectCharHighlightNearest(ball, time) then
+                return true
+        end
+
+        return false
+end
+
 -- ping
 local function samplePing()
         if not StatsService then
@@ -231,7 +509,7 @@ local function computeParryRadius(time)
         return Tuning.DEFLECT_RADIUS + getResilienceBonus(time)
 end
 
--- targeting
+-- targeting (server sync via GameInfo)
 local function onBallSync(data)
         if typeof(data) ~= "table" then
                 return
@@ -291,6 +569,12 @@ local function requestParry()
         if isValidBall(ball) then
                 Resilience.lastFireBall = ball
                 Resilience.lastFireAt = time
+
+                -- trava one-shot: marca a bola vermelha atual como já parried
+                local id = getBallIdentity(ball)
+                if id then
+                        Runtime.lastParriedIdentity = id
+                end
         else
                 Resilience.lastFireBall = nil
                 Resilience.lastFireAt = 0
@@ -479,13 +763,47 @@ local function bindCharacter(character)
                 end
 
                 local ball = snapshot.ball
-                local targeted = snapshot.targeted == true
+                local ballVel = snapshot.velocity
+                local targetedFromGameInfo = snapshot.targeted == true
 
                 local deflectCooldown = tonumber(GameInfo.getDeflectCD()) or 0
 
                 if not Utils.isFiniteNumber(deflectCooldown) then
                         deflectCooldown = 0
                 end
+
+                -- =========================================
+                -- NOVO: target detection multi-sinal sem previsão.
+                -- - Se snapshot já diz targeted (do server sync), confirma.
+                -- - Senão, roda os 4: server target attr, BrickColor vermelho
+                --   na bola, Highlight vermelho na bola, Highlight vermelho
+                --   no MEU char. Quem confirmar primeiro trava os outros.
+                -- =========================================
+                if isValidBall(ball) then
+                        if targetedFromGameInfo then
+                                confirmTargetIfFirst(REASON_SERVER_TARGET, timeNow)
+                        else
+                                runTargetDetection(ball, ballVel, timeNow)
+                        end
+                else
+                        resetTargetDetection(timeNow)
+                end
+
+                local targeted = Runtime.detectedAsTarget
+                Runtime.detectedAsTarget = false -- reset pra próximo tick
+
+                -- one-shot por bola vermelha (estilo Phantom Lupa).
+                -- Se a bola virou vermelha agora (identidade mudou),
+                -- libera novo parry. Se eu já parried essa identidade
+                -- e ela não mudou, NÃO parried de novo.
+                local currentIdentity = isValidBall(ball) and getBallIdentity(ball) or nil
+                local identityChanged = currentIdentity and currentIdentity ~= Runtime.lastBallIdentity
+                Runtime.lastBallIdentity = currentIdentity
+
+                local alreadyParriedThisOne =
+                        currentIdentity ~= nil
+                        and currentIdentity == Runtime.lastParriedIdentity
+                        and not identityChanged
 
                 if ParryState.armed then
                         if not (
@@ -522,8 +840,16 @@ local function bindCharacter(character)
                         Runtime.cooldownObservedAt = 0
                 end
 
+                -- aqui é onde o one-shot entra: se já parried essa
+                -- identidade e ela não mudou, ABORTA. Só age se for uma
+                -- nova "ronda" da bola vermelha.
                 if not (isValidBall(ball) and targeted) then
                         setPhase(PHASE_WAITING, "ball_or_target_invalid")
+                        return
+                end
+
+                if alreadyParriedThisOne then
+                        setPhase(PHASE_WAITING, "already_parried_this_id")
                         return
                 end
 
@@ -661,6 +987,12 @@ local function resetState()
         Runtime.cooldownObservedAt = 0
         Runtime.bound = false
 
+        Runtime.detectedAsTarget = false
+        Runtime.detectionReason = nil
+        Runtime.detectionTickAt = 0
+        Runtime.lastBallIdentity = nil
+        Runtime.lastParriedIdentity = nil
+
         setPhase(PHASE_DETACHED, "reset")
 end
 
@@ -773,6 +1105,18 @@ function AutoParry.getPingOneWay()
         return Runtime.pingOneWay
 end
 
+function AutoParry.getDetectedReason()
+        return Runtime.detectionReason
+end
+
+function AutoParry.getDetectionCounts()
+        local copy = {}
+        for reason, count in pairs(Runtime.detectionCounts) do
+                copy[reason] = count
+        end
+        return copy
+end
+
 function AutoParry.getStatus()
         return {
                 schema = Utils and Utils.apiVersion() or nil,
@@ -783,6 +1127,11 @@ function AutoParry.getStatus()
                 resilienceStack = Resilience.stack,
                 parryRadius = Runtime.parryRadius,
                 stationary = Runtime.stationary == true,
+                detectedAsTarget = Runtime.detectedAsTarget,
+                detectionReason = Runtime.detectionReason,
+                detectionCounts = AutoParry.getDetectionCounts(),
+                lastBallIdentity = Runtime.lastBallIdentity,
+                lastParriedIdentity = Runtime.lastParriedIdentity,
         }
 end
 
