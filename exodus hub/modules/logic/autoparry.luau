@@ -187,6 +187,7 @@ local Runtime = {
 	detectedAsTarget = false,
 	detectionReason = nil,
 	detectionTickAt = 0,
+diagnosticPreviousTarget = -1,
 
 	detectionCounts = {
 		[REASON_GAMEINFO_TARGET] = 0,
@@ -211,6 +212,153 @@ local resetTargetDetection
 
 local function now()
 	return Utils.now()
+end
+
+-- Diagnostic instrumentation. This is intentionally independent from the
+-- parry decision: it records detector edges and opportunity timing only.
+local Diagnostic = {
+	sequence = 0,
+	current = nil,
+	labels = {
+		[1] = "GameInfo",
+		[2] = "ServerTarget",
+		[3] = "BrickColor",
+		[4] = "BallHighlight",
+		[5] = "CharacterHighlight",
+	},
+}
+
+local function diagnosticLog(message)
+	if Utils and type(Utils.warn) == "function" then
+		Utils.warn("[AutoParry][DIAG] " .. message)
+	else
+		print("[AutoParry][DIAG] " .. message)
+	end
+end
+
+local function diagnosticBallX(ball)
+	if not ball then
+		return "nil"
+	end
+
+	local ok, position = pcall(function()
+		return ball.Position
+	end)
+
+	if ok and typeof(position) == "Vector3" then
+		return string.format("%.2f,%.2f,%.2f", position.X, position.Y, position.Z)
+	end
+
+	return "unavailable"
+end
+
+local function diagnosticClose(time, reason)
+	local opportunity = Diagnostic.current
+	if not opportunity then
+		return
+	end
+
+	diagnosticLog(string.format(
+		"OP#%d END reason=%s ballX=%s targetPrev=%s targetNow=%s first=%s firstAt=%.2f lastAt=%.2f duration=%.2f",
+		opportunity.id,
+		reason or "unknown",
+		opportunity.ballX,
+		tostring(opportunity.targetPrevious),
+		tostring(opportunity.targetCurrent),
+		opportunity.firstDetector or "none",
+		opportunity.firstAt or 0,
+		opportunity.lastAt or 0,
+	(opportunity.lastAt or time) - (opportunity.firstAt or time)
+	))
+
+	Diagnostic.current = nil
+end
+
+local function diagnosticStart(ball, targetId, time)
+	local opportunity = Diagnostic.current
+	if opportunity and opportunity.ball ~= ball then
+		diagnosticClose(time, "ball_changed")
+		opportunity = nil
+	end
+
+	if not opportunity then
+		Diagnostic.sequence += 1
+		opportunity = {
+			id = Diagnostic.sequence,
+			ball = ball,
+			ballX = diagnosticBallX(ball),
+			targetPrevious = Runtime.diagnosticPreviousTarget,
+			targetCurrent = targetId,
+			firstDetector = nil,
+			firstAt = nil,
+			lastAt = nil,
+			active = {},
+		}
+		Diagnostic.current = opportunity
+	else
+		if opportunity.targetCurrent ~= targetId then
+			diagnosticLog(string.format(
+				"OP#%d TARGET_CHANGE previous=%s current=%s ballX=%s",
+				opportunity.id,
+				tostring(opportunity.targetCurrent),
+				tostring(targetId),
+				opportunity.ballX
+			))
+			opportunity.targetCurrent = targetId
+		end
+	end
+
+	return opportunity
+end
+
+local function diagnosticRecord(opportunity, index, result, time)
+	local active = result ~= nil
+	local wasActive = opportunity.active[index] == true
+	local label = Diagnostic.labels[index] or ("Detector" .. tostring(index))
+
+	if active and not wasActive then
+		if not opportunity.firstDetector then
+			opportunity.firstDetector = label
+			opportunity.firstAt = time
+			diagnosticLog(string.format(
+				"OP#%d FIRST detector=%s +0.00ms ballX=%s targetPrev=%s targetNow=%s",
+				opportunity.id,
+				label,
+				opportunity.ballX,
+				tostring(opportunity.targetPrevious),
+				tostring(opportunity.targetCurrent)
+			))
+		else
+			diagnosticLog(string.format(
+				"OP#%d ENTER detector=%s +%.2fms",
+				opportunity.id,
+				label,
+				(time - opportunity.firstAt) * 1000
+			))
+		end
+		opportunity.active[index] = true
+		opportunity.enteredAt[index] = time
+		opportunity.lastAt = time
+	elseif not active and wasActive then
+		local enteredAt = opportunity.enteredAt[index] or time
+		diagnosticLog(string.format(
+			"OP#%d EXIT detector=%s +%.2fms duration=%.2fms",
+			opportunity.id,
+			label,
+			(time - opportunity.firstAt) * 1000,
+			(time - enteredAt) * 1000
+		))
+		opportunity.active[index] = false
+	end
+end
+
+local function diagnosticHasActive(opportunity)
+	for index = 1, #Diagnostic.labels do
+		if opportunity.active[index] then
+			return true
+		end
+	end
+	return false
 end
 
 local function setPhase(phase, reason)
@@ -486,6 +634,10 @@ local function commitOwnership(
 		and state ~= false
 	then
 		return false
+	end
+
+	if Runtime.diagnosticSuppressCommit then
+		return true
 	end
 
 	if Ownership.ball ~= ball then
@@ -772,6 +924,7 @@ local function runOwnershipDetection(
 	Runtime.detectionTickAt = time
 
 	if not isValidBall(ball) then
+		diagnosticClose(time, "invalid_ball")
 		return nil
 	end
 
@@ -779,11 +932,15 @@ local function runOwnershipDetection(
 		resetOwnership(ball)
 	end
 
+	local opportunity = diagnosticStart(ball, targetId, time)
+	local firstResult = nil
+
 	for index = 1, #OwnershipDetectors do
 		local detector =
 			OwnershipDetectors[index]
 
 		local result
+		Runtime.diagnosticSuppressCommit = index > 1
 
 		if index == 1 then
 			result = detector(
@@ -799,16 +956,19 @@ local function runOwnershipDetection(
 			)
 		end
 
-		if result == true then
-			return true
-		end
+			Runtime.diagnosticSuppressCommit = false
+		diagnosticRecord(opportunity, index, result, time)
 
-		if result == false then
-			return false
+		if firstResult == nil and result ~= nil then
+			firstResult = result
 		end
 	end
 
-	return nil
+	if not diagnosticHasActive(opportunity) then
+		diagnosticClose(time, "all_detectors_off")
+	end
+
+	return firstResult
 end
 
 -- ping
@@ -923,6 +1083,8 @@ local function onBallSync(data)
 	then
 		return
 	end
+
+Runtime.diagnosticPreviousTarget = Runtime.lastTarget
 
 	local previousTarget =
 		Runtime.lastTarget
