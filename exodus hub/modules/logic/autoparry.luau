@@ -214,11 +214,12 @@ local function now()
 	return Utils.now()
 end
 
--- Diagnostic instrumentation. This is intentionally independent from the
--- parry decision: it records detector edges and opportunity timing only.
+-- Diagnostic instrumentation: one consolidated report per transition to the
+-- local player. It never changes the effective ownership/parry decision.
 local Diagnostic = {
 	sequence = 0,
 	current = nil,
+	awaitingTarget = false,
 	labels = {
 		[1] = "GameInfo",
 		[2] = "ServerTarget",
@@ -229,10 +230,19 @@ local Diagnostic = {
 }
 
 local function diagnosticLog(message)
-	if Utils and type(Utils.warn) == "function" then
-		Utils.warn("[AutoParry][DIAG] " .. message)
-	else
-		print("[AutoParry][DIAG] " .. message)
+	local fileName = "autoparry_detector_log.txt"
+	local text = message .. "\n\n"
+
+	if type(appendfile) == "function" then
+		appendfile(fileName, text)
+	elseif type(writefile) == "function" then
+		local previous = ""
+		if type(isfile) == "function" and isfile(fileName)
+			and type(readfile) == "function"
+		then
+			previous = readfile(fileName)
+		end
+		writefile(fileName, previous .. text)
 	end
 end
 
@@ -258,23 +268,39 @@ local function diagnosticClose(time, reason)
 		return
 	end
 
-	diagnosticLog(string.format(
-		"OP#%d END reason=%s ballX=%s targetPrev=%s targetNow=%s first=%s firstAt=%.2f lastAt=%.2f duration=%.2f",
-		opportunity.id,
-		reason or "unknown",
-		opportunity.ballX,
-		tostring(opportunity.targetPrevious),
-		tostring(opportunity.targetCurrent),
-		opportunity.firstDetector or "none",
-		opportunity.firstAt or 0,
-		opportunity.lastAt or 0,
-	(opportunity.lastAt or time) - (opportunity.firstAt or time)
-	))
+	local firstAt = opportunity.firstAt
+	local firstLabel = opportunity.firstDetector or "nenhum"
+	local lines = {
+		string.format("Target #%d", opportunity.id),
+		"Primeiro: " .. firstLabel,
+	}
 
+	for index = 1, #Diagnostic.labels do
+		local label = Diagnostic.labels[index]
+		local detector = opportunity.detectors[index]
+		local answer = detector and detector.answer or "N/A"
+		local delta = "N/A"
+
+		if detector and detector.time and firstAt then
+			delta = string.format("+%.2f ms", (detector.time - firstAt) * 1000)
+		end
+
+		if detector and detector.time and firstAt then
+			lines[#lines + 1] = string.format("%s: %s", label, delta)
+		else
+			lines[#lines + 1] = string.format("%s: %s", label, answer)
+		end
+	end
+
+	diagnosticLog(table.concat(lines, "\n"))
 	Diagnostic.current = nil
 end
 
 local function diagnosticStart(ball, targetId, time)
+	if not Diagnostic.awaitingTarget then
+		return nil
+	end
+
 	local opportunity = Diagnostic.current
 	if opportunity and opportunity.ball ~= ball then
 		diagnosticClose(time, "ball_changed")
@@ -291,74 +317,52 @@ local function diagnosticStart(ball, targetId, time)
 			targetCurrent = targetId,
 			firstDetector = nil,
 			firstAt = nil,
-			lastAt = nil,
-			active = {},
+			detectors = {},
 		}
 		Diagnostic.current = opportunity
-	else
-		if opportunity.targetCurrent ~= targetId then
-			diagnosticLog(string.format(
-				"OP#%d TARGET_CHANGE previous=%s current=%s ballX=%s",
-				opportunity.id,
-				tostring(opportunity.targetCurrent),
-				tostring(targetId),
-				opportunity.ballX
-			))
-			opportunity.targetCurrent = targetId
-		end
 	end
 
 	return opportunity
 end
 
 local function diagnosticRecord(opportunity, index, result, time)
-	local active = result ~= nil
-	local wasActive = opportunity.active[index] == true
-	local label = Diagnostic.labels[index] or ("Detector" .. tostring(index))
+	if not opportunity then
+		return
+	end
 
-	if active and not wasActive then
-		if not opportunity.firstDetector then
-			opportunity.firstDetector = label
-			opportunity.firstAt = time
-			diagnosticLog(string.format(
-				"OP#%d FIRST detector=%s +0.00ms ballX=%s targetPrev=%s targetNow=%s",
-				opportunity.id,
-				label,
-				opportunity.ballX,
-				tostring(opportunity.targetPrevious),
-				tostring(opportunity.targetCurrent)
-			))
-		else
-			diagnosticLog(string.format(
-				"OP#%d ENTER detector=%s +%.2fms",
-				opportunity.id,
-				label,
-				(time - opportunity.firstAt) * 1000
-			))
-		end
-		opportunity.active[index] = true
-		opportunity.enteredAt[index] = time
-		opportunity.lastAt = time
-	elseif not active and wasActive then
-		local enteredAt = opportunity.enteredAt[index] or time
-		diagnosticLog(string.format(
-			"OP#%d EXIT detector=%s +%.2fms duration=%.2fms",
-			opportunity.id,
-			label,
-			(time - opportunity.firstAt) * 1000,
-			(time - enteredAt) * 1000
-		))
-		opportunity.active[index] = false
+	local detector = opportunity.detectors[index]
+	if detector then
+		return
+	end
+
+	local label = Diagnostic.labels[index] or ("Detector" .. tostring(index))
+	local answer
+	if result == true then
+		answer = "SIM"
+	elseif result == false then
+		answer = "NAO"
+	else
+		return
+	end
+
+	detector = { answer = answer, time = time }
+	opportunity.detectors[index] = detector
+
+	if not opportunity.firstAt then
+		opportunity.firstAt = time
+		opportunity.firstDetector = label
 	end
 end
 
-local function diagnosticHasActive(opportunity)
-	for index = 1, #Diagnostic.labels do
-		if opportunity.active[index] then
-			return true
+local function diagnosticMarkTargetTransition(previousTarget, targetId)
+	if targetId == Runtime.localUserId
+		and previousTarget ~= Runtime.localUserId
+	then
+		if Diagnostic.current then
+			diagnosticClose(now(), "new_target")
 		end
+		Diagnostic.awaitingTarget = true
 	end
-	return false
 end
 
 local function setPhase(phase, reason)
@@ -964,10 +968,6 @@ local function runOwnershipDetection(
 		end
 	end
 
-	if not diagnosticHasActive(opportunity) then
-		diagnosticClose(time, "all_detectors_off")
-	end
-
 	return firstResult
 end
 
@@ -1101,6 +1101,8 @@ Runtime.diagnosticPreviousTarget = Runtime.lastTarget
 		Ownership.cycle += 1
 	end
 
+	diagnosticMarkTargetTransition(previousTarget, targetId)
+
 	if previousTarget
 		== Runtime.localUserId
 		and targetId
@@ -1110,6 +1112,10 @@ Runtime.diagnosticPreviousTarget = Runtime.lastTarget
 		clearFired()
 
 		Ownership.parriedThisCycle = false
+		if previousTarget == Runtime.localUserId and targetId ~= Runtime.localUserId then
+			diagnosticClose(time, "target_left")
+			Diagnostic.awaitingTarget = false
+		end
 	end
 end
 
