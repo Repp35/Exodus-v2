@@ -23,6 +23,8 @@ local Tuning = {
 
 	CLIENT_CD_PROPAGATION = 0.30,
 
+	PARRY_COOLDOWN = 0.05,
+
 	RED_COLOR_TOLERANCE = 0.08,
 	BRICKCOLOR_RED_NAME = "Bright red",
 	CHAR_HIGHLIGHT_RADIUS = 20,
@@ -176,6 +178,7 @@ local Runtime = {
 	lastRootPosAt = 0,
 
 	lastFireAt = 0,
+	nextParryAllowedAt = 0,
 	cooldownObservedAt = 0,
 
 	phase = PHASE_DETACHED,
@@ -489,16 +492,6 @@ local function commitOwnership(
 		resetOwnership(ball)
 	end
 
-	if Ownership.state == state
-		and Ownership.reason == reason
-	then
-		Runtime.detectedAsTarget = state
-		Runtime.detectionReason = reason
-		Runtime.detectionTickAt = time
-
-		return true
-	end
-
 	Ownership.state = state
 	Ownership.reason = reason
 	Ownership.stateAt = time
@@ -512,10 +505,8 @@ local function commitOwnership(
 		+ 1
 
 	if state then
-		Ownership.parriedThisCycle = false
 		Ownership.lastMineAt = time
 	else
-		Ownership.parriedThisCycle = false
 		Ownership.lastLostAt = time
 	end
 
@@ -770,17 +761,6 @@ local OwnershipDetectors = {
 	detectCharacterHighlight,
 }
 
-local OwnershipDetectorReasons = {
-	REASON_GAMEINFO_TARGET,
-	REASON_GAMEINFO_OTHER,
-	REASON_SERVER_TARGET,
-	REASON_SERVER_OTHER,
-	REASON_BALL_BRICKCOLOR,
-	REASON_BALL_HIGHLIGHT,
-	REASON_CHAR_HIGHLIGHT_NEAREST,
-	REASON_CHAR_HIGHLIGHT_OTHER,
-}
-
 local function runOwnershipDetection(
 	ball,
 	targeted,
@@ -929,6 +909,7 @@ local function onBallSync(data)
 			time + TELEPORT_LOCK
 
 		clearCycle()
+		resetTargetDetection(time)
 
 		return
 	end
@@ -956,12 +937,6 @@ local function onBallSync(data)
 
 		Ownership.parriedThisCycle = false
 		Ownership.cycle += 1
-
-		if Ownership.ball then
-			Ownership.state = nil
-			Ownership.reason = nil
-			Ownership.stateAt = 0
-		end
 	end
 
 	if previousTarget
@@ -977,6 +952,11 @@ local function onBallSync(data)
 end
 
 -- parry
+
+local function isParryCooldownActive(time)
+	return time
+		< Runtime.nextParryAllowedAt
+end
 
 local function requestParry()
 	if not Remote
@@ -1003,6 +983,17 @@ local function requestParry()
 
 	local time = now()
 
+	-- Global anti-double-click guard.
+	-- Todos os caminhos de parry passam por aqui.
+	if isParryCooldownActive(time) then
+		setPhase(
+			PHASE_COOLDOWN,
+			"parry_cooldown"
+		)
+
+		return false
+	end
+
 	local ok, result =
 		pcall(
 			Remote.fireParry,
@@ -1028,7 +1019,11 @@ local function requestParry()
 		return false
 	end
 
+	-- The lock starts only after a successful parry.
 	Runtime.lastFireAt = time
+	Runtime.nextParryAllowedAt =
+		time + Tuning.PARRY_COOLDOWN
+
 	Runtime.cooldownObservedAt = 0
 
 	local ball =
@@ -1180,7 +1175,6 @@ local function bindCharacter(character)
 	clearCycle()
 	resetResilience()
 	resetOwnership(nil)
-
 	resetTargetDetection(now())
 
 	setPhase(
@@ -1290,9 +1284,6 @@ local function bindCharacter(character)
 						now()
 					)
 
-					Ownership.parriedThisCycle =
-						false
-
 					setPhase(
 						PHASE_WAITING,
 						"disabled_or_locked"
@@ -1302,6 +1293,16 @@ local function bindCharacter(character)
 				end
 
 				local timeNow = now()
+
+				-- Hard global anti-double-click guard.
+				if isParryCooldownActive(timeNow) then
+					setPhase(
+						PHASE_COOLDOWN,
+						"parry_cooldown"
+					)
+
+					return
+				end
 
 				if timeNow
 					< Runtime.teleportLockUntil
@@ -1421,11 +1422,6 @@ local function bindCharacter(character)
 						targetId,
 						timeNow
 					)
-
-				-- Semantics:
-				-- o primeiro detector que retornar
-				-- true ou false vence.
-				-- nil = sem evidência suficiente.
 
 				if ownershipResult ~= true then
 					if ownershipResult == false then
@@ -1583,12 +1579,11 @@ local function bindCharacter(character)
 					)
 
 				local effectiveDistance =
-					distance
-					- parryRadius
-
-				if effectiveDistance <= 0 then
-					effectiveDistance = 0
-				end
+					math.max(
+						distance
+							- parryRadius,
+						0
+					)
 
 				local tti =
 					effectiveDistance
@@ -1658,19 +1653,6 @@ local function bindCharacter(character)
 						setPhase(
 							PHASE_FIRED,
 							"already_parried_this_cycle"
-						)
-
-						return
-					end
-
-					if ownershipResult
-						~= true
-					then
-						clearArmed()
-
-						setPhase(
-							PHASE_WAITING,
-							"armed_ownership_invalid"
 						)
 
 						return
@@ -1788,6 +1770,7 @@ local function resetState()
 	Runtime.lastRootPosAt = 0
 
 	Runtime.lastFireAt = 0
+	Runtime.nextParryAllowedAt = 0
 	Runtime.cooldownObservedAt = 0
 
 	Runtime.bound = false
@@ -1909,6 +1892,14 @@ function AutoParry.fire()
 		or not GameInfo
 		or not Utils
 	then
+		return false
+	end
+
+	local time = now()
+
+	-- Mesmo o disparo externo passa
+	-- pelo mesmo bloqueio global.
+	if isParryCooldownActive(time) then
 		return false
 	end
 
@@ -2061,6 +2052,12 @@ function AutoParry.getStatus()
 			lastLostAt =
 				Ownership.lastLostAt,
 		},
+
+		nextParryAllowedAt =
+			Runtime.nextParryAllowedAt,
+
+		parryCooldown =
+			Tuning.PARRY_COOLDOWN,
 	}
 end
 
