@@ -11,6 +11,7 @@ local clock = os.clock
 local DEFLECT_COOLDOWN_THRESHOLD = 0
 local EFFECTIVE_RADIUS_MULTIPLIER = 1.0
 local CPF_REFERENCE_FPS = 60
+local CPF_COMPENSATION_ENABLED = false
 
 -- state
 local heartbeatConnection
@@ -148,7 +149,7 @@ end
 return false
 end
 
--- [[ PARRY WINDOW ]]
+-- PARRY WINDOW
 local function isBallInParryWindow(timeNow)
 if not AutoParry
 or type(AutoParry.getParryRadius) ~= "function"
@@ -236,15 +237,13 @@ Scheduler.inParryWindow = inside
 return inside
 end
 
--- [[ CPF ]]
+-- CPF
 local function scheduleCPF(rate, dt, compensation)
 if rate <= 0 then
 Scheduler.cpfClicks = 0
 return
 end
 
--- FPS EXATO DO FRAME ATUAL.
--- Sem EMA, sem média e sem suavização.
 local fpsNow = 1 / dt
 
 cpfFps = fpsNow
@@ -254,10 +253,6 @@ Scheduler.cpfCompensation = compensation == true
 local clicks
 
 if compensation then
--- 60 FPS = 1x
--- 30 FPS = 2x
--- 20 FPS = 3x
--- 120 FPS = 0.5x -> arredonda para 1
 local multiplier = CPF_REFERENCE_FPS / fpsNow
 
 clicks = math_max(
@@ -265,8 +260,6 @@ clicks = math_max(
 math_floor(rate * multiplier + 0.5)
 )
 else
--- CPF normal:
--- respeita exatamente a quantidade configurada por frame.
 clicks = math_max(
 1,
 math_floor(rate)
@@ -280,7 +273,7 @@ requestParry()
 end
 end
 
--- [[ CHAIN ]]
+-- CHAIN
 local function scheduleChain()
 local currentGeneration = generation
 
@@ -295,7 +288,7 @@ end
 chainRunning = false
 end
 
--- [[ CONFIG ]]
+-- CONFIG
 local function getModeAndRate()
 local config
 
@@ -321,12 +314,10 @@ end
 local rateKey = mode == "CPF" and "CPF" or "CPS"
 local rate = tonumber(config[rateKey]) or 1
 
-local compensation = config.CPFCompensation == true
-
-return mode, math_max(rate, 0), compensation
+return mode, math_max(rate, 0), CPF_COMPENSATION_ENABLED
 end
 
--- [[ RUNTIME ]]
+-- RUNTIME
 local function tick(dt)
 if type(dt) ~= "number"
 or dt <= 0
@@ -409,7 +400,7 @@ end
 
 wasActive = true
 
--- [[ CHAIN ]]
+-- CHAIN
 if mode == "CHAIN" then
 if not chainRunning then
 chainRunning = true
@@ -419,7 +410,7 @@ end
 return
 end
 
--- [[ MODE CHANGE ]]
+-- MODE CHANGE
 if mode ~= lastMode then
 lastMode = mode
 lastRate = nil
@@ -428,7 +419,7 @@ accumulator = 0
 cpfFps = nil
 end
 
--- [[ RATE CHANGE ]]
+-- RATE CHANGE
 if rate ~= lastRate then
 lastRate = rate
 
@@ -439,19 +430,19 @@ accumulator = 0
 end
 end
 
--- [[ CPF COMPENSATION CHANGE ]]
+-- CPF COMPENSATION CHANGE
 if compensation ~= lastCompensation then
 lastCompensation = compensation
 cpfFps = nil
 end
 
--- [[ CPF ]]
+-- CPF
 if mode == "CPF" then
 scheduleCPF(rate, dt, compensation)
 return
 end
 
--- [[ CPS ]]
+-- CPS
 if rate <= 0 then
 accumulator = 0
 return
@@ -494,7 +485,7 @@ requestParry()
 end
 end
 
--- [[ SETUP ]]
+-- SETUP
 function Spam.setup(deps)
 if type(deps) ~= "table"
 or type(deps.Remote) ~= "table"
@@ -562,7 +553,7 @@ end
 return true
 end
 
--- [[ LIFECYCLE ]]
+-- LIFECYCLE
 function Spam.resetState()
 invalidate("reset")
 
