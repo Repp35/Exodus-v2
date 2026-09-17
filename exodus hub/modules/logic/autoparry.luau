@@ -19,7 +19,7 @@ local Tuning = {
 	WINDOW_MAX_SPEED = 600,
 	WINDOW_MAX = 0.82,
 	WINDOW_MIN = 0.20,
-	WINDOW_FACTOR = 0.80,
+	WINDOW_FACTOR = 0.40,
 
 	-- movement
 	STATIONARY_SPEED = 1.5,
