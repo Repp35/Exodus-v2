@@ -29,7 +29,7 @@ local T = {
         APPROACH_RETURN_MULT = 1.60,
         APPROACH_BALL_WINDOW = 0.150,
         OWN_DASH_ESCAPE_DOT = -0.3,
-        DEACT_DIRECTION_MAX_LO = 0.1,
+        DEACT_DIRECTION_MAX_LO = 0.05,
         DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
         DEACT_DIRECTION_SPD_LO = 60,
         DEACT_DIRECTION_SPD_HI = 600,
@@ -719,6 +719,36 @@ function Dash.register(player, position, velocity)
 
         if dot < T.DASH_RETURN_DOT
                 or distance > R.parryRadius * T.DASH_RETURN_RADIUS_MULT then
+                return
+        end
+
+        -- ignore vertical / upward dashes (dash pra cima)
+        -- only count a dash as a threat when the player is
+        -- actually approaching in the horizontal plane.
+        local verticalSpeed = math.abs(velocity.Y)
+        local horizontalSpeedValue = speed
+
+        if verticalSpeed > horizontalSpeedValue * 0.75 then
+                return
+        end
+
+        -- require the player to actually be closing in on us.
+        -- compare current distance against the last known distance
+        -- for this player; if it's not shrinking, bail out.
+        local lastEvent = R.dashEvents[#R.dashEvents - 1]
+        local lastDistance
+
+        if lastEvent
+                and lastEvent.player == player
+                and typeof(lastEvent.position) == "Vector3" then
+                local lastPos = lastEvent.position
+                lastDistance = math.sqrt(
+                        (localRoot.X - lastPos.X) * (localRoot.X - lastPos.X)
+                        + (localRoot.Z - lastPos.Z) * (localRoot.Z - lastPos.Z)
+                )
+        end
+
+        if lastDistance and distance >= lastDistance then
                 return
         end
 
