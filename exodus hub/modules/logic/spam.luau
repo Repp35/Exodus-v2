@@ -9,7 +9,7 @@ local clock = os.clock
 
 -- tuning
 local DEFLECT_COOLDOWN_THRESHOLD = 0
-local EFFECTIVE_RADIUS_MULTIPLIER = 1.0
+local EFFECTIVE_RADIUS_MULTIPLIER = 1.1
 local CPF_REFERENCE_FPS = 60
 local CPF_COMPENSATION_ENABLED = false
 
