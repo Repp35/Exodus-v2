@@ -17,11 +17,11 @@ local heartbeatConnection
 local generation = 0
 local wasActive = false
 local accumulator = 0
-local cpfFps
+local chainRunning = false
+
 local lastMode
 local lastRate
 local lastCompensation
-local chainRunning = false
 
 -- click scheduler
 local clickQueue = 0
@@ -35,9 +35,11 @@ lastError = nil,
 lastCooldownAt = 0,
 lastCooldownValue = 0,
 lastErrorAt = 0,
+
 cpfFps = 0,
 cpfClicks = 0,
 cpfCompensation = false,
+
 }
 
 -- helpers
@@ -50,17 +52,21 @@ return clock()
 
 end
 
-local function resetRuntime()
-accumulator = 0
-cpfFps = nil
-lastMode = nil
-lastRate = nil
-lastCompensation = nil
-chainRunning = false
-
+local function clearClickScheduler()
 clickQueue = 0
 clickAccumulator = 0
 clickInterval = 0
+end
+
+local function resetRuntime()
+accumulator = 0
+chainRunning = false
+
+lastMode = nil
+lastRate = nil
+lastCompensation = nil
+
+clearClickScheduler()
 
 Scheduler.cpfFps = 0
 Scheduler.cpfClicks = 0
@@ -171,6 +177,18 @@ end
 
 end
 
+local function clearInvalidQueue(currentGeneration)
+if currentGeneration ~= generation
+or not isActive()
+then
+clearClickScheduler()
+return true
+end
+
+return false
+
+end
+
 local function processClickQueue(dt)
 if clickQueue <= 0 then
 clickAccumulator = 0
@@ -181,11 +199,7 @@ if clickInterval <= 0 then
     local currentGeneration = generation
 
     while clickQueue > 0 do
-        if currentGeneration ~= generation
-            or not isActive()
-        then
-            clickQueue = 0
-            clickAccumulator = 0
+        if clearInvalidQueue(currentGeneration) then
             return
         end
 
@@ -204,11 +218,7 @@ local currentGeneration = generation
 while clickQueue > 0
     and clickAccumulator >= clickInterval
 do
-    if currentGeneration ~= generation
-        or not isActive()
-    then
-        clickQueue = 0
-        clickAccumulator = 0
+    if clearInvalidQueue(currentGeneration) then
         return
     end
 
@@ -218,50 +228,63 @@ do
     requestParry()
 end
 
-if clickQueue <= 0
-    and clickAccumulator > clickInterval
-then
-    clickAccumulator = clickInterval
+if clickQueue <= 0 then
+    clickAccumulator = math.min(
+        clickAccumulator,
+        clickInterval
+    )
 end
 
 end
 
 -- CPF
-local function scheduleCPF(rate, dt, compensation)
-if rate <= 0 then
-Scheduler.cpfClicks = 0
-clickQueue = 0
-clickAccumulator = 0
-return
+local function calculateCPFClicks(rate, fps)
+if rate <= 0 or fps <= 0 then
+return 0
 end
 
-local fpsNow = 1 / dt
-
-cpfFps = fpsNow
-Scheduler.cpfFps = fpsNow
-Scheduler.cpfCompensation = compensation == true
-
-local clicks
-
-if compensation then
-    local multiplier = CPF_REFERENCE_FPS / fpsNow
-
-    clicks = math_max(
-        1,
-        math_floor(rate * multiplier + 0.5)
-    )
-else
-    clicks = math_max(
+if not CPF_COMPENSATION_ENABLED then
+    return math_max(
         1,
         math_floor(rate)
     )
 end
 
+local multiplier = CPF_REFERENCE_FPS / fps
+
+return math_max(
+    1,
+    math_floor(rate * multiplier + 0.5)
+)
+
+end
+
+local function scheduleCPF(rate, dt, compensation)
+if rate <= 0 then
+Scheduler.cpfClicks = 0
+clearClickScheduler()
+return
+end
+
+local fpsNow = 1 / dt
+
+Scheduler.cpfFps = fpsNow
+Scheduler.cpfCompensation = compensation == true
+
+local clicks = calculateCPFClicks(
+    rate,
+    fpsNow
+)
+
 Scheduler.cpfClicks = clicks
 
-local frameInterval = dt / clicks
+-- distribui os clicks deste frame pelo próprio intervalo do frame
+local interval = dt / clicks
 
-queueClicks(clicks, frameInterval)
+queueClicks(
+    clicks,
+    interval
+)
 
 end
 
@@ -303,10 +326,44 @@ else
     mode = "CPS"
 end
 
-local rateKey = mode == "CPF" and "CPF" or "CPS"
+local rateKey = mode == "CPF"
+    and "CPF"
+    or "CPS"
+
 local rate = tonumber(config[rateKey]) or 1
 
 return mode, math_max(rate, 0), CPF_COMPENSATION_ENABLED
+
+end
+
+-- MODE STATE
+local function resetSchedulerForModeChange()
+accumulator = 0
+clearClickScheduler()
+end
+
+local function updateModeState(mode, rate, compensation)
+if mode ~= lastMode then
+lastMode = mode
+lastRate = nil
+lastCompensation = nil
+
+    resetSchedulerForModeChange()
+end
+
+if rate ~= lastRate then
+    lastRate = rate
+
+    resetSchedulerForModeChange()
+end
+
+if compensation ~= lastCompensation then
+    lastCompensation = compensation
+
+    if mode == "CPF" then
+        clearClickScheduler()
+    end
+end
 
 end
 
@@ -355,6 +412,7 @@ if deflectCd ~= nil then
 
         wasActive = false
         Scheduler.phase = "cooldown"
+
         return
     end
 end
@@ -388,54 +446,31 @@ if mode == "CHAIN" then
     return
 end
 
--- MODE CHANGE
-if mode ~= lastMode then
-    lastMode = mode
-    lastRate = nil
-    lastCompensation = nil
-    accumulator = 0
-    cpfFps = nil
-
-    clickQueue = 0
-    clickAccumulator = 0
-    clickInterval = 0
-end
-
--- RATE CHANGE
-if rate ~= lastRate then
-    lastRate = rate
-
-    if mode == "CPF" then
-        cpfFps = nil
-    else
-        accumulator = 0
-    end
-
-    clickQueue = 0
-    clickAccumulator = 0
-end
-
--- CPF COMPENSATION CHANGE
-if compensation ~= lastCompensation then
-    lastCompensation = compensation
-    cpfFps = nil
-
-    clickQueue = 0
-    clickAccumulator = 0
-end
+-- MODE / RATE STATE
+updateModeState(
+    mode,
+    rate,
+    compensation
+)
 
 -- CPF
 if mode == "CPF" then
-    scheduleCPF(rate, dt, compensation)
+    scheduleCPF(
+        rate,
+        dt,
+        compensation
+    )
+
     processClickQueue(dt)
+
     return
 end
 
 -- CPS
 if rate <= 0 then
     accumulator = 0
-    clickQueue = 0
-    clickAccumulator = 0
+    clearClickScheduler()
+
     return
 end
 
@@ -446,7 +481,9 @@ accumulator = accumulator + dt
 local currentGeneration = generation
 
 if accumulator >= interval then
-    local clicks = math_floor(accumulator / interval)
+    local clicks = math_floor(
+        accumulator / interval
+    )
 
     accumulator = accumulator - clicks * interval
 
@@ -460,7 +497,10 @@ if accumulator >= interval then
         return
     end
 
-    queueClicks(clicks, interval)
+    queueClicks(
+        clicks,
+        interval
+    )
 end
 
 processClickQueue(dt)
@@ -519,7 +559,9 @@ if not RunService then
     RunService = game:GetService("RunService")
 end
 
-local signal = RunService.RenderStepped or RunService.Heartbeat
+local signal =
+    RunService.RenderStepped
+    or RunService.Heartbeat
 
 heartbeatConnection = signal:Connect(tick)
 
