@@ -20,7 +20,7 @@ MIN_BALL_SPEED = 10,
     WINDOW_LOW_SPEED = 16,
     WINDOW_LOW = 0.820,
     WINDOW_REFERENCE_SPEED = 600,
-    WINDOW_REFERENCE = 0.350,
+    WINDOW_REFERENCE = 0.250,
     WINDOW_FACTOR = 0.4,
 
     -- ping compensation: round-trip buffer added to the window
