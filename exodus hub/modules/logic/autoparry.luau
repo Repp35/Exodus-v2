@@ -18,9 +18,9 @@ MIN_BALL_SPEED = 10,
 
     -- deflect window
     WINDOW_LOW_SPEED = 16,
-    WINDOW_LOW = 0.740,
+    WINDOW_LOW = 0.820,
     WINDOW_REFERENCE_SPEED = 600,
-    WINDOW_REFERENCE = 0.300,
+    WINDOW_REFERENCE = 0.350,
     WINDOW_FACTOR = 0.4,
 
     -- stationary
