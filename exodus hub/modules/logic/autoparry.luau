@@ -23,6 +23,13 @@ MIN_BALL_SPEED = 10,
     WINDOW_REFERENCE = 0.350,
     WINDOW_FACTOR = 0.4,
 
+    -- ping compensation: round-trip buffer added to the window
+    -- so remote fire ainda chega a tempo quando o cliente está atrás.
+    --   1.0 = soma o round-trip inteiro (defensivo)
+    --   0.5 = soma metade (agressivo, confia em compensação do server)
+    PING_WINDOW_FACTOR = 1.0,
+    PING_WINDOW_CAP = 0.250,
+
     -- stationary
     STATIONARY_SPEED = 1.5,
     STATIONARY_DWELL = 0.20,
@@ -449,7 +456,7 @@ Tuning.WINDOW_LOW_SPEED
 
 end
 
-local function computeDeflectWindow(speed, stationary)
+local function computeDeflectWindow(speed, stationary, pingOneWay)
 local window =
 computeBaseDeflectWindow(speed)
 
@@ -458,17 +465,35 @@ computeBaseDeflectWindow(speed)
                     Tuning.STATIONARY_WINDOW_MULTIPLIER
     end
 
+    -- ping compensation (round-trip buffado, com cap pra não dobrar janela em spike)
+    local ping = tonumber(pingOneWay)
+            or Runtime.pingOneWay
+            or DEFAULT_PING_ONE_WAY
+
+    if ping and ping > 0 then
+            local buffer =
+                    ping * 2
+                    * Tuning.PING_WINDOW_FACTOR
+
+            window += math.min(
+                    buffer,
+                    Tuning.PING_WINDOW_CAP
+            )
+    end
+
     return window
 
 end
 
 local function computeEffectiveWindow(
 speed,
-stationary
+stationary,
+pingOneWay
 )
 return computeDeflectWindow(
 speed,
-stationary
+stationary,
+pingOneWay
 ) * Tuning.WINDOW_FACTOR
 end
 
@@ -484,7 +509,8 @@ computeBaseParryRadius(time)
     local effectiveWindow =
             computeEffectiveWindow(
                     speed,
-                    stationary
+                    stationary,
+                    Runtime.pingOneWay
             )
 
     return baseRadius
@@ -522,7 +548,8 @@ end
     local deflectWindow =
             computeDeflectWindow(
                     speed,
-                    stationary
+                    stationary,
+                    Runtime.pingOneWay
             )
 
     local effectiveWindow =
