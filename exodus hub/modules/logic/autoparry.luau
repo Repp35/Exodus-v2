@@ -21,7 +21,7 @@ MIN_BALL_SPEED = 10,
     WINDOW_LOW = 0.820,
     WINDOW_REFERENCE_SPEED = 600,
     WINDOW_REFERENCE = 0.250,
-    WINDOW_FACTOR = 0.4,
+    WINDOW_FACTOR = 0.45,
 
     -- ping compensation: round-trip buffer added to the window
     -- so remote fire ainda chega a tempo quando o cliente está atrás.
@@ -33,7 +33,7 @@ MIN_BALL_SPEED = 10,
     -- stationary
     STATIONARY_SPEED = 1.5,
     STATIONARY_DWELL = 0.20,
-    STATIONARY_WINDOW_MULTIPLIER = 1.40,
+    STATIONARY_WINDOW_MULTIPLIER = 1.25,
     STATIONARY_RESET_DISTANCE = 1,
 
     -- cooldown propagation
