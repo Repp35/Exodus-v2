@@ -23,330 +23,429 @@ local lastRate
 local lastCompensation
 local chainRunning = false
 
+-- click scheduler
+local clickQueue = 0
+local clickAccumulator = 0
+local clickInterval = 0
+
 local Scheduler = {
-    phase = "stopped",
-    lastRequestAt = 0,
-    lastError = nil,
-    lastCooldownAt = 0,
-    lastCooldownValue = 0,
-    lastErrorAt = 0,
-    cpfFps = 0,
-    cpfClicks = 0,
-    cpfCompensation = false,
+phase = "stopped",
+lastRequestAt = 0,
+lastError = nil,
+lastCooldownAt = 0,
+lastCooldownValue = 0,
+lastErrorAt = 0,
+cpfFps = 0,
+cpfClicks = 0,
+cpfCompensation = false,
 }
 
 -- helpers
 local function getNow()
-    if Utils and type(Utils.now) == "function" then
-        return Utils.now()
-    end
+if Utils and type(Utils.now) == "function" then
+return Utils.now()
+end
 
-    return clock()
+return clock()
+
 end
 
 local function resetRuntime()
-    accumulator = 0
-    cpfFps = nil
-    lastMode = nil
-    lastRate = nil
-    lastCompensation = nil
-    chainRunning = false
+accumulator = 0
+cpfFps = nil
+lastMode = nil
+lastRate = nil
+lastCompensation = nil
+chainRunning = false
 
-    Scheduler.cpfFps = 0
-    Scheduler.cpfClicks = 0
-    Scheduler.cpfCompensation = false
+clickQueue = 0
+clickAccumulator = 0
+clickInterval = 0
+
+Scheduler.cpfFps = 0
+Scheduler.cpfClicks = 0
+Scheduler.cpfCompensation = false
+
 end
 
 local function invalidate(reason)
-    generation = generation + 1
-    Scheduler.phase = "stopped"
+generation = generation + 1
+Scheduler.phase = "stopped"
 
-    resetRuntime()
+resetRuntime()
 
-    if wasActive
-        and Utils
-        and type(Utils.recordTransition) == "function"
-    then
-        Utils.recordTransition(
-            "Spam",
-            "running",
-            "stopped",
-            reason or "invalidated"
-        )
-    end
+if wasActive
+    and Utils
+    and type(Utils.recordTransition) == "function"
+then
+    Utils.recordTransition(
+        "Spam",
+        "running",
+        "stopped",
+        reason or "invalidated"
+    )
+end
+
 end
 
 local function isActive()
-    if not Utils
-        or type(Utils.isActive) ~= "function"
-        or type(Utils.isSpamActive) ~= "function"
-    then
-        return false
-    end
+if not Utils
+or type(Utils.isActive) ~= "function"
+or type(Utils.isSpamActive) ~= "function"
+then
+return false
+end
 
-    return Utils.isActive() and Utils.isSpamActive()
+return Utils.isActive() and Utils.isSpamActive()
+
 end
 
 local function readDeflectCooldown()
-    if not GameInfo
-        or type(GameInfo.getDeflectCD) ~= "function"
-    then
-        return nil
-    end
+if not GameInfo
+or type(GameInfo.getDeflectCD) ~= "function"
+then
+return nil
+end
 
-    local ok, value = pcall(GameInfo.getDeflectCD)
+local ok, value = pcall(GameInfo.getDeflectCD)
 
-    if not ok
-        or type(value) ~= "number"
-        or value ~= value
-        or value == math.huge
-        or value == -math.huge
-    then
-        return nil
-    end
+if not ok
+    or type(value) ~= "number"
+    or value ~= value
+    or value == math.huge
+    or value == -math.huge
+then
+    return nil
+end
 
-    return value
+return value
+
 end
 
 local function requestParry()
-    local ok, result = pcall(Remote.fireParry, 1)
-    local timestamp = getNow()
+local ok, result = pcall(Remote.fireParry, 1)
+local timestamp = getNow()
 
-    Scheduler.lastRequestAt = timestamp
+Scheduler.lastRequestAt = timestamp
 
-    if ok and result ~= false then
-        Scheduler.lastError = nil
-        return true
+if ok and result ~= false then
+    Scheduler.lastError = nil
+    return true
+end
+
+local errorMessage
+
+if not ok then
+    errorMessage = tostring(result)
+else
+    errorMessage = "Remote.fireParry retornou false"
+end
+
+Scheduler.lastError = errorMessage
+
+if timestamp - Scheduler.lastErrorAt >= 1 then
+    Scheduler.lastErrorAt = timestamp
+
+    if Utils
+        and type(Utils.recordError) == "function"
+    then
+        Utils.recordError("Spam", errorMessage)
     end
+end
 
-    local errorMessage
+return false
 
-    if not ok then
-        errorMessage = tostring(result)
-    else
-        errorMessage = "Remote.fireParry retornou false"
-    end
+end
 
-    Scheduler.lastError = errorMessage
+-- CLICK SCHEDULER
+local function queueClicks(clicks, interval)
+if clicks <= 0 then
+return
+end
 
-    if timestamp - Scheduler.lastErrorAt >= 1 then
-        Scheduler.lastErrorAt = timestamp
+clickQueue = clickQueue + clicks
 
-        if Utils
-            and type(Utils.recordError) == "function"
+if interval > 0 then
+    clickInterval = interval
+end
+
+end
+
+local function processClickQueue(dt)
+if clickQueue <= 0 then
+clickAccumulator = 0
+return
+end
+
+if clickInterval <= 0 then
+    local currentGeneration = generation
+
+    while clickQueue > 0 do
+        if currentGeneration ~= generation
+            or not isActive()
         then
-            Utils.recordError("Spam", errorMessage)
+            clickQueue = 0
+            clickAccumulator = 0
+            return
         end
+
+        requestParry()
+        clickQueue = clickQueue - 1
     end
 
-    return false
+    clickAccumulator = 0
+    return
+end
+
+clickAccumulator = clickAccumulator + dt
+
+local currentGeneration = generation
+
+while clickQueue > 0
+    and clickAccumulator >= clickInterval
+do
+    if currentGeneration ~= generation
+        or not isActive()
+    then
+        clickQueue = 0
+        clickAccumulator = 0
+        return
+    end
+
+    clickAccumulator = clickAccumulator - clickInterval
+    clickQueue = clickQueue - 1
+
+    requestParry()
+end
+
+if clickQueue <= 0
+    and clickAccumulator > clickInterval
+then
+    clickAccumulator = clickInterval
+end
+
 end
 
 -- CPF
 local function scheduleCPF(rate, dt, compensation)
-    if rate <= 0 then
-        Scheduler.cpfClicks = 0
-        return
-    end
+if rate <= 0 then
+Scheduler.cpfClicks = 0
+clickQueue = 0
+clickAccumulator = 0
+return
+end
 
-    local fpsNow = 1 / dt
+local fpsNow = 1 / dt
 
-    cpfFps = fpsNow
-    Scheduler.cpfFps = fpsNow
-    Scheduler.cpfCompensation = compensation == true
+cpfFps = fpsNow
+Scheduler.cpfFps = fpsNow
+Scheduler.cpfCompensation = compensation == true
 
-    local clicks
+local clicks
 
-    if compensation then
-        local multiplier = CPF_REFERENCE_FPS / fpsNow
+if compensation then
+    local multiplier = CPF_REFERENCE_FPS / fpsNow
 
-        clicks = math_max(
-            1,
-            math_floor(rate * multiplier + 0.5)
-        )
-    else
-        clicks = math_max(
-            1,
-            math_floor(rate)
-        )
-    end
+    clicks = math_max(
+        1,
+        math_floor(rate * multiplier + 0.5)
+    )
+else
+    clicks = math_max(
+        1,
+        math_floor(rate)
+    )
+end
 
-    Scheduler.cpfClicks = clicks
+Scheduler.cpfClicks = clicks
 
-    for _ = 1, clicks do
-        requestParry()
-    end
+local frameInterval = dt / clicks
+
+queueClicks(clicks, frameInterval)
+
 end
 
 -- CHAIN
 local function scheduleChain()
-    local currentGeneration = generation
+local currentGeneration = generation
 
-    while currentGeneration == generation
-        and isActive()
-    do
-        requestParry()
-        task.wait()
-    end
+while currentGeneration == generation
+    and isActive()
+do
+    requestParry()
+    task.wait()
+end
 
-    chainRunning = false
+chainRunning = false
+
 end
 
 -- CONFIG
 local function getModeAndRate()
-    local config
+local config
 
-    if Utils and type(Utils.getConfig) == "function" then
-        config = Utils.getConfig()
-    end
+if Utils and type(Utils.getConfig) == "function" then
+    config = Utils.getConfig()
+end
 
-    if type(config) ~= "table" then
-        return "CPS", 1, false
-    end
+if type(config) ~= "table" then
+    return "CPS", 1, false
+end
 
-    local configuredMode = config.SpamRateMode
-    local mode
+local configuredMode = config.SpamRateMode
+local mode
 
-    if configuredMode == "CPF" then
-        mode = "CPF"
-    elseif configuredMode == "CHAIN" then
-        mode = "CHAIN"
-    else
-        mode = "CPS"
-    end
+if configuredMode == "CPF" then
+    mode = "CPF"
+elseif configuredMode == "CHAIN" then
+    mode = "CHAIN"
+else
+    mode = "CPS"
+end
 
-    local rateKey = mode == "CPF" and "CPF" or "CPS"
-    local rate = tonumber(config[rateKey]) or 1
+local rateKey = mode == "CPF" and "CPF" or "CPS"
+local rate = tonumber(config[rateKey]) or 1
 
-    return mode, math_max(rate, 0), CPF_COMPENSATION_ENABLED
+return mode, math_max(rate, 0), CPF_COMPENSATION_ENABLED
+
 end
 
 -- RUNTIME
 local function tick(dt)
-    if type(dt) ~= "number"
-        or dt <= 0
-        or dt ~= dt
-        or dt == math.huge
-        or dt == -math.huge
-    then
-        return
+if type(dt) ~= "number"
+or dt <= 0
+or dt ~= dt
+or dt == math.huge
+or dt == -math.huge
+then
+return
+end
+
+if not isActive() then
+    if wasActive then
+        invalidate("spam_disabled")
     end
 
-    if not isActive() then
+    wasActive = false
+    return
+end
+
+local deflectCd = readDeflectCooldown()
+
+if deflectCd ~= nil then
+    Scheduler.lastCooldownAt = clock()
+    Scheduler.lastCooldownValue = deflectCd
+
+    if deflectCd > DEFLECT_COOLDOWN_THRESHOLD then
         if wasActive then
-            invalidate("spam_disabled")
+            invalidate("deflect_cooldown")
+
+            if Utils
+                and type(Utils.recordError) == "function"
+            then
+                Utils.recordError(
+                    "Spam",
+                    string.format(
+                        "deflect cooldown ativo (%.3fs) — spam desligado",
+                        deflectCd
+                    )
+                )
+            end
         end
 
         wasActive = false
+        Scheduler.phase = "cooldown"
         return
     end
+end
 
-    local deflectCd = readDeflectCooldown()
+local mode, rate, compensation = getModeAndRate()
 
-    if deflectCd ~= nil then
-        Scheduler.lastCooldownAt = clock()
-        Scheduler.lastCooldownValue = deflectCd
+if not wasActive then
+    Scheduler.phase = "running"
 
-        if deflectCd > DEFLECT_COOLDOWN_THRESHOLD then
-            if wasActive then
-                invalidate("deflect_cooldown")
+    if Utils
+        and type(Utils.recordTransition) == "function"
+    then
+        Utils.recordTransition(
+            "Spam",
+            "stopped",
+            "running",
+            "spam_active"
+        )
+    end
+end
 
-                if Utils
-                    and type(Utils.recordError) == "function"
-                then
-                    Utils.recordError(
-                        "Spam",
-                        string.format(
-                            "deflect cooldown ativo (%.3fs) — spam desligado",
-                            deflectCd
-                        )
-                    )
-                end
-            end
+wasActive = true
 
-            wasActive = false
-            Scheduler.phase = "cooldown"
-            return
-        end
+-- CHAIN
+if mode == "CHAIN" then
+    if not chainRunning then
+        chainRunning = true
+        task.spawn(scheduleChain)
     end
 
-    local mode, rate, compensation = getModeAndRate()
+    return
+end
 
-    if not wasActive then
-        Scheduler.phase = "running"
+-- MODE CHANGE
+if mode ~= lastMode then
+    lastMode = mode
+    lastRate = nil
+    lastCompensation = nil
+    accumulator = 0
+    cpfFps = nil
 
-        if Utils
-            and type(Utils.recordTransition) == "function"
-        then
-            Utils.recordTransition(
-                "Spam",
-                "stopped",
-                "running",
-                "spam_active"
-            )
-        end
-    end
+    clickQueue = 0
+    clickAccumulator = 0
+    clickInterval = 0
+end
 
-    wasActive = true
+-- RATE CHANGE
+if rate ~= lastRate then
+    lastRate = rate
 
-    -- CHAIN
-    if mode == "CHAIN" then
-        if not chainRunning then
-            chainRunning = true
-            task.spawn(scheduleChain)
-        end
-
-        return
-    end
-
-    -- MODE CHANGE
-    if mode ~= lastMode then
-        lastMode = mode
-        lastRate = nil
-        lastCompensation = nil
-        accumulator = 0
-        cpfFps = nil
-    end
-
-    -- RATE CHANGE
-    if rate ~= lastRate then
-        lastRate = rate
-
-        if mode == "CPF" then
-            cpfFps = nil
-        else
-            accumulator = 0
-        end
-    end
-
-    -- CPF COMPENSATION CHANGE
-    if compensation ~= lastCompensation then
-        lastCompensation = compensation
-        cpfFps = nil
-    end
-
-    -- CPF
     if mode == "CPF" then
-        scheduleCPF(rate, dt, compensation)
-        return
-    end
-
-    -- CPS
-    if rate <= 0 then
+        cpfFps = nil
+    else
         accumulator = 0
-        return
     end
 
-    local interval = 1 / rate
+    clickQueue = 0
+    clickAccumulator = 0
+end
 
-    accumulator = accumulator + dt
+-- CPF COMPENSATION CHANGE
+if compensation ~= lastCompensation then
+    lastCompensation = compensation
+    cpfFps = nil
 
-    local currentGeneration = generation
+    clickQueue = 0
+    clickAccumulator = 0
+end
 
-    if accumulator < interval then
-        return
-    end
+-- CPF
+if mode == "CPF" then
+    scheduleCPF(rate, dt, compensation)
+    processClickQueue(dt)
+    return
+end
 
+-- CPS
+if rate <= 0 then
+    accumulator = 0
+    clickQueue = 0
+    clickAccumulator = 0
+    return
+end
+
+local interval = 1 / rate
+
+accumulator = accumulator + dt
+
+local currentGeneration = generation
+
+if accumulator >= interval then
     local clicks = math_floor(accumulator / interval)
 
     accumulator = accumulator - clicks * interval
@@ -361,123 +460,122 @@ local function tick(dt)
         return
     end
 
-    for _ = 1, clicks do
-        if currentGeneration ~= generation
-            or not isActive()
-        then
-            return
-        end
+    queueClicks(clicks, interval)
+end
 
-        requestParry()
-    end
+processClickQueue(dt)
+
 end
 
 -- SETUP
 function Spam.setup(deps)
-    if type(deps) ~= "table"
-        or type(deps.Remote) ~= "table"
-        or type(deps.Remote.fireParry) ~= "function"
-        or type(deps.Utils) ~= "table"
-    then
-        return false, "dependência ausente: Remote.fireParry ou Utils"
-    end
+if type(deps) ~= "table"
+or type(deps.Remote) ~= "table"
+or type(deps.Remote.fireParry) ~= "function"
+or type(deps.Utils) ~= "table"
+then
+return false, "dependência ausente: Remote.fireParry ou Utils"
+end
 
-    if heartbeatConnection then
+if heartbeatConnection then
+    pcall(
+        heartbeatConnection.Disconnect,
+        heartbeatConnection
+    )
+
+    if Utils
+        and type(Utils.untrackGlobal) == "function"
+    then
         pcall(
-            heartbeatConnection.Disconnect,
+            Utils.untrackGlobal,
             heartbeatConnection
         )
-
-        if Utils
-            and type(Utils.untrackGlobal) == "function"
-        then
-            pcall(
-                Utils.untrackGlobal,
-                heartbeatConnection
-            )
-        end
-
-        heartbeatConnection = nil
     end
 
-    Remote = deps.Remote
-    Utils = deps.Utils
+    heartbeatConnection = nil
+end
 
-    GameInfo =
-        type(deps.GameInfo) == "table"
-        and deps.GameInfo
-        or nil
+Remote = deps.Remote
+Utils = deps.Utils
 
-    if not GameInfo then
-        return false, "dependência ausente: GameInfo"
-    end
+GameInfo =
+    type(deps.GameInfo) == "table"
+    and deps.GameInfo
+    or nil
 
-    Spam.resetState()
+if not GameInfo then
+    return false, "dependência ausente: GameInfo"
+end
 
-    local RunService
+Spam.resetState()
 
-    if type(Utils.getRunService) == "function" then
-        RunService = Utils.getRunService()
-    end
+local RunService
 
-    if not RunService then
-        RunService = game:GetService("RunService")
-    end
+if type(Utils.getRunService) == "function" then
+    RunService = Utils.getRunService()
+end
 
-    local signal = RunService.RenderStepped or RunService.Heartbeat
+if not RunService then
+    RunService = game:GetService("RunService")
+end
 
-    heartbeatConnection = signal:Connect(tick)
+local signal = RunService.RenderStepped or RunService.Heartbeat
 
-    if type(Utils.trackGlobal) == "function" then
-        Utils.trackGlobal(heartbeatConnection)
-    end
+heartbeatConnection = signal:Connect(tick)
 
-    return true
+if type(Utils.trackGlobal) == "function" then
+    Utils.trackGlobal(heartbeatConnection)
+end
+
+return true
+
 end
 
 -- LIFECYCLE
 function Spam.resetState()
-    invalidate("reset")
+invalidate("reset")
 
-    wasActive = false
+wasActive = false
 
-    Scheduler.phase = "stopped"
-    Scheduler.lastRequestAt = 0
-    Scheduler.lastError = nil
-    Scheduler.lastCooldownAt = 0
-    Scheduler.lastCooldownValue = 0
-    Scheduler.lastErrorAt = 0
-    Scheduler.cpfFps = 0
-    Scheduler.cpfClicks = 0
-    Scheduler.cpfCompensation = false
+Scheduler.phase = "stopped"
+Scheduler.lastRequestAt = 0
+Scheduler.lastError = nil
+Scheduler.lastCooldownAt = 0
+Scheduler.lastCooldownValue = 0
+Scheduler.lastErrorAt = 0
+Scheduler.cpfFps = 0
+Scheduler.cpfClicks = 0
+Scheduler.cpfCompensation = false
+
 end
 
 function Spam.getStatus()
-    return {
-        schema =
-            Utils
-            and type(Utils.apiVersion) == "function"
-            and Utils.apiVersion()
-            or 1,
+return {
+schema =
+Utils
+and type(Utils.apiVersion) == "function"
+and Utils.apiVersion()
+or 1,
 
-        phase = Scheduler.phase,
-        lastRequestAt = Scheduler.lastRequestAt,
-        lastError = Scheduler.lastError,
-        lastCooldownAt = Scheduler.lastCooldownAt,
-        lastCooldownValue = Scheduler.lastCooldownValue,
+    phase = Scheduler.phase,
+    lastRequestAt = Scheduler.lastRequestAt,
+    lastError = Scheduler.lastError,
+    lastCooldownAt = Scheduler.lastCooldownAt,
+    lastCooldownValue = Scheduler.lastCooldownValue,
 
-        cpfFps = Scheduler.cpfFps,
-        cpfClicks = Scheduler.cpfClicks,
-        cpfCompensation = Scheduler.cpfCompensation,
-    }
+    cpfFps = Scheduler.cpfFps,
+    cpfClicks = Scheduler.cpfClicks,
+    cpfCompensation = Scheduler.cpfCompensation,
+}
+
 end
 
 Spam.__contract = {
-    requires = {
-        Remote = "remote",
-        Utils = "utils",
-        GameInfo = "gameinfo",
-    },
+requires = {
+Remote = "remote",
+Utils = "utils",
+GameInfo = "gameinfo",
+},
 }
 
 return Spam
