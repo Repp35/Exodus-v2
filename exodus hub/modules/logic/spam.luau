@@ -10,7 +10,7 @@ local clock = os.clock
 -- tuning
 local DEFLECT_COOLDOWN_THRESHOLD = 0
 local CPF_REFERENCE_FPS = 60
-local CPF_COMPENSATION_ENABLED = false
+local CPF_COMPENSATION_ENABLED = true
 
 -- state
 local heartbeatConnection
