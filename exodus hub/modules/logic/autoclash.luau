@@ -336,7 +336,6 @@ local function resetTargetState()
 	R.dashBonusUntil = 0
 	R.wasMeTarget = nil
 	clearReturnState()
-	R.lastDirectionSwitchAt = 0
 	R.lastClashSwitchAt = 0
 	R.clashIntervalMs = 0
 	R.approachBonusUntil = 0
@@ -628,11 +627,6 @@ function Deactivation.confirm(t, reason)
 	return true
 end
 function Deactivation.direction(t, snapshot, speed)
-	if snapshot.targeted == true then
-		R.lastGate =
-			"deact_direction_targeted"
-		return false
-	end
 	if R.lastDirectionSwitchAt <= 0 then
 		return false
 	end
@@ -1349,7 +1343,7 @@ function OwnDash.shouldDeactivate(t)
 	end
 	if currentDistance > previousDistance then
 		R.ownDashEscapeFartherStreak += 1
-		R.ownDashEscapeConfirmFrames = t
+		R.ownDashEscapeConfirmFrames += 1
 		R.ownDashEscapeLastDist =
 			currentDistance
 		R.lastGate =
