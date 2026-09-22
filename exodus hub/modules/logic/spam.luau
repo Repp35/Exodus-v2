@@ -9,11 +9,8 @@ local clock = os.clock
 
 -- tuning
 local DEFLECT_COOLDOWN_THRESHOLD = 0
-local CPF_REFERENCE_FPS = 60
-local CPF_COMPENSATION_ENABLED = true
-local CPF_MAX_CATCHUP_CLICKS = 4
-local CPF_MIN_INTERVAL = 0.0005
-local CPF_MAX_INTERVAL = 0.25
+local CPF_MIN_FPS = 60
+local CPF_AVERAGE_ALPHA = 0.08
 
 -- state
 local heartbeatConnection
@@ -23,7 +20,6 @@ local accumulator = 0
 local cpfFps
 local lastMode
 local lastRate
-local lastCompensation
 local chainRunning = false
 
 -- click scheduler
@@ -32,8 +28,9 @@ local clickAccumulator = 0
 local clickInterval = 0
 
 -- CPF scheduler
+local cpfAverageDt = 1 / CPF_MIN_FPS
 local cpfClickAccumulator = 0
-local cpfTimeAccumulator = 0
+local cpfFrameTime = 1 / CPF_MIN_FPS
 local cpfLastDt = 0
 
 local Scheduler = {
@@ -62,15 +59,15 @@ local function resetRuntime()
     cpfFps = nil
     lastMode = nil
     lastRate = nil
-    lastCompensation = nil
     chainRunning = false
 
     clickQueue = 0
     clickAccumulator = 0
     clickInterval = 0
 
+    cpfAverageDt = 1 / CPF_MIN_FPS
     cpfClickAccumulator = 0
-    cpfTimeAccumulator = 0
+    cpfFrameTime = 1 / CPF_MIN_FPS
     cpfLastDt = 0
 
     Scheduler.cpfFps = 0
@@ -222,83 +219,70 @@ local function processClickQueue(dt)
 
         requestParry()
     end
-
-    if clickQueue <= 0
-        and clickAccumulator > clickInterval
-    then
-        clickAccumulator = clickInterval
-    end
 end
 
 -- CPF
-local function scheduleCPF(rate, dt, compensation)
+local function scheduleCPF(rate, dt)
     if rate <= 0 then
         Scheduler.cpfClicks = 0
+
         cpfClickAccumulator = 0
-        cpfTimeAccumulator = 0
+        cpfLastDt = dt
+
         clickQueue = 0
         clickAccumulator = 0
+        clickInterval = 0
+
         return
     end
 
-    local fpsNow = 1 / dt
+    -- Média exponencial do tempo dos frames.
+    if dt < 1 / CPF_MIN_FPS then
+        local frameDt = dt
 
-    if fpsNow < 1 then
-        fpsNow = 1
+        cpfAverageDt =
+            cpfAverageDt
+            + (frameDt - cpfAverageDt)
+            * CPF_AVERAGE_ALPHA
+    else
+        cpfAverageDt =
+            cpfAverageDt
+            + (dt - cpfAverageDt)
+            * CPF_AVERAGE_ALPHA
     end
 
-    cpfFps = fpsNow
-    Scheduler.cpfFps = fpsNow
-    Scheduler.cpfCompensation = compensation == true
+    -- O piso é 60 FPS.
+    local minimumFrameTime = 1 / CPF_MIN_FPS
 
-    local effectiveRate = rate
-
-    if compensation then
-        local fpsRatio = fpsNow / CPF_REFERENCE_FPS
-
-        if fpsRatio > 0 then
-            effectiveRate = rate * fpsRatio
-        end
+    if cpfAverageDt > minimumFrameTime then
+        cpfFrameTime = minimumFrameTime
+    else
+        cpfFrameTime = cpfAverageDt
     end
 
-    if effectiveRate < 0 then
-        effectiveRate = 0
-    end
+    cpfFps = 1 / cpfFrameTime
 
-    local interval = 1 / effectiveRate
+    Scheduler.cpfFps = cpfFps
+    Scheduler.cpfCompensation = false
 
-    if interval < CPF_MIN_INTERVAL then
-        interval = CPF_MIN_INTERVAL
-    elseif interval > CPF_MAX_INTERVAL then
-        interval = CPF_MAX_INTERVAL
+    -- CPF = quantidade de clicks dentro da janela média.
+    local interval = cpfFrameTime / rate
+
+    if interval <= 0 then
+        interval = cpfFrameTime
     end
 
     clickInterval = interval
 
-    cpfTimeAccumulator = cpfTimeAccumulator + dt
+    -- Cada atualização representa uma nova janela temporal.
+    cpfClickAccumulator = cpfClickAccumulator + rate
 
-    local desiredClicks = cpfTimeAccumulator / interval
-
-    if desiredClicks >= 1 then
-        local wholeClicks = math_floor(desiredClicks)
-
-        if wholeClicks > CPF_MAX_CATCHUP_CLICKS then
-            wholeClicks = CPF_MAX_CATCHUP_CLICKS
-        end
-
-        cpfTimeAccumulator = cpfTimeAccumulator - (wholeClicks * interval)
-
-        if cpfTimeAccumulator < 0 then
-            cpfTimeAccumulator = 0
-        end
-
-        cpfClickAccumulator = cpfClickAccumulator + wholeClicks
-    end
-
-    local clicksToQueue = math_floor(cpfClickAccumulator)
+    local clicksToQueue =
+        math_floor(cpfClickAccumulator)
 
     if clicksToQueue > 0 then
-        cpfClickAccumulator = cpfClickAccumulator - clicksToQueue
+        cpfClickAccumulator =
+            cpfClickAccumulator - clicksToQueue
 
         queueClicks(
             clicksToQueue,
@@ -333,7 +317,7 @@ local function getModeAndRate()
     end
 
     if type(config) ~= "table" then
-        return "CPS", 1, CPF_COMPENSATION_ENABLED
+        return "CPS", 1
     end
 
     local configuredMode = config.SpamRateMode
@@ -350,13 +334,7 @@ local function getModeAndRate()
     local rateKey = mode == "CPF" and "CPF" or "CPS"
     local rate = tonumber(config[rateKey]) or 1
 
-    local compensation = CPF_COMPENSATION_ENABLED
-
-    if config.CPFCompensation ~= nil then
-        compensation = config.CPFCompensation == true
-    end
-
-    return mode, math_max(rate, 0), compensation
+    return mode, math_max(rate, 0)
 end
 
 -- RUNTIME
@@ -408,7 +386,7 @@ local function tick(dt)
         end
     end
 
-    local mode, rate, compensation = getModeAndRate()
+    local mode, rate = getModeAndRate()
 
     if not wasActive then
         Scheduler.phase = "running"
@@ -441,7 +419,6 @@ local function tick(dt)
     if mode ~= lastMode then
         lastMode = mode
         lastRate = nil
-        lastCompensation = nil
 
         accumulator = 0
         cpfFps = nil
@@ -450,8 +427,9 @@ local function tick(dt)
         clickAccumulator = 0
         clickInterval = 0
 
+        cpfAverageDt = 1 / CPF_MIN_FPS
         cpfClickAccumulator = 0
-        cpfTimeAccumulator = 0
+        cpfFrameTime = 1 / CPF_MIN_FPS
         cpfLastDt = 0
     end
 
@@ -461,8 +439,9 @@ local function tick(dt)
 
         if mode == "CPF" then
             cpfFps = nil
+            cpfAverageDt = 1 / CPF_MIN_FPS
             cpfClickAccumulator = 0
-            cpfTimeAccumulator = 0
+            cpfFrameTime = 1 / CPF_MIN_FPS
             cpfLastDt = 0
         else
             accumulator = 0
@@ -473,26 +452,11 @@ local function tick(dt)
         clickInterval = 0
     end
 
-    -- CPF COMPENSATION CHANGE
-    if compensation ~= lastCompensation then
-        lastCompensation = compensation
-
-        cpfFps = nil
-        cpfClickAccumulator = 0
-        cpfTimeAccumulator = 0
-        cpfLastDt = 0
-
-        clickQueue = 0
-        clickAccumulator = 0
-        clickInterval = 0
-    end
-
     -- CPF
     if mode == "CPF" then
         scheduleCPF(
             rate,
-            dt,
-            compensation
+            dt
         )
 
         processClickQueue(dt)
