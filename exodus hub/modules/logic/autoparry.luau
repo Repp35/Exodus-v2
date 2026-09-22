@@ -21,7 +21,7 @@ local Tuning = {
 	WINDOW_LOW = 0.820,
 	WINDOW_REFERENCE_SPEED = 600,
 	WINDOW_REFERENCE = 0.200,
-	WINDOW_FACTOR = 0.4,
+	WINDOW_FACTOR = 0.6,
 
 	-- ping compensation
 	PING_WINDOW_FACTOR = 1.0,
