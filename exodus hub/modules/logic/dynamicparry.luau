@@ -11,7 +11,6 @@ local HOLD_THRESHOLD = 0.16
 local AP_DELAY = 0.010
 
 local R = {
-    enabled = false,
     pressed = false,
     holding = false,
     generation = 0,
@@ -112,19 +111,7 @@ function DynamicParry.setup(deps)
     AutoParry = deps.AutoParry
     Utils = deps.Utils
     DynamicParry.resetState()
-    local config = Utils.getConfig()
-    R.enabled = type(config) == "table" and config.DynamicParry == true
     return true
-end
-function DynamicParry.setEnabled(value)
-    R.enabled = value == true
-    if Utils and type(Utils.setConfig) == "function" then
-        Utils.setConfig({ DynamicParry = R.enabled })
-    end
-    if not R.enabled then
-        DynamicParry.release()
-    end
-    return R.enabled
 end
 function DynamicParry.setAutoClashDisabledHandler(handler)
     onAutoClashDisabled = type(handler) == "function" and handler or nil
@@ -133,7 +120,7 @@ function DynamicParry.setStateHandler(handler)
     onStateChanged = type(handler) == "function" and handler or nil
 end
 function DynamicParry.press()
-    if not R.enabled or R.pressed then
+    if R.pressed then
         return false
     end
     R.pressed = true
@@ -194,7 +181,6 @@ end
 function DynamicParry.getStatus()
     return {
         schema = Utils and Utils.apiVersion and Utils.apiVersion() or 1,
-        enabled = R.enabled == true,
         pressed = R.pressed == true,
         holding = R.holding == true,
         holdThreshold = HOLD_THRESHOLD,
