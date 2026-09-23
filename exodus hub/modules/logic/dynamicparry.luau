@@ -130,12 +130,10 @@ function DynamicParry.tap()
     if R.pressed or R.holding then
         return false
     end
-    if Utils and type(Utils.getConfig) == "function" then
-        local config = Utils.getConfig()
-        if type(config) == "table" and config.AutoClash == true then
-            emitState("released")
-            return false
-        end
+    local config = Utils and type(Utils.getConfig) == "function" and Utils.getConfig() or nil
+    if type(config) == "table" and config.AutoClash == true then
+        emitState("released")
+        return false
     end
     local generation = R.generation
     task.spawn(function()
