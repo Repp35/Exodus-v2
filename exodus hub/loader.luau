@@ -14,7 +14,6 @@ Exodus.Modules = Modules
 _G.Exodus = Exodus
 _G.ExodusModules = Modules
 local Loader = {}
-local HttpService = game:GetService("HttpService")
 
 -- metadata
 local REPOSITORY = "Repp35/Exodus-v2"
@@ -243,40 +242,23 @@ local function compile(name, source)
 	return module
 end
 
--- version
-local function latestVersion()
-	local url = ("https://api.github.com/repos/%s/commits/%s?t=%d"):format(REPOSITORY, BRANCH, os.time())
-	local body = request(url, {
-		["User-Agent"] = "Exodus",
-		["Cache-Control"] = "no-cache",
-	})
-
-	if not body then
-		return "refs/heads/" .. BRANCH
-	end
-	local ok, data = pcall(HttpService.JSONDecode, HttpService, body)
-	if ok and type(data) == "table" and type(data.sha) == "string" and #data.sha >= 7 then
-		return data.sha
-	end
-	return "refs/heads/" .. BRANCH
-end
-
 -- urls
 local function buildURLs(version)
 	local root = BASE_URL .. (version or ("refs/heads/" .. BRANCH)) .. "/" .. PROJECT_PATH .. "modules/"
+	local query = "?t=" .. tostring(os.time())
 	return {
-		config = root .. "front/config.luau",
-		uiconfig = root .. "front/uiconfig.luau",
-		utils = root .. "logic/utils.luau",
-		gameinfo = root .. "logic/gameinfo.luau",
-		remote = root .. "logic/remote.luau",
-		autoparry = root .. "logic/autoparry.luau",
-		dynamicparry = root .. "logic/dynamicparry.luau",
-		dash = root .. "logic/dash.luau",
-		autoclash = root .. "logic/autoclash.luau",
-		spam = root .. "logic/spam.luau",
-		character = root .. "logic/character.luau",
-		ui = root .. "front/ui.luau",
+		config = root .. "front/config.luau" .. query,
+		uiconfig = root .. "front/uiconfig.luau" .. query,
+		utils = root .. "logic/utils.luau" .. query,
+		gameinfo = root .. "logic/gameinfo.luau" .. query,
+		remote = root .. "logic/remote.luau" .. query,
+		autoparry = root .. "logic/autoparry.luau" .. query,
+		dynamicparry = root .. "logic/dynamicparry.luau" .. query,
+		dash = root .. "logic/dash.luau" .. query,
+		autoclash = root .. "logic/autoclash.luau" .. query,
+		spam = root .. "logic/spam.luau" .. query,
+		character = root .. "logic/character.luau" .. query,
+		ui = root .. "front/ui.luau" .. query,
 	}
 end
 local function loadModule(name, url)
@@ -300,16 +282,49 @@ local function loadModule(name, url)
 end
 local function loadModules(urls)
 	local loaded = {}
+	local names = {}
 	for _, name in ipairs(MODULE_ORDER) do
-		if name ~= "utils" then
-			local module, loadError = loadModule(name, urls[name])
-				if not module then
-					return nil, name, loadError
-				end
-				loaded[name] = module
-			end
+		names[#names + 1] = name
+	end
+	names[#names + 1] = "ui"
+
+	local results = {}
+	local function load(name)
+		local module, loadError, source = loadModule(name, urls[name])
+		results[name] = {
+			module = module,
+			error = loadError,
+			source = source,
+		}
+	end
+	if type(task) == "table"
+		and type(task.spawn) == "function"
+		and type(task.wait) == "function"
+	then
+		local pending = #names
+		for _, name in ipairs(names) do
+			task.spawn(function()
+				load(name)
+				pending -= 1
+			end)
 		end
-		return loaded
+		while pending > 0 do
+			task.wait()
+		end
+	else
+		for _, name in ipairs(names) do
+			load(name)
+		end
+	end
+
+	for _, name in ipairs(names) do
+		local result = results[name]
+		if not result or not result.module then
+			return nil, name, result and result.error or "resultado de carregamento ausente"
+		end
+		loaded[name] = result.module
+	end
+	return loaded
 end
 
 -- setup
@@ -349,9 +364,9 @@ local function collectCharacterBinds(loaded)
 					detach = module.detachCharacter,
 				}
 
-				elseif hasBindFlag then
-					return nil, name, "contrato bindCharacter incompleto"
-				end
+			elseif hasBindFlag then
+				return nil, name, "contrato bindCharacter incompleto"
+			end
 		end
 	end
 	return binds
@@ -364,23 +379,23 @@ local function initializeModules(loaded)
 	for _, name in ipairs(MODULE_ORDER) do
 		if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
 			local module = loaded[name]
-				if type(module) ~= "table" or type(module.setup) ~= "function" then
-					return false, name, "setup ausente"
+			if type(module) ~= "table" or type(module.setup) ~= "function" then
+				return false, name, "setup ausente"
 			end
 			local contract = contractOf(module)
 			local deps, missingDependency = resolveDeps(loaded, contract.requires)
-				if not deps then
-					local message = ("%s depende de %s, mas esse módulo não foi carregado"):format(name, tostring(missingDependency))
-					return false, name, message
+			if not deps then
+				local message = ("%s depende de %s, mas esse módulo não foi carregado"):format(name, tostring(missingDependency))
+				return false, name, message
 			end
 			if name == "character" then
 				deps.characterBinds = characterBinds
 			end
-				local ok, initialized = pcall(module.setup, deps)
-				if not ok or initialized ~= true then
-					return false, name, initialized
+			local ok, initialized = pcall(module.setup, deps)
+			if not ok or initialized ~= true then
+				return false, name, initialized
 			end
-			end
+		end
 	end
 	return true
 end
@@ -464,23 +479,21 @@ local function bindRuntime(loaded, log)
 end
 
 -- interface
-local function loadInterface(url, controls, uiConfig)
-		local interface, loadError, source = loadModule("ui", url)
-		if not interface then
-			return false, "UI", loadError
-		end
-		if type(interface.setup) ~= "function" then
-			return false, "UI", "setup ausente"
+local function loadInterface(interface, utils, controls, uiConfig)
+	if type(interface) ~= "table" then
+		return false, "UI", "módulo não carregado"
+	end
+	if type(interface.setup) ~= "function" then
+		return false, "UI", "setup ausente"
 	end
 	local ok, setupError = pcall(interface.setup, {
 		Utils = utils,
 		Controls = controls,
 		UIConfig = uiConfig,
 	})
-		if not ok or setupError ~= true then
-			return false, "UI", setupError
+	if not ok or setupError ~= true then
+		return false, "UI", setupError
 	end
-	utils.info(source == "local" and "Exodus UI carregada localmente" or "Exodus UI carregada")
 	return true
 end
 
@@ -512,12 +525,13 @@ function Loader.start()
 	if not playerReady then
 		return false, "Loader", playerError
 	end
-	local version = latestVersion()
+	local version = "refs/heads/" .. BRANCH
 	local urls = buildURLs(version)
-	local utils, utilsError = loadModule("utils", urls.utils)
-	if not utils then
-		return false, "utils", utilsError
+	local loaded, moduleName, loadError = loadModules(urls)
+	if not loaded then
+		return false, moduleName, loadError
 	end
+	local utils = loaded.utils
 	utils.start()
 	if type(utils.log) == "function" then
 		utils.log = function() end
@@ -525,12 +539,6 @@ function Loader.start()
 	utils.setLifecyclePhase("loading")
 	Exodus.Utils = utils
 	Exodus.State = utils.getStateSnapshot()
-	local loaded, moduleName, loadError = loadModules(urls)
-	if not loaded then
-		utils.stop()
-		return false, moduleName, loadError
-	end
-	loaded.utils = utils
 	Exodus.Context = loaded
 	local defaultsOk, defaults = pcall(loaded.config.defaults)
 	if not defaultsOk or type(defaults) ~= "table" then
@@ -571,7 +579,7 @@ function Loader.start()
 	end
 	Exodus.Runtime = runtime
 	_G.ExodusOnBurst = loaded.autoparry.fire
-	local uiReady, uiModule, uiError = loadInterface(urls.ui, {
+	local uiReady, uiModule, uiError = loadInterface(loaded.ui, utils, {
 		onPanic = function()
 			loaded.autoparry.resetState()
 			loaded.dynamicparry.resetState()
