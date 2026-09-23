@@ -114,6 +114,13 @@ local R = {
         ownDashEscapeFartherStreak = 0,
         lastActivationAt = 0,
         lastActivationSource = "none",
+        lastActivationReason = "none",
+        lastActivationTrigger = "none",
+        lastActivationTarget = -1,
+        lastActivationPartner = -1,
+        lastActivationDistance = 0,
+        lastActivationRadius = 0,
+        lastActivationSpeed = 0,
         lastDashEvent = nil,
 
         -- connections
@@ -292,6 +299,13 @@ local function resetTargetState()
         R.lastDashEvent = nil
         R.lastActivationAt = 0
         R.lastActivationSource = "none"
+        R.lastActivationReason = "none"
+        R.lastActivationTrigger = "none"
+        R.lastActivationTarget = -1
+        R.lastActivationPartner = -1
+        R.lastActivationDistance = 0
+        R.lastActivationRadius = 0
+        R.lastActivationSpeed = 0
 end
 local function resetOwnDashState()
         R.ownDashEscapePending = false
@@ -326,7 +340,7 @@ local function setActivationLock(t, snapshot)
                         t + T.ACT_DEACT_LOCK_TIME
         end
 end
-local function setActive(active, reason, snapshot)
+local function setActive(active, reason, snapshot, activationReason)
         active = active == true
         if R.active == active then
                 return
@@ -340,11 +354,24 @@ local function setActive(active, reason, snapshot)
                         t < R.dashBonusUntil
                         and "anti_dash"
                         or "normal"
+                R.lastActivationReason = activationReason or "unknown"
+                R.lastActivationTrigger = reason or "unknown"
+                R.lastActivationTarget = R.lastTarget
+                R.lastActivationSpeed = R.lastSpeed
+                R.lastActivationRadius = R.parryRadius
+                if snapshot and snapshot.ball and R.boundRoot then
+                        local position = getSnapshotPosition(snapshot)
+                        if position then
+                                R.lastActivationDistance =
+                                        (R.boundRoot.Position - position).Magnitude
+                        end
+                end
                 if R.clashPartnerId == -1
                         and R.lastTarget ~= R.localUserId
                         and R.lastTarget ~= -1 then
                         R.clashPartnerId = R.lastTarget
                 end
+                R.lastActivationPartner = R.clashPartnerId
                 setActivationLock(t, snapshot)
                 if t < R.dashBonusUntil then
                         R.dashDeactLockedUntil =
@@ -500,6 +527,22 @@ local function tryReturnActivate(snapshot, t)
         end
         return canReactivate(t, R.lastTarget)
                 and shouldActivate(snapshot, t)
+end
+local function getActivationReason(snapshot, t)
+        if t < R.dashBonusUntil then
+                return "anti_dash"
+        end
+        if t < R.approachBonusUntil then
+                return "approach_window"
+        end
+        local root = getRootPosition()
+        local position = getSnapshotPosition(snapshot)
+        if root and position
+                and (root - position).Magnitude <= T.PROXIMITY_RADIUS
+        then
+                return "proximity"
+        end
+        return "effective_radius"
 end
 
 -- deactivation
@@ -1011,11 +1054,13 @@ local function evaluateClash(
                 snapshot,
                 t
         ) then
+                local activationReason = getActivationReason(snapshot, t)
                 clearReturnState()
                 setActive(
                         true,
                         "activated",
-                        snapshot
+                        snapshot,
+                        activationReason
                 )
         end
 end
@@ -1565,7 +1610,14 @@ function AutoClash.getActivationContext()
         return {
                 active = R.active == true,
                 source = R.lastActivationSource,
+                reason = R.lastActivationReason,
+                trigger = R.lastActivationTrigger,
                 timestamp = R.lastActivationAt,
+                target = R.lastActivationTarget,
+                partner = R.lastActivationPartner,
+                distance = R.lastActivationDistance,
+                parryRadius = R.lastActivationRadius,
+                speed = R.lastActivationSpeed,
         }
 end
 function AutoClash.getStatus()
@@ -1585,7 +1637,14 @@ function AutoClash.getStatus()
                 bound = R.bound == true,
                 active = R.active == true,
                 activationSource = R.lastActivationSource,
+                activationReason = R.lastActivationReason,
+                activationTrigger = R.lastActivationTrigger,
                 activationAt = R.lastActivationAt,
+                activationTarget = R.lastActivationTarget,
+                activationPartner = R.lastActivationPartner,
+                activationDistance = R.lastActivationDistance,
+                activationRadius = R.lastActivationRadius,
+                activationSpeed = R.lastActivationSpeed,
                 parryRadius = R.parryRadius,
                 lastTarget = R.lastTarget,
                 clashPartnerId =
