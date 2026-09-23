@@ -65,6 +65,7 @@ local PHASE_WAITING = 2
 local PHASE_COOLDOWN = 3
 local PHASE_ARMED = 4
 local PHASE_FIRED = 5
+local PHASE_PASSIVE = 6
 
 local PHASE_STRINGS = {
 	[PHASE_DETACHED] = "detached",
@@ -72,6 +73,7 @@ local PHASE_STRINGS = {
 	[PHASE_COOLDOWN] = "cooldown",
 	[PHASE_ARMED] = "armed",
 	[PHASE_FIRED] = "fired",
+	[PHASE_PASSIVE] = "passive",
 }
 
 local phaseString = PHASE_STRINGS[PHASE_DETACHED]
@@ -114,6 +116,7 @@ local Runtime = {
 	generation = 0,
 	localUserId = -1,
 	lastTarget = -1,
+	lastWasMe = nil,
 
 	teleportLockUntil = 0,
 
@@ -138,6 +141,10 @@ local Runtime = {
 
 	phase = PHASE_DETACHED,
 	bound = false,
+
+	passivePhase = "idle",
+	passiveCycleStart = 0,
+	passiveBallAtValid = false,
 }
 
 local StatsService
@@ -441,6 +448,64 @@ local function computeTiming(
 	}
 end
 
+-- passive count: checa se a bola está dentro do raio efetivo
+local function isBallInParryWindow(time)
+	local snapshot = GameInfo.getSnapshot(
+		Runtime.lastTarget,
+		time
+	)
+
+	if type(snapshot) ~= "table"
+		or not GameInfo.isSnapshotValid(snapshot, time)
+	then
+		return false, false
+	end
+
+	local ball = snapshot.ball
+	if not isValidBall(ball) then
+		return false, false
+	end
+
+	local speed = tonumber(snapshot.speed)
+	if not speed
+		or not Utils.isFiniteNumber(speed)
+		or speed < Tuning.MIN_BALL_SPEED
+	then
+		return false, false
+	end
+
+	local position = snapshot.position
+	if typeof(position) ~= "Vector3" then
+		return false, false
+	end
+
+	local localPlayer = Utils.getLocalPlayer()
+	local character = localPlayer and localPlayer.Character
+	if not character then
+		return false, false
+	end
+
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return false, false
+	end
+
+	local timing = computeTiming(
+		root.Position,
+		position,
+		speed,
+		time
+	)
+
+	if not timing then
+		return false, false
+	end
+
+	local insideRadius = timing.distance <= timing.parryRadius
+
+	return insideRadius, true
+end
+
 -- targeting
 local function onBallSync(data)
 	if typeof(data) ~= "table" then
@@ -455,20 +520,79 @@ local function onBallSync(data)
 
 		clearCycle()
 
+		Runtime.passivePhase = "idle"
+		Runtime.passiveBallAtValid = false
+
 		return
 	end
 
 	local targetId =
 		tonumber(data.TargetPlayerID) or -1
 
-	if targetId == Runtime.lastTarget then
-		return
-	end
-
 	local previousTarget =
 		Runtime.lastTarget
 
+	local previousWasMe = Runtime.lastWasMe
+
+	if targetId == Runtime.lastTarget
+		and previousWasMe ~= nil
+	then
+		-- sync repetido, mas pode estar mid-cycle ("me"); checa window agora
+		if isSpamActive()
+			and Runtime.passivePhase == "awaiting_leave"
+		then
+			local inside, valid = isBallInParryWindow(time)
+			if valid and inside then
+				Runtime.passiveBallAtValid = true
+			end
+		end
+		return
+	end
+
 	Runtime.lastTarget = targetId
+
+	local isMe = targetId == Runtime.localUserId
+
+	Runtime.lastWasMe = isMe
+
+	-- lógica passiva de contagem de resi durante spam
+	if isSpamActive() then
+		if not isMe then
+			if Runtime.passivePhase == "awaiting_leave" then
+				-- completou ciclo not me -> me -> not me
+				if Runtime.passiveBallAtValid then
+					Resilience.stack = math.min(
+						Resilience.stack + 1,
+						MAX_RES_STACK
+					)
+
+					Runtime.resilienceBonusAt = -1
+				end
+
+				Runtime.passivePhase = "idle"
+				Runtime.passiveBallAtValid = false
+			end
+		else
+			-- virou target (me)
+			if previousWasMe ~= true then
+				Runtime.passivePhase = "awaiting_leave"
+				Runtime.passiveCycleStart = time
+
+				local inside, valid = isBallInParryWindow(time)
+				Runtime.passiveBallAtValid = valid and inside
+			else
+				-- continua sendo target, segue checando window
+				local inside, valid = isBallInParryWindow(time)
+				if valid and inside then
+					Runtime.passiveBallAtValid = true
+				end
+			end
+		end
+	else
+		-- spam desligado: zera ciclo passivo
+		Runtime.passivePhase = "idle"
+		Runtime.passiveBallAtValid = false
+	end
 
 	if targetId == Runtime.localUserId
 		and previousTarget ~= Runtime.localUserId
@@ -767,6 +891,8 @@ local function bindCharacter(character)
 
 					return
 				end
+
+				Runtime.passiveCounting = false
 
 				Runtime.pingTimer +=
 					math.max(
@@ -1084,6 +1210,11 @@ local function resetState()
 	Runtime.cooldownObservedAt = 0
 
 	Runtime.bound = false
+	Runtime.passiveCounting = false
+	Runtime.passivePhase = "idle"
+	Runtime.passiveCycleStart = 0
+	Runtime.passiveBallAt = nil
+	Runtime.passiveBallAtValid = false
 
 	setPhase(
 		PHASE_DETACHED,
