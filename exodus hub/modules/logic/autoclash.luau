@@ -8,7 +8,7 @@ local Utils
 -- configuration
 local T = {
         -- activation
-        RETURN_WIN_LO = 0.148,
+        RETURN_WIN_LO = 0.15,
         RETURN_WIN_MIN_FACTOR = 0.10,
         RETURN_SPD_LO = 60,
         RETURN_SPD_HI = 600,
@@ -33,7 +33,7 @@ local T = {
         DASH_REGISTER_DEBOUNCE = 0.050,
         OWN_DASH_ESCAPE_HOLD = 0.060,
         -- deactivation
-        DEACT_DIRECTION_MAX_LO = 0.10,
+        DEACT_DIRECTION_MAX_LO = 0.11,
         DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
         DEACT_DIRECTION_SPD_LO = 60,
         DEACT_DIRECTION_SPD_HI = 600,
