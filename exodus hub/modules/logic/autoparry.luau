@@ -1,4 +1,5 @@
---[[ autoclash ]]
+--[[ autoparry ]]
+
 local AutoParry = {}
 local Remote, GameInfo, Utils
 
@@ -760,6 +761,10 @@ end
 
 function AutoParry.getPingOneWay()
 	return Runtime.pingOneWay
+end
+
+function AutoParry.getLastFireAt()
+	return Runtime.lastFireAt
 end
 
 function AutoParry.getTiming(snapshot, time, rootPosition)
