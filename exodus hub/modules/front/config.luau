@@ -13,6 +13,7 @@ local DEFAULTS = {
     AutoParry = true,
     AutoClash = true,
     DynamicParry = false,
+    DynamicParryReleaseDelay = 0.2,
     CPS = 500,
     CPF = 8,
     SpamRateMode = "CPF",
@@ -48,6 +49,12 @@ function Config.validate(config)
         or config.CPF < 0
     then
         return false, "taxas de spam inválidas"
+    end
+    if not isFiniteNumber(config.DynamicParryReleaseDelay)
+        or config.DynamicParryReleaseDelay < 0
+        or config.DynamicParryReleaseDelay > 5
+    then
+        return false, "atraso de saída do Dynamic Parry inválido"
     end
     if config.SpamRateMode ~= "CPS" and config.SpamRateMode ~= "CPF" then
         return false, "SpamRateMode inválido"
