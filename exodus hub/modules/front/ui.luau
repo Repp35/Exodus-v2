@@ -26,6 +26,8 @@ local UIState = {
     dynamicButtonInput = nil,
     dynamicButtonStart = nil,
     dynamicButtonDragged = false,
+    dynamicHoldToken = 0,
+    dynamicHoldTriggered = false,
     dynamicAnimToken = 0,
     dynamicReleaseToken = 0,
     panelTween = nil,
@@ -325,9 +327,11 @@ end
 local CLASH_SIZE = 64
 local OFFSCREEN_X = -CLASH_SIZE - 40
 local autoClashTrack, autoClashThumb
-local DYNAMIC_W, DYNAMIC_H = 130, 100
-local DYNAMIC_TITLE_H = 22
+local DYNAMIC_W, DYNAMIC_H = 120, 90
+local DYNAMIC_TITLE_H = 26
 local DYNAMIC_RELEASE_DELAY = 0.12
+local DYNAMIC_HOLD_THRESHOLD = 0.2
+local DYNAMIC_TAP_DURATION = 0.08
 local DYNAMIC_MOVE_THRESHOLD_SQ = 100 -- 10 pixels squared
 local DYNAMIC_FLASH_DURATION = 0.07
 local DYNAMIC_FADE_DURATION = 0.22
@@ -425,22 +429,31 @@ setSpam = function(v)
         )
     end
 end
-local function paintDynamicParry()
+local function paintDynamicParry(activeOverride)
     if not dynamicButton or not dynamicButton.Parent then
         return
     end
-    local state = UIState.dynamicParryState
-    local isActive = state == "holding" or state == "pressed"
-    local color = isActive and dynamicActiveColor or dynamicIdleColor
-    dynamicButton.Text = state == "holding" and "S" or "P"
-    -- Se a gente tá no meio da animação de flash/cancelar, deixa ela rodar livre
-    if UIState.dynamicButtonDown then
-        return
+    local stateActive = UIState.dynamicParryState == "holding"
+        or UIState.dynamicParryState == "pressed"
+    local active = activeOverride
+    if active == nil then
+        active = UIState.dynamicButtonDown or stateActive
     end
-    twPlay(dynamicButton, 0.2, {
-        BackgroundColor3 = color,
+    dynamicButton.Text = active and "ON" or "OFF"
+    twPlay(dynamicButton, 0.25, {
+        BackgroundColor3 = active and C.green or C.red,
         TextColor3 = Color3.new(1, 1, 1),
     }, EASE_SINE, DIR_INOUT)
+    twPlay(dynamicButton, 0.08, {
+        Size = active and UDim2.new(1, -22, 0, 44) or UDim2.new(1, -16, 0, 48),
+    }, EASE_SINE, DIR_OUT)
+    task.delay(0.08, function()
+        if dynamicButton and dynamicButton.Parent then
+            twPlay(dynamicButton, 0.28, {
+                Size = UDim2.new(1, -16, 0, 48),
+            }, EASE_BACK, DIR_OUT)
+        end
+    end)
 end
 local function setDynamicParry(v)
     if not Controls.DynamicParry then
@@ -454,13 +467,17 @@ local function setDynamicParry(v)
         UIState.dynamicButtonInput = nil
         UIState.dynamicButtonStart = nil
         UIState.dynamicButtonDragged = false
+        UIState.dynamicHoldToken += 1
+        UIState.dynamicHoldTriggered = false
         UIState.dynamicAnimToken += 1
         UIState.dynamicReleaseToken += 1
         if type(Controls.DynamicParry.release) == "function" then
             Controls.DynamicParry.release()
         end
+        paintDynamicParry(false)
+    else
+        paintDynamicParry(false)
     end
-    paintDynamicParry()
 end
 showDynamicParry = function(v)
     if not dynamicGui or not dynamicTargetPosition then
@@ -542,6 +559,8 @@ local function cleanupUI()
     UIState.dynamicButtonInput = nil
     UIState.dynamicButtonStart = nil
     UIState.dynamicButtonDragged = false
+    UIState.dynamicHoldToken = 0
+    UIState.dynamicHoldTriggered = false
     UIState.dynamicAnimToken = 0
     UIState.dynamicReleaseToken = 0
     flowingGradients = {}
@@ -1383,142 +1402,88 @@ function ExodusUI.setup(deps)
         "TextButton",
         {
             Name = "DynamicParryButton",
-            Size = UDim2.new(1, -14, 0, 68),
-            Position = UDim2.new(0, 7, 0, DYNAMIC_TITLE_H + 4),
-            BackgroundColor3 = dynamicIdleColor,
+            Size = UDim2.new(1, -16, 0, 48),
+            Position = UDim2.new(0, 8, 0, 32),
+            BackgroundColor3 = C.red,
             BorderSizePixel = 0,
-            Text = "P",
+            Text = "OFF",
             TextColor3 = Color3.new(1, 1, 1),
-            TextSize = 21,
+            TextSize = 24,
             Font = Enum.Font.GothamBold,
             ZIndex = 16,
             Parent = dynamicGui
         }
     )
-    corner(dynamicButton, 14)
+    corner(dynamicButton, 10)
     dynamicGui.Visible = false
-    -- helpers de animação (fade tudo, sem ficar piscando)
-    local function cancelDynamicAnim()
-        UIState.dynamicAnimToken = UIState.dynamicAnimToken + 1
-    end
-    local function fadeDynamic(color, duration, style, dir)
-        twPlay(
-            dynamicButton,
-            duration,
-            { BackgroundColor3 = color },
-            style or EASE_SINE,
-            dir or DIR_INOUT
-        )
-    end
-    local function startDynamicPressAnim()
-        cancelDynamicAnim()
-        local myToken = UIState.dynamicAnimToken
-        -- flash claro rápido
-        fadeDynamic(dynamicFlashColor, DYNAMIC_FLASH_DURATION, EASE_OUT, DIR_OUT)
-        -- depois fade pro vermelho
-        task.delay(DYNAMIC_FLASH_DURATION, function()
-            if myToken ~= UIState.dynamicAnimToken then
+    -- O botão segue o mesmo padrão do Spam: ON/OFF, cores simples e feedback curto.
+    local function releaseDynamicParry()
+        if not UIState.dynamicButtonDown then
+            return
+        end
+        local holdTriggered = UIState.dynamicHoldTriggered
+        UIState.dynamicButtonDown = false
+        UIState.dynamicButtonInput = nil
+        UIState.dynamicButtonStart = nil
+        UIState.dynamicHoldToken += 1
+        UIState.dynamicHoldTriggered = false
+
+        if holdTriggered then
+            safe(Controls.DynamicParry.release)
+            paintDynamicParry(false)
+            return
+        end
+
+        -- Toque curto: um único parry, sem entrar no modo de spam.
+        safe(Controls.DynamicParry.press)
+        paintDynamicParry(true)
+        local tapToken = UIState.dynamicHoldToken
+        task.delay(DYNAMIC_TAP_DURATION, function()
+            if tapToken ~= UIState.dynamicHoldToken then
                 return
             end
-            if not UIState.dynamicButtonDown then
-                return
-            end
-            if UIState.dynamicButtonDragged then
-                return
-            end
-            fadeDynamic(dynamicActiveColor, DYNAMIC_FADE_DURATION, EASE_SINE, DIR_INOUT)
+            safe(Controls.DynamicParry.release)
+            paintDynamicParry(false)
         end)
     end
-    local function startDynamicCancelAnim()
-        cancelDynamicAnim()
-        fadeDynamic(dynamicIdleColor, DYNAMIC_FADE_DURATION, EASE_SINE, DIR_INOUT)
-    end
+
     trackConn(dynamicButton.InputBegan:Connect(function(input)
         if input.UserInputType ~= Enum.UserInputType.MouseButton1
             and input.UserInputType ~= Enum.UserInputType.Touch then
             return
         end
-        if UIState.isDynamicParryDragging() then
-            return
-        end
-        if UIState.dynamicButtonDown then
+        if UIState.dynamicButtonDown or UIState.isDynamicParryDragging() then
             return
         end
         UIState.dynamicButtonDown = true
         UIState.dynamicButtonInput = input
         UIState.dynamicButtonStart = input.Position
         UIState.dynamicButtonDragged = false
-        UIState.dynamicReleaseToken = UIState.dynamicReleaseToken + 1
-        startDynamicPressAnim()
-        safe(Controls.DynamicParry.press)
+        UIState.dynamicHoldTriggered = false
+        UIState.dynamicHoldToken += 1
+        local holdToken = UIState.dynamicHoldToken
+
+        -- Só vira spam se permanecer pressionado por pelo menos 200 ms.
+        task.delay(DYNAMIC_HOLD_THRESHOLD, function()
+            if holdToken ~= UIState.dynamicHoldToken
+                or not UIState.dynamicButtonDown
+                or UIState.dynamicButtonDragged then
+                return
+            end
+            UIState.dynamicHoldTriggered = true
+            safe(Controls.DynamicParry.press)
+            paintDynamicParry(true)
+        end)
     end))
-    -- Se mexer o dedo/drag fora do lugar: cancela
-    trackConn(UIS.InputChanged:Connect(function(input)
-        if not UIState.dynamicButtonDown then
-            return
-        end
-        if not UIState.dynamicButtonStart then
-            return
-        end
+
+    -- InputEnded global evita travar o parry quando o cursor/dedo sai do botão.
+    trackConn(UIS.InputEnded:Connect(function(input)
         if input ~= UIState.dynamicButtonInput then
             return
         end
-        if input.UserInputType ~= Enum.UserInputType.MouseMovement
-            and input.UserInputType ~= Enum.UserInputType.Touch then
-            return
-        end
-        if UIState.dynamicButtonDragged then
-            return
-        end
-        local dx = input.Position.X - UIState.dynamicButtonStart.X
-        local dy = input.Position.Y - UIState.dynamicButtonStart.Y
-        if (dx * dx + dy * dy) >= DYNAMIC_MOVE_THRESHOLD_SQ then
-            UIState.dynamicButtonDragged = true
-            cancelDynamicAnim()
-            safe(Controls.DynamicParry.release)
-            startDynamicCancelAnim()
-        end
+        releaseDynamicParry()
     end))
-    trackConn(dynamicButton.InputEnded:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.MouseButton1
-            and input.UserInputType ~= Enum.UserInputType.Touch then
-            return
-        end
-        if input ~= UIState.dynamicButtonInput then
-            return
-        end
-        if not UIState.dynamicButtonDown then
-            return
-        end
-        UIState.dynamicButtonDown = false
-        UIState.dynamicButtonInput = nil
-        UIState.dynamicButtonStart = nil
-        if UIState.dynamicButtonDragged then
-            UIState.dynamicButtonDragged = false
-            startDynamicCancelAnim()
-            return
-        end
-        -- soltou parado: delay só se tava segurando (holding/spam)
-        local wasHolding = UIState.dynamicParryState == "holding"
-        local delay = wasHolding and DYNAMIC_RELEASE_DELAY or 0
-        if delay <= 0 then
-            startDynamicCancelAnim()
-            safe(Controls.DynamicParry.release)
-        else
-            local token = UIState.dynamicReleaseToken + 1
-            UIState.dynamicReleaseToken = token
-            task.delay(delay, function()
-                if token ~= UIState.dynamicReleaseToken then
-                    return
-                end
-                if UIState.dynamicButtonDown then
-                    return
-                end
-                startDynamicCancelAnim()
-                safe(Controls.DynamicParry.release)
-            end)
-        end
-    end))
+
     UIState.isDynamicParryDragging = makeDraggable(
         dynamicTitleBar,
         dynamicGui,
