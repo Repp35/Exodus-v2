@@ -33,11 +33,12 @@ local LOCAL_ROOTS = { "Exodus-v2", "exodus hub", "Exodus Hub" }
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local MODULE_ORDER = {
     "config",
+    "uiconfig",
     "utils",
     "gameinfo",
     "remote",
     "autoparry",
-    "dash",
+    "dynamicparry",
     "autoclash",
     "spam",
     "character",
@@ -305,11 +306,12 @@ local function buildURLs(version)
         .. "modules/"
     return {
         config = root .. "front/config.luau",
+        uiconfig = root .. "front/uiconfig.luau",
         utils = root .. "logic/utils.luau",
         gameinfo = root .. "logic/gameinfo.luau",
         remote = root .. "logic/remote.luau",
         autoparry = root .. "logic/autoparry.luau",
-        dash = root .. "logic/dash.luau",
+        dynamicparry = root .. "logic/dynamicparry.luau",
         autoclash = root .. "logic/autoclash.luau",
         spam = root .. "logic/spam.luau",
         character = root .. "logic/character.luau",
@@ -526,7 +528,7 @@ local function bindRuntime(loaded, log)
 end
 
 -- interface
-local function loadInterface(url, utils, controls)
+local function loadInterface(url, utils, controls, uiConfig)
     local interface, loadError, source = loadModule("ui", url)
     if not interface then
         utils.warn("Exodus UI falhou: " .. tostring(loadError))
@@ -539,6 +541,7 @@ local function loadInterface(url, utils, controls)
     local ok, setupError = pcall(interface.setup, {
         Utils = utils,
         Controls = controls,
+        UIConfig = uiConfig,
     })
     if not ok or setupError ~= true then
         utils.warn("Exodus UI falhou ao inicializar: " .. tostring(setupError))
@@ -667,10 +670,13 @@ function Loader.start()
     local uiReady = loadInterface(urls.ui, utils, {
         onPanic = function()
             loaded.autoparry.resetState()
+            loaded.dynamicparry.resetState()
             utils.setManualSpamActive(false)
             utils.setAutoSpamActive(false)
+            utils.setConfig({ DynamicParry = false })
         end,
-    })
+        DynamicParry = loaded.dynamicparry,
+    }, loaded.uiconfig)
     Exodus.UIReady = uiReady == true
     Exodus.UI = Modules.ui
     utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
