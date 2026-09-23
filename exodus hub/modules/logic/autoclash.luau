@@ -8,7 +8,7 @@ local Utils
 -- configuration
 local T = {
 	-- activation
-	RETURN_WIN_LO = 0.130,
+	RETURN_WIN_LO = 0.125,
 	RETURN_WIN_MIN_FACTOR = 0.10,
 	RETURN_SPD_LO = 60,
 	RETURN_SPD_HI = 600,
@@ -333,8 +333,6 @@ local function clearReturnState()
 	R.returnFromTarget = -1
 	R.returnToken += 1
 end
--- Reseta o estado de monitoramento (target, return window, dash bonus, approach).
--- Use em reset REAL (hub off, teardown, rebind, setup, teleport).
 local function resetTargetState()
 	R.lastTarget = -1
 	R.clashPartnerId = -1
@@ -348,11 +346,9 @@ local function resetTargetState()
 	R.ballLeftRadiusDuring = false
 	R.becameMeAt = 0
 end
--- Reseta apenas o estado da ATIVAÇÃO.
--- O monitoramento (lastTarget, wasMeTarget, lostMeAt, returnPending,
--- returnExpiresAt, dashBonusUntil, approachBonusUntil, etc.) continua
--- intacto para que o AutoClash possa reativar imediatamente assim que
--- as condições voltarem a ser atendidas.
+-- Reseta apenas o estado da ativação.
+-- Monitoring (lastTarget, wasMeTarget, lostMeAt, returnPending,
+-- returnExpiresAt, dashBonusUntil, approachBonusUntil, ...) intacto.
 local function clearActivationState()
 	R.clashPartnerId = -1
 	R.activationDeactLockedUntil = 0
@@ -398,14 +394,6 @@ local function setActivationLock(t, snapshot)
 			t + T.ACT_DEACT_LOCK_TIME
 	end
 end
--- Liga/desliga o clash.
--- IMPORTANTE: setActive(false) NÃO reseta o estado de monitoramento
--- (lastTarget, wasMeTarget, lostMeAt, returnPending, returnExpiresAt,
--- dashBonusUntil, approachBonusUntil, ...). Apenas clearActivationState()
--- é aplicado: clashPartnerId e os locks de ativação.
--- O reativar é controlado por R.reactivateBlockedUntil (cooldown).
--- Para um reset completo (hub off, teardown, rebind, teleport, setup)
--- use resetTargetState() explicitamente.
 local function setActive(active, reason, snapshot)
 	active = active == true
 	if R.active == active then
@@ -1498,10 +1486,6 @@ local function evaluateClash(
 				false,
 				"ball_lost"
 			)
-			-- bola sumiu de fato; sem snapshot não há como
-			-- reativar via tryReturnActivate, então descarta o
-			-- estado de return para não carregar lixo.
-			clearReturnState()
 		else
 			R.lastGate =
 				"ball_lost_pending"
@@ -1550,22 +1534,6 @@ local function evaluateClash(
 			"activated",
 			snapshot
 		)
-		return
-	end
-	-- continua sendo target e dentro do raio efetivo?
-	-- Se não houve troca de target (sem returnPending armado),
-	-- mas o clash foi desativado por outro motivo (dash, direção, ...),
-	-- reativa assim que o cooldown permitir.
-	if snapshot.targeted == true
-		and not R.returnPending
-		and canReactivate(t, R.lastTarget)
-		and shouldActivate(snapshot, t) then
-		setActive(
-			true,
-			"activated",
-			snapshot
-		)
-		R.lastGate = "reactivate_direct"
 	end
 end
 
