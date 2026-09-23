@@ -83,6 +83,7 @@ local R = {
         lastDirectionSwitchAt = 0,
         lastClashSwitchAt = 0,
         clashIntervalMs = 0,
+        targetResetToken = 0,
 
         -- deactivation
         deactivationCandidate = nil,
@@ -271,6 +272,7 @@ local function clearReturnState()
         R.returnToken += 1
 end
 local function resetTargetState()
+        R.targetResetToken += 1
         R.lastTarget = -1
         R.clashPartnerId = -1
         R.dashBonusUntil = 0
@@ -1506,6 +1508,8 @@ function AutoClash.getTargetSwitch()
         return {
                 timestampMs = R.lastClashSwitchAt * 1000,
                 intervalMs = R.clashIntervalMs,
+                partnerId = R.clashPartnerId,
+                resetToken = R.targetResetToken,
         }
 end
 function AutoClash.getStatus()

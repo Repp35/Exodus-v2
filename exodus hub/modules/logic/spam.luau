@@ -43,6 +43,8 @@ local cpfClickAccumulator = 0
 local cpfFrameTime = 1 / CPF_MIN_FPS
 local cpfLastDt = 0
 local lastTargetSwitchTimestampMs = 0
+local lastTargetResetToken
+local boostedPartners = {}
 
 local Scheduler = {
 	phase = "stopped",
@@ -89,6 +91,8 @@ local function resetRuntime()
 	cpfFrameTime = 1 / CPF_MIN_FPS
 	cpfLastDt = 0
 	lastTargetSwitchTimestampMs = 0
+	lastTargetResetToken = nil
+	boostedPartners = {}
 
 	Scheduler.cpfFps = 0
 	Scheduler.cpfClicks = 0
@@ -493,10 +497,23 @@ local function getTargetSwitchRate()
 
 	local timestampMs = tonumber(switch.timestampMs)
 	local intervalMs = tonumber(switch.intervalMs)
+	local partnerId = tonumber(switch.partnerId)
+	local resetToken = tonumber(switch.resetToken)
+	if not resetToken then
+		return nil
+	end
+
+	if resetToken ~= lastTargetResetToken then
+		lastTargetResetToken = resetToken
+		boostedPartners = {}
+	end
+
 	if not timestampMs
 		or not intervalMs
+		or not partnerId
 		or timestampMs <= 0
 		or intervalMs <= 0
+		or partnerId == -1
 	then
 		return nil
 	end
@@ -530,6 +547,8 @@ local function getTargetSwitchRate()
 		intervalMs = intervalMs,
 		effectiveIntervalMs = effectiveIntervalMs,
 		cps = cps,
+		partnerId = partnerId,
+		resetToken = resetToken,
 	}
 end
 
@@ -544,8 +563,12 @@ local function applyTargetSwitchBoost(mode, rate)
 			and rate > TARGET_SWITCH_MIN_CPF
 			and switchRate.cps > TARGET_SWITCH_THRESHOLD_CPS
 		then
-			Scheduler.targetSwitchBoostUntil = getNow()
-				+ TARGET_SWITCH_BOOST_DURATION
+			local partnerKey = tostring(switchRate.partnerId)
+			if not boostedPartners[partnerKey] then
+				boostedPartners[partnerKey] = true
+				Scheduler.targetSwitchBoostUntil = getNow()
+					+ TARGET_SWITCH_BOOST_DURATION
+			end
 		end
 	end
 
