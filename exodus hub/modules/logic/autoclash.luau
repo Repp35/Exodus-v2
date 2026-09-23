@@ -33,6 +33,8 @@ local T = {
         OWN_DASH_ESCAPE_DOT = -0.3,
         DASH_REGISTER_DEBOUNCE = 0.050,
         OWN_DASH_ESCAPE_HOLD = 0.060,
+        OWN_DASH_ESCAPE_MIN_SEPARATION_SPEED = 18,
+        OWN_DASH_ESCAPE_SPEED_FACTOR = 0.08,
         -- deactivation
         DEACT_DIRECTION_MAX_LO = 0.11,
         DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
@@ -108,7 +110,10 @@ local R = {
         ownDashEscapeDetectedAt = 0,
         ownDashEscapeConfirmFrames = 0,
         ownDashEscapeLastDist = nil,
+        ownDashEscapeLastAt = 0,
         ownDashEscapeFartherStreak = 0,
+        lastActivationAt = 0,
+        lastActivationSource = "none",
         lastDashEvent = nil,
 
         -- connections
@@ -285,12 +290,15 @@ local function resetTargetState()
         R.ballLeftRadiusDuring = false
         R.becameMeAt = 0
         R.lastDashEvent = nil
+        R.lastActivationAt = 0
+        R.lastActivationSource = "none"
 end
 local function resetOwnDashState()
         R.ownDashEscapePending = false
         R.ownDashEscapeDetectedAt = 0
         R.ownDashEscapeConfirmFrames = 0
         R.ownDashEscapeLastDist = nil
+        R.ownDashEscapeLastAt = 0
         R.ownDashEscapeFartherStreak = 0
 end
 local function resetDeactivationState()
@@ -327,6 +335,11 @@ local function setActive(active, reason, snapshot)
         resetDeactivationState()
         local t = now()
         if active then
+                R.lastActivationAt = t
+                R.lastActivationSource =
+                        t < R.dashBonusUntil
+                        and "anti_dash"
+                        or "normal"
                 if R.clashPartnerId == -1
                         and R.lastTarget ~= R.localUserId
                         and R.lastTarget ~= -1 then
@@ -760,6 +773,7 @@ function OwnDash.shouldDeactivate(t)
                 R.ownDashEscapeFartherStreak = 0
                 R.ownDashEscapeLastDist =
                         (ownRoot - opponentRoot.Position).Magnitude
+                R.ownDashEscapeLastAt = t
                 R.lastGate =
                         "own_dash_escape_detected"
                 return false
@@ -771,15 +785,49 @@ function OwnDash.shouldDeactivate(t)
         if not previousDistance then
                 R.ownDashEscapeLastDist =
                         currentDistance
+                R.ownDashEscapeLastAt = t
                 R.lastGate =
                         "own_dash_escape_first"
                 return false
         end
-        if currentDistance > previousDistance then
+        local sampleDt = t - R.ownDashEscapeLastAt
+        if sampleDt <= 0 or sampleDt > T.DEACT_CONFIRM_MAX_GAP then
+                R.ownDashEscapeFartherStreak = 0
+                R.ownDashEscapeConfirmFrames = 0
+                R.ownDashEscapeLastDist = currentDistance
+                R.ownDashEscapeLastAt = t
+                R.lastGate =
+                        "own_dash_escape_sample_gap"
+                return false
+        end
+        local deltaDistance = currentDistance - previousDistance
+        local awayX = (ownRoot.Position.X - opponentRoot.Position.X)
+                / math.max(currentDistance, 0.001)
+        local awayZ = (ownRoot.Position.Z - opponentRoot.Position.Z)
+                / math.max(currentDistance, 0.001)
+        local opponentVelocity = opponentRoot.AssemblyLinearVelocity
+        local separationSpeed =
+                opponentVelocity.X * -awayX
+                + opponentVelocity.Z * -awayZ
+        local requiredSeparationSpeed = math.max(
+                T.OWN_DASH_ESCAPE_MIN_SEPARATION_SPEED,
+                horizontalSpeed(opponentVelocity)
+                        * T.OWN_DASH_ESCAPE_SPEED_FACTOR
+        )
+        local measuredSeparationSpeed =
+                deltaDistance / sampleDt
+        local effectiveSeparationSpeed = math.max(
+                separationSpeed,
+                measuredSeparationSpeed
+        )
+        local isMeaningfulEscape =
+                deltaDistance > 0
+                and effectiveSeparationSpeed >= requiredSeparationSpeed
+        R.ownDashEscapeLastDist = currentDistance
+        R.ownDashEscapeLastAt = t
+        if isMeaningfulEscape then
                 R.ownDashEscapeFartherStreak += 1
                 R.ownDashEscapeConfirmFrames += 1
-                R.ownDashEscapeLastDist =
-                        currentDistance
                 R.lastGate =
                         "own_dash_escape_farther_"
                         .. R.ownDashEscapeFartherStreak
@@ -793,6 +841,7 @@ function OwnDash.shouldDeactivate(t)
         R.ownDashEscapeConfirmFrames = 0
         R.ownDashEscapeLastDist =
                 currentDistance
+        R.ownDashEscapeLastAt = t
         R.lastGate =
                 "own_dash_escape_not_farther"
         return false
@@ -1512,6 +1561,13 @@ function AutoClash.getTargetSwitch()
                 resetToken = R.targetResetToken,
         }
 end
+function AutoClash.getActivationContext()
+        return {
+                active = R.active == true,
+                source = R.lastActivationSource,
+                timestamp = R.lastActivationAt,
+        }
+end
 function AutoClash.getStatus()
         local schema
         if Utils
@@ -1528,6 +1584,8 @@ function AutoClash.getStatus()
                 phase = R.phase,
                 bound = R.bound == true,
                 active = R.active == true,
+                activationSource = R.lastActivationSource,
+                activationAt = R.lastActivationAt,
                 parryRadius = R.parryRadius,
                 lastTarget = R.lastTarget,
                 clashPartnerId =
@@ -1537,6 +1595,10 @@ function AutoClash.getStatus()
                         R.ownDashEscapePending == true,
                 ownDashEscapeConfirmFrames =
                         R.ownDashEscapeConfirmFrames,
+                ownDashEscapeLastDistance =
+                        R.ownDashEscapeLastDist,
+                ownDashEscapeLastAt =
+                        R.ownDashEscapeLastAt,
                 returnPending =
                         R.returnPending == true,
                 returnWindow =

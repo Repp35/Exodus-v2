@@ -17,6 +17,7 @@ local TARGET_SWITCH_BOOST_DURATION = 3
 local TARGET_SWITCH_MIN_CPF = 10
 local TARGET_SWITCH_THRESHOLD_CPS = 15
 local TARGET_SWITCH_PING_FACTOR = 1 / 3
+local ANTI_DASH_RADIUS_BYPASS_DURATION = 0.300
 
 -- parry radius guard
 local SPAM_PARRY_RADIUS_GUARD = false
@@ -62,6 +63,7 @@ local Scheduler = {
 	targetSwitchEffectiveIntervalMs = 0,
 	targetSwitchCps = 0,
 	parryRadiusGuard = false,
+	antiDashRadiusBypass = false,
 	parryRadiusTTI = 0,
 	parryRadiusLimit = 0,
 }
@@ -104,6 +106,7 @@ local function resetRuntime()
 	Scheduler.targetSwitchCps = 0
 
 	Scheduler.parryRadiusGuard = false
+	Scheduler.antiDashRadiusBypass = false
 	Scheduler.parryRadiusTTI = 0
 	Scheduler.parryRadiusLimit = 0
 end
@@ -161,7 +164,35 @@ local function readDeflectCooldown()
 end
 
 -- parry radius guard
+local function isAntiDashRadiusBypass(now)
+	if not AutoClash
+		or type(AutoClash.getActivationContext) ~= "function"
+	then
+		return false
+	end
+
+	local ok, context = pcall(AutoClash.getActivationContext)
+	local active = ok
+		and type(context) == "table"
+		and context.active == true
+		and context.source == "anti_dash"
+		and type(context.timestamp) == "number"
+		and now >= context.timestamp
+		and now - context.timestamp < ANTI_DASH_RADIUS_BYPASS_DURATION
+
+	Scheduler.antiDashRadiusBypass = active
+	return active
+end
+
 local function checkParryRadiusGuard()
+	local now = getNow()
+	if isAntiDashRadiusBypass(now) then
+		Scheduler.parryRadiusGuard = false
+		Scheduler.parryRadiusTTI = 0
+		Scheduler.parryRadiusLimit = 0
+		return true
+	end
+
 	if not SPAM_PARRY_RADIUS_GUARD then
 		Scheduler.parryRadiusGuard = false
 		Scheduler.parryRadiusTTI = 0
@@ -777,6 +808,7 @@ function Spam.setup(deps)
 		or type(deps.Utils) ~= "table"
 		or type(deps.AutoClash) ~= "table"
 		or type(deps.AutoClash.getTargetSwitch) ~= "function"
+		or type(deps.AutoClash.getActivationContext) ~= "function"
 		or type(deps.AutoParry) ~= "table"
 		or type(deps.AutoParry.getPingOneWay) ~= "function"
 	then
@@ -903,6 +935,7 @@ function Spam.getStatus()
 		targetSwitchCps = Scheduler.targetSwitchCps,
 
 		parryRadiusGuard = Scheduler.parryRadiusGuard,
+		antiDashRadiusBypass = Scheduler.antiDashRadiusBypass,
 		parryRadiusTTI = Scheduler.parryRadiusTTI,
 		parryRadiusLimit = Scheduler.parryRadiusLimit,
 	}
