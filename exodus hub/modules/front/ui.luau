@@ -21,6 +21,10 @@ local UIState = {
     dynamicParryOn = false,
     dynamicParryState = "idle",
     btnIsDragging = function() return false end,
+    isDynamicParryDragging = function() return false end,
+    dynamicButtonDown = false,
+    dynamicButtonInput = nil,
+    dynamicReleaseToken = 0,
     panelTween = nil,
     btnTween = nil,
 }
@@ -318,7 +322,8 @@ end
 local CLASH_SIZE = 64
 local OFFSCREEN_X = -CLASH_SIZE - 40
 local autoClashTrack, autoClashThumb
-local DYNAMIC_W, DYNAMIC_H = 120, 120
+local DYNAMIC_W, DYNAMIC_H = 120, 110
+local DYNAMIC_RELEASE_DELAY = 0.12
 
 -- clash ui
 local function paintClashBall()
@@ -442,9 +447,13 @@ local function setDynamicParry(v)
     UIState.dynamicParryOn = v == true
     setConfigValue("DynamicParry", UIState.dynamicParryOn)
     showDynamicParry(UIState.dynamicParryOn)
-    if not UIState.dynamicParryOn
-        and type(Controls.DynamicParry.release) == "function" then
-        Controls.DynamicParry.release()
+    if not UIState.dynamicParryOn then
+        UIState.dynamicButtonDown = false
+        UIState.dynamicButtonInput = nil
+        UIState.dynamicReleaseToken += 1
+        if type(Controls.DynamicParry.release) == "function" then
+            Controls.DynamicParry.release()
+        end
     end
     paintDynamicParry()
 end
@@ -523,6 +532,10 @@ local function cleanupUI()
     UIState.panelTween = nil
     UIState.btnTween = nil
     UIState.btnIsDragging = function() return false end
+    UIState.isDynamicParryDragging = function() return false end
+    UIState.dynamicButtonDown = false
+    UIState.dynamicButtonInput = nil
+    UIState.dynamicReleaseToken = 0
     flowingGradients = {}
     local current = screenGui
     if current then
@@ -1302,7 +1315,7 @@ function ExodusUI.setup(deps)
     local dynamicTitleBar = inst(
         "Frame",
         {
-            Size = UDim2.new(1, 0, 0, 26),
+            Size = UDim2.new(1, 0, 0, 22),
             BackgroundColor3 = Color3.fromRGB(20, 20, 46),
             BackgroundTransparency = 0.05,
             BorderSizePixel = 0,
@@ -1342,8 +1355,8 @@ function ExodusUI.setup(deps)
         "TextButton",
         {
             Name = "DynamicParryButton",
-            Size = UDim2.new(1, -16, 0, 78),
-            Position = UDim2.new(0, 8, 0, 32),
+            Size = UDim2.new(1, -16, 0, 80),
+            Position = UDim2.new(0, 8, 0, 22),
             BackgroundColor3 = C.green,
             BorderSizePixel = 0,
             Text = "P",
@@ -1355,22 +1368,57 @@ function ExodusUI.setup(deps)
         }
     )
     corner(dynamicButton, 14)
+    local dynamicButtonStroke = stroke(dynamicButton, Color3.fromRGB(255, 255, 255), 1.5)
+    dynamicButtonStroke.Transparency = 0.25
     dynamicGui.Visible = false
     trackConn(dynamicButton.InputBegan:Connect(function(input)
         if input.UserInputType ~= Enum.UserInputType.MouseButton1
             and input.UserInputType ~= Enum.UserInputType.Touch then
             return
         end
-        Controls.DynamicParry.press()
+        if UIState.isDynamicParryDragging() then
+            return
+        end
+        if UIState.dynamicButtonDown then
+            return
+        end
+        UIState.dynamicButtonDown = true
+        UIState.dynamicButtonInput = input
+        UIState.dynamicReleaseToken += 1
+        safe(Controls.DynamicParry.press)
     end))
     trackConn(dynamicButton.InputEnded:Connect(function(input)
         if input.UserInputType ~= Enum.UserInputType.MouseButton1
             and input.UserInputType ~= Enum.UserInputType.Touch then
             return
         end
-        Controls.DynamicParry.release()
+        if input ~= UIState.dynamicButtonInput then
+            return
+        end
+        if not UIState.dynamicButtonDown then
+            return
+        end
+        UIState.dynamicButtonDown = false
+        UIState.dynamicButtonInput = nil
+        local wasHolding = UIState.dynamicParryState == "holding"
+        local delay = wasHolding and DYNAMIC_RELEASE_DELAY or 0
+        local token = UIState.dynamicReleaseToken + 1
+        UIState.dynamicReleaseToken = token
+        if delay <= 0 then
+            safe(Controls.DynamicParry.release)
+        else
+            task.delay(delay, function()
+                if token ~= UIState.dynamicReleaseToken then
+                    return
+                end
+                if UIState.dynamicButtonDown then
+                    return
+                end
+                safe(Controls.DynamicParry.release)
+            end)
+        end
     end))
-    makeDraggable(
+    UIState.isDynamicParryDragging = makeDraggable(
         dynamicTitleBar,
         dynamicGui,
         function()
