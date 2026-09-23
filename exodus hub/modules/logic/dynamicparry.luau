@@ -9,11 +9,13 @@ local onStateChanged
 
 local HOLD_THRESHOLD = 0.16
 local AP_DELAY = 0.010
+local DEFAULT_RELEASE_DELAY = 0.2
 
 local R = {
     pressed = false,
     holding = false,
     generation = 0,
+    releaseGeneration = 0,
 }
 
 local function now()
@@ -43,6 +45,19 @@ local function getLastAutoParryAt()
         end
     end
     return 0
+end
+local function getReleaseDelay()
+    local configured
+    if Utils and type(Utils.getConfig) == "function" then
+        local config = Utils.getConfig()
+        if type(config) == "table" then
+            configured = tonumber(config.DynamicParryReleaseDelay)
+        end
+    end
+    if not configured or configured ~= configured or configured < 0 then
+        return DEFAULT_RELEASE_DELAY
+    end
+    return math.min(configured, 5)
 end
 local function waitForAutoParryWindow(generation)
     local deadline = now()
@@ -80,19 +95,11 @@ local function startHold(generation)
         return
     end
     R.holding = true
-    if Utils and type(Utils.setConfig) == "function" then
-        Utils.setConfig({ AutoClash = false })
-    end
-    if Utils and type(Utils.setAutoSpamActive) == "function" then
-        Utils.setAutoSpamActive(false)
-    end
+    R.releaseGeneration += 1
     if Utils and type(Utils.setManualSpamActive) == "function" then
         Utils.setManualSpamActive(true)
     end
     emitState("holding")
-    if type(onAutoClashDisabled) == "function" then
-        pcall(onAutoClashDisabled)
-    end
 end
 function DynamicParry.setup(deps)
     if type(deps) ~= "table"
@@ -126,6 +133,7 @@ function DynamicParry.press()
     R.pressed = true
     R.holding = false
     R.generation += 1
+    R.releaseGeneration += 1
     local generation = R.generation
     emitState("pressed")
     task.delay(HOLD_THRESHOLD, function()
@@ -142,9 +150,16 @@ function DynamicParry.release()
     R.pressed = false
     R.holding = false
     if wasHolding then
-        if Utils and type(Utils.setManualSpamActive) == "function" then
-            Utils.setManualSpamActive(false)
-        end
+        R.releaseGeneration += 1
+        local releaseGeneration = R.releaseGeneration
+        task.delay(getReleaseDelay(), function()
+            if releaseGeneration ~= R.releaseGeneration or R.pressed or R.holding then
+                return
+            end
+            if Utils and type(Utils.setManualSpamActive) == "function" then
+                Utils.setManualSpamActive(false)
+            end
+        end)
         emitState("released")
         return true
     end
@@ -163,6 +178,7 @@ function DynamicParry.release()
 end
 function DynamicParry.resetState()
     R.generation += 1
+    R.releaseGeneration += 1
     if R.holding and Utils and type(Utils.setManualSpamActive) == "function" then
         Utils.setManualSpamActive(false)
     end
@@ -184,6 +200,7 @@ function DynamicParry.getStatus()
         pressed = R.pressed == true,
         holding = R.holding == true,
         holdThreshold = HOLD_THRESHOLD,
+        releaseDelay = getReleaseDelay(),
         apDelay = AP_DELAY,
     }
 end
