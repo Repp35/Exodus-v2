@@ -7,7 +7,7 @@ local Utils
 local onAutoClashDisabled
 local onStateChanged
 
-local HOLD_THRESHOLD = 0.16
+local HOLD_THRESHOLD = 0.10
 local AP_DELAY = 0.010
 local DEFAULT_RELEASE_DELAY = 0.2
 
@@ -75,6 +75,7 @@ local function requestParry(generation)
     if generation ~= R.generation or not isReady() then
         return false
     end
+    -- Só aguarda se o Auto Parry disparou nos últimos 10 ms; fora disso é imediato.
     if not waitForAutoParryWindow(generation) then
         return false
     end
@@ -136,9 +137,8 @@ function DynamicParry.tap()
         return false
     end
     local generation = R.generation
-    task.spawn(function()
-        requestParry(generation)
-    end)
+    -- Clique curto: envia imediatamente pelo mesmo Remote.fireParry usado pelo Spam.
+    requestParry(generation)
     emitState("released")
     return true
 end
@@ -186,9 +186,8 @@ function DynamicParry.release()
             return false
         end
     end
-    task.spawn(function()
-        requestParry(generation)
-    end)
+    -- Clique curto: envia imediatamente pelo mesmo Remote.fireParry usado pelo Spam.
+    requestParry(generation)
     emitState("released")
     return true
 end
