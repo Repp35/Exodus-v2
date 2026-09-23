@@ -31,6 +31,8 @@ local clashBall
 local miniGui
 local dynamicGui
 local dynamicButton
+local dynamicTargetPosition
+local showDynamicParry
 local configPanel
 local particleLayer
 local titleBar
@@ -316,7 +318,7 @@ end
 local CLASH_SIZE = 64
 local OFFSCREEN_X = -CLASH_SIZE - 40
 local autoClashTrack, autoClashThumb
-local DYNAMIC_W, DYNAMIC_H = 132, 96
+local DYNAMIC_W, DYNAMIC_H = 120, 120
 
 -- clash ui
 local function paintClashBall()
@@ -416,8 +418,8 @@ local function paintDynamicParry()
     local color = state == "holding"
         and C.accentPink
         or state == "pressed"
-        and (UIState.dynamicParryOn and C.green or C.red)
-        or UIState.dynamicParryOn and C.green or C.red
+        and C.green
+        or C.green
     dynamicButton.Text = state == "holding" and "S" or "P"
     twPlay(
         dynamicButton,
@@ -426,20 +428,52 @@ local function paintDynamicParry()
             BackgroundColor3 = color,
             TextColor3 = Color3.new(1, 1, 1),
             Size = state == "pressed"
-                and UDim2.new(1, -22, 0, 44)
-                or UDim2.new(1, -16, 0, 48),
+                and UDim2.new(1, -22, 0, 74)
+                or UDim2.new(1, -16, 0, 78),
         },
         EASE_SINE,
         DIR_INOUT
     )
 end
 local function setDynamicParry(v)
-    if not Controls.DynamicParry
-        or type(Controls.DynamicParry.setEnabled) ~= "function" then
+    if not Controls.DynamicParry then
         return
     end
-    UIState.dynamicParryOn = Controls.DynamicParry.setEnabled(v == true) == true
+    UIState.dynamicParryOn = v == true
+    setConfigValue("DynamicParry", UIState.dynamicParryOn)
+    showDynamicParry(UIState.dynamicParryOn)
+    if not UIState.dynamicParryOn
+        and type(Controls.DynamicParry.release) == "function" then
+        Controls.DynamicParry.release()
+    end
     paintDynamicParry()
+end
+showDynamicParry = function(v)
+    if not dynamicGui or not dynamicTargetPosition then
+        return
+    end
+    local offscreen = UDim2.new(
+        0,
+        viewport().X + 30,
+        0,
+        dynamicTargetPosition.Y.Offset
+    )
+    if v then
+        dynamicGui.Visible = true
+        dynamicGui.Position = offscreen
+        twPlay(dynamicGui, 0.38, {
+            Position = dynamicTargetPosition,
+        }, EASE_OUT, DIR_OUT)
+    else
+        twPlay(dynamicGui, 0.28, {
+            Position = offscreen,
+        }, EASE_IN, DIR_IN)
+        task.delay(0.3, function()
+            if dynamicGui and not UIState.dynamicParryOn then
+                dynamicGui.Visible = false
+            end
+        end)
+    end
 end
 local PW, PH = 540, 380
 local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
@@ -500,6 +534,7 @@ local function cleanupUI()
     miniGui = nil
     dynamicGui = nil
     dynamicButton = nil
+    dynamicTargetPosition = nil
     configPanel = nil
     particleLayer = nil
     titleBar = nil
@@ -1012,7 +1047,6 @@ function ExodusUI.setup(deps)
         or type(deps.Controls.DynamicParry) ~= "table"
         or type(deps.Controls.DynamicParry.press) ~= "function"
         or type(deps.Controls.DynamicParry.release) ~= "function"
-        or type(deps.Controls.DynamicParry.setEnabled) ~= "function"
         or type(deps.Controls.DynamicParry.setStateHandler) ~= "function"
         or type(deps.Utils.stop) ~= "function"
         or type(deps.Utils.name) ~= "function"
@@ -1252,20 +1286,19 @@ function ExodusUI.setup(deps)
     )
     local dynamicX = config.DynamicParryX or (viewport().X - DYNAMIC_W - 14)
     local dynamicY = config.DynamicParryY or (viewport().Y / 2 + MINI_H / 2 + 12)
+    dynamicTargetPosition = UDim2.new(0, dynamicX, 0, dynamicY)
     dynamicGui = inst(
         "Frame",
         {
             Name = "ExodusDynamicParry",
             Size = UDim2.new(0, DYNAMIC_W, 0, DYNAMIC_H),
-            Position = UDim2.new(0, dynamicX, 0, dynamicY),
-            BackgroundColor3 = C.header,
+            Position = UDim2.new(0, viewport().X + 30, 0, dynamicY),
+            BackgroundTransparency = 1,
             BorderSizePixel = 0,
             ZIndex = 15,
             Parent = screenGui
         }
     )
-    corner(dynamicGui, 10)
-    registerFlow(stroke(dynamicGui, C.accentPink, 1.5))
     local dynamicTitleBar = inst(
         "Frame",
         {
@@ -1277,7 +1310,7 @@ function ExodusUI.setup(deps)
             Parent = dynamicGui
         }
     )
-    corner(dynamicTitleBar, 10)
+    corner(dynamicTitleBar, 16)
     inst(
         "Frame",
         {
@@ -1309,9 +1342,9 @@ function ExodusUI.setup(deps)
         "TextButton",
         {
             Name = "DynamicParryButton",
-            Size = UDim2.new(1, -16, 0, 48),
+            Size = UDim2.new(1, -16, 0, 78),
             Position = UDim2.new(0, 8, 0, 32),
-            BackgroundColor3 = UIState.dynamicParryOn and C.green or C.red,
+            BackgroundColor3 = C.green,
             BorderSizePixel = 0,
             Text = "P",
             TextColor3 = Color3.new(1, 1, 1),
@@ -1321,7 +1354,8 @@ function ExodusUI.setup(deps)
             Parent = dynamicGui
         }
     )
-    corner(dynamicButton, 8)
+    corner(dynamicButton, 14)
+    dynamicGui.Visible = false
     trackConn(dynamicButton.InputBegan:Connect(function(input)
         if input.UserInputType ~= Enum.UserInputType.MouseButton1
             and input.UserInputType ~= Enum.UserInputType.Touch then
@@ -1340,10 +1374,12 @@ function ExodusUI.setup(deps)
         dynamicTitleBar,
         dynamicGui,
         function()
+            dynamicTargetPosition = dynamicGui.Position
             setConfigValue("DynamicParryX", dynamicGui.Position.X.Offset)
             setConfigValue("DynamicParryY", dynamicGui.Position.Y.Offset)
         end
     )
+    showDynamicParry(UIState.dynamicParryOn)
     configPanel =
         inst(
         "Frame",
