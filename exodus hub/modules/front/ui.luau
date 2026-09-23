@@ -1467,6 +1467,7 @@ function ExodusUI.setup(deps)
         UIState.dynamicHoldTriggered = false
         UIState.dynamicHoldToken += 1
         local holdToken = UIState.dynamicHoldToken
+        paintDynamicParry(true)
 
         -- Só vira spam se permanecer pressionado por pelo menos 200 ms.
         task.delay(DYNAMIC_HOLD_THRESHOLD, function()
