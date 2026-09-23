@@ -33,7 +33,7 @@ local T = {
 	DASH_REGISTER_DEBOUNCE = 0.050,
 	OWN_DASH_ESCAPE_HOLD = 0.060,
 	-- deactivation
-	DEACT_DIRECTION_MAX_LO = 0.10,
+	DEACT_DIRECTION_MAX_LO = 0.110,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DEACT_DIRECTION_SPD_LO = 60,
 	DEACT_DIRECTION_SPD_HI = 600,
@@ -88,6 +88,9 @@ local R = {
 	deactivationCandidateAt = 0,
 	deactivationConfirmFrames = 0,
 	deactivationLastConfirmAt = 0,
+
+	-- activation timing
+	becameMeAt = 0,
 
 	-- approach
 	approachBonusUntil = 0,
@@ -341,6 +344,7 @@ local function resetTargetState()
 	R.approachBonusUntil = 0
 	R.opponentWasOutside = false
 	R.ballLeftRadiusDuring = false
+	R.becameMeAt = 0
 end
 local function resetOwnDashState()
 	R.ownDashEscapePending = false
@@ -544,36 +548,21 @@ local function shouldActivate(snapshot, t)
 	return true
 end
 local function tryReturnActivate(snapshot, t)
-	if not R.returnPending then
+	if not snapshot
+		or snapshot.targeted ~= true then
+		R.lastGate = "act_not_targeted"
 		return false
 	end
-	if R.lostMeAt <= 0
-		or R.returnExpiresAt <= 0 then
-		clearReturnState()
-		R.lastGate =
-			"return_without_loss"
+	if R.becameMeAt <= 0 then
+		R.lastGate = "act_no_became_me"
 		return false
 	end
-	if t < R.lostMeAt then
-		clearReturnState()
-		R.lastGate =
-			"return_invalid_time"
+	if t - R.becameMeAt < T.RETURN_WIN_LO then
+		R.lastGate = "act_window_pending"
 		return false
 	end
-	if t >= R.returnExpiresAt then
-		clearReturnState()
-		R.lastGate =
-			"return_expired"
-		return false
-	end
-	return canReactivate(
-		t,
-		R.lastTarget
-	)
-		and shouldActivate(
-			snapshot,
-			t
-		)
+	return canReactivate(t, R.lastTarget)
+		and shouldActivate(snapshot, t)
 end
 
 -- deactivation
@@ -627,6 +616,11 @@ function Deactivation.confirm(t, reason)
 	return true
 end
 function Deactivation.direction(t, snapshot, speed)
+	if snapshot.targeted == true then
+		R.lastGate =
+			"deact_direction_targeted"
+		return false
+	end
 	if R.lastDirectionSwitchAt <= 0 then
 		return false
 	end
@@ -1874,6 +1868,9 @@ function AutoClash.onBallSync(data)
 	end
 	if wasMe ~= isMe then
 		R.lastDirectionSwitchAt = t
+		if isMe then
+			R.becameMeAt = t
+		end
 	end
 	if wasMe and not isMe then
 		R.lostMeAt = t
