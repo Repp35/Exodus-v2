@@ -5,6 +5,7 @@ local Utils
 local AutoParry
 local onDetected
 
+-- tuning
 local T = {
     DETECT_WINDOW = 0.25,
     REGISTER_DEBOUNCE = 0.050,
@@ -32,6 +33,7 @@ local R = {
     lastOwnEvent = nil,
 }
 
+-- helpers
 local function now()
     if Utils and type(Utils.now) == "function" then
         return Utils.now()
@@ -302,9 +304,11 @@ local function scanVelocity()
                 R.previousSpeed[player] = speed
                 R.lastPosition[player] = root.Position
             end
-        end
-    end
+		end
+	end
 end
+
+-- setup
 function Dash.setup(deps)
     if type(deps) ~= "table"
         or type(deps.Utils) ~= "table"
@@ -336,9 +340,11 @@ function Dash.setup(deps)
             hookPlayer(currentPlayer, generation)
         end
     end)
-    R.connections[#R.connections + 1] = players.PlayerRemoving:Connect(removePlayer)
-    return true
+	R.connections[#R.connections + 1] = players.PlayerRemoving:Connect(removePlayer)
+	return true
 end
+
+-- api
 function Dash.setHandler(handler)
     onDetected = type(handler) == "function" and handler or nil
     return true
@@ -371,9 +377,11 @@ function Dash.tick(t)
     end
     if t - R.lastVelocityScanAt >= T.VELOCITY_SCAN_INTERVAL then
         R.lastVelocityScanAt = t
-        scanVelocity()
-    end
+		scanVelocity()
+	end
 end
+
+-- lifecycle
 function Dash.resetState()
     R.generation += 1
     disconnectList(R.connections)

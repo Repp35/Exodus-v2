@@ -1,12 +1,5 @@
 -- [[ Utils ]]
 
--- disable client-side CPS filter, server handles it
-task.defer(function()
-    pcall(function()
-        workspace:SetAttribute("CPS_LIMIT", 9999)
-    end)
-end)
-
 local Utils = {}
 
 -- services
@@ -27,6 +20,15 @@ local SPAM_RATE_MIN = 0
 local SPAM_RATE_MAX = 5000000000
 local MAX_DIAGNOSTIC_ENTRIES = 32
 local DATA_FOLDER = "Exodus Hub"
+
+-- bootstrap
+-- disable client-side CPS filter, server handles it
+task.defer(function()
+    pcall(function()
+        workspace:SetAttribute("CPS_LIMIT", 9999)
+    end)
+end)
+
 local function isValidConfigValue(key, value)
     if key == "AutoParry"
         or key == "AutoClash"

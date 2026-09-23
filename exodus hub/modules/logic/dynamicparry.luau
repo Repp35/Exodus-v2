@@ -7,11 +7,13 @@ local AutoParry
 local Utils
 local onStateChanged
 
+-- tuning
 local HOLD_THRESHOLD = 0.10
 local AP_DELAY = 0.010
 local DEFAULT_RELEASE_DELAY = 0.20
 local MAX_RELEASE_DELAY = 5
 
+-- state
 local State = {
 	pressed = false,
 	holding = false,
@@ -19,6 +21,7 @@ local State = {
 	releaseGeneration = 0,
 }
 
+-- helpers
 local function now()
 	if Utils and type(Utils.now) == "function" then
 		return Utils.now()
@@ -129,6 +132,7 @@ local function enableHold(generation)
 	emit("holding")
 end
 
+-- setup
 function DynamicParry.setup(deps)
 	if type(deps) ~= "table"
 		or type(deps.Remote) ~= "table"
@@ -151,6 +155,7 @@ function DynamicParry.setup(deps)
 	return true
 end
 
+-- api
 function DynamicParry.setStateHandler(handler)
 	onStateChanged = type(handler) == "function" and handler or nil
 end
@@ -225,6 +230,7 @@ function DynamicParry.release()
 	return true
 end
 
+-- lifecycle
 function DynamicParry.resetState()
 	State.generation += 1
 	State.releaseGeneration += 1

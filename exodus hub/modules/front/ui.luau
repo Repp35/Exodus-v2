@@ -49,6 +49,7 @@ local closeButton
 local colLeft
 local colRight
 local killBtn
+local flowingGradients = {}
 
 -- palette
 local C = {
@@ -284,8 +285,6 @@ local function makeDraggable(handle, target, onDragEnd)
         return state == "Dragging"
     end
 end
-local flowingGradients = {}
-
 -- effects
 local function registerFlow(obj)
     flowingGradients[#flowingGradients + 1] = attachFlow(obj)
