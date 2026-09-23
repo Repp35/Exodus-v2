@@ -553,12 +553,13 @@ local function tryReturnActivate(snapshot, t)
 		R.lastGate = "act_not_targeted"
 		return false
 	end
-	if R.becameMeAt <= 0 then
-		R.lastGate = "act_no_became_me"
+	if not R.returnPending then
+		R.lastGate = "act_no_return_pending"
 		return false
 	end
-	if t - R.becameMeAt < T.RETURN_WIN_LO then
-		R.lastGate = "act_window_pending"
+	if R.returnExpiresAt <= 0
+		or t >= R.returnExpiresAt then
+		R.lastGate = "act_return_expired"
 		return false
 	end
 	return canReactivate(t, R.lastTarget)
@@ -1942,14 +1943,6 @@ function AutoClash.onBallSync(data)
 				R.clashPartnerId =
 					previousTarget
 			end
-			local cooldownEnd =
-				math.max(
-					t,
-					R.reactivateBlockedUntil
-				)
-			R.returnExpiresAt =
-				cooldownEnd
-				+ R.returnWindow
 			R.returnPending = true
 			R.lastGate =
 				"target_return"
