@@ -2,7 +2,6 @@
 
 local Dash = {}
 local Utils
-local AutoParry
 local onDetected
 
 -- tuning
@@ -17,7 +16,6 @@ local T = {
 local R = {
     players = nil,
     playerList = {},
-    localUserId = -1,
     generation = 0,
     lastScanAt = 0,
     lastVelocityScanAt = 0,
@@ -29,8 +27,6 @@ local R = {
     trackSnapshot = {},
     previousSpeed = {},
     lastPosition = {},
-    events = {},
-    lastOwnEvent = nil,
 }
 
 -- helpers
@@ -39,14 +35,6 @@ local function now()
         return Utils.now()
     end
     return os.clock()
-end
-local function pingCompensation()
-    if not AutoParry or type(AutoParry.getPingOneWay) ~= "function" then
-        return 0
-    end
-    local ok, value = pcall(AutoParry.getPingOneWay)
-    value = ok and tonumber(value) or 0
-    return value and value > 0 and value * 0.3 or 0
 end
 local function horizontalSpeed(value)
     if typeof(value) ~= "Vector3" then
@@ -96,21 +84,8 @@ local function isTrack(track)
     return name:find("dash", 1, true) ~= nil
         or id:find("dash", 1, true) ~= nil
 end
-local function cleanExpired(t)
-    local expiration = T.DETECT_WINDOW + pingCompensation()
-    for i = #R.events, 1, -1 do
-        local event = R.events[i]
-        if not event
-            or not event.player
-            or not event.player.Parent
-            or t - event.detectedAt > expiration
-        then
-            if event == R.lastOwnEvent then
-                R.lastOwnEvent = nil
-            end
-            table.remove(R.events, i)
-        end
-    end
+local function cleanCooldowns(t)
+    local expiration = T.DETECT_WINDOW
     for player, last in pairs(R.cooldown) do
         if not player.Parent or t - last > expiration then
             R.cooldown[player] = nil
@@ -123,9 +98,9 @@ local function register(player, position, velocity)
     end
     local t = now()
     local last = R.cooldown[player]
-    local cooldown = math.max(
-        T.REGISTER_DEBOUNCE,
-        T.DETECT_WINDOW + pingCompensation()
+	local cooldown = math.max(
+		T.REGISTER_DEBOUNCE,
+		T.DETECT_WINDOW
     )
     if last and t - last < cooldown then
         return
@@ -147,10 +122,6 @@ local function register(player, position, velocity)
         velocity = velocity,
         previousPosition = R.lastPosition[player],
     }
-    R.events[#R.events + 1] = event
-    if player.UserId == R.localUserId then
-        R.lastOwnEvent = event
-    end
     if typeof(position) == "Vector3" then
         R.lastPosition[player] = position
     end
@@ -253,14 +224,6 @@ local function removePlayer(player)
     R.trackSnapshot[player] = nil
     R.previousSpeed[player] = nil
     R.lastPosition[player] = nil
-    for i = #R.events, 1, -1 do
-        if R.events[i] and R.events[i].player == player then
-            table.remove(R.events, i)
-        end
-    end
-    if R.lastOwnEvent and R.lastOwnEvent.player == player then
-        R.lastOwnEvent = nil
-    end
 end
 local function scanTracks()
     for i = 1, #R.playerList do
@@ -313,19 +276,11 @@ function Dash.setup(deps)
     if type(deps) ~= "table"
         or type(deps.Utils) ~= "table"
         or type(deps.Utils.getPlayers) ~= "function"
-        or type(deps.Utils.getLocalPlayer) ~= "function"
-        or type(deps.AutoParry) ~= "table"
     then
-        return false, "dependência ausente: Utils ou AutoParry"
+        return false, "dependência ausente: Utils"
     end
     Dash.resetState()
     Utils = deps.Utils
-    AutoParry = deps.AutoParry
-    local okPlayer, player = pcall(Utils.getLocalPlayer)
-    if not okPlayer or not player then
-        return false, "jogador local indisponível"
-    end
-    R.localUserId = player.UserId
     local okPlayers, players = pcall(Utils.getPlayers)
     if not okPlayers or not players then
         return false, "Players indisponível"
@@ -349,27 +304,13 @@ function Dash.setHandler(handler)
     onDetected = type(handler) == "function" and handler or nil
     return true
 end
-function Dash.getPlayers()
-    return R.players
-end
-function Dash.getRecentThreat(t)
-    local event = R.lastOwnEvent
-    if not event or not event.player or not event.player.Parent then
-        return nil
-    end
-    local age = t - event.detectedAt
-    if age < 0 or age > T.DETECT_WINDOW + pingCompensation() then
-        return nil
-    end
-    return event
-end
 function Dash.tick(t)
     if not R.players then
         return
     end
     if t - R.lastCleanAt >= T.CLEAN_INTERVAL then
         R.lastCleanAt = t
-        cleanExpired(t)
+        cleanCooldowns(t)
     end
     if t - R.lastScanAt >= T.ANIMATION_SCAN_INTERVAL then
         R.lastScanAt = t
@@ -377,8 +318,8 @@ function Dash.tick(t)
     end
     if t - R.lastVelocityScanAt >= T.VELOCITY_SCAN_INTERVAL then
         R.lastVelocityScanAt = t
-		scanVelocity()
-	end
+        scanVelocity()
+    end
 end
 
 -- lifecycle
@@ -393,10 +334,7 @@ function Dash.resetState()
     table.clear(R.trackSnapshot)
     table.clear(R.previousSpeed)
     table.clear(R.lastPosition)
-    table.clear(R.events)
-    R.lastOwnEvent = nil
     R.players = nil
-    R.localUserId = -1
     R.lastScanAt = 0
     R.lastVelocityScanAt = 0
     R.lastCleanAt = 0
@@ -404,20 +342,18 @@ end
 function Dash.teardown()
     Dash.resetState()
     Utils = nil
-    AutoParry = nil
     onDetected = nil
 end
 function Dash.getStatus()
     return {
         schema = Utils and Utils.apiVersion and Utils.apiVersion() or 1,
         players = R.players ~= nil,
-        events = #R.events,
+        detecting = R.players ~= nil,
     }
 end
 Dash.__contract = {
     requires = {
         Utils = "utils",
-        AutoParry = "autoparry",
     },
 }
 return Dash

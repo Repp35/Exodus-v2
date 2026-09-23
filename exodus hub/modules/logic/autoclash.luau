@@ -108,6 +108,7 @@ local R = {
         ownDashEscapeConfirmFrames = 0,
         ownDashEscapeLastDist = nil,
         ownDashEscapeFartherStreak = 0,
+        lastDashEvent = nil,
 
         -- connections
         connections = {},
@@ -281,6 +282,7 @@ local function resetTargetState()
         R.opponentWasOutside = false
         R.ballLeftRadiusDuring = false
         R.becameMeAt = 0
+        R.lastDashEvent = nil
 end
 local function resetOwnDashState()
         R.ownDashEscapePending = false
@@ -621,6 +623,9 @@ local function getHorizontalDistance(a, b)
 end
 
 local function onDashDetected(event)
+        if type(event) == "table" then
+                R.lastDashEvent = event
+        end
         if type(event) ~= "table"
                 or not event.player
                 or R.clashPartnerId == -1
@@ -690,7 +695,19 @@ function OwnDash.getOpponent()
         return opponent, root
 end
 function OwnDash.getRecentThreat(t)
-        return Dash.getRecentThreat(t)
+        local event = R.lastDashEvent
+        if not event
+                or not event.player
+                or event.userId ~= R.clashPartnerId
+                or not event.player.Parent then
+                return nil
+        end
+        local age = t - event.detectedAt
+        if age < 0
+                or age > T.DASH_DETECT_WINDOW + pingCompensation() then
+                return nil
+        end
+        return event
 end
 function OwnDash.shouldDeactivate(t)
         if not R.active then
