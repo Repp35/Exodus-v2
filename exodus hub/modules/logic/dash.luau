@@ -1,4 +1,4 @@
--- [[ dash ]]
+-- [[ Dash ]]
 
 local Dash = {}
 local Utils

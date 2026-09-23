@@ -1,4 +1,4 @@
---[[ autoparry ]]
+-- [[ AutoParry ]]
 
 local AutoParry = {}
 local Remote, GameInfo, Utils
@@ -738,7 +738,7 @@ function AutoParry.onBallSync(data)
 	onBallSync(data)
 end
 
--- API
+-- api
 function AutoParry.getParryRadius()
 	return Runtime.parryRadius
 end

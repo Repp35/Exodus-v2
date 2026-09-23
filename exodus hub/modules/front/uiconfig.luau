@@ -1,4 +1,4 @@
--- [[ ui config ]]
+-- [[ UIConfig ]]
 
 local UIConfig = {}
 

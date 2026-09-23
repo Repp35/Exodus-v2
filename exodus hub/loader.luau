@@ -1,4 +1,4 @@
--- [[ loader ]]
+-- [[ Loader ]]
 
 local function bootstrapPrint(message)
 	local text = tostring(message)

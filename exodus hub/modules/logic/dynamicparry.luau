@@ -1,4 +1,4 @@
--- [[ dynamic parry ]]
+-- [[ DynamicParry ]]
 
 local DynamicParry = {}
 

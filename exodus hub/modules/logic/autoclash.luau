@@ -1,4 +1,4 @@
--- [[ autoclash ]]
+-- [[ AutoClash ]]
 
 local AutoClash = {}
 local AutoParry
@@ -6,7 +6,7 @@ local GameInfo
 local Dash
 local Utils
 
--- configuration
+-- tuning
 local T = {
         -- activation
         RETURN_WIN_LO = 0.15,

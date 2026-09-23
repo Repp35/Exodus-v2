@@ -1,4 +1,4 @@
--- [[ spam ]]
+-- [[ Spam ]]
 
 local Spam = {}
 local Remote, GameInfo, Utils, AutoParry
@@ -31,7 +31,7 @@ local clickQueue = 0
 local clickAccumulator = 0
 local clickInterval = 0
 
--- CPF scheduler
+-- cpf scheduler
 local cpfAverageDt = 1 / CPF_MIN_FPS
 local cpfClickAccumulator = 0
 local cpfFrameTime = 1 / CPF_MIN_FPS
@@ -274,7 +274,7 @@ local function requestParry()
 	return false
 end
 
--- CLICK SCHEDULER
+-- click scheduler
 local function queueClicks(clicks, interval)
 	if clicks <= 0 then
 		return
@@ -339,7 +339,7 @@ local function processClickQueue(dt)
 	end
 end
 
--- CPF
+-- cpf
 local function scheduleCPF(rate, dt)
 	if rate <= 0 then
 		Scheduler.cpfClicks = 0
@@ -413,7 +413,7 @@ local function scheduleCPF(rate, dt)
 	cpfLastDt = dt
 end
 
--- CHAIN
+-- chain
 local function scheduleChain()
 	local currentGeneration = generation
 
@@ -432,7 +432,7 @@ local function scheduleChain()
 	chainRunning = false
 end
 
--- CONFIG
+-- config
 local function getModeAndRate()
 	local config
 
@@ -461,7 +461,7 @@ local function getModeAndRate()
 	return mode, math_max(rate, 0)
 end
 
--- RUNTIME
+-- runtime
 local function tick(dt)
 	if type(dt) ~= "number"
 		or dt <= 0
@@ -645,7 +645,7 @@ local function tick(dt)
 	processClickQueue(dt)
 end
 
--- SETUP
+-- setup
 function Spam.setup(deps)
 	if type(deps) ~= "table"
 		or type(deps.Remote) ~= "table"
@@ -724,7 +724,7 @@ function Spam.setup(deps)
 	return true
 end
 
--- LIFECYCLE
+-- lifecycle
 function Spam.resetState()
 	invalidate("reset")
 

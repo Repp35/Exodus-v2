@@ -361,7 +361,7 @@ function GameInfo.setup(deps)
     return true
 end
 
--- public api
+-- api
 function GameInfo.getBall()
     return getBall()
 end
