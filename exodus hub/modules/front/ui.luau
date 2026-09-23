@@ -1087,7 +1087,6 @@ function ExodusUI.setup(deps)
         or type(deps.Controls.DynamicParry) ~= "table"
         or type(deps.Controls.DynamicParry.press) ~= "function"
         or type(deps.Controls.DynamicParry.release) ~= "function"
-        or type(deps.Controls.DynamicParry.tap) ~= "function"
         or type(deps.Controls.DynamicParry.setStateHandler) ~= "function"
         or type(deps.Utils.stop) ~= "function"
         or type(deps.Utils.name) ~= "function"
@@ -1435,21 +1434,8 @@ function ExodusUI.setup(deps)
             return
         end
 
-        -- Toque curto: um único parry, sem entrar no modo de spam.
-        if type(Controls.DynamicParry.tap) == "function" then
-            local ok, accepted = safe(Controls.DynamicParry.tap)
-            if ok and accepted then
-                paintDynamicParry(true)
-                task.delay(DYNAMIC_TAP_DURATION, function()
-                    if dynamicButton and dynamicButton.Parent
-                        and not UIState.dynamicButtonDown then
-                        paintDynamicParry(false)
-                    end
-                end)
-            else
-                paintDynamicParry(false)
-            end
-        end
+        -- O remote já foi enviado no InputBegan; aqui apenas encerra o feedback visual.
+        paintDynamicParry(false)
     end
 
     trackConn(dynamicButton.InputBegan:Connect(function(input)
@@ -1466,20 +1452,12 @@ function ExodusUI.setup(deps)
         UIState.dynamicButtonDragged = false
         UIState.dynamicHoldTriggered = false
         UIState.dynamicHoldToken += 1
-        local holdToken = UIState.dynamicHoldToken
         paintDynamicParry(true)
-
-        -- Só vira spam se permanecer pressionado por pelo menos 100 ms.
-        task.delay(DYNAMIC_HOLD_THRESHOLD, function()
-            if holdToken ~= UIState.dynamicHoldToken
-                or not UIState.dynamicButtonDown
-                or UIState.dynamicButtonDragged then
-                return
-            end
+        -- A UI apenas encaminha; o DynamicParry envia e controla o hold de 100 ms.
+        local ok = safe(Controls.DynamicParry.press)
+        if ok then
             UIState.dynamicHoldTriggered = true
-            safe(Controls.DynamicParry.press)
-            paintDynamicParry(true)
-        end)
+        end
     end))
 
     -- Caminho primário: o próprio botão encerra o clique curto.
