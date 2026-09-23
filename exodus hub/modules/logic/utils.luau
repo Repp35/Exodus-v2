@@ -16,7 +16,7 @@ local RunServiceService = game:GetService("RunService")
 local WorkspaceService = game:GetService("Workspace")
 
 -- metadata
-local SCRIPT_VERSION = "33.6"
+local SCRIPT_VERSION = "33.7"
 local API_VERSION = 1
 local SCRIPT_NAME = "Exodus Hub"
 local INTERNAL_NAME = "Exodus"
@@ -30,6 +30,7 @@ local DATA_FOLDER = "Exodus Hub"
 local function isValidConfigValue(key, value)
     if key == "AutoParry"
         or key == "AutoClash"
+        or key == "DynamicParry"
         or key == "ClashBallVisible"
     then
         return type(value) == "boolean"
