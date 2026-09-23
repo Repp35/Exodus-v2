@@ -304,8 +304,11 @@ end
 
 -- deflect window
 local function computeBaseDeflectWindow(speed)
+	local rawSpeed =
+		tonumber(speed) or 0
+
 	speed = math.max(
-		tonumber(speed) or 0,
+		rawSpeed,
 		Tuning.WINDOW_LOW_SPEED
 	)
 
@@ -318,6 +321,11 @@ local function computeBaseDeflectWindow(speed)
 	local window =
 		WINDOW_CURVE_A
 		+ WINDOW_CURVE_B / speed
+
+	-- baixa velocidade: encolhe a window em 30% pra punir bola lenta
+	if rawSpeed < 40 then
+		window *= 0.7
+	end
 
 	return math.max(
 		window,
