@@ -13,7 +13,7 @@ local CPF_MIN_FPS = 60
 local CPF_AVERAGE_ALPHA = 0.08
 
 -- parry radius guard
-local SPAM_PARRY_RADIUS_GUARD = true
+local SPAM_PARRY_RADIUS_GUARD = false
 local SPAM_PARRY_TTI_MS = 150
 
 -- state
