@@ -3,6 +3,7 @@
 local AutoClash = {}
 local AutoParry
 local GameInfo
+local Dash
 local Utils
 
 -- configuration
@@ -99,9 +100,6 @@ local R = {
 
         -- evaluation
         lastEvalAt = 0,
-        lastDashScanAt = 0,
-        lastDashVelocityScanAt = 0,
-        lastDashCleanAt = 0,
 
         -- debug
         lastGate = "none",
@@ -113,16 +111,6 @@ local R = {
 
         -- connections
         connections = {},
-        dashConnections = {},
-        dashCharacterConnections = {},
-        dashPlayerConnections = {},
-        dashGeneration = 0,
-        dashEvents = {},
-        dashCooldown = {},
-        dashTrackSnap = {},
-        dashVelAnterior = {},
-        dashLastPosition = {},
-        lastOwnDashEvent = nil,
 }
 
 -- helpers
@@ -272,58 +260,6 @@ local function disconnectList(list, trackCharacter)
                 end
         end
 end
-local function disconnectDashCharacterConnections()
-        for player, list in pairs(R.dashCharacterConnections) do
-                disconnectList(list, false)
-                R.dashCharacterConnections[player] = nil
-        end
-end
-local function disconnectDashPlayerConnections()
-        for player, list in pairs(R.dashPlayerConnections) do
-                disconnectList(list, false)
-                R.dashPlayerConnections[player] = nil
-        end
-end
-local function disconnectDashConnections()
-        disconnectDashCharacterConnections()
-        disconnectDashPlayerConnections()
-        disconnectList(R.dashConnections, false)
-        table.clear(R.playerList)
-        R.dashGeneration += 1
-end
-local function addDashCharacterConnection(player, connection)
-        if not player or not connection then
-                return connection
-        end
-        local list = R.dashCharacterConnections[player]
-        if not list then
-                list = {}
-                R.dashCharacterConnections[player] = list
-        end
-        list[#list + 1] = connection
-        return connection
-end
-local function addDashPlayerConnection(player, connection)
-        if not player or not connection then
-                return connection
-        end
-        local list = R.dashPlayerConnections[player]
-        if not list then
-                list = {}
-                R.dashPlayerConnections[player] = list
-        end
-        list[#list + 1] = connection
-        return connection
-end
-local function removePlayerFromList(player)
-        for i = #R.playerList, 1, -1 do
-                if R.playerList[i] == player then
-                        table.remove(R.playerList, i)
-                        return
-                end
-        end
-end
-
 -- state
 local function clearReturnState()
         R.lostMeAt = 0
@@ -360,14 +296,6 @@ local function resetDeactivationState()
         R.deactivationCandidateAt = 0
         R.deactivationConfirmFrames = 0
         R.deactivationLastConfirmAt = 0
-end
-local function clearDashState()
-        table.clear(R.dashEvents)
-        table.clear(R.dashCooldown)
-        table.clear(R.dashTrackSnap)
-        table.clear(R.dashVelAnterior)
-        table.clear(R.dashLastPosition)
-        R.lastOwnDashEvent = nil
 end
 
 -- activation
@@ -432,23 +360,16 @@ local function resetRuntime(reason, keepDashDetection)
                 setActive(false, reason or "reset")
         end
         disconnectList(R.connections, true)
-        if not keepDashDetection then
-                disconnectDashConnections()
-        end
         R.bound = false
         R.boundRoot = nil
         R.lastSpeed = 0
         R.parryRadius = 0
         R.lastSyncAt = 0
         R.lastEvalAt = 0
-        R.lastDashScanAt = 0
-        R.lastDashVelocityScanAt = 0
-        R.lastDashCleanAt = 0
         R.reactivateBlockedUntil = 0
         R.activationDeactLockedUntil = 0
         resetTargetState()
         resetDeactivationState()
-        clearDashState()
         R.lastGate = "detached"
         setPhase(
                 "detached",
@@ -690,540 +611,56 @@ local function rallyCheck(data, t)
 end
 
 -- dash
-local Dash = {}
-function Dash.cleanExpired(t)
-        local expiration =
-                T.DASH_DETECT_WINDOW
-                + pingCompensation()
-        for i = #R.dashEvents, 1, -1 do
-                local event = R.dashEvents[i]
-                if not event
-                        or not event.player
-                        or not event.player.Parent
-                        or t - event.detectedAt > expiration then
-                        if event == R.lastOwnDashEvent then
-                                R.lastOwnDashEvent = nil
-                        end
-                        table.remove(
-                                R.dashEvents,
-                                i
-                        )
-                end
-        end
-        for player, last in pairs(R.dashCooldown) do
-                if not player.Parent
-                        or t - last > expiration then
-                        R.dashCooldown[player] = nil
-                end
-        end
-end
 local function getHorizontalDistance(a, b)
-        if typeof(a) ~= "Vector3"
-                or typeof(b) ~= "Vector3" then
+        if typeof(a) ~= "Vector3" or typeof(b) ~= "Vector3" then
                 return math.huge
         end
         local x = a.X - b.X
         local z = a.Z - b.Z
-        return math.sqrt(
-                x * x + z * z
-        )
+        return math.sqrt(x * x + z * z)
 end
-function Dash.register(player, position, velocity)
-        if not player
-                or not player.Parent then
-                return
-        end
-        local t = now()
-        local last =
-                R.dashCooldown[player]
-        local cooldown =
-                math.max(
-                        T.DASH_REGISTER_DEBOUNCE,
-                        T.DASH_DETECT_WINDOW
-                                + pingCompensation()
-                )
-        if last and t - last < cooldown then
-                return
-        end
-        local character = player.Character
-        local root =
-                character
-                and character:FindFirstChild(
-                        "HumanoidRootPart"
-                )
-        if typeof(position) ~= "Vector3"
-                and root then
-                position = root.Position
-        end
-        if typeof(velocity) ~= "Vector3"
-                and root then
-                velocity =
-                        root.AssemblyLinearVelocity
-        end
-        R.dashCooldown[player] = t
-        local previousPosition =
-                R.dashLastPosition[player]
-        local event = {
-                player = player,
-                userId = player.UserId,
-                detectedAt = t,
-                position = position,
-                velocity = velocity,
-                previousPosition = previousPosition,
-        }
 
-        R.dashEvents[#R.dashEvents + 1] = event
-        if player.UserId == R.localUserId then
-                R.lastOwnDashEvent = event
-        end
-        if typeof(position) == "Vector3" then
-                R.dashLastPosition[player] =
-                        position
-        end
-        if R.clashPartnerId == -1
-                or player.UserId ~= R.clashPartnerId
+local function onDashDetected(event)
+        if type(event) ~= "table"
+                or not event.player
+                or R.clashPartnerId == -1
+                or event.userId ~= R.clashPartnerId
                 or R.parryRadius <= 0
-                or typeof(position) ~= "Vector3"
-                or typeof(velocity) ~= "Vector3" then
+                or typeof(event.position) ~= "Vector3"
+                or typeof(event.velocity) ~= "Vector3" then
                 return
         end
-        local localRoot =
-                getRootPosition()
+        local localRoot = getRootPosition()
         if not localRoot then
                 return
         end
-        local distance =
-                getHorizontalDistance(
-                        localRoot,
-                        position
-                )
-        local speed =
-                horizontalSpeed(velocity)
-        if distance <= 0
-                or speed <= 0 then
+        local distance = getHorizontalDistance(localRoot, event.position)
+        local speed = horizontalSpeed(event.velocity)
+        if distance <= 0 or speed <= 0 then
                 return
         end
-        local toRoot =
-                localRoot - position
-        local dot =
-                (
-                        velocity.X * toRoot.X
-                        + velocity.Z * toRoot.Z
-                )
-                / (speed * distance)
+        local toRoot = localRoot - event.position
+        local dot = (
+                event.velocity.X * toRoot.X
+                + event.velocity.Z * toRoot.Z
+        ) / (speed * distance)
         if dot < T.DASH_RETURN_DOT
-                or distance
-                        > R.parryRadius
-                                * T.DASH_RETURN_RADIUS_MULT then
+                or distance > R.parryRadius * T.DASH_RETURN_RADIUS_MULT
+                or math.abs(event.velocity.Y) > speed * 0.75 then
                 return
         end
-        local verticalSpeed =
-                math.abs(velocity.Y)
-        if verticalSpeed
-                > speed * 0.75 then
+        if typeof(event.previousPosition) == "Vector3"
+                and distance >= getHorizontalDistance(localRoot, event.previousPosition) then
                 return
         end
-        if typeof(previousPosition)
-                == "Vector3" then
-                local previousDistance =
-                        getHorizontalDistance(
-                                localRoot,
-                                previousPosition
-                        )
-                if distance >= previousDistance then
-                        return
-                end
-        end
-        R.dashBonusUntil =
-                t
-                + T.DASH_RADIUS_BONUS_TIME
-                + pingCompensation()
-        if R.returnPending
-                and R.returnWindow > 0 then
-                R.returnWindow =
-                        getReturnWindow(R.lastSpeed)
-                        * T.DASH_BONUS_RETURN_MULT
-                R.returnExpiresAt =
-                        math.max(
-                                R.returnExpiresAt,
-                                t + R.returnWindow
-                        )
+        local t = event.detectedAt
+        R.dashBonusUntil = t + T.DASH_RADIUS_BONUS_TIME + pingCompensation()
+        if R.returnPending and R.returnWindow > 0 then
+                R.returnWindow = getReturnWindow(R.lastSpeed) * T.DASH_BONUS_RETURN_MULT
+                R.returnExpiresAt = math.max(R.returnExpiresAt, t + R.returnWindow)
         end
 end
-function Dash.isTrack(track)
-        if not track
-                or not track:IsA("AnimationTrack") then
-                return false
-        end
-        local animation =
-                track.Animation
-        if not animation then
-                return false
-        end
-        local name =
-                string.lower(
-                        animation.Name or ""
-                )
-        local id =
-                string.lower(
-                        animation.AnimationId or ""
-                )
-        return name:find(
-                "dash",
-                1,
-                true
-        ) ~= nil
-                or id:find(
-                        "dash",
-                        1,
-                        true
-                ) ~= nil
-end
-function Dash.hookAnimator(
-        animator,
-        player,
-        character,
-        generation
-)
-        if not animator
-                or not player
-                or generation ~= R.dashGeneration
-                or not player.Parent
-                or player.Character ~= character then
-                return
-        end
-        local list =
-                R.dashCharacterConnections[player]
-        if not list then
-                list = {}
-                R.dashCharacterConnections[player] =
-                        list
-        end
-        list[#list + 1] =
-                animator.AnimationPlayed:Connect(
-                        function(track)
-                                if generation
-                                                ~= R.dashGeneration
-                                        or not player.Parent
-                                        or player.Character
-                                                ~= character then
-                                        return
-                                end
-                                if Dash.isTrack(track) then
-                                        Dash.register(player)
-                                end
-                        end
-                )
-        local snapshot =
-                R.dashTrackSnap[player]
-        if not snapshot then
-                snapshot = {}
-                R.dashTrackSnap[player] =
-                        snapshot
-        else
-                table.clear(snapshot)
-        end
-        for _, track in ipairs(
-                animator:GetPlayingAnimationTracks()
-        ) do
-                snapshot[track] = true
-        end
-end
-function Dash.attachCharacter(
-        character,
-        player,
-        generation
-)
-        if generation ~= R.dashGeneration
-                or not character
-                or not player
-                or not player.Parent
-                or player.Character ~= character then
-                return
-        end
-        local old =
-                R.dashCharacterConnections[player]
-        if old then
-                disconnectList(old, false)
-                R.dashCharacterConnections[player] =
-                        nil
-        end
-        local humanoid =
-                character:FindFirstChildOfClass(
-                        "Humanoid"
-                )
-                or character:WaitForChild(
-                        "Humanoid",
-                        3
-                )
-        if generation ~= R.dashGeneration
-                or player.Character ~= character
-                or not humanoid then
-                return
-        end
-        local animator =
-                humanoid:FindFirstChildOfClass(
-                        "Animator"
-                )
-                or humanoid:WaitForChild(
-                        "Animator",
-                        3
-                )
-        local root =
-                character:FindFirstChild(
-                        "HumanoidRootPart"
-                )
-                or character:WaitForChild(
-                        "HumanoidRootPart",
-                        3
-                )
-        if generation ~= R.dashGeneration
-                or player.Character ~= character
-                or not root then
-                return
-        end
-        if animator then
-                Dash.hookAnimator(
-                        animator,
-                        player,
-                        character,
-                        generation
-                )
-        end
-        R.dashVelAnterior[player] =
-                horizontalSpeed(
-                        root.AssemblyLinearVelocity
-                )
-        R.dashLastPosition[player] =
-                root.Position
-end
-function Dash.hookPlayer(
-        player,
-        generation
-)
-        if generation ~= R.dashGeneration
-                or not player
-                or not player.Parent then
-                return
-        end
-        R.dashTrackSnap[player] = {}
-        R.dashVelAnterior[player] = nil
-        R.dashLastPosition[player] = nil
-        R.playerList[#R.playerList + 1] =
-                player
-        if player.Character then
-                task.spawn(
-                        Dash.attachCharacter,
-                        player.Character,
-                        player,
-                        generation
-                )
-        end
-        addDashPlayerConnection(
-                player,
-                player.CharacterAdded:Connect(
-                        function(character)
-                                if generation
-                                        == R.dashGeneration then
-                                        task.spawn(
-                                                Dash.attachCharacter,
-                                                character,
-                                                player,
-                                                generation
-                                        )
-                                end
-                        end
-                )
-        )
-end
-function Dash.init(players)
-        if not players then
-                return
-        end
-        disconnectDashConnections()
-        R.players = players
-        local generation =
-                R.dashGeneration
-        local currentPlayers =
-                players:GetPlayers()
-        for i = 1, #currentPlayers do
-                Dash.hookPlayer(
-                        currentPlayers[i],
-                        generation
-                )
-        end
-        addConnection(
-                R.dashConnections,
-                players.PlayerAdded:Connect(
-                        function(player)
-                                if generation
-                                        == R.dashGeneration then
-                                        Dash.hookPlayer(
-                                                player,
-                                                generation
-                                        )
-                                end
-                        end
-                )
-        )
-        addConnection(
-                R.dashConnections,
-                players.PlayerRemoving:Connect(
-                        function(player)
-                                local characterConnections =
-                                        R.dashCharacterConnections[player]
-                                if characterConnections then
-                                        disconnectList(
-                                                characterConnections,
-                                                false
-                                        )
-                                        R.dashCharacterConnections[player] =
-                                                nil
-                                end
-                                local playerConnections =
-                                        R.dashPlayerConnections[player]
-                                if playerConnections then
-                                        disconnectList(
-                                                playerConnections,
-                                                false
-                                        )
-                                        R.dashPlayerConnections[player] =
-                                                nil
-                                end
-                                removePlayerFromList(player)
-                                R.dashCooldown[player] = nil
-                                R.dashTrackSnap[player] = nil
-                                R.dashVelAnterior[player] = nil
-                                R.dashLastPosition[player] = nil
-                                if R.lastOwnDashEvent
-                                        and R.lastOwnDashEvent.player
-                                                == player then
-                                        R.lastOwnDashEvent = nil
-                                end
-                                for i = #R.dashEvents, 1, -1 do
-                                        local event =
-                                                R.dashEvents[i]
-                                        if event
-                                                and event.player == player then
-                                                table.remove(
-                                                        R.dashEvents,
-                                                        i
-                                                )
-                                        end
-                                end
-                        end
-                )
-        )
-end
-function Dash.scanTracks()
-        local players =
-                R.playerList
-        for i = 1, #players do
-                local player =
-                        players[i]
-                if player
-                        and player.Parent then
-                        local character =
-                                player.Character
-                        local humanoid =
-                                character
-                                and character:FindFirstChildOfClass(
-                                        "Humanoid"
-                                )
-                        local animator =
-                                humanoid
-                                and humanoid:FindFirstChildOfClass(
-                                        "Animator"
-                                )
-                        if animator then
-                                local current =
-                                        animator:GetPlayingAnimationTracks()
-                                local snapshot =
-                                        R.dashTrackSnap[player]
-                                if not snapshot then
-                                        snapshot = {}
-                                        R.dashTrackSnap[player] =
-                                                snapshot
-                                end
-                                for j = 1, #current do
-                                        local track =
-                                                current[j]
-                                        if not snapshot[track]
-                                                and Dash.isTrack(track) then
-                                                Dash.register(player)
-                                        end
-                                end
-                                table.clear(snapshot)
-                                for j = 1, #current do
-                                        snapshot[current[j]] =
-                                                true
-                                end
-                        end
-                end
-        end
-end
-function Dash.scanVelocity()
-        local players =
-                R.playerList
-        for i = 1, #players do
-                local player =
-                        players[i]
-                if player
-                        and player.Parent then
-                        local character =
-                                player.Character
-                        local root =
-                                character
-                                and character:FindFirstChild(
-                                        "HumanoidRootPart"
-                                )
-                        if root then
-                                local velocity =
-                                        root.AssemblyLinearVelocity
-                                local speed =
-                                        horizontalSpeed(
-                                                velocity
-                                        )
-                                local previous =
-                                        R.dashVelAnterior[player]
-                                if previous == nil then
-                                        previous = speed
-                                elseif speed >= 80
-                                        and speed - previous >= 15 then
-                                        Dash.register(
-                                                player,
-                                                root.Position,
-                                                velocity
-                                        )
-                                end
-                                R.dashVelAnterior[player] =
-                                        speed
-                                R.dashLastPosition[player] =
-                                        root.Position
-                        end
-                end
-        end
-end
-function Dash.tick(t)
-        if not R.players then
-                return
-        end
-        if t - R.lastDashCleanAt
-                >= T.DASH_CLEAN_INTERVAL then
-                R.lastDashCleanAt = t
-                Dash.cleanExpired(t)
-        end
-        if t - R.lastDashScanAt
-                >= T.DASH_ANIMATION_SCAN_INTERVAL then
-                R.lastDashScanAt = t
-                Dash.scanTracks()
-        end
-        if t - R.lastDashVelocityScanAt
-                >= T.DASH_VELOCITY_SCAN_INTERVAL then
-                R.lastDashVelocityScanAt = t
-                Dash.scanVelocity()
-        end
-end
+
 local OwnDash = {}
 function OwnDash.getOpponent()
         local id =
@@ -1253,22 +690,7 @@ function OwnDash.getOpponent()
         return opponent, root
 end
 function OwnDash.getRecentThreat(t)
-        local event =
-                R.lastOwnDashEvent
-        if not event
-                or not event.player
-                or not event.player.Parent then
-                return nil
-        end
-        local age =
-                t - event.detectedAt
-        if age < 0
-                or age
-                        > T.DASH_DETECT_WINDOW
-                                + pingCompensation() then
-                return nil
-        end
-        return event
+        return Dash.getRecentThreat(t)
 end
 function OwnDash.shouldDeactivate(t)
         if not R.active then
@@ -1769,12 +1191,6 @@ local function bindCharacter(character)
                 "waiting",
                 "character_bound"
         )
-        local players =
-                getPlayersService()
-        if players
-                and #R.dashConnections == 0 then
-                Dash.init(players)
-        end
         return true
 end
 
@@ -1957,6 +1373,7 @@ function AutoClash.setup(deps)
         local required = {
                 { "AutoParry", "getParryRadius" },
                 { "AutoParry", "getPingOneWay" },
+                { "Dash", "setHandler" },
                 { "GameInfo", "getSnapshot" },
                 { "GameInfo", "isSnapshotValid" },
                 { "Utils", "now" },
@@ -1990,7 +1407,6 @@ function AutoClash.setup(deps)
                         false
                 )
         else
-                disconnectDashConnections()
                 disconnectList(
                         R.connections,
                         true
@@ -1998,10 +1414,13 @@ function AutoClash.setup(deps)
         end
         AutoParry =
                 deps.AutoParry
+        Dash =
+                deps.Dash
         GameInfo =
                 deps.GameInfo
         Utils =
                 deps.Utils
+        Dash.setHandler(onDashDetected)
         local ok, player =
                 pcall(
                         Utils.getLocalPlayer
@@ -2020,30 +1439,17 @@ function AutoClash.setup(deps)
         R.phase = "detached"
         R.boundRoot = nil
         R.players = nil
-        R.playerList = {}
         R.lastSpeed = 0
         R.parryRadius = 0
         R.lastSyncAt = 0
         R.lastEvalAt = 0
-        R.lastDashScanAt = 0
-        R.lastDashVelocityScanAt = 0
-        R.lastDashCleanAt = 0
         R.reactivateBlockedUntil = 0
         R.activationDeactLockedUntil = 0
         R.connections = {}
-        R.dashConnections = {}
-        R.dashCharacterConnections = {}
-        R.dashPlayerConnections = {}
-        R.dashGeneration = 0
         resetTargetState()
         resetDeactivationState()
-        clearDashState()
+        R.players = getPlayersService()
         R.lastGate = "none"
-        local players =
-                getPlayersService()
-        if players then
-                Dash.init(players)
-        end
         return true
 end
 
@@ -2064,8 +1470,12 @@ function AutoClash.teardown()
                 "teardown",
                 false
         )
+        if Dash and type(Dash.setHandler) == "function" then
+                Dash.setHandler(nil)
+        end
         AutoParry = nil
         GameInfo = nil
+        Dash = nil
         Utils = nil
         R.players = nil
         R.localUserId = nil
@@ -2127,6 +1537,7 @@ end
 AutoClash.__contract = {
         requires = {
                 AutoParry = "autoparry",
+                Dash = "dash",
                 GameInfo = "gameinfo",
                 Utils = "utils",
         },
