@@ -1087,6 +1087,7 @@ function ExodusUI.setup(deps)
         or type(deps.Controls.DynamicParry) ~= "table"
         or type(deps.Controls.DynamicParry.press) ~= "function"
         or type(deps.Controls.DynamicParry.release) ~= "function"
+        or type(deps.Controls.DynamicParry.tap) ~= "function"
         or type(deps.Controls.DynamicParry.setStateHandler) ~= "function"
         or type(deps.Utils.stop) ~= "function"
         or type(deps.Utils.name) ~= "function"
@@ -1435,16 +1436,10 @@ function ExodusUI.setup(deps)
         end
 
         -- Toque curto: um único parry, sem entrar no modo de spam.
-        safe(Controls.DynamicParry.press)
-        paintDynamicParry(true)
-        local tapToken = UIState.dynamicHoldToken
-        task.delay(DYNAMIC_TAP_DURATION, function()
-            if tapToken ~= UIState.dynamicHoldToken then
-                return
-            end
-            safe(Controls.DynamicParry.release)
-            paintDynamicParry(false)
-        end)
+        if type(Controls.DynamicParry.tap) == "function" then
+            safe(Controls.DynamicParry.tap)
+        end
+        paintDynamicParry(false)
     end
 
     trackConn(dynamicButton.InputBegan:Connect(function(input)
@@ -1478,7 +1473,11 @@ function ExodusUI.setup(deps)
 
     -- InputEnded global evita travar o parry quando o cursor/dedo sai do botão.
     trackConn(UIS.InputEnded:Connect(function(input)
-        if input ~= UIState.dynamicButtonInput then
+        if not UIState.dynamicButtonDown then
+            return
+        end
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then
             return
         end
         releaseDynamicParry()
