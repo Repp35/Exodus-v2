@@ -12,6 +12,7 @@ end
 local DEFAULTS = {
     AutoParry = true,
     AutoClash = true,
+    DynamicParry = false,
     CPS = 500,
     CPF = 8,
     SpamRateMode = "CPF",
@@ -36,6 +37,7 @@ function Config.validate(config)
     end
     if type(config.AutoParry) ~= "boolean"
         or type(config.AutoClash) ~= "boolean"
+        or type(config.DynamicParry) ~= "boolean"
         or type(config.ClashBallVisible) ~= "boolean"
     then
         return false, "flags booleanas inválidas"
