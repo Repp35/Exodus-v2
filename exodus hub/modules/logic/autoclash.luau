@@ -1502,6 +1502,12 @@ end
 function AutoClash.isActive()
         return R.active == true
 end
+function AutoClash.getTargetSwitch()
+        return {
+                timestampMs = R.lastClashSwitchAt * 1000,
+                intervalMs = R.clashIntervalMs,
+        }
+end
 function AutoClash.getStatus()
         local schema
         if Utils

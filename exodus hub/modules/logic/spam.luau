@@ -1,7 +1,7 @@
 -- [[ Spam ]]
 
 local Spam = {}
-local Remote, GameInfo, Utils, AutoParry
+local Remote, GameInfo, Utils, AutoParry, AutoClash
 
 local math_max = math.max
 local math_floor = math.floor
@@ -11,6 +11,12 @@ local clock = os.clock
 local DEFLECT_COOLDOWN_THRESHOLD = 0
 local CPF_MIN_FPS = 60
 local CPF_AVERAGE_ALPHA = 0.08
+local TARGET_SWITCH_BOOST_ENABLED = true
+local TARGET_SWITCH_BOOST_MULTIPLIER = 1.5
+local TARGET_SWITCH_BOOST_DURATION = 3
+local TARGET_SWITCH_MIN_CPF = 10
+local TARGET_SWITCH_THRESHOLD_CPS = 15
+local TARGET_SWITCH_PING_FACTOR = 1 / 3
 
 -- parry radius guard
 local SPAM_PARRY_RADIUS_GUARD = false
@@ -36,6 +42,7 @@ local cpfAverageDt = 1 / CPF_MIN_FPS
 local cpfClickAccumulator = 0
 local cpfFrameTime = 1 / CPF_MIN_FPS
 local cpfLastDt = 0
+local lastTargetSwitchTimestampMs = 0
 
 local Scheduler = {
 	phase = "stopped",
@@ -47,6 +54,11 @@ local Scheduler = {
 	cpfFps = 0,
 	cpfClicks = 0,
 	cpfCompensation = false,
+	targetSwitchBoost = false,
+	targetSwitchBoostUntil = 0,
+	targetSwitchIntervalMs = 0,
+	targetSwitchEffectiveIntervalMs = 0,
+	targetSwitchCps = 0,
 	parryRadiusGuard = false,
 	parryRadiusTTI = 0,
 	parryRadiusLimit = 0,
@@ -76,10 +88,16 @@ local function resetRuntime()
 	cpfClickAccumulator = 0
 	cpfFrameTime = 1 / CPF_MIN_FPS
 	cpfLastDt = 0
+	lastTargetSwitchTimestampMs = 0
 
 	Scheduler.cpfFps = 0
 	Scheduler.cpfClicks = 0
 	Scheduler.cpfCompensation = false
+	Scheduler.targetSwitchBoost = false
+	Scheduler.targetSwitchBoostUntil = 0
+	Scheduler.targetSwitchIntervalMs = 0
+	Scheduler.targetSwitchEffectiveIntervalMs = 0
+	Scheduler.targetSwitchCps = 0
 
 	Scheduler.parryRadiusGuard = false
 	Scheduler.parryRadiusTTI = 0
@@ -461,6 +479,88 @@ local function getModeAndRate()
 	return mode, math_max(rate, 0)
 end
 
+local function getTargetSwitchRate()
+	if not AutoClash
+		or type(AutoClash.getTargetSwitch) ~= "function"
+	then
+		return nil
+	end
+
+	local ok, switch = pcall(AutoClash.getTargetSwitch)
+	if not ok or type(switch) ~= "table" then
+		return nil
+	end
+
+	local timestampMs = tonumber(switch.timestampMs)
+	local intervalMs = tonumber(switch.intervalMs)
+	if not timestampMs
+		or not intervalMs
+		or timestampMs <= 0
+		or intervalMs <= 0
+	then
+		return nil
+	end
+
+	if timestampMs <= lastTargetSwitchTimestampMs then
+		return nil
+	end
+
+	lastTargetSwitchTimestampMs = timestampMs
+
+	local pingOneWay = 0
+	if AutoParry and type(AutoParry.getPingOneWay) == "function" then
+		local pingOk, value = pcall(AutoParry.getPingOneWay)
+		if pingOk then
+			pingOneWay = tonumber(value) or 0
+		end
+	end
+	if pingOneWay ~= pingOneWay
+		or pingOneWay == math.huge
+		or pingOneWay == -math.huge
+	then
+		pingOneWay = 0
+	end
+
+	local compensationMs = math.max(pingOneWay, 0)
+		* TARGET_SWITCH_PING_FACTOR
+	local effectiveIntervalMs = math.max(intervalMs - compensationMs, 1)
+	local cps = 1000 / effectiveIntervalMs
+
+	return {
+		intervalMs = intervalMs,
+		effectiveIntervalMs = effectiveIntervalMs,
+		cps = cps,
+	}
+end
+
+local function applyTargetSwitchBoost(mode, rate)
+	local switchRate = getTargetSwitchRate()
+	if switchRate then
+		Scheduler.targetSwitchIntervalMs = switchRate.intervalMs
+		Scheduler.targetSwitchEffectiveIntervalMs = switchRate.effectiveIntervalMs
+		Scheduler.targetSwitchCps = switchRate.cps
+		if TARGET_SWITCH_BOOST_ENABLED
+			and mode == "CPF"
+			and rate > TARGET_SWITCH_MIN_CPF
+			and switchRate.cps > TARGET_SWITCH_THRESHOLD_CPS
+		then
+			Scheduler.targetSwitchBoostUntil = getNow()
+				+ TARGET_SWITCH_BOOST_DURATION
+		end
+	end
+
+	local active = TARGET_SWITCH_BOOST_ENABLED
+		and mode == "CPF"
+		and rate > TARGET_SWITCH_MIN_CPF
+		and getNow() < Scheduler.targetSwitchBoostUntil
+	Scheduler.targetSwitchBoost = active
+
+	if active then
+		return rate * TARGET_SWITCH_BOOST_MULTIPLIER
+	end
+	return rate
+end
+
 -- runtime
 local function tick(dt)
 	if type(dt) ~= "number"
@@ -526,6 +626,7 @@ local function tick(dt)
 	end
 
 	local mode, rate = getModeAndRate()
+	rate = applyTargetSwitchBoost(mode, rate)
 
 	if not wasActive then
 		Scheduler.phase = "running"
@@ -651,8 +752,12 @@ function Spam.setup(deps)
 		or type(deps.Remote) ~= "table"
 		or type(deps.Remote.fireParry) ~= "function"
 		or type(deps.Utils) ~= "table"
+		or type(deps.AutoClash) ~= "table"
+		or type(deps.AutoClash.getTargetSwitch) ~= "function"
+		or type(deps.AutoParry) ~= "table"
+		or type(deps.AutoParry.getPingOneWay) ~= "function"
 	then
-		return false, "dependência ausente: Remote.fireParry ou Utils"
+		return false, "dependência ausente: Remote, Utils, AutoClash ou AutoParry"
 	end
 
 	if heartbeatConnection then
@@ -685,6 +790,8 @@ function Spam.setup(deps)
 		type(deps.AutoParry) == "table"
 		and deps.AutoParry
 		or nil
+
+	AutoClash = deps.AutoClash
 
 	if not GameInfo then
 		return false, "dependência ausente: GameInfo"
@@ -739,6 +846,11 @@ function Spam.resetState()
 	Scheduler.cpfFps = 0
 	Scheduler.cpfClicks = 0
 	Scheduler.cpfCompensation = false
+	Scheduler.targetSwitchBoost = false
+	Scheduler.targetSwitchBoostUntil = 0
+	Scheduler.targetSwitchIntervalMs = 0
+	Scheduler.targetSwitchEffectiveIntervalMs = 0
+	Scheduler.targetSwitchCps = 0
 	Scheduler.parryRadiusGuard = false
 	Scheduler.parryRadiusTTI = 0
 	Scheduler.parryRadiusLimit = 0
@@ -761,6 +873,11 @@ function Spam.getStatus()
 		cpfFps = Scheduler.cpfFps,
 		cpfClicks = Scheduler.cpfClicks,
 		cpfCompensation = Scheduler.cpfCompensation,
+		targetSwitchBoost = Scheduler.targetSwitchBoost,
+		targetSwitchBoostUntil = Scheduler.targetSwitchBoostUntil,
+		targetSwitchIntervalMs = Scheduler.targetSwitchIntervalMs,
+		targetSwitchEffectiveIntervalMs = Scheduler.targetSwitchEffectiveIntervalMs,
+		targetSwitchCps = Scheduler.targetSwitchCps,
 
 		parryRadiusGuard = Scheduler.parryRadiusGuard,
 		parryRadiusTTI = Scheduler.parryRadiusTTI,
