@@ -126,6 +126,24 @@ end
 function DynamicParry.setStateHandler(handler)
     onStateChanged = type(handler) == "function" and handler or nil
 end
+function DynamicParry.tap()
+    if R.pressed or R.holding then
+        return false
+    end
+    if Utils and type(Utils.getConfig) == "function" then
+        local config = Utils.getConfig()
+        if type(config) == "table" and config.AutoClash == true then
+            emitState("released")
+            return false
+        end
+    end
+    local generation = R.generation
+    task.spawn(function()
+        requestParry(generation)
+    end)
+    emitState("released")
+    return true
+end
 function DynamicParry.press()
     if R.pressed then
         return false
