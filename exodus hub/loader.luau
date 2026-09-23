@@ -182,9 +182,6 @@ local function findLocalModule(name)
 		if rootOk and rootExists then
 			availableRoots[#availableRoots + 1] = root
 			walk(root, 0)
-			if #matches > 0 then
-				break
-			end
 		end
 	end
 	if #matches == 0 then
@@ -218,8 +215,12 @@ local function clearRegistry()
 	Exodus.Runtime = nil
 	Exodus.Context = nil
 	Exodus.UI = nil
+	Exodus.Diagnostics = nil
+	Exodus.Version = nil
+	Exodus.StartError = nil
 	Exodus.UIReady = false
 	Exodus.Started = false
+	_G.ExodusOnBurst = nil
 end
 local function stopPreviousRuntime()
 	if type(Modules.remote) == "table" and type(Modules.remote.stopMaintenance) == "function" then
@@ -346,7 +347,11 @@ local function resolveDeps(loaded, requires)
 		return deps
 	end
 	for depName, sourceKey in pairs(requires) do
-		deps[depName] = loaded[sourceKey]
+		local dependency = loaded[sourceKey]
+		if dependency == nil then
+			return nil, sourceKey
+		end
+		deps[depName] = dependency
 	end
 	return deps
 end
@@ -385,7 +390,7 @@ local function initializeModules(loaded, log)
 	local characterBinds = collectCharacterBinds(loaded)
 	log.info(("%d m贸dulos com bind de personagem"):format(#characterBinds))
 	for _, name in ipairs(MODULE_ORDER) do
-		if name ~= "utils" and name ~= "config" then
+		if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
 			local module = loaded[name]
 			if type(module) ~= "table" or type(module.setup) ~= "function" then
 				log.warn(name .. " n茫o possui setup")
@@ -395,7 +400,15 @@ local function initializeModules(loaded, log)
 				return false, name .. " não possui setup()"
 			end
 			local contract = contractOf(module)
-			local deps = resolveDeps(loaded, contract.requires)
+			local deps, missingDependency = resolveDeps(loaded, contract.requires)
+			if not deps then
+				local message = ("%s depende de %s, mas esse módulo não foi carregado"):format(name, tostring(missingDependency))
+				log.warn(message)
+				if type(log.recordError) == "function" then
+					log.recordError("Loader", message)
+				end
+				return false, message
+			end
 			if name == "character" then
 				deps.characterBinds = characterBinds
 			end
