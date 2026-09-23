@@ -1095,7 +1095,7 @@ function ExodusUI.setup(deps)
         or type(deps.UIConfig.panelToggles) ~= "table"
         or type(deps.UIConfig.panelComponents) ~= "table"
     then
-        return false
+        return false, "dependência ausente: Utils, Controls.DynamicParry ou UIConfig"
     end
     Utils = deps.Utils
     UIConfig = deps.UIConfig

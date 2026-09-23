@@ -1385,7 +1385,7 @@ end
 -- setup
 function AutoClash.setup(deps)
         if type(deps) ~= "table" then
-                return false
+                return false, "dependências inválidas"
         end
         local required = {
                 { "AutoParry", "getParryRadius" },
@@ -1415,7 +1415,7 @@ function AutoClash.setup(deps)
                 if not object
                         or type(object[requirement[2]])
                                 ~= "function" then
-                        return false
+                        return false, requirement[1] .. "." .. requirement[2] .. " ausente"
                 end
         end
         if Utils then

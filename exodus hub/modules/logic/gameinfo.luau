@@ -352,7 +352,7 @@ function GameInfo.setup(deps)
         or type(deps.Utils.getReplicatedStorage) ~= "function"
         or type(deps.Utils.getWorkspace) ~= "function"
     then
-        return false
+        return false, "dependência ausente: Utils"
     end
     Utils = deps.Utils
     Players = Utils.getPlayers()

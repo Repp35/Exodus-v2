@@ -298,20 +298,18 @@ local function loadModule(name, url)
 	end
 	return nil, fetchError or localPath
 end
-local function loadModules(urls, log)
+local function loadModules(urls)
 	local loaded = {}
 	for _, name in ipairs(MODULE_ORDER) do
 		if name ~= "utils" then
-				local module, loadError, source = loadModule(name, urls[name])
+			local module, loadError = loadModule(name, urls[name])
 				if not module then
 					return nil, name, loadError
+				end
+				loaded[name] = module
 			end
-			loaded[name] = module
-			log.info(("%s carregado%s"):format(name, source == "local" and " localmente" or ""))
 		end
-	end
-	loaded.utils = log
-	return loaded
+		return loaded
 end
 
 -- setup
@@ -351,18 +349,18 @@ local function collectCharacterBinds(loaded)
 					detach = module.detachCharacter,
 				}
 
-			elseif hasBindFlag and not hasBindFn then
-				if type(loaded.utils) == "table" and type(loaded.utils.recordError) == "function" then
-					loaded.utils.recordError("Loader", ("%s declara bindCharacter no contrato mas não exporta módulo.bindCharacter(): o módulo nunca será vinculado ao personagem"):format(name))
+				elseif hasBindFlag then
+					return nil, name, "contrato bindCharacter incompleto"
 				end
-			end
 		end
 	end
 	return binds
 end
-local function initializeModules(loaded, log)
-	local characterBinds = collectCharacterBinds(loaded)
-	log.info(("%d m贸dulos com bind de personagem"):format(#characterBinds))
+local function initializeModules(loaded)
+	local characterBinds, bindModule, bindError = collectCharacterBinds(loaded)
+	if not characterBinds then
+		return false, bindModule, bindError
+	end
 	for _, name in ipairs(MODULE_ORDER) do
 		if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
 			local module = loaded[name]
@@ -382,8 +380,7 @@ local function initializeModules(loaded, log)
 				if not ok or initialized ~= true then
 					return false, name, initialized
 			end
-			log.info(name .. " inicializado")
-		end
+			end
 	end
 	return true
 end
@@ -528,11 +525,12 @@ function Loader.start()
 	utils.setLifecyclePhase("loading")
 	Exodus.Utils = utils
 	Exodus.State = utils.getStateSnapshot()
-	local loaded, moduleName, loadError = loadModules(urls, utils)
+	local loaded, moduleName, loadError = loadModules(urls)
 	if not loaded then
 		utils.stop()
 		return false, moduleName, loadError
 	end
+	loaded.utils = utils
 	Exodus.Context = loaded
 	local defaultsOk, defaults = pcall(loaded.config.defaults)
 	if not defaultsOk or type(defaults) ~= "table" then
@@ -556,7 +554,7 @@ function Loader.start()
 	Exodus.Config = utils.getConfigSnapshot()
 	Exodus.ModuleURLs = utils.getModuleURLsSnapshot()
 	utils.setLifecyclePhase("initializing")
-	local modulesReady, moduleName, modulesError = initializeModules(loaded, utils)
+	local modulesReady, moduleName, modulesError = initializeModules(loaded)
 	if not modulesReady then
 		utils.stop()
 		return false, moduleName, modulesError

@@ -338,14 +338,14 @@ end
 -- setup
 function Remote.setup(deps)
     if type(deps) ~= "table" or not deps.Utils then
-        return false
+        return false, "dependência ausente: Utils"
     end
     Utils = deps.Utils
     HookState.register = registerRemote
     if not installHooks() then
         HookState.register = nil
         Utils.warn("hooks do Remote indisponíveis")
-        return false
+        return false, "hooks indisponíveis"
     end
     remoteState = "hooked"
     initializeStorage()
