@@ -22,7 +22,6 @@ local MAX_DIAGNOSTIC_ENTRIES = 32
 local DATA_FOLDER = "Exodus Hub"
 
 -- bootstrap
--- disable client-side CPS filter, server handles it
 task.defer(function()
     pcall(function()
         workspace:SetAttribute("CPS_LIMIT", 9999)
