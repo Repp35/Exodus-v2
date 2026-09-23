@@ -330,7 +330,7 @@ local autoClashTrack, autoClashThumb
 local DYNAMIC_W, DYNAMIC_H = 120, 90
 local DYNAMIC_TITLE_H = 26
 local DYNAMIC_RELEASE_DELAY = 0.12
-local DYNAMIC_HOLD_THRESHOLD = 0.2
+local DYNAMIC_HOLD_THRESHOLD = 0.1
 local DYNAMIC_TAP_DURATION = 0.08
 local DYNAMIC_MOVE_THRESHOLD_SQ = 100 -- 10 pixels squared
 local DYNAMIC_FLASH_DURATION = 0.07
@@ -1469,7 +1469,7 @@ function ExodusUI.setup(deps)
         local holdToken = UIState.dynamicHoldToken
         paintDynamicParry(true)
 
-        -- Só vira spam se permanecer pressionado por pelo menos 200 ms.
+        -- Só vira spam se permanecer pressionado por pelo menos 100 ms.
         task.delay(DYNAMIC_HOLD_THRESHOLD, function()
             if holdToken ~= UIState.dynamicHoldToken
                 or not UIState.dynamicButtonDown
