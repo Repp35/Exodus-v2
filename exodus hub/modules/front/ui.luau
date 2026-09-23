@@ -3,6 +3,7 @@
 -- services
 local ExodusUI = {}
 local Utils
+local UIConfig
 local Controls = {}
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -17,6 +18,8 @@ local UIState = {
     panelOpen = false,
     spamOn = false,
     clashBallOn = false,
+    dynamicParryOn = false,
+    dynamicParryState = "idle",
     btnIsDragging = function() return false end,
     panelTween = nil,
     btnTween = nil,
@@ -26,6 +29,8 @@ local screenGui
 local floatingButton
 local clashBall
 local miniGui
+local dynamicGui
+local dynamicButton
 local configPanel
 local particleLayer
 local titleBar
@@ -311,6 +316,7 @@ end
 local CLASH_SIZE = 64
 local OFFSCREEN_X = -CLASH_SIZE - 40
 local autoClashTrack, autoClashThumb
+local DYNAMIC_W, DYNAMIC_H = 132, 96
 
 -- clash ui
 local function paintClashBall()
@@ -402,6 +408,39 @@ setSpam = function(v)
         )
     end
 end
+local function paintDynamicParry()
+    if not dynamicButton or not dynamicButton.Parent then
+        return
+    end
+    local state = UIState.dynamicParryState
+    local color = state == "holding"
+        and C.accentPink
+        or state == "pressed"
+        and (UIState.dynamicParryOn and C.green or C.red)
+        or UIState.dynamicParryOn and C.green or C.red
+    dynamicButton.Text = state == "holding" and "S" or "P"
+    twPlay(
+        dynamicButton,
+        0.2,
+        {
+            BackgroundColor3 = color,
+            TextColor3 = Color3.new(1, 1, 1),
+            Size = state == "pressed"
+                and UDim2.new(1, -22, 0, 44)
+                or UDim2.new(1, -16, 0, 48),
+        },
+        EASE_SINE,
+        DIR_INOUT
+    )
+end
+local function setDynamicParry(v)
+    if not Controls.DynamicParry
+        or type(Controls.DynamicParry.setEnabled) ~= "function" then
+        return
+    end
+    UIState.dynamicParryOn = Controls.DynamicParry.setEnabled(v == true) == true
+    paintDynamicParry()
+end
 local PW, PH = 540, 380
 local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
 local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 52, 68, 118
@@ -438,8 +477,14 @@ local function cleanupUI()
     UIState.panelOpen = false
     UIState.spamOn = false
     UIState.clashBallOn = false
+    UIState.dynamicParryOn = false
+    UIState.dynamicParryState = "idle"
     if Utils then
         Utils.setManualSpamActive(false)
+    end
+    if Controls.DynamicParry
+        and type(Controls.DynamicParry.release) == "function" then
+        Controls.DynamicParry.release()
     end
     UIState.panelTween = nil
     UIState.btnTween = nil
@@ -453,6 +498,8 @@ local function cleanupUI()
     floatingButton = nil
     clashBall = nil
     miniGui = nil
+    dynamicGui = nil
+    dynamicButton = nil
     configPanel = nil
     particleLayer = nil
     titleBar = nil
@@ -672,7 +719,11 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
     local config = Utils.getConfig()
     local initial = configKey and config[configKey] or false
     local state = initial
-    local _, _, setVisual = makeToggle(f, initial)
+    local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
+    if configKey == "AutoClash" then
+        autoClashTrack = toggleTrack
+        autoClashThumb = toggleThumb
+    end
     trackConn(
         inst(
             "TextButton",
@@ -957,15 +1008,36 @@ function ExodusUI.setup(deps)
         or type(deps.Utils.normalizeSpamRate) ~= "function"
         or type(deps.Utils.isManualSpamActive) ~= "function"
         or type(deps.Utils.setManualSpamActive) ~= "function"
+        or type(deps.Controls) ~= "table"
+        or type(deps.Controls.DynamicParry) ~= "table"
+        or type(deps.Controls.DynamicParry.press) ~= "function"
+        or type(deps.Controls.DynamicParry.release) ~= "function"
+        or type(deps.Controls.DynamicParry.setEnabled) ~= "function"
+        or type(deps.Controls.DynamicParry.setStateHandler) ~= "function"
         or type(deps.Utils.stop) ~= "function"
         or type(deps.Utils.name) ~= "function"
         or type(deps.Utils.version) ~= "function"
         or type(deps.Utils.author) ~= "function"
+        or type(deps.UIConfig) ~= "table"
+        or type(deps.UIConfig.panelToggles) ~= "table"
+        or type(deps.UIConfig.panelComponents) ~= "table"
     then
         return false
     end
     Utils = deps.Utils
+    UIConfig = deps.UIConfig
     Controls = type(deps.Controls) == "table" and deps.Controls or {}
+    if type(Controls.DynamicParry.setAutoClashDisabledHandler) == "function" then
+        Controls.DynamicParry.setAutoClashDisabledHandler(function()
+            UIState.clashBallOn = false
+            paintClashBall()
+            syncAutoClashToggle()
+        end)
+    end
+    Controls.DynamicParry.setStateHandler(function(state)
+        UIState.dynamicParryState = state
+        paintDynamicParry()
+    end)
     if type(_G.ExodusUICleanup) == "function" then
         pcall(_G.ExodusUICleanup)
     else
@@ -977,6 +1049,8 @@ function ExodusUI.setup(deps)
     UIState.panelOpen = false
     UIState.spamOn = false
     UIState.clashBallOn = false
+    UIState.dynamicParryOn = Utils.getConfig().DynamicParry == true
+    UIState.dynamicParryState = "idle"
     UIState.panelTween = nil
     UIState.btnTween = nil
     _G.ExodusUICleanup = cleanupUI
@@ -1176,6 +1250,100 @@ function ExodusUI.setup(deps)
             setConfigValue("MiniY", miniGui.Position.Y.Offset)
         end
     )
+    local dynamicX = config.DynamicParryX or (viewport().X - DYNAMIC_W - 14)
+    local dynamicY = config.DynamicParryY or (viewport().Y / 2 + MINI_H / 2 + 12)
+    dynamicGui = inst(
+        "Frame",
+        {
+            Name = "ExodusDynamicParry",
+            Size = UDim2.new(0, DYNAMIC_W, 0, DYNAMIC_H),
+            Position = UDim2.new(0, dynamicX, 0, dynamicY),
+            BackgroundColor3 = C.header,
+            BorderSizePixel = 0,
+            ZIndex = 15,
+            Parent = screenGui
+        }
+    )
+    corner(dynamicGui, 10)
+    registerFlow(stroke(dynamicGui, C.accentPink, 1.5))
+    local dynamicTitleBar = inst(
+        "Frame",
+        {
+            Size = UDim2.new(1, 0, 0, 26),
+            BackgroundColor3 = Color3.fromRGB(20, 20, 46),
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
+            ZIndex = 16,
+            Parent = dynamicGui
+        }
+    )
+    corner(dynamicTitleBar, 10)
+    inst(
+        "Frame",
+        {
+            Size = UDim2.new(1, 0, 0, 12),
+            Position = UDim2.new(0, 0, 1, -12),
+            BackgroundColor3 = Color3.fromRGB(20, 20, 46),
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
+            ZIndex = 16,
+            Parent = dynamicTitleBar
+        }
+    )
+    inst(
+        "TextLabel",
+        {
+            Size = UDim2.new(1, -16, 1, 0),
+            Position = UDim2.new(0, 8, 0, 0),
+            BackgroundTransparency = 1,
+            Text = "Dynamic Parry",
+            TextColor3 = C.subtext,
+            TextScaled = true,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            Font = Enum.Font.GothamBold,
+            ZIndex = 17,
+            Parent = dynamicTitleBar
+        }
+    )
+    dynamicButton = inst(
+        "TextButton",
+        {
+            Name = "DynamicParryButton",
+            Size = UDim2.new(1, -16, 0, 48),
+            Position = UDim2.new(0, 8, 0, 32),
+            BackgroundColor3 = UIState.dynamicParryOn and C.green or C.red,
+            BorderSizePixel = 0,
+            Text = "P",
+            TextColor3 = Color3.new(1, 1, 1),
+            TextSize = 21,
+            Font = Enum.Font.GothamBold,
+            ZIndex = 16,
+            Parent = dynamicGui
+        }
+    )
+    corner(dynamicButton, 8)
+    trackConn(dynamicButton.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+        Controls.DynamicParry.press()
+    end))
+    trackConn(dynamicButton.InputEnded:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+        Controls.DynamicParry.release()
+    end))
+    makeDraggable(
+        dynamicTitleBar,
+        dynamicGui,
+        function()
+            setConfigValue("DynamicParryX", dynamicGui.Position.X.Offset)
+            setConfigValue("DynamicParryY", dynamicGui.Position.Y.Offset)
+        end
+    )
     configPanel =
         inst(
         "Frame",
@@ -1350,29 +1518,37 @@ function ExodusUI.setup(deps)
         end
     ))
     local yL = 4
-    yL = createToggleCard("Auto Parry", "AutoParry", yL, colLeft)
-    local function buildAutoClash(y)
-        local f = cardFrame(y, CARD_H, colLeft)
-        inst("TextLabel", {Size = UDim2.new(0.55, 0, 1, 0), Position = UDim2.new(0, 14, 0, 0), BackgroundTransparency = 1, Text = "Auto Clash", TextColor3 = C.text, TextSize = 14, Font = Enum.Font.GothamSemibold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7, Parent = f})
-        local track, thumb, setVisual = makeToggle(f, config.AutoClash)
-        autoClashTrack, autoClashThumb = track, thumb
-        trackConn(inst("TextButton", {Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", ZIndex = 9, Parent = f}).Activated:Connect(function()
-            local nextValue = not UIState.clashBallOn
-            setConfigValue("AutoClash", nextValue)
-            setClashBall(nextValue, true)
-            setVisual(nextValue)
+    local toggleCallbacks = {
+        AutoClash = function(value)
+            setClashBall(value, true)
             paintClashBall()
-        end))
-        return y + CARD_H + CARD_GAP
+        end,
+        DynamicParry = setDynamicParry,
+        ClashBallVisible = showClashBall,
+    }
+    for _, definition in ipairs(UIConfig.panelToggles) do
+        if definition.kind == "toggle" then
+            yL = createToggleCard(
+                definition.label,
+                definition.key,
+                yL,
+                colLeft,
+                toggleCallbacks[definition.key]
+            )
+        end
     end
-    yL = buildAutoClash(yL)
-    yL = createToggleCard("Mini Clash UI", "ClashBallVisible", yL, colLeft, function(v)
-        showClashBall(v)
-    end)
     local yR = 4
-    yR = createRateSelector(yR, colRight)
-    yR = createKeybindSelector(yR, colRight)
-    yR = createSpamCard(yR, colRight)
+    local components = {
+        rate_selector = createRateSelector,
+        keybind_selector = createKeybindSelector,
+        manual_spam = createSpamCard,
+    }
+    for _, definition in ipairs(UIConfig.panelComponents) do
+        local createComponent = components[definition.kind]
+        if createComponent then
+            yR = createComponent(yR, colRight)
+        end
+    end
     if config.ClashBallVisible then
         clashBall.Position = UDim2.new(0, clashX, 0, clashY)
     end
