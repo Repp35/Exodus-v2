@@ -9,7 +9,7 @@ local RunServiceService = game:GetService("RunService")
 local WorkspaceService = game:GetService("Workspace")
 
 -- metadata
-local SCRIPT_VERSION = "33.10"
+local SCRIPT_VERSION = "35.10"
 local API_VERSION = 1
 local SCRIPT_NAME = "Exodus Hub"
 local INTERNAL_NAME = "Exodus"
