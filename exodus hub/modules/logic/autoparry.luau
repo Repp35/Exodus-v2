@@ -83,12 +83,15 @@ local Runtime = {
 	minPing               = nil,
 	pingTimer             = 0,
 	pingOneWay            = DEFAULT_PING_ONE_WAY,
-	resilienceBonus       = 0,
 	resilienceBonusAt     = -1,
 	parryRadius           = 0,
+	baseParryRadius       = Tuning.DEFLECT_RADIUS,
+	resilienceBonus       = 0,
 	deflectWindow         = 0,
 	effectiveWindow       = 0,
 	lastTTI               = math.huge,
+	lastDistance          = 0,
+	lastDistanceToParryRadius = 0,
 	lastSpeed             = 0,
 	lastFireAt            = 0,
 	cooldownObservedAt    = 0,
@@ -264,9 +267,11 @@ local function computeTiming(rootPosition, position, speed, time)
 	else
 		tti = distanceToParryRadius / speed
 	end
-	return {
-		parryRadius           = parryRadius,
-		deflectWindow         = deflectWindow,
+		return {
+			parryRadius           = parryRadius,
+			pureRadius            = Tuning.DEFLECT_RADIUS,
+			resilienceBonus       = getResilienceBonus(time),
+			deflectWindow         = deflectWindow,
 		effectiveWindow       = effectiveWindow,
 		tti                   = tti,
 		speed                 = speed,
@@ -560,11 +565,15 @@ local function bindCharacter(character)
 			setPhase(PHASE_WAITING, "timing_unavailable")
 			return
 		end
-		Runtime.parryRadius = timing.parryRadius
-		Runtime.deflectWindow = timing.deflectWindow
-		Runtime.effectiveWindow = timing.effectiveWindow
-		Runtime.lastTTI = timing.tti
-		Runtime.lastSpeed = timing.speed
+			Runtime.parryRadius = timing.parryRadius
+			Runtime.baseParryRadius = timing.pureRadius
+			Runtime.resilienceBonus = timing.resilienceBonus
+			Runtime.deflectWindow = timing.deflectWindow
+			Runtime.effectiveWindow = timing.effectiveWindow
+			Runtime.lastTTI = timing.tti
+			Runtime.lastDistance = timing.distance
+			Runtime.lastDistanceToParryRadius = timing.distanceToParryRadius
+			Runtime.lastSpeed = timing.speed
 
 		local insideEffectiveRadius = timing.distance <= timing.parryRadius
 		if not insideEffectiveRadius then
@@ -652,9 +661,13 @@ local function resetState()
 	Runtime.minPing = nil
 	Runtime.pingOneWay = DEFAULT_PING_ONE_WAY
 	Runtime.parryRadius = 0
+	Runtime.baseParryRadius = Tuning.DEFLECT_RADIUS
+	Runtime.resilienceBonus = 0
 	Runtime.deflectWindow = 0
 	Runtime.effectiveWindow = 0
 	Runtime.lastTTI = math.huge
+	Runtime.lastDistance = 0
+	Runtime.lastDistanceToParryRadius = 0
 	Runtime.lastSpeed = 0
 	Runtime.lastFireAt = 0
 	Runtime.cooldownObservedAt = 0
@@ -747,6 +760,39 @@ function AutoParry.getFullParryRadius()
 	return Runtime.parryRadius
 end
 
+function AutoParry.getPureRadius()
+	return Tuning.DEFLECT_RADIUS
+end
+
+function AutoParry.getFullRadius()
+	return Runtime.parryRadius
+end
+
+function AutoParry.getResilienceSize()
+	return Runtime.resilienceBonus
+end
+
+function AutoParry.getResilienceStatus()
+	return {
+		stack = Resilience.stack,
+		size = Runtime.resilienceBonus,
+		perParry = Tuning.RES_PER_PARRY,
+		cap = Tuning.RES_CAP_STUDS,
+		maxStack = MAX_RES_STACK,
+	}
+end
+
+function AutoParry.getRadiusStatus()
+	return {
+		pureRadius = Tuning.DEFLECT_RADIUS,
+		resilience = AutoParry.getResilienceStatus(),
+		fullRadius = Runtime.parryRadius,
+		fullParryRadius = Runtime.parryRadius,
+		deflectWindow = Runtime.deflectWindow,
+		effectiveWindow = Runtime.effectiveWindow,
+	}
+end
+
 function AutoParry.getDeflectWindow()
 	return Runtime.deflectWindow
 end
@@ -795,20 +841,45 @@ end
 
 function AutoParry.getTimingStatus()
 	return {
-		parryRadius     = Runtime.parryRadius,
+		radius = AutoParry.getRadiusStatus(),
+		parryRadius = Runtime.parryRadius,
+		fullRadius = Runtime.parryRadius,
 		fullParryRadius = Runtime.parryRadius,
-		deflectWindow   = Runtime.deflectWindow,
+		deflectWindow = Runtime.deflectWindow,
 		effectiveWindow = Runtime.effectiveWindow,
-		tti             = Runtime.lastTTI,
-		speed           = Runtime.lastSpeed,
-		pingOneWay      = Runtime.pingOneWay,
-		stationary      = false,
+		tti = Runtime.lastTTI,
+		speed = Runtime.lastSpeed,
+		distance = Runtime.lastDistance,
+		distanceToFullRadius = Runtime.lastDistanceToParryRadius,
+		pingOneWay = Runtime.pingOneWay,
+		stationary = false,
 	}
 end
 
 function AutoParry.getStatus()
 	return {
 		schema          = Utils and Utils.apiVersion and Utils.apiVersion() or nil,
+		api = {
+			name = "AutoParry",
+			version = 2,
+		},
+		lifecycle = {
+			phase = phaseString,
+			bound = Runtime.bound == true,
+		},
+		radius = AutoParry.getRadiusStatus(),
+		resilience = AutoParry.getResilienceStatus(),
+		timing = AutoParry.getTimingStatus(),
+		ping = {
+			oneWay = Runtime.pingOneWay,
+			minimum = Runtime.minPing,
+		},
+		cycle = {
+			armed = ParryState.armed == true,
+			fired = ParryState.fired == true,
+			lastFireAt = Runtime.lastFireAt,
+			lastTTI = Runtime.lastTTI,
+		},
 		phase           = phaseString,
 		bound           = Runtime.bound == true,
 		armed           = ParryState.armed == true,
