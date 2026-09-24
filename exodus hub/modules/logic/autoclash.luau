@@ -9,7 +9,7 @@ local Utils
 -- tuning
 local T = {
         -- activation
-        RETURN_WIN_LO = 0.160,
+        RETURN_WIN_LO = 0.15,
         RETURN_WIN_MIN_FACTOR = 0.10,
         RETURN_SPD_LO = 60,
         RETURN_SPD_HI = 600,
@@ -36,7 +36,7 @@ local T = {
         OWN_DASH_ESCAPE_MIN_SEPARATION_SPEED = 18,
         OWN_DASH_ESCAPE_SPEED_FACTOR = 0.08,
         -- deactivation
-        DEACT_DIRECTION_MAX_LO = 0.10,
+        DEACT_DIRECTION_MAX_LO = 0.11,
         DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
         DEACT_DIRECTION_SPD_LO = 60,
         DEACT_DIRECTION_SPD_HI = 600,
