@@ -8,6 +8,11 @@ local function printRawError(moduleName, message)
 		pcall(print, output)
 	end
 end
+local function printStartup(message)
+	if type(print) == "function" then
+		pcall(print, message)
+	end
+end
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 Exodus.Modules = Modules
@@ -519,6 +524,7 @@ local function waitForLocalPlayer(timeout)
 	return false, "LocalPlayer indispon铆vel ap贸s esperar " .. tostring(timeout or 10) .. "s"
 end
 function Loader.start()
+	printStartup("Exodus: iniciando")
 	stopPreviousRuntime()
 	clearRegistry()
 	local playerReady, playerError = waitForLocalPlayer(10)
@@ -598,7 +604,7 @@ function Loader.start()
 	utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
 	Exodus.Started = true
 	Exodus.Version = utils.version()
-	utils.info(("%s %s inicializado"):format(utils.name(), utils.version()))
+	printStartup("Exodus: iniciado")
 	return true
 end
 Exodus.Loader = Loader
