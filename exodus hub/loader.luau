@@ -391,9 +391,9 @@ local function initializeModules(loaded)
 			if name == "character" then
 				deps.characterBinds = characterBinds
 			end
-			local ok, initialized = pcall(module.setup, deps)
+			local ok, initialized, setupError = pcall(module.setup, deps)
 			if not ok or initialized ~= true then
-				return false, name, initialized
+				return false, name, ok and setupError or initialized
 			end
 		end
 	end

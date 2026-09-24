@@ -948,6 +948,7 @@ Spam.__contract = {
 		Utils = "utils",
 		GameInfo = "gameinfo",
 		AutoParry = "autoparry",
+		AutoClash = "autoclash",
 	},
 }
 
