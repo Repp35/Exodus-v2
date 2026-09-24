@@ -204,14 +204,15 @@ local function getDataPosition(data)
         return typeof(position) == "Vector3" and position or nil
 end
 local function getPingOneWay()
-        if not AutoParry or type(AutoParry.getPingOneWay) ~= "function" then
-                return 0
-        end
-        local ok, value = pcall(AutoParry.getPingOneWay)
-        if not ok then
-                return 0
-        end
-        value = tonumber(value)
+	if not AutoParry or type(AutoParry.getStatus) ~= "function" then
+		return 0
+	end
+	local ok, status = pcall(AutoParry.getStatus)
+	if not ok or type(status) ~= "table"
+		or type(status.ping) ~= "table" then
+		return 0
+	end
+	local value = tonumber(status.ping.oneWay)
         if not value
                 or value <= 0
                 or value == math.huge
@@ -423,13 +424,14 @@ end
 
 -- parry
 local function refreshParryRadius(t)
-        if not AutoParry
-                or type(AutoParry.getParryRadius) ~= "function" then
-                return
-        end
-        local ok, radius =
-                pcall(AutoParry.getParryRadius, t)
-        radius = ok and tonumber(radius) or nil
+	if not AutoParry or type(AutoParry.getRadius) ~= "function" then
+		return
+	end
+	local ok, radiusStatus =
+		pcall(AutoParry.getRadius, "geometry")
+	local radius = ok and type(radiusStatus) == "table"
+		and tonumber(radiusStatus.fullRadius)
+		or nil
         if radius
                 and radius == radius
                 and radius >= 0
@@ -1484,8 +1486,8 @@ function AutoClash.setup(deps)
                 return false, "dependências inválidas"
         end
         local required = {
-                { "AutoParry", "getParryRadius" },
-                { "AutoParry", "getPingOneWay" },
+                { "AutoParry", "getRadius" },
+                { "AutoParry", "getStatus" },
                 { "Dash", "setHandler" },
                 { "GameInfo", "getSnapshot" },
                 { "GameInfo", "isSnapshotValid" },

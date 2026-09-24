@@ -752,27 +752,7 @@ function AutoParry.onBallSync(data)
 end
 
 -- api
-function AutoParry.getParryRadius()
-	return Runtime.parryRadius
-end
-
-function AutoParry.getFullParryRadius()
-	return Runtime.parryRadius
-end
-
-function AutoParry.getPureRadius()
-	return Tuning.DEFLECT_RADIUS
-end
-
-function AutoParry.getFullRadius()
-	return Runtime.parryRadius
-end
-
-function AutoParry.getResilienceSize()
-	return Runtime.resilienceBonus
-end
-
-function AutoParry.getResilienceStatus()
+local function getResilienceStatus()
 	return {
 		stack = Resilience.stack,
 		size = Runtime.resilienceBonus,
@@ -782,35 +762,41 @@ function AutoParry.getResilienceStatus()
 	}
 end
 
-function AutoParry.getRadiusStatus()
+function AutoParry.getRadius(mode)
+	mode = mode or "geometry"
+	if mode ~= "geometry"
+		and mode ~= "tti"
+		and mode ~= "speed_distance"
+	then
+		mode = "geometry"
+	end
+
+	local speed = Runtime.lastSpeed
+	local distance = Runtime.lastDistance
+	local tti = speed > 0 and distance / speed or math.huge
+	local fullRadius = Runtime.parryRadius
+	local value = fullRadius
+	if mode == "tti" then
+		value = tti
+	elseif mode == "speed_distance" then
+		value = {
+			speed = speed,
+			distance = distance,
+		}
+	end
+
 	return {
+		mode = mode,
+		value = value,
 		pureRadius = Tuning.DEFLECT_RADIUS,
-		resilience = AutoParry.getResilienceStatus(),
-		fullRadius = Runtime.parryRadius,
-		fullParryRadius = Runtime.parryRadius,
+		resilience = getResilienceStatus(),
+		fullRadius = fullRadius,
 		deflectWindow = Runtime.deflectWindow,
 		effectiveWindow = Runtime.effectiveWindow,
+		distance = distance,
+		speed = speed,
+		tti = tti,
 	}
-end
-
-function AutoParry.getDeflectWindow()
-	return Runtime.deflectWindow
-end
-
-function AutoParry.getEffectiveWindow()
-	return Runtime.effectiveWindow
-end
-
-function AutoParry.getTTI()
-	return Runtime.lastTTI
-end
-
-function AutoParry.getPingOneWay()
-	return Runtime.pingOneWay
-end
-
-function AutoParry.getLastFireAt()
-	return Runtime.lastFireAt
 end
 
 function AutoParry.getTiming(snapshot, time, rootPosition)
@@ -839,37 +825,32 @@ function AutoParry.getTiming(snapshot, time, rootPosition)
 	return computeTiming(rootPosition, position, speed, time)
 end
 
-function AutoParry.getTimingStatus()
-	return {
-		radius = AutoParry.getRadiusStatus(),
-		parryRadius = Runtime.parryRadius,
-		fullRadius = Runtime.parryRadius,
-		fullParryRadius = Runtime.parryRadius,
-		deflectWindow = Runtime.deflectWindow,
-		effectiveWindow = Runtime.effectiveWindow,
-		tti = Runtime.lastTTI,
-		speed = Runtime.lastSpeed,
-		distance = Runtime.lastDistance,
-		distanceToFullRadius = Runtime.lastDistanceToParryRadius,
-		pingOneWay = Runtime.pingOneWay,
-		stationary = false,
-	}
-end
-
 function AutoParry.getStatus()
 	return {
 		schema          = Utils and Utils.apiVersion and Utils.apiVersion() or nil,
 		api = {
 			name = "AutoParry",
-			version = 2,
+			version = 3,
+			endpoints = {
+				"getRadius",
+				"getTiming",
+				"getStatus",
+			},
 		},
 		lifecycle = {
 			phase = phaseString,
 			bound = Runtime.bound == true,
 		},
-		radius = AutoParry.getRadiusStatus(),
-		resilience = AutoParry.getResilienceStatus(),
-		timing = AutoParry.getTimingStatus(),
+		radius = AutoParry.getRadius("geometry"),
+		resilience = getResilienceStatus(),
+		timing = {
+			tti = Runtime.lastTTI,
+			speed = Runtime.lastSpeed,
+			distance = Runtime.lastDistance,
+			distanceToRadius = Runtime.lastDistanceToParryRadius,
+			deflectWindow = Runtime.deflectWindow,
+			effectiveWindow = Runtime.effectiveWindow,
+		},
 		ping = {
 			oneWay = Runtime.pingOneWay,
 			minimum = Runtime.minPing,
@@ -880,20 +861,6 @@ function AutoParry.getStatus()
 			lastFireAt = Runtime.lastFireAt,
 			lastTTI = Runtime.lastTTI,
 		},
-		phase           = phaseString,
-		bound           = Runtime.bound == true,
-		armed           = ParryState.armed == true,
-		fired           = ParryState.fired == true,
-		resilienceStack = Resilience.stack,
-		parryRadius     = Runtime.parryRadius,
-		fullParryRadius = Runtime.parryRadius,
-		deflectWindow   = Runtime.deflectWindow,
-		effectiveWindow = Runtime.effectiveWindow,
-		tti             = Runtime.lastTTI,
-		speed           = Runtime.lastSpeed,
-		pingOneWay      = Runtime.pingOneWay,
-		stationary      = false,
-		stationarySince = 0,
 	}
 end
 

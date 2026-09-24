@@ -45,12 +45,15 @@ local function ready()
 end
 
 local function lastAutoParry()
-	if not AutoParry or type(AutoParry.getLastFireAt) ~= "function" then
+	if not AutoParry or type(AutoParry.getStatus) ~= "function" then
 		return 0
 	end
 
-	local ok, value = pcall(AutoParry.getLastFireAt)
-	value = ok and tonumber(value) or 0
+	local ok, status = pcall(AutoParry.getStatus)
+	local value = ok and type(status) == "table"
+		and status.cycle
+		and tonumber(status.cycle.lastFireAt)
+		or 0
 
 	if value and value == value and value > 0 then
 		return value
@@ -138,7 +141,7 @@ function DynamicParry.setup(deps)
 		or type(deps.Remote) ~= "table"
 		or type(deps.Remote.fireParry) ~= "function"
 		or type(deps.AutoParry) ~= "table"
-		or type(deps.AutoParry.getLastFireAt) ~= "function"
+		or type(deps.AutoParry.getStatus) ~= "function"
 		or type(deps.Utils) ~= "table"
 		or type(deps.Utils.isActive) ~= "function"
 		or type(deps.Utils.setManualSpamActive) ~= "function"

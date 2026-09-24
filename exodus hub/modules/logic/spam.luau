@@ -556,10 +556,11 @@ local function getTargetSwitchRate()
 	lastTargetSwitchTimestampMs = timestampMs
 
 	local pingOneWay = 0
-	if AutoParry and type(AutoParry.getPingOneWay) == "function" then
-		local pingOk, value = pcall(AutoParry.getPingOneWay)
-		if pingOk then
-			pingOneWay = tonumber(value) or 0
+	if AutoParry and type(AutoParry.getStatus) == "function" then
+		local pingOk, status = pcall(AutoParry.getStatus)
+		if pingOk and type(status) == "table"
+			and type(status.ping) == "table" then
+			pingOneWay = tonumber(status.ping.oneWay) or 0
 		end
 	end
 	if pingOneWay ~= pingOneWay
@@ -810,7 +811,7 @@ function Spam.setup(deps)
 		or type(deps.AutoClash.getTargetSwitch) ~= "function"
 		or type(deps.AutoClash.getActivationContext) ~= "function"
 		or type(deps.AutoParry) ~= "table"
-		or type(deps.AutoParry.getPingOneWay) ~= "function"
+		or type(deps.AutoParry.getStatus) ~= "function"
 	then
 		return false, "dependência ausente: Remote, Utils, AutoClash ou AutoParry"
 	end
