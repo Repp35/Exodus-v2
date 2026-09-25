@@ -15,6 +15,9 @@ local T = {
 	RETURN_SPD_HI = 600,
 	PING_FACTOR = 0.3,
 	ACTIVATION_WINDOW_FACTOR = 0.8,
+	ACTIVATION_MIN_DOT = 0.3,
+	ACTIVATION_TTI_MAX = 0.35,
+	ACTIVATION_TTI_EMA_ALPHA = 0.4,
 	DASH_WINDOW_FACTOR = 1.0,
 	REACTIVATE_COOLDOWN = 0.070,
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
@@ -29,8 +32,6 @@ local T = {
 	DASH_DEACT_LOCK_TIME = 0.070,
 	DASH_RADIUS_BONUS_TIME = 0.700,
 	DASH_BONUS_RETURN_MULT = 10.0,
-	APPROACH_RETURN_MULT = 1.60,
-	APPROACH_BALL_WINDOW = 0.150,
 	OWN_DASH_ESCAPE_DOT = -0.3,
 	DASH_REGISTER_DEBOUNCE = 0.050,
 	OWN_DASH_ESCAPE_HOLD = 0.060,
@@ -38,11 +39,12 @@ local T = {
 	OWN_DASH_ESCAPE_SPEED_FACTOR = 0.08,
 
 	-- deactivation
-	DEACT_DIRECTION_MAX_LO = 0.03,
+	DEACT_DIRECTION_MAX_LO = 0.090,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
+	DEACT_RESET_RADIUS_FACTOR = 0.5,
 	DEACT_DIRECTION_SPD_LO = 60,
 	DEACT_DIRECTION_SPD_HI = 600,
-	DEACT_CONFIRM_HOLD = 0.025,
+	DEACT_CONFIRM_HOLD = 0.070,
 	DEACT_CONFIRM_FRAMES = 2,
 	DEACT_CONFIRM_MAX_GAP = 0.100,
 	CLASH_CADENCE_INTERVAL_LO = 1 / 14,
@@ -69,6 +71,8 @@ local R = {
 	lastTarget = -1,
 	clashPartnerId = -1,
 	lastSpeed = 0,
+	ttiEma = nil,
+	ttiEmaAt = 0,
 	parryRadius = 0,
 	dashBonusUntil = 0,
 	dashDeactLockedUntil = 0,
@@ -98,9 +102,6 @@ local R = {
 	becameMeAt = 0,
 
 	-- approach
-	approachBonusUntil = 0,
-	opponentWasOutside = false,
-	ballLeftRadiusDuring = false,
 
 	-- evaluation
 	lastEvalAt = 0,
@@ -260,10 +261,9 @@ local function resetTargetState()
 	clearReturnState()
 	R.lastClashSwitchAt = 0
 	R.clashIntervalMs = 0
-	R.approachBonusUntil = 0
-	R.opponentWasOutside = false
-	R.ballLeftRadiusDuring = false
 	R.becameMeAt = 0
+	R.ttiEma = nil
+	R.ttiEmaAt = 0
 	R.lastDashEvent = nil
 	R.lastActivationAt = 0
 	R.lastActivationSource = "none"
@@ -380,9 +380,40 @@ local function refreshParryRadius(t)
 		R.parryRadius = radius
 	end
 end
+local function updateTtiEma(t, root, snapshot)
+	local position = getSnapshotPosition(snapshot)
+	local velocity = snapshot and snapshot.ball and snapshot.ball.AssemblyLinearVelocity
+	if not position or typeof(velocity) ~= "Vector3" then
+		R.ttiEma = nil
+		return
+	end
+	local toRoot = root - position
+	local dist = toRoot.Magnitude
+	local speed = velocity.Magnitude
+	if dist <= 0.001 or speed <= 0 then
+		R.ttiEma = nil
+		return
+	end
+	local closingSpeed = (velocity.X * toRoot.X + velocity.Z * toRoot.Z) / dist
+	if closingSpeed <= 0 then
+		R.ttiEma = nil
+		return
+	end
+	local rawTti = dist / closingSpeed
+	if not R.ttiEma then
+		R.ttiEma = rawTti
+	else
+		R.ttiEma = T.ACTIVATION_TTI_EMA_ALPHA * rawTti + (1 - T.ACTIVATION_TTI_EMA_ALPHA) * R.ttiEma
+	end
+	R.ttiEmaAt = t
+end
 local function updateParryState(t, snapshot)
 	R.lastSpeed = math.max(finiteNumber(snapshot and snapshot.speed, 0), 0)
 	refreshParryRadius(t)
+	local root = getRootPosition()
+	if root then
+		updateTtiEma(t, root, snapshot)
+	end
 end
 local function getRadiusForWindow(factor)
 	local ok, status = pcall(AutoParry.getRadius, "geometry", factor, R.lastSpeed)
@@ -433,6 +464,30 @@ local function shouldActivate(snapshot, t)
 		R.lastGate = "outside_effective_radius"
 		return false
 	end
+
+	-- Dot: a bola precisa estar vindo em nossa direção.
+	local velocity = snapshot.ball.AssemblyLinearVelocity
+	if typeof(velocity) == "Vector3" then
+		local toRoot = root - position
+		local dist = toRoot.Magnitude
+		local speed = velocity.Magnitude
+		if dist > 0.001 and speed > 0 then
+			local dot = (velocity.X * toRoot.X + velocity.Z * toRoot.Z) / (speed * dist)
+			if dot < T.ACTIVATION_MIN_DOT then
+				R.lastGate = "ball_not_approaching"
+				return false
+			end
+		end
+	end
+
+	-- EMA do tempo estimado até o impacto.
+	if R.ttiEma and t - R.ttiEmaAt <= T.MIN_EVAL_INTERVAL * 4 then
+		if R.ttiEma > T.ACTIVATION_TTI_MAX then
+			R.lastGate = "tti_too_high"
+			return false
+		end
+	end
+
 	R.lastGate = "activation_ready"
 	return true
 end
@@ -454,9 +509,6 @@ end
 local function getActivationReason(snapshot, t)
 	if t < R.dashBonusUntil then
 		return "anti_dash"
-	end
-	if t < R.approachBonusUntil then
-		return "approach_window"
 	end
 	local root = getRootPosition()
 	local position = getSnapshotPosition(snapshot)
@@ -518,7 +570,31 @@ function Deactivation.direction(t, snapshot, speed)
 	local ping = pingCompensation()
 	local base = T.DEACT_DIRECTION_MAX_LO + ping
 	local directionMax = math.max(lerpBySpeed(speed, base, base * T.DEACT_DIRECTION_MAX_MIN_FACTOR, T.DEACT_DIRECTION_SPD_LO, T.DEACT_DIRECTION_SPD_HI), T.MIN_EVAL_INTERVAL * 1.5)
-	return t - R.lastDirectionSwitchAt > directionMax
+	if t - R.lastDirectionSwitchAt <= directionMax then
+		return false
+	end
+
+	-- Ainda está convergindo para o jogador? Evita desativar durante a aproximação.
+	local root = getRootPosition()
+	local position = getSnapshotPosition(snapshot)
+	local velocity = snapshot and snapshot.ball and snapshot.ball.AssemblyLinearVelocity
+	if root and position and typeof(velocity) == "Vector3" then
+		local toRoot = root - position
+		local dist = toRoot.Magnitude
+		local spd = velocity.Magnitude
+		if dist > 0.001 and spd > 0 then
+			local dot = (velocity.X * toRoot.X + velocity.Z * toRoot.Z) / (spd * dist)
+			local ttiOk = R.ttiEma
+				and (t - R.ttiEmaAt <= T.MIN_EVAL_INTERVAL * 4)
+				and R.ttiEma <= T.ACTIVATION_TTI_MAX
+			if dot >= T.ACTIVATION_MIN_DOT and ttiOk then
+				R.lastGate = "deact_direction_still_converging"
+				return false
+			end
+		end
+	end
+
+	return true
 end
 
 -- rally
@@ -764,7 +840,14 @@ function Deactivation.shouldDeactivate(t, snapshot)
 		R.lastGate = "deact_no_position"
 		return false
 	end
-	if (root - position).Magnitude > getSafetyRadius() then
+	local distance = (root - position).Magnitude
+	local resetRadius = getSafetyRadius() * T.DEACT_RESET_RADIUS_FACTOR
+	if distance <= resetRadius then
+		Deactivation.clearConfirmation()
+		R.lastGate = "deact_reset_proximity"
+		return false
+	end
+	if distance > getSafetyRadius() then
 		if Deactivation.confirm(t, "outside_safety_radius") then
 			return true
 		end
@@ -796,35 +879,6 @@ function Deactivation.shouldDeactivate(t, snapshot)
 end
 
 -- evaluation
-local function evaluateApproach(t, snapshot)
-	if R.lastDirectionSwitchAt <= 0 or R.parryRadius <= 0 or R.lastSpeed <= 0 then
-		return
-	end
-	local root = getRootPosition()
-	local position = getSnapshotPosition(snapshot)
-	if not root or not position then
-		return
-	end
-	local _, opponentRoot = OwnDash.getOpponent()
-	if not opponentRoot then
-		return
-	end
-	local effectiveRadius = R.parryRadius + R.lastSpeed * T.APPROACH_BALL_WINDOW
-	local ballDistance = (root - position).Magnitude
-	local opponentDistance = (root - opponentRoot.Position).Magnitude
-	if ballDistance > effectiveRadius then
-		R.ballLeftRadiusDuring = true
-	end
-	if opponentDistance > effectiveRadius then
-		R.opponentWasOutside = true
-		R.ballLeftRadiusDuring = false
-	end
-	if R.opponentWasOutside and opponentDistance <= effectiveRadius and not R.ballLeftRadiusDuring then
-		R.approachBonusUntil = t + T.APPROACH_BALL_WINDOW
-		R.opponentWasOutside = false
-		R.ballLeftRadiusDuring = false
-	end
-end
 local function evaluateClash(t, snapshot)
 	if not R.boundRoot or not R.boundRoot.Parent then
 		return
@@ -845,7 +899,6 @@ local function evaluateClash(t, snapshot)
 		return
 	end
 	updateParryState(t, snapshot)
-	evaluateApproach(t, snapshot)
 	if R.active then
 		if Deactivation.shouldDeactivate(t, snapshot) then
 			setActive(false, "target_deactivated")
@@ -1059,9 +1112,6 @@ function AutoClash.onBallSync(data)
 		local returnWindow = getReturnWindow(R.lastSpeed)
 		if t < R.dashBonusUntil then
 			returnWindow *= T.DASH_BONUS_RETURN_MULT
-		end
-		if t < R.approachBonusUntil then
-			returnWindow *= T.APPROACH_RETURN_MULT
 		end
 		R.returnWindow = returnWindow
 		R.returnExpiresAt = t + returnWindow
