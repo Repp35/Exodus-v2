@@ -155,6 +155,16 @@ end
 local function isValidBall(ball)
 	return ball ~= nil and ball.Parent ~= nil
 end
+local function isLocallyTargeted()
+	if not Utils or type(Utils.getWorkspace) ~= "function" then
+		return false
+	end
+	local ok, targetId = pcall(function()
+		local workspaceService = Utils.getWorkspace()
+		return workspaceService and workspaceService:GetAttribute("GameBallTarget")
+	end)
+	return ok and tonumber(targetId) == Runtime.localUserId
+end
 local function getDistanceSquared(a, b)
 	local dx = a.X - b.X
 	local dy = a.Y - b.Y
@@ -328,8 +338,7 @@ local function onBallSync(data)
 			setPhase(PHASE_WAITING, "teleport_lock")
 			return
 		end
-		-- Este campo corresponde ao jogador cujo personagem recebe PlayerBallHighlight.
-		local targetId = tonumber(data.HighlightTargetPlayerID) or -1
+		local targetId = tonumber(data.TargetPlayerID) or -1
 		local previousTarget = Runtime.lastTarget
 		local previousWasMe = Runtime.lastWasMe
 	if targetId == Runtime.lastTarget and previousWasMe ~= nil then
@@ -535,12 +544,12 @@ local function bindCharacter(character)
 		local snapshot = GameInfo.getSnapshot(Runtime.lastTarget, timeNow)
 		if type(snapshot) ~= "table" or not GameInfo.isSnapshotValid(snapshot, timeNow) then
 			setPhase(PHASE_WAITING, "snapshot_invalid")
-			return
-		end
-		local ball = snapshot.ball
-		local targeted = snapshot.targeted == true
-		if not (isValidBall(ball) and targeted) then
-			setPhase(PHASE_WAITING, "ball_or_target_invalid")
+				return
+			end
+			local ball = snapshot.ball
+			local targeted = isLocallyTargeted()
+			if not (isValidBall(ball) and targeted) then
+				setPhase(PHASE_WAITING, "ball_or_target_invalid")
 			return
 		end
 		local speed = tonumber(snapshot.speed)
