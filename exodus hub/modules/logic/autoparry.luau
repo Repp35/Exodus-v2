@@ -325,12 +325,13 @@ local function onBallSync(data)
 		clearCycle()
 		Runtime.passivePhase = "idle"
 		Runtime.passiveBallAtValid = false
-		setPhase(PHASE_WAITING, "teleport_lock")
-		return
-	end
-	local targetId = tonumber(data.TargetPlayerID) or -1
-	local previousTarget = Runtime.lastTarget
-	local previousWasMe = Runtime.lastWasMe
+			setPhase(PHASE_WAITING, "teleport_lock")
+			return
+		end
+		-- Este campo corresponde ao jogador cujo personagem recebe PlayerBallHighlight.
+		local targetId = tonumber(data.HighlightTargetPlayerID) or -1
+		local previousTarget = Runtime.lastTarget
+		local previousWasMe = Runtime.lastWasMe
 	if targetId == Runtime.lastTarget and previousWasMe ~= nil then
 		if Utils.isSpamActive and Utils.isSpamActive() and Runtime.passivePhase == "awaiting_leave" then
 			local inside, valid = isBallInParryWindow(time)
