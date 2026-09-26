@@ -37,7 +37,7 @@ local T = {
 	OWN_DASH_ESCAPE_SPEED_FACTOR = 0.08,
 
 	-- deactivation
-	DEACT_DIRECTION_MAX_LO = 0.07,
+	DEACT_DIRECTION_MAX_LO = 0.045,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DEACT_RESET_RADIUS_FACTOR = 0.5,
 	DEACT_DIRECTION_SPD_LO = 60,
@@ -672,7 +672,21 @@ function AutoClash.onBallSync(data)
 		R.returnWindow = returnWindow; R.returnExpiresAt = t + returnWindow; R.returnFromTarget = target; R.returnPending = false
 		R.returnToken += 1
 		if R.active then
-			if t >= R.activationDeactLockedUntil and t >= R.dashDeactLockedUntil then setActive(false, "target_switched"); R.lastGate = "target_switched"; R.wasMeTarget = isMe; return end
+			if t >= R.activationDeactLockedUntil and t >= R.dashDeactLockedUntil then
+				setActive(false, "target_switched")
+				-- Renew return state before leaving the target-switched path.
+				R.lostMeAt = t
+				local returnWindow = getReturnWindow(R.lastSpeed)
+				if t < R.dashBonusUntil then returnWindow *= T.DASH_BONUS_RETURN_MULT end
+				R.returnWindow = returnWindow
+				R.returnExpiresAt = t + returnWindow
+				R.returnFromTarget = target
+				R.returnPending = false
+				R.returnToken += 1
+				R.lastGate = "target_switched"
+				R.wasMeTarget = isMe
+				return
+			end
 			if not rallyCheck(data, t) then R.wasMeTarget = isMe; return end
 		else
 			R.clashPartnerId = target
