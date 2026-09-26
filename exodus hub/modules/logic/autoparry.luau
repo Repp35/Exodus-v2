@@ -201,12 +201,11 @@ local function isValidBall(ball)
 end
 
 -- target detection
--- Uses the same three target sources as Delta:
--- 1. Character.Highlight
--- 2. Workspace.GameBallTarget
--- 3. BallReplicator.syncData.HighlightTargetPlayerID
+-- Priority: authoritative gameplay target from BallSyncData.TargetPlayerID.
+-- Visual corroborators: HighlightTargetPlayerID, GameBallTarget,
+-- PlayerBallHighlight, ball color/trail and the red screen indicator.
 local function isLocallyTargeted()
-	local localUserId = Runtime.localUserId
+	local localUserId = tonumber(Runtime.localUserId) or -1
 
 	if localUserId <= 0 then
 		return false
@@ -214,36 +213,121 @@ local function isLocallyTargeted()
 
 	local player = Utils.getLocalPlayer()
 	local character = player and player.Character
-
-	-- Highlight
-	if character and character:FindFirstChild("Highlight") then
-		return true
-	end
-
-	-- Workspace attribute
 	local workspaceService = Utils.getWorkspace()
+	local syncData = BallReplicator and BallReplicator.syncData
 
-	if workspaceService
-		and tonumber(
-			workspaceService:GetAttribute("GameBallTarget")
-		) == localUserId
-	then
-		return true
+	-- Autoridade de gameplay: StandardBall escreve TargetPlayerID a partir
+	-- do alvo real da bola. Se esse campo tem um ID válido, ele prevalece
+	-- sobre qualquer efeito visual atrasado ou divergente.
+	local gameplayTargetId = tonumber(syncData and syncData.TargetPlayerID)
+
+	if gameplayTargetId and gameplayTargetId > 0 then
+		return gameplayTargetId == localUserId
 	end
 
-	-- BallReplicator syncData
-	if BallReplicator then
-		local syncData = BallReplicator.syncData
+	-- -1 e 0 significam explicitamente que não há alvo. Não deixe um
+	-- highlight/cor antigo causar um falso positivo nesses casos.
+	if gameplayTargetId == -1 or gameplayTargetId == 0 then
+		return false
+	end
 
-		if syncData
-			and tonumber(syncData.HighlightTargetPlayerID)
-				== localUserId
-		then
-			return true
+	-- Fallback para estados ainda não inicializados/indisponíveis.
+	-- Estes sinais são visuais/replicados, não garantem certeza autoritativa.
+	-- Exigimos dois corroboradores para reduzir falsos positivos.
+	local visualMatches = 0
+	local function addTargetId(value)
+		if tonumber(value) == localUserId then
+			visualMatches += 1
 		end
 	end
 
-	return false
+	-- IDs visuais existentes no dump.
+	addTargetId(syncData and syncData.HighlightTargetPlayerID)
+	if workspaceService then
+		addTargetId(workspaceService:GetAttribute("GameBallTarget"))
+	end
+
+	-- O dump usa PlayerBallHighlight no Character; o Highlight genérico
+	-- não é um sinal de alvo confiável.
+	local playerHighlight = character
+		and character:FindFirstChild("PlayerBallHighlight")
+	if playerHighlight and playerHighlight.Enabled == true then
+		visualMatches += 1
+	end
+
+	local function colorNear(actual, r, g, b, tolerance)
+		return typeof(actual) == "Color3"
+			and math.abs(actual.R - r / 255) <= tolerance
+			and math.abs(actual.G - g / 255) <= tolerance
+			and math.abs(actual.B - b / 255) <= tolerance
+	end
+
+	-- GameBallInitializer pinta a bola de RGB(202, 56, 30) quando o
+	-- atributo GameBallTarget aponta para o jogador local.
+	local ball
+	if GameInfo and type(GameInfo.getBall) == "function" then
+		local ok, value = pcall(GameInfo.getBall)
+		if ok then
+			ball = value
+		end
+	end
+	if ball then
+		local ok, ballColor = pcall(function()
+			return ball.Color
+		end)
+		if ok and colorNear(ballColor, 202, 56, 30, 0.035) then
+			visualMatches += 1
+		end
+
+		-- O trail ativo recebe a cor de BallTrailTarget ao mirar o jogador.
+		local okTrail, trailMatch = pcall(function()
+			local activeTrail = ball:FindFirstChild("BallTrail", true)
+			local targetTrail = ball:FindFirstChild("BallTrailTarget", true)
+			if not activeTrail or not targetTrail then
+				return false
+			end
+			local active = activeTrail.Color.Keypoints
+			local target = targetTrail.Color.Keypoints
+			if #active ~= #target then
+				return false
+			end
+			for i = 1, #active do
+				if math.abs(active[i].Time - target[i].Time) > 0.001 then
+					return false
+				end
+				local a, b = active[i].Value, target[i].Value
+				if math.abs(a.R - b.R) > 0.02
+					or math.abs(a.G - b.G) > 0.02
+					or math.abs(a.B - b.B) > 0.02
+				then
+					return false
+				end
+			end
+			return true
+		end)
+		if okTrail and trailMatch then
+			visualMatches += 1
+		end
+	end
+
+	-- O indicador da tela fica vermelho segundo HighlightTargetPlayerID.
+	if player then
+		local okIndicator, indicatorRed = pcall(function()
+			local playerGui = player:FindFirstChild("PlayerGui")
+			local interface = playerGui and playerGui:FindFirstChild("Interface")
+			local indicatorUI = interface and interface:FindFirstChild("BallIndicatorUI")
+			local indicator = indicatorUI and indicatorUI:FindFirstChild("Indicator")
+			local c = indicator and indicator.ImageColor3
+			return indicator ~= nil
+				and indicator.Visible == true
+				and colorNear(c, 255, 0, 0, 0.04)
+		end)
+		if okIndicator and indicatorRed then
+			visualMatches += 1
+		end
+	end
+
+	return visualMatches >= 2
 end
 
 local function getDistanceSquared(a, b)
@@ -1143,8 +1227,8 @@ local function bindCharacter(character)
 
 			local ball = snapshot.ball
 
-			-- Target detection is independent from GameInfo:
-			-- Highlight OR GameBallTarget OR BallReplicator syncData.
+			-- Prefer syncData.TargetPlayerID; use visual corroborators only
+			-- when the gameplay target field is unavailable.
 			local targeted =
 				isLocallyTargeted()
 
