@@ -182,7 +182,7 @@ local function computeBaseDeflectWindow(speed)
 end
 local function computeDeflectWindow(speed)
 	local window = computeBaseDeflectWindow(speed); local ping = Runtime.pingOneWay
-	if ping > 0 then window += math.min(ping * 2 * Tuning.PING_WINDOW_FACTOR, Tuning.PING_WINDOW_CAP) end
+	if ping > 0 then window += math.min(ping * Tuning.PING_WINDOW_FACTOR, Tuning.PING_WINDOW_CAP) end
 	return window
 end
 local function computeEffectiveWindow(speed) return computeDeflectWindow(speed) * Tuning.WINDOW_FACTOR end
