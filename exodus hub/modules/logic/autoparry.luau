@@ -270,7 +270,13 @@ local function onBallSync(data)
 	else
 		Runtime.passivePhase = "idle"; Runtime.passiveBallAtValid = false
 	end
-	if isMe and previousTarget ~= Runtime.localUserId then clearFired() end
+	if isMe then
+		clearFired()
+	elseif targetId ~= -1 then
+		if previousWasMe == true then clearFired() end
+	else
+		clearFired()
+	end
 end
 
 -- PARRY
