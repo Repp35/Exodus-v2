@@ -9,7 +9,7 @@ local Utils
 -- tuning
 local T = {
 	-- activation
-	RETURN_WIN_LO = 0.17,
+	RETURN_WIN_LO = 0.16,
 	RETURN_WIN_MIN_FACTOR = 0.10,
 	RETURN_SPD_LO = 60,
 	RETURN_SPD_HI = 600,
@@ -37,7 +37,7 @@ local T = {
 	OWN_DASH_ESCAPE_SPEED_FACTOR = 0.08,
 
 	-- deactivation
-	DEACT_DIRECTION_MAX_LO = 0.045,
+	DEACT_DIRECTION_MAX_LO = 0.07,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DEACT_RESET_RADIUS_FACTOR = 0.5,
 	DEACT_DIRECTION_SPD_LO = 60,
@@ -383,7 +383,7 @@ local function rallyCheck(data, t)
 	local position = getDataPosition(data); local root = getRootPosition()
 	if not position or not root or R.parryRadius <= 0 then return true end
 	local radius = getSafetyRadius()
-	if (root - position).Magnitude > radius then return not Deactivation.confirm(t, "rally_outside_effective_radius") end
+	if (root - position).Magnitude > radius then return true end
 	Deactivation.clearConfirmation(); R.clashPartnerId = target; return true
 end
 
@@ -527,11 +527,9 @@ function Deactivation.shouldDeactivate(t, snapshot)
 	if OwnDash.shouldDeactivate(t) then R.lastGate = "own_dash_escape"; return true end
 	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
 	if not root or not position or R.parryRadius <= 0 then Deactivation.clearConfirmation(); R.lastGate = "deact_no_position"; return false end
-	local distance = (root - position).Magnitude; local safetyRadius = getSafetyRadius(); local resetRadius = safetyRadius * T.DEACT_RESET_RADIUS_FACTOR
-	if distance <= resetRadius then Deactivation.clearConfirmation(); R.lastGate = "deact_reset_proximity"; return false end
+	local distance = (root - position).Magnitude; local safetyRadius = getSafetyRadius()
 	if distance > safetyRadius then
-		if Deactivation.confirm(t, "outside_safety_radius") then return true end
-		return false
+		Deactivation.clearConfirmation(); R.lastGate = "outside_safety_radius"; return true
 	end
 	Deactivation.clearConfirmation()
 	if t < R.activationDeactLockedUntil then Deactivation.clearConfirmation(); R.lastGate = "deact_activation_lock"; return false end
