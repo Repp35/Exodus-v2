@@ -39,7 +39,7 @@ local T = {
 	-- deactivation
 	DEACT_DIRECTION_MAX_LO = 0.060,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
-	DEACT_RESET_RADIUS_FACTOR = 0.5,
+	DIRECTION_DEACT_MARGIN_FACTOR = 1.10,
 	DEACT_DIRECTION_SPD_LO = 60,
 	DEACT_DIRECTION_SPD_HI = 600,
 	DEACT_CONFIRM_HOLD = 0.050,
@@ -391,6 +391,16 @@ function Deactivation.confirm(t, reason)
 end
 function Deactivation.direction(t, snapshot, speed)
 	if snapshot.targeted == true then R.lastGate = "deact_direction_targeted"; return false end
+	local radius = AutoParry.getRadius("geometry", 0, speed)
+	local parryRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil
+	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
+	if not parryRadius or parryRadius ~= parryRadius or parryRadius < 0 or parryRadius == math.huge or not root or not position then
+		Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_unavailable"; return false
+	end
+	local directionDeactRadius = parryRadius * T.DIRECTION_DEACT_MARGIN_FACTOR
+	if distanceSquared(root, position) <= directionDeactRadius * directionDeactRadius then
+		Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_protected"; return false
+	end
 	if R.lastDirectionSwitchAt <= 0 then return false end
 	if R.lastSyncAt < R.lastDirectionSwitchAt then return false end
 	local ping = pingCompensation(); local base = T.DEACT_DIRECTION_MAX_LO + ping
@@ -407,7 +417,7 @@ function Deactivation.direction(t, snapshot, speed)
 	local directionMax = baseMax
 	if R.clashIntervalEma and R.clashIntervalEmaSamples >= T.CLASH_INTERVAL_EMA_MIN_SAMPLES then directionMax = math.max(R.clashIntervalEma * T.CLASH_INTERVAL_DIRECTION_FACTOR, baseMax) end
 	if t - R.lastDirectionSwitchAt <= directionMax then return false end
-	local root = getRootPosition(); local position = getSnapshotPosition(snapshot); local ball = snapshot.ball; local velocity = ball and ball.AssemblyLinearVelocity
+	local ball = snapshot.ball; local velocity = ball and ball.AssemblyLinearVelocity
 	if root and position and typeof(velocity) == "Vector3" then
 		local dx = root.X - position.X; local dz = root.Z - position.Z; local distSq = dx * dx + dz * dz
 		if distSq > 0.000001 then
