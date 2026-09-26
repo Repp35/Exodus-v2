@@ -20,7 +20,6 @@ local Tuning = {
 	PING_WINDOW_FACTOR = 1,
 	PING_WINDOW_CAP = 0.400,
 	CLIENT_CD_PROPAGATION = 0.30,
-	DEFLECT_RETRY_DELAY = 1.45,
 }
 
 local PING_SAMPLE_INTERVAL = 0.35
@@ -35,16 +34,12 @@ local HITBOX_PROXIMITY_SQ = Tuning.HITBOX_PROXIMITY * Tuning.HITBOX_PROXIMITY
 local PHASE_DETACHED = 1
 local PHASE_WAITING = 2
 local PHASE_COOLDOWN = 3
-local PHASE_ARMED = 4
-local PHASE_FIRED = 5
-local PHASE_PASSIVE = 6
+local PHASE_FIRED = 4
 local PHASE_STRINGS = {
 	[PHASE_DETACHED] = "detached",
 	[PHASE_WAITING] = "waiting",
 	[PHASE_COOLDOWN] = "cooldown",
-	[PHASE_ARMED] = "armed",
 	[PHASE_FIRED] = "fired",
-	[PHASE_PASSIVE] = "passive",
 }
 
 local phaseString = "detached"
@@ -57,11 +52,8 @@ local HitboxState = type(namespace.AutoParryHitbox) == "table" and namespace.Aut
 namespace.AutoParryHitbox = HitboxState
 _G.Exodus = namespace
 local ParryState = {
-	armed = false,
-	armedBall = nil,
 	fired = false,
 	firedBall = nil,
-	firedAt = 0,
 }
 
 local Resilience = {
@@ -118,14 +110,11 @@ local function setPhase(phase, reason)
 	if Utils and Utils.recordTransition then Utils.recordTransition("AutoParry", PHASE_STRINGS[old] or "detached", phaseString, reason) end
 end
 local function isValidBall(ball) return ball ~= nil and ball.Parent ~= nil end
-local function clearArmed()
-	ParryState.armed = false; ParryState.armedBall = nil
-end
 local function clearFired()
-	ParryState.fired = false; ParryState.firedBall = nil; ParryState.firedAt = 0
+	ParryState.fired = false; ParryState.firedBall = nil
 end
 local function clearCycle()
-	clearArmed(); clearFired(); Resilience.lastFireBall = nil; Resilience.lastFireAt = 0
+	clearFired(); Resilience.lastFireBall = nil; Resilience.lastFireAt = 0
 end
 local function disconnectConnections()
 	for i = #Runtime.connections, 1, -1 do
@@ -292,11 +281,7 @@ local function requestParry(ball)
 		setPhase(PHASE_WAITING, "remote_unavailable"); return false
 	end
 	local time = now()
-	if ParryState.fired then
-		if ball == nil or ParryState.firedBall == ball then return false end
-		clearFired()
-	end
-	ParryState.fired = true; ParryState.firedBall = ball; ParryState.firedAt = time; local ok, result = pcall(Remote.fireParry, 1)
+	ParryState.fired = true; ParryState.firedBall = ball; local ok, result = pcall(Remote.fireParry, 1)
 	if not ok or result == false then
 		clearFired()
 		if Utils.recordError then Utils.recordError("AutoParry", "Remote.fireParry falhou") end
@@ -387,54 +372,37 @@ local function bindCharacter(character)
 		if generation ~= Runtime.generation or not Runtime.alive or not Runtime.bound then return end
 		if not character.Parent or not root.Parent then return end
 		local config = getConfig()
-		if type(config) ~= "table" or config.AutoParry ~= true then clearCycle(); setPhase(PHASE_WAITING, "disabled_or_locked"); return end
+		if type(config) ~= "table" or config.AutoParry ~= true then clearCycle(); return end
 		local timeNow = now()
-		if timeNow < Runtime.teleportLockUntil then clearCycle(); setPhase(PHASE_WAITING, "teleport_lock"); return end
-		if isSpamActive() then clearCycle(); setPhase(PHASE_WAITING, "spam_active"); return end
+		if timeNow < Runtime.teleportLockUntil then clearCycle(); return end
+		if isSpamActive() then clearCycle(); return end
 		Runtime.pingTimer += math.max(dt, 0)
 		if Runtime.pingTimer >= PING_SAMPLE_INTERVAL then Runtime.pingTimer = 0; samplePing() end
 		refreshTargetCache()
-		if not isLocallyTargeted() then setPhase(PHASE_WAITING, "ball_or_target_invalid"); return end
+		if not isLocallyTargeted() then setPhase(PHASE_WAITING, "not_targeted"); return end
+		if ParryState.fired then return end
 		local snapshot = getSnapshot(Runtime.lastTarget, timeNow)
-		if type(snapshot) ~= "table" or not isSnapshotValid(snapshot, timeNow) then setPhase(PHASE_WAITING, "snapshot_invalid"); return end
+		if type(snapshot) ~= "table" or not isSnapshotValid(snapshot, timeNow) then return end
 		local ball = snapshot.ball
-		if not isValidBall(ball) then setPhase(PHASE_WAITING, "ball_invalid"); return end
+		if not isValidBall(ball) then return end
 		local speed = tonumber(snapshot.speed)
-		if not speed or speed < Tuning.MIN_BALL_SPEED or not finite(speed) then setPhase(PHASE_WAITING, "ball_too_slow"); return end
+		if not speed or speed < Tuning.MIN_BALL_SPEED or not finite(speed) then return end
 		local position = snapshot.position
-		if typeof(position) ~= "Vector3" then setPhase(PHASE_WAITING, "position_unavailable"); return end
-		local rootPosition = root.Position; local deflectCooldown = tonumber(getDeflectCD()) or 0
-		if not finite(deflectCooldown) then deflectCooldown = 0 end
-		local timing = computeTiming(rootPosition, position, speed, timeNow)
-		if not timing then setPhase(PHASE_WAITING, "timing_unavailable"); return end
-		Runtime.parryRadius = timing.parryRadius; Runtime.baseParryRadius = timing.pureRadius; Runtime.resilienceBonus = timing.resilienceBonus; Runtime.deflectWindow = timing.deflectWindow
-		Runtime.effectiveWindow = timing.effectiveWindow; Runtime.lastTTI = timing.tti; Runtime.lastDistance = timing.distance; Runtime.lastDistanceToParryRadius = timing.distanceToParryRadius
-		Runtime.lastSpeed = timing.speed
-		if timing.distance > timing.parryRadius then setPhase(PHASE_WAITING, "outside_effective_radius"); return end
+		if typeof(position) ~= "Vector3" then return end
+		local deflectCooldown = tonumber(getDeflectCD()) or 0
 		if deflectCooldown > 0 then
-			if not ParryState.armed then ParryState.armed = true; ParryState.armedBall = ball end
-			if Runtime.cooldownObservedAt <= 0 then Runtime.cooldownObservedAt = timeNow; setPhase(PHASE_COOLDOWN, "cooldown_observed")
-			elseif timeNow - Runtime.cooldownObservedAt >= Tuning.CLIENT_CD_PROPAGATION then setPhase(PHASE_COOLDOWN, "cooldown_propagation")
-			else setPhase(PHASE_ARMED, "awaiting_deflect_cooldown") end
+			if Runtime.cooldownObservedAt <= 0 then Runtime.cooldownObservedAt = timeNow end
+			if timeNow - Runtime.cooldownObservedAt >= Tuning.CLIENT_CD_PROPAGATION then setPhase(PHASE_COOLDOWN, "cooldown_propagation")
+			else setPhase(PHASE_COOLDOWN, "cooldown_observed") end
 			return
 		end
 		Runtime.cooldownObservedAt = 0
-		if
-			ParryState.fired
-			and ParryState.firedBall == ball
-			and timeNow - ParryState.firedAt >= Tuning.DEFLECT_RETRY_DELAY
-		then
-			clearFired()
-		end
-		if ParryState.armed then
-			if not isValidBall(ball) or ball ~= ParryState.armedBall or not isLocallyTargeted() then clearArmed(); setPhase(PHASE_WAITING, "armed_context_invalid"); return end
-			requestParry(ball); clearArmed(); return
-		end
-		if ParryState.fired then
-			if ParryState.firedBall == ball then return end
-			if not isValidBall(ParryState.firedBall) then clearFired()
-			elseif ParryState.firedBall ~= ball then clearFired() end
-		end
+		local timing = computeTiming(root.Position, position, speed, timeNow)
+		if not timing then return end
+		Runtime.parryRadius = timing.parryRadius; Runtime.baseParryRadius = timing.pureRadius; Runtime.resilienceBonus = timing.resilienceBonus
+		Runtime.deflectWindow = timing.deflectWindow; Runtime.effectiveWindow = timing.effectiveWindow
+		Runtime.lastTTI = timing.tti; Runtime.lastDistance = timing.distance; Runtime.lastDistanceToParryRadius = timing.distanceToParryRadius; Runtime.lastSpeed = timing.speed
+		if timing.distance > timing.parryRadius then setPhase(PHASE_WAITING, "outside_radius"); return end
 		requestParry(ball)
 	end)
 	Runtime.connections[#Runtime.connections + 1] = heartbeatConnection; Utils.trackCharacter(heartbeatConnection)
@@ -455,7 +423,7 @@ local function resetState()
 	Runtime.pingOneWay = DEFAULT_PING_ONE_WAY; Runtime.parryRadius = 0; Runtime.baseParryRadius = Tuning.DEFLECT_RADIUS; Runtime.resilienceBonus = 0
 	Runtime.resilienceBonusAt = -1; Runtime.deflectWindow = 0; Runtime.effectiveWindow = 0; Runtime.lastTTI = math.huge
 	Runtime.lastDistance = 0; Runtime.lastDistanceToParryRadius = 0; Runtime.lastSpeed = 0; Runtime.lastFireAt = 0
-	Runtime.cooldownObservedAt = 0; Runtime.passivePhase = "idle"; Runtime.passiveCycleStart = 0; Runtime.passiveBallAtValid = false
+	Runtime.cooldownObservedAt = 0
 	setPhase(PHASE_DETACHED, "reset")
 end
 
@@ -629,7 +597,6 @@ function AutoParry.getStatus()
 		},
 
 		cycle = {
-			armed = ParryState.armed == true,
 			fired = ParryState.fired == true,
 			lastFireAt = Runtime.lastFireAt,
 			lastTTI = Runtime.lastTTI,
