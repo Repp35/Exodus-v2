@@ -37,16 +37,19 @@ local T = {
 	OWN_DASH_ESCAPE_SPEED_FACTOR = 0.08,
 
 	-- deactivation
-	DEACT_DIRECTION_MAX_LO = 0.07,
+	DEACT_DIRECTION_MAX_LO = 0.045,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DEACT_RESET_RADIUS_FACTOR = 0.5,
 	DEACT_DIRECTION_SPD_LO = 60,
 	DEACT_DIRECTION_SPD_HI = 600,
-	DEACT_CONFIRM_HOLD = 0.050,
-	DEACT_CONFIRM_FRAMES = 2,
-	DEACT_CONFIRM_MAX_GAP = 0.10,
+		DEACT_CONFIRM_HOLD = 0.050,
+		DEACT_CONFIRM_FRAMES = 2,
+		DEACT_CONFIRM_MAX_GAP = 0.10,
+		CLASH_INTERVAL_EMA_ALPHA = 0.4,
+		CLASH_INTERVAL_EMA_MIN_SAMPLES = 3,
+		CLASH_INTERVAL_DIRECTION_FACTOR = 3.0,
 
-	-- system
+		-- system
 	MIN_EVAL_INTERVAL = 1 / 120,
 }
 
@@ -80,10 +83,12 @@ local R = {
 	reactivateBlockedUntil = 0,
 
 	-- clash
-	lastDirectionSwitchAt = 0,
-	lastClashSwitchAt = 0,
-	clashIntervalMs = 0,
-	targetResetToken = 0,
+		lastDirectionSwitchAt = 0,
+		lastClashSwitchAt = 0,
+		clashIntervalMs = 0,
+		clashIntervalEma = nil,
+		clashIntervalEmaSamples = 0,
+		targetResetToken = 0,
 
 	-- deactivation
 	deactivationCandidate = nil,
@@ -207,6 +212,7 @@ end
 local function resetTargetState()
 	R.targetResetToken += 1; R.lastTarget = -1; R.clashPartnerId = -1; R.dashBonusUntil = 0
 	R.wasMeTarget = nil; clearReturnState(); R.lastClashSwitchAt = 0; R.clashIntervalMs = 0
+	R.clashIntervalEma = nil; R.clashIntervalEmaSamples = 0
 	R.ttiEma = nil; R.ttiEmaAt = 0; R.lastDashEvent = nil; R.lastActivationAt = 0
 	R.lastActivationSource = "none"; R.lastActivationReason = "none"; R.lastActivationTrigger = "none"; R.lastActivationTarget = -1
 	R.lastActivationPartner = -1; R.lastActivationDistance = 0; R.lastActivationRadius = 0; R.lastActivationSpeed = 0
@@ -353,7 +359,7 @@ function Deactivation.direction(t, snapshot, speed)
 	if R.lastDirectionSwitchAt <= 0 then return false end
 	if R.lastSyncAt < R.lastDirectionSwitchAt then return false end
 	local ping = pingCompensation(); local base = T.DEACT_DIRECTION_MAX_LO + ping
-	local directionMax = math.max(
+	local baseMax = math.max(
 		lerpBySpeed(
 			speed,
 			base,
@@ -363,6 +369,10 @@ function Deactivation.direction(t, snapshot, speed)
 		),
 		T.MIN_EVAL_INTERVAL * 1.5
 	)
+	local directionMax = baseMax
+	if R.clashIntervalEma and R.clashIntervalEmaSamples >= T.CLASH_INTERVAL_EMA_MIN_SAMPLES then
+		directionMax = math.max(R.clashIntervalEma * T.CLASH_INTERVAL_DIRECTION_FACTOR, baseMax)
+	end
 	if t - R.lastDirectionSwitchAt <= directionMax then return false end
 	local root = getRootPosition(); local position = getSnapshotPosition(snapshot); local velocity = snapshot and snapshot.ball and snapshot.ball.AssemblyLinearVelocity
 	if root and position and typeof(velocity) == "Vector3" then
@@ -656,7 +666,16 @@ function AutoClash.onBallSync(data)
 			and (wasMe == true) ~= isMe
 			and (previousWasPartner or currentIsPartner)
 		then
-			if R.lastClashSwitchAt > 0 and t >= R.lastClashSwitchAt then R.clashIntervalMs = (t - R.lastClashSwitchAt) * 1000 end
+			if R.lastClashSwitchAt > 0 and t >= R.lastClashSwitchAt then
+				local interval = t - R.lastClashSwitchAt
+				R.clashIntervalMs = interval * 1000
+				if not R.clashIntervalEma then
+					R.clashIntervalEma = interval
+				else
+					R.clashIntervalEma = T.CLASH_INTERVAL_EMA_ALPHA * interval + (1 - T.CLASH_INTERVAL_EMA_ALPHA) * R.clashIntervalEma
+				end
+				R.clashIntervalEmaSamples += 1
+			end
 			R.lastClashSwitchAt = t
 		end
 	end
@@ -815,9 +834,11 @@ function AutoClash.getStatus()
 		activationRadius = R.lastActivationRadius,
 		activationSpeed = R.lastActivationSpeed,
 		parryRadius = R.parryRadius,
-		lastTarget = R.lastTarget,
-		clashPartnerId = R.clashPartnerId,
-		lastGate = R.lastGate,
+			lastTarget = R.lastTarget,
+			clashPartnerId = R.clashPartnerId,
+			clashIntervalEma = R.clashIntervalEma,
+			clashIntervalEmaSamples = R.clashIntervalEmaSamples,
+			lastGate = R.lastGate,
 		ownDashEscapePending = R.ownDashEscapePending == true,
 		ownDashEscapeConfirmFrames = R.ownDashEscapeConfirmFrames,
 		ownDashEscapeLastDistance = R.ownDashEscapeLastDist,
