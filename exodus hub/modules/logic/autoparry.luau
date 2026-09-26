@@ -88,6 +88,8 @@ local Runtime = {
 	resilienceBonusAt = -1,
 	parryRadius = 0,
 	baseParryRadius = Tuning.DEFLECT_RADIUS,
+	noWindowParryRadius = Tuning.DEFLECT_RADIUS,
+	pingRadius = 0,
 	deflectWindow = 0,
 	effectiveWindow = 0,
 	lastTTI = math.huge,
@@ -178,14 +180,25 @@ local function computeDeflectWindow(speed)
 	return window
 end
 local function computeEffectiveWindow(speed) return computeDeflectWindow(speed) * Tuning.WINDOW_FACTOR end
+local function computePingRadius(speed)
+	local rawSpeed = tonumber(speed) or 0
+	if rawSpeed <= 0 then return 0 end
+	return rawSpeed * math.min(Runtime.pingOneWay * 2 * Tuning.PING_WINDOW_FACTOR, Tuning.PING_WINDOW_CAP)
+end
+local function computeNoWindowParryRadius(speed, resilience)
+	return Tuning.DEFLECT_RADIUS + (resilience or 0) + computePingRadius(speed)
+end
 local function computeTiming(rootPosition, position, speed, time)
 	if typeof(rootPosition) ~= "Vector3" or typeof(position) ~= "Vector3" or type(speed) ~= "number" or speed <= 0 then return nil end
 	local resilience = getResilienceBonus(time); local deflectWindow = computeDeflectWindow(speed); local effectiveWindow = deflectWindow * Tuning.WINDOW_FACTOR
+	local pingRadius = computePingRadius(speed); local noWindowParryRadius = Tuning.DEFLECT_RADIUS + resilience + pingRadius
 	local parryRadius = Tuning.DEFLECT_RADIUS + resilience + speed * effectiveWindow; local distSq = distanceSquared(rootPosition, position); local distance = math.sqrt(distSq)
 	local delta = distance - parryRadius; local tti = delta <= 0 and 0 or delta / speed
 	return {
 		parryRadius = parryRadius,
 		pureRadius = Tuning.DEFLECT_RADIUS,
+		noWindowParryRadius = noWindowParryRadius,
+		pingRadius = pingRadius,
 		resilienceBonus = resilience,
 		deflectWindow = deflectWindow,
 		effectiveWindow = effectiveWindow,
@@ -406,7 +419,8 @@ local function bindCharacter(character)
 		Runtime.cooldownObservedAt = 0
 		local timing = computeTiming(root.Position, position, speed, timeNow)
 		if not timing then return end
-		Runtime.parryRadius = timing.parryRadius; Runtime.baseParryRadius = timing.pureRadius; Runtime.resilienceBonus = timing.resilienceBonus
+		Runtime.parryRadius = timing.parryRadius; Runtime.baseParryRadius = timing.pureRadius; Runtime.noWindowParryRadius = timing.noWindowParryRadius
+		Runtime.pingRadius = timing.pingRadius; Runtime.resilienceBonus = timing.resilienceBonus
 		Runtime.deflectWindow = timing.deflectWindow; Runtime.effectiveWindow = timing.effectiveWindow
 		Runtime.lastTTI = timing.tti; Runtime.lastDistance = timing.distance; Runtime.lastDistanceToParryRadius = timing.distanceToParryRadius; Runtime.lastSpeed = timing.speed
 		if timing.distance > timing.parryRadius then setPhase(PHASE_WAITING, "outside_radius"); return end
@@ -427,7 +441,8 @@ end
 local function resetState()
 	invalidateLife(); Runtime.teleportLockUntil = 0; Runtime.lastTarget = -1; Runtime.lastWasMe = nil
 	Runtime.targetId = -1; Runtime.targetKnown = false; Runtime.pingTimer = 0; Runtime.minPing = nil
-	Runtime.pingOneWay = DEFAULT_PING_ONE_WAY; Runtime.parryRadius = 0; Runtime.baseParryRadius = Tuning.DEFLECT_RADIUS; Runtime.resilienceBonus = 0
+	Runtime.pingOneWay = DEFAULT_PING_ONE_WAY; Runtime.parryRadius = 0; Runtime.baseParryRadius = Tuning.DEFLECT_RADIUS
+	Runtime.noWindowParryRadius = Tuning.DEFLECT_RADIUS; Runtime.pingRadius = 0; Runtime.resilienceBonus = 0
 	Runtime.resilienceBonusAt = -1; Runtime.deflectWindow = 0; Runtime.effectiveWindow = 0; Runtime.lastTTI = math.huge
 	Runtime.lastDistance = 0; Runtime.lastDistanceToParryRadius = 0; Runtime.lastSpeed = 0; Runtime.lastFireAt = 0
 	Runtime.cooldownObservedAt = 0
@@ -519,7 +534,9 @@ function AutoParry.getRadius(mode, windowFactor, speedOverride)
 	if not windowFactor or not Utils.isFiniteNumber(windowFactor) then windowFactor = Tuning.WINDOW_FACTOR end
 	windowFactor = math.clamp(windowFactor, 0, 1.5); local deflectWindow = computeDeflectWindow(speed)
 	local effectiveWindow = deflectWindow * windowFactor
-	local resilience = getResilienceBonus(now()); local fullRadius = Tuning.DEFLECT_RADIUS + resilience + speed * effectiveWindow; local value = fullRadius
+	local resilience = getResilienceBonus(now()); local pingRadius = computePingRadius(speed)
+	local noWindowParryRadius = Tuning.DEFLECT_RADIUS + resilience + pingRadius
+	local fullRadius = Tuning.DEFLECT_RADIUS + resilience + speed * effectiveWindow; local value = fullRadius
 	if mode == "tti" then
 		value = tti
 	elseif mode == "speed_distance" then
@@ -533,6 +550,8 @@ function AutoParry.getRadius(mode, windowFactor, speedOverride)
 		mode = mode,
 		value = value,
 		pureRadius = Tuning.DEFLECT_RADIUS,
+		noWindowParryRadius = noWindowParryRadius,
+		pingRadius = pingRadius,
 		resilience = getResilienceStatus(),
 		fullRadius = fullRadius,
 		deflectWindow = deflectWindow,
@@ -596,6 +615,8 @@ function AutoParry.getStatus()
 			distanceToRadius = Runtime.lastDistanceToParryRadius,
 			deflectWindow = Runtime.deflectWindow,
 			effectiveWindow = Runtime.effectiveWindow,
+			noWindowParryRadius = Runtime.noWindowParryRadius,
+			pingRadius = Runtime.pingRadius,
 		},
 
 		ping = {
