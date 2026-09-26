@@ -1,4 +1,4 @@
--- [[ script-to-format ]]
+-- [[ autoparry ]]
 
 local AutoParry = {}
 local Remote, GameInfo, Utils, BallReplicator, StatsService
