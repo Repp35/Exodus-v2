@@ -17,7 +17,7 @@ local MAX_CAPTURED_REMOTES = 128
 
 -- remote discovery
 local RemoteConfig = {
-	METHOD = "index",
+	METHOD = "hook",
 	INDEX = 27,
 	NAME = "RemoteEvent",
 }
