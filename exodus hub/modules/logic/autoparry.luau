@@ -180,7 +180,7 @@ end
 local function computeEffectiveWindow(speed) return computeDeflectWindow(speed) * Tuning.WINDOW_FACTOR end
 local function computeTiming(rootPosition, position, speed, time)
 	if typeof(rootPosition) ~= "Vector3" or typeof(position) ~= "Vector3" or type(speed) ~= "number" or speed <= 0 then return nil end
-	local resilience = getResilienceBonus(time); local deflectWindow = computeDeflectWindow(speed); local effectiveWindow = computeEffectiveWindow(speed)
+	local resilience = getResilienceBonus(time); local deflectWindow = computeDeflectWindow(speed); local effectiveWindow = deflectWindow * Tuning.WINDOW_FACTOR
 	local parryRadius = Tuning.DEFLECT_RADIUS + resilience + speed * effectiveWindow; local distSq = distanceSquared(rootPosition, position); local distance = math.sqrt(distSq)
 	local delta = distance - parryRadius; local tti = delta <= 0 and 0 or delta / speed
 	return {
@@ -231,8 +231,9 @@ local function isBallInParryWindow(time)
 	local speed = tonumber(snapshot.speed)
 	if not speed or speed < Tuning.MIN_BALL_SPEED or not Utils.isFiniteNumber(speed) then return false, false end
 	local position = snapshot.position
-	if typeof(position) ~= "Vector3" or not Runtime.root or not Runtime.root.Parent then return false, false end
-	local timing = computeTiming(Runtime.root.Position, position, speed, time)
+	local root = Runtime.root
+	if typeof(position) ~= "Vector3" or not root or not root.Parent then return false, false end
+	local timing = computeTiming(root.Position, position, speed, time)
 	if not timing then return false, false end
 	return (timing.distance <= timing.parryRadius), true
 end
@@ -294,7 +295,7 @@ local function requestParry(ball)
 		setPhase(PHASE_WAITING, "remote_failed"); return false
 	end
 	Runtime.lastFireAt = time; Runtime.cooldownObservedAt = 0
-	if Resilience.hitboxConfirmed and isResilienceUsable() then Resilience.stack = math.min(Resilience.stack + 1, MAX_RES_STACK); Runtime.resilienceBonusAt = -1 end
+	if Resilience.hitboxConfirmed then Resilience.hitboxConfirmed = false end
 	local firedBall = ball
 	if not isValidBall(firedBall) then
 		local okBall, currentBall = pcall(GameInfo.getBall)
@@ -364,7 +365,7 @@ local function bindCharacter(character)
 	if generation ~= Runtime.generation or not root or not root.Parent then return false end
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid and humanoid.Health <= 0 then return false end
-	Runtime.character = character; Runtime.root = root; local player = Runtime.player
+	Runtime.character = character; Runtime.root = root
 	if humanoid then
 		local diedConnection = humanoid.Died:Connect(function()
 			if generation ~= Runtime.generation then return end
