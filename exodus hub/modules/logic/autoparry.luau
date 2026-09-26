@@ -2,6 +2,7 @@
 
 local AutoParry = {}
 local Remote, GameInfo, Utils
+local BallReplicator
 
 -- tuning
 local Tuning = {
@@ -81,15 +82,12 @@ local Resilience = {
 	lastFireBall = nil,
 	lastFireAt = 0,
 	lastHitboxAt = 0,
-
-	-- identifies which character life this resilience belongs to
 	lifeGeneration = 0,
 }
 
 local Runtime = {
 	generation = 0,
 
-	-- hard life protection
 	lifeGeneration = 0,
 	alive = false,
 
@@ -202,19 +200,50 @@ local function isValidBall(ball)
 	return ball ~= nil and ball.Parent ~= nil
 end
 
+-- target detection
+-- Uses the same three target sources as Delta:
+-- 1. Character.Highlight
+-- 2. Workspace.GameBallTarget
+-- 3. BallReplicator.syncData.HighlightTargetPlayerID
 local function isLocallyTargeted()
-	if not Utils or type(Utils.getWorkspace) ~= "function" then
+	local localUserId = Runtime.localUserId
+
+	if localUserId <= 0 then
 		return false
 	end
 
-	local ok, targetId = pcall(function()
-		local workspaceService = Utils.getWorkspace()
+	local player = Utils.getLocalPlayer()
+	local character = player and player.Character
 
-		return workspaceService
-			and workspaceService:GetAttribute("GameBallTarget")
-	end)
+	-- Highlight
+	if character and character:FindFirstChild("Highlight") then
+		return true
+	end
 
-	return ok and tonumber(targetId) == Runtime.localUserId
+	-- Workspace attribute
+	local workspaceService = Utils.getWorkspace()
+
+	if workspaceService
+		and tonumber(
+			workspaceService:GetAttribute("GameBallTarget")
+		) == localUserId
+	then
+		return true
+	end
+
+	-- BallReplicator syncData
+	if BallReplicator then
+		local syncData = BallReplicator.syncData
+
+		if syncData
+			and tonumber(syncData.HighlightTargetPlayerID)
+				== localUserId
+		then
+			return true
+		end
+	end
+
+	return false
 end
 
 local function getDistanceSquared(a, b)
@@ -251,7 +280,6 @@ local function isResilienceUsable()
 		or not Runtime.bound
 		or Resilience.lifeGeneration ~= Runtime.lifeGeneration
 	then
-		-- Hard protection against stale resilience from an old life.
 		Resilience.stack = 0
 		Resilience.lastFireBall = nil
 		Resilience.lastFireAt = 0
@@ -410,7 +438,6 @@ local function computeParryRadius(time, speed)
 	return baseRadius + speed * effectiveWindow
 end
 
--- timing
 local function computeTiming(rootPosition, position, speed, time)
 	if
 		typeof(rootPosition) ~= "Vector3"
@@ -564,7 +591,6 @@ local function onBallSync(data)
 		return
 	end
 
-	-- Never mutate resilience while no character life is valid.
 	if not Runtime.alive or not Runtime.bound then
 		return
 	end
@@ -813,8 +839,6 @@ local function handleHitbox(instance)
 		return
 	end
 
-	-- Hard protection:
-	-- a HitboxGrow event from a previous life can never grant resilience.
 	if not isResilienceUsable() then
 		return
 	end
@@ -859,7 +883,6 @@ local function handleHitbox(instance)
 		return
 	end
 
-	-- Recheck immediately before mutating stack.
 	if
 		not Runtime.alive
 		or not Runtime.bound
@@ -945,7 +968,6 @@ local function bindCharacter(character)
 
 	disconnectConnections()
 
-	-- New character = new resilience life.
 	invalidateLife()
 
 	setPhase(
@@ -994,7 +1016,6 @@ local function bindCharacter(character)
 					return
 				end
 
-				-- Invalidate this life immediately.
 				Runtime.generation += 1
 				invalidateLife()
 
@@ -1030,7 +1051,6 @@ local function bindCharacter(character)
 				return
 			end
 
-			-- Dead/stale characters can never process parry or resilience.
 			if not Runtime.alive or not Runtime.bound then
 				return
 			end
@@ -1122,6 +1142,9 @@ local function bindCharacter(character)
 			end
 
 			local ball = snapshot.ball
+
+			-- Target detection is independent from GameInfo:
+			-- Highlight OR GameBallTarget OR BallReplicator syncData.
 			local targeted =
 				isLocallyTargeted()
 
@@ -1354,7 +1377,6 @@ local function bindCharacter(character)
 		)
 	end
 
-	-- Only now is this life officially valid.
 	Runtime.bound = true
 	Runtime.alive = true
 	Resilience.lifeGeneration =
@@ -1460,6 +1482,28 @@ function AutoParry.setup(deps)
 
 	StatsService =
 		game:GetService("Stats")
+
+	-- Get BallReplicator once.
+	-- It is only read later by isLocallyTargeted().
+	BallReplicator = nil
+
+	pcall(function()
+		local ReplicatedStorage =
+			game:GetService("ReplicatedStorage")
+
+		local module =
+			require(
+				ReplicatedStorage
+					:WaitForChild("TS")
+					:WaitForChild("BallReplicator")
+					:WaitForChild("BallReplicator")
+			)
+
+		if module and module.BallReplicator then
+			BallReplicator =
+				module.BallReplicator
+		end
+	end)
 
 	local localPlayer =
 		Utils.getLocalPlayer()
