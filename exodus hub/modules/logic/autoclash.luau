@@ -9,7 +9,7 @@ local Utils
 -- TUNING
 local T = {
 	-- activation
-	RETURN_WIN_LO = 0.13,
+	RETURN_WIN_LO = 0.17,
 	RETURN_WIN_MIN_FACTOR = 0.10,
 	RETURN_SPD_LO = 60,
 	RETURN_SPD_HI = 600,
