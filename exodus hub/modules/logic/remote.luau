@@ -22,6 +22,25 @@ local RemoteConfig = {
 	NAME = "RemoteEvent",
 }
 
+-- ==========================================================
+-- 💜 HEARTBURST "auto" — MESMA LÓGICA DO HEART, SÓ COM PAYLOAD MENOR
+-- "hook" continua EXATAMENTE igual abaixo.
+-- Troque na config: METHOD = "hook"  (atual)
+--                   METHOD = "auto"  (Heartburst com payload menor)
+-- ==========================================================
+local AUTO_PAYLOAD_SIZE   = 50000     -- menor que o HEART (300000)
+local AUTO_THREADS        = 12
+local AUTO_CYCLE_WAIT     = 0.155
+local AUTO_LOT_SIZE       = 40
+local AUTO_INTER_SHOT     = 0.001
+local AUTO_INTER_LOT      = 0.008
+local AUTO_THREAD_STAGGER = 0.015
+local AUTO_LOT_COUNT      = 4
+
+local autoActive  = false
+local autoThreads = {}
+
+-- Storage
 local Storage = {
 	initialized = false,
 	available = false,
@@ -451,7 +470,7 @@ local function clearRemovedRemote(remote)
 	end
 end
 
--- payload
+-- payload (hook — EXATAMENTE igual ao atual)
 local function payloadFor(flag)
 	local value = flag == 2 and "\x02" or "\x01"
 
@@ -465,7 +484,23 @@ local function payloadFor(flag)
 	return value
 end
 
--- hooks
+-- payload do HEARTBURST "auto" — IGUAL ao Heart só com tamanho menor
+local function payloadForAuto()
+	local body = string.rep("\x01", AUTO_PAYLOAD_SIZE)
+
+	if
+		type(buffer) == "table"
+		and type(buffer.fromstring) == "function"
+	then
+		return buffer.fromstring(body)
+	end
+
+	return body
+end
+
+-- ==========================================================
+-- 🔒 MÉTODO HOOK — NÃO MEXER, fica EXATAMENTE igual ✅
+-- ==========================================================
 local function installHooks()
 	if HookState.installed then return true end
 	if type(hookmetamethod) ~= "function" then return false end
@@ -541,6 +576,49 @@ local function installHooks()
 	return HookState.installed == true
 end
 
+-- ==========================================================
+-- 💜 HEARTBURST "auto" — MESMA LÓGICA DO HEART, payload menor
+-- 12 THREADS | 4×40 disparos | 1ms entre shots | 8ms entre lotes | 155ms entre ciclos
+-- ==========================================================
+local function startAutoParry()
+	if autoActive then return true end
+	if not isAlive(parryRemote) then return false end
+
+	autoActive = true
+	table.clear(autoThreads)
+
+	local payload    = payloadForAuto()
+	local fireServer = parryRemote.FireServer
+	local event      = parryRemote
+	local wait       = task.wait
+
+	for id = 1, AUTO_THREADS do
+		task.wait(id * AUTO_THREAD_STAGGER)
+
+		autoThreads[id] = task.spawn(function()
+			while autoActive do
+				for lote = 1, AUTO_LOT_COUNT do
+					if not autoActive then return end
+					for j = 1, AUTO_LOT_SIZE do
+						if not autoActive then return end
+						fireServer(event, payload)
+						wait(AUTO_INTER_SHOT)
+					end
+					task.wait(AUTO_INTER_LOT)
+				end
+				task.wait(AUTO_CYCLE_WAIT)
+			end
+		end)
+	end
+
+	return true
+end
+
+local function stopAutoParry()
+	autoActive = false
+	table.clear(autoThreads)
+end
+
 function Remote.setDiscoveryMethod(method, options)
 	method = tostring(method or "")
 
@@ -553,6 +631,9 @@ function Remote.setDiscoveryMethod(method, options)
 	then
 		return false
 	end
+
+	-- ao trocar de método, sempre encerra o auto se estiver rodando
+	stopAutoParry()
 
 	RemoteConfig.METHOD = method
 
@@ -605,6 +686,18 @@ end
 
 -- parry
 function Remote.fireParry(flag)
+	-- 💜 HEARTBURST "auto" — liga o loop contínuo
+	if RemoteConfig.METHOD == "auto" then
+		if not isAlive(parryRemote) then
+			clearRemovedRemote(parryRemote)
+			parryRemote = discoverRemote()
+		end
+
+		if not isAlive(parryRemote) then return false end
+		return startAutoParry()
+	end
+
+	-- hook (atual, EXATAMENTE igual)
 	if not isAlive(parryRemote) then
 		clearRemovedRemote(parryRemote)
 		parryRemote = discoverRemote()
@@ -620,6 +713,22 @@ function Remote.fireParry(flag)
 end
 
 function Remote.initParry()
+	-- 💜 HEARTBURST "auto" — liga o loop contínuo
+	if RemoteConfig.METHOD == "auto" then
+		if not isAlive(parryRemote) then
+			clearRemovedRemote(parryRemote)
+			parryRemote = discoverRemote()
+		end
+
+		if not isAlive(parryRemote) then return false end
+		if parryInitialized then return true end
+
+		local ok = startAutoParry()
+		parryInitialized = ok
+		return ok
+	end
+
+	-- hook (atual, EXATAMENTE igual)
 	if not isAlive(parryRemote) then
 		clearRemovedRemote(parryRemote)
 		parryRemote = discoverRemote()
@@ -660,6 +769,11 @@ function Remote.getStatus()
 			ballSyncConnection ~= nil
 			and ballSyncConnection.Connected == true
 			and ballSyncRemote ~= nil,
+		auto = {
+			active = autoActive == true,
+			threads = #autoThreads,
+			payloadSize = AUTO_PAYLOAD_SIZE,
+		},
 		storage = getStorageStatus(),
 	}
 end
@@ -724,6 +838,26 @@ function Remote.bindBallSync(handler)
 	return true
 end
 
+-- ==========================================================
+-- 💜 controle externo do HEARTBURST "auto"
+-- ==========================================================
+function Remote.startAuto()
+	if not isAlive(parryRemote) then
+		clearRemovedRemote(parryRemote)
+		parryRemote = discoverRemote()
+	end
+	return isAlive(parryRemote) and startAutoParry() or false
+end
+
+function Remote.stopAuto()
+	stopAutoParry()
+	return true
+end
+
+function Remote.isAutoActive()
+	return autoActive == true
+end
+
 -- maintenance
 function Remote.startMaintenance(options)
 	options = type(options) == "table" and options or {}
@@ -764,6 +898,7 @@ end
 function Remote.stopMaintenance()
 	maintenanceGeneration = maintenanceGeneration + 1
 	disconnectBallSync()
+	stopAutoParry()
 end
 
 Remote.__contract = {
