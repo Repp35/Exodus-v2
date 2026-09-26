@@ -5,24 +5,25 @@ local Remote, GameInfo, Utils, BallReplicator, StatsService
 
 -- tuning
 local Tuning = {
-	DEFLECT_RADIUS = 8.5,
-	MIN_BALL_SPEED = 16,
-	RES_PER_PARRY = 0.225,
-	RES_CAP_STUDS = 32,
+DEFLECT_RADIUS = 8.5,
+MIN_BALL_SPEED = 16,
+RES_PER_PARRY = 0.225,
+RES_CAP_STUDS = 32,
 
-	HITBOX_OWN_WINDOW = 0.5,
-	HITBOX_PROXIMITY = 12,
-	HITBOX_GAP = 0.4,
+HITBOX_OWN_WINDOW = 0.5,
+HITBOX_PROXIMITY = 12,
+HITBOX_GAP = 0.4,
 
-	WINDOW_LOW_SPEED = 16,
-	WINDOW_LOW = 0.820,
-	WINDOW_REFERENCE_SPEED = 600,
-	WINDOW_REFERENCE = 0.200,
-	WINDOW_FACTOR = 0.45,
+WINDOW_LOW_SPEED = 16,
+WINDOW_LOW = 0.820,
+WINDOW_REFERENCE_SPEED = 600,
+WINDOW_REFERENCE = 0.200,
+WINDOW_FACTOR = 0.45,
 
 	PING_WINDOW_FACTOR = 1,
 	PING_WINDOW_CAP = 0.400,
 	CLIENT_CD_PROPAGATION = 0.30,
+	DEFLECT_RETRY_DELAY = 1.45,
 }
 
 local PING_SAMPLE_INTERVAL = 0.35
@@ -32,15 +33,15 @@ local DEFAULT_PING_ONE_WAY = 0.030
 local TELEPORT_LOCK_BASE = 0.400
 
 local WINDOW_CURVE_B =
-	(Tuning.WINDOW_LOW - Tuning.WINDOW_REFERENCE)
-	/ ((1 / Tuning.WINDOW_LOW_SPEED) - (1 / Tuning.WINDOW_REFERENCE_SPEED))
+(Tuning.WINDOW_LOW - Tuning.WINDOW_REFERENCE)
+/ ((1 / Tuning.WINDOW_LOW_SPEED) - (1 / Tuning.WINDOW_REFERENCE_SPEED))
 
 local WINDOW_CURVE_A =
-	Tuning.WINDOW_REFERENCE
-	- WINDOW_CURVE_B / Tuning.WINDOW_REFERENCE_SPEED
+Tuning.WINDOW_REFERENCE
+- WINDOW_CURVE_B / Tuning.WINDOW_REFERENCE_SPEED
 
 local MAX_RES_STACK =
-	math.floor(Tuning.RES_CAP_STUDS / Tuning.RES_PER_PARRY)
+math.floor(Tuning.RES_CAP_STUDS / Tuning.RES_PER_PARRY)
 
 local HITBOX_PROXIMITY_SQ =
 	Tuning.HITBOX_PROXIMITY * Tuning.HITBOX_PROXIMITY
@@ -91,6 +92,7 @@ local Resilience = {
 	lastFireBall = nil,
 	lastFireAt = 0,
 	lastHitboxAt = 0,
+	hitboxConfirmed = false,
 	lifeGeneration = 0,
 }
 
@@ -232,6 +234,7 @@ local function resetResilience()
 	Resilience.lastFireBall = nil
 	Resilience.lastFireAt = 0
 	Resilience.lastHitboxAt = 0
+	Resilience.hitboxConfirmed = false
 	Resilience.lifeGeneration = Runtime.lifeGeneration
 
 	Runtime.resilienceBonus = 0
@@ -346,36 +349,36 @@ end
 -- =========================================================
 
 local function computeBaseDeflectWindow(speed)
-	local raw = tonumber(speed) or 0
-	local s = math.max(raw, Tuning.WINDOW_LOW_SPEED)
+local raw = tonumber(speed) or 0
+local s = math.max(raw, Tuning.WINDOW_LOW_SPEED)
 
-	local window =
-		WINDOW_CURVE_A
-		+ WINDOW_CURVE_B / s
+local window =
+WINDOW_CURVE_A
++ WINDOW_CURVE_B / s
 
-	if raw < 40 then
-		window *= 0.7
-	end
+if raw < 40 then
+window *= 0.7
+end
 
-	return math.max(window, 0)
+return math.max(window, 0)
 end
 
 local function computeDeflectWindow(speed)
-	local window = computeBaseDeflectWindow(speed)
-	local ping = Runtime.pingOneWay
+local window = computeBaseDeflectWindow(speed)
+local ping = Runtime.pingOneWay
 
-	if ping > 0 then
-		window += math.min(
-			ping * 2 * Tuning.PING_WINDOW_FACTOR,
-			Tuning.PING_WINDOW_CAP
-		)
-	end
+if ping > 0 then
+window += math.min(
+ping * 2 * Tuning.PING_WINDOW_FACTOR,
+Tuning.PING_WINDOW_CAP
+)
+end
 
-	return window
+return window
 end
 
 local function computeEffectiveWindow(speed)
-	return computeDeflectWindow(speed) * Tuning.WINDOW_FACTOR
+return computeDeflectWindow(speed) * Tuning.WINDOW_FACTOR
 end
 
 local function computeTiming(rootPosition, position, speed, time)
@@ -394,7 +397,7 @@ local function computeTiming(rootPosition, position, speed, time)
 		computeDeflectWindow(speed)
 
 	local effectiveWindow =
-		deflectWindow * Tuning.WINDOW_FACTOR
+		computeEffectiveWindow(speed)
 
 	local parryRadius =
 		Tuning.DEFLECT_RADIUS
@@ -664,7 +667,6 @@ local function onBallSync(data)
 							Resilience.stack + 1,
 							MAX_RES_STACK
 						)
-
 					Runtime.resilienceBonusAt = -1
 				end
 
@@ -778,6 +780,19 @@ local function requestParry(ball)
 	Runtime.lastFireAt = time
 	Runtime.cooldownObservedAt = 0
 
+	-- Depois da confirmação inicial por HitboxGrow, cada parry
+	-- enviado com sucesso concede exatamente um stack.
+	if Resilience.hitboxConfirmed
+		and isResilienceUsable()
+	then
+		Resilience.stack =
+			math.min(
+				Resilience.stack + 1,
+				MAX_RES_STACK
+			)
+
+		Runtime.resilienceBonusAt = -1
+	end
 	local firedBall = ball
 
 	if not isValidBall(firedBall) then
@@ -818,6 +833,7 @@ local function handleHitbox(instance)
 	if typeof(instance) ~= "Instance"
 		or instance.Name ~= "HitboxGrow"
 		or not Utils.isActive()
+		or Resilience.hitboxConfirmed
 	then
 		return
 	end
@@ -867,6 +883,9 @@ local function handleHitbox(instance)
 		return
 	end
 
+	-- O primeiro HitboxGrow válido confirma a resiliência nesta vida.
+	-- O stack inicial é contado aqui; os próximos vêm de cada fired.
+	Resilience.hitboxConfirmed = true
 	Resilience.lastHitboxAt = time
 
 	Resilience.stack =
@@ -1234,13 +1253,24 @@ local function bindCharacter(character)
 				end
 
 				return
-			end
+				end
 
-			Runtime.cooldownObservedAt = 0
+				Runtime.cooldownObservedAt = 0
 
-			-- Se estava armado durante cooldown,
-			-- dispara imediatamente no primeiro frame livre.
-			if ParryState.armed then
+				-- A local send is not proof of a server parry. If the same
+				-- ball is still eligible after the game's 1.45s cooldown,
+				-- release the stale fired lock so the normal trigger can retry.
+				if ParryState.fired
+					and ParryState.firedBall == ball
+					and timeNow - ParryState.firedAt
+						>= Tuning.DEFLECT_RETRY_DELAY
+				then
+					clearFired()
+				end
+
+				-- Se estava armado durante cooldown,
+				-- dispara imediatamente no primeiro frame livre.
+				if ParryState.armed then
 				if not isValidBall(ball)
 					or ball ~= ParryState.armedBall
 					or not isLocallyTargeted()
