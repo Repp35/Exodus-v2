@@ -9,6 +9,7 @@ local Workspace
 local BALL_CACHE_TTL = 0.5
 local SYNC_FRESH_TIME = 1.0
 local ABILITY_RETRY_TIME = 2.0
+local GAMEINFO_RETRY_TIME = 2.0
 local SNAPSHOT_SCHEMA = 1
 
 -- state
@@ -29,6 +30,9 @@ local State = {
 local deflectAbility = nil
 local abilityAttempted = false
 local abilityCheckedAt = 0
+local gameInfoModule = nil
+local gameInfoProvider = nil
+local gameInfoCheckedAt = 0
 local cachedCharacter = nil
 local cachedRoot = nil
 local function clearSyncState()
@@ -40,7 +44,7 @@ end
 -- reset
 local function resetState()
 	State.ball = nil; State.ballAt = 0; clearSyncState(); cachedCharacter = nil
-	cachedRoot = nil
+	cachedRoot = nil; gameInfoModule = nil; gameInfoProvider = nil; gameInfoCheckedAt = 0
 end
 
 -- ball
@@ -48,7 +52,39 @@ local function isBall(instance)
 	return typeof(instance) == "Instance"
 		and instance.Parent ~= nil
 		and instance:IsA("BasePart")
-		and instance.Name == "GameBall"
+end
+local function resolveGameInfoProvider(time)
+	time = time or Utils.now()
+	if gameInfoProvider and gameInfoModule and gameInfoModule.Parent ~= nil
+		and time - gameInfoCheckedAt < GAMEINFO_RETRY_TIME
+	then
+		return gameInfoProvider
+	end
+	if gameInfoCheckedAt > 0 and time - gameInfoCheckedAt < GAMEINFO_RETRY_TIME then
+		return nil
+	end
+	gameInfoCheckedAt = time
+	gameInfoModule = nil; gameInfoProvider = nil
+	local replicatedStorage = Utils.getReplicatedStorage()
+	local ts = replicatedStorage and replicatedStorage:FindFirstChild("TS")
+	local candidate = ts and ts:FindFirstChild("GameInfo")
+	if not candidate or not candidate:IsA("ModuleScript") then return nil end
+	gameInfoModule = candidate
+	local ok, result = pcall(require, candidate)
+	if not ok or type(result) ~= "table" then return nil end
+	if type(result.GameInfo) == "table" then
+		gameInfoProvider = result.GameInfo
+	elseif result.BallModel ~= nil then
+		-- Algumas versões expõem BallModel diretamente; o formato atual observado
+		-- no jogo disponibiliza a tabela em result.GameInfo.
+		gameInfoProvider = result
+	end
+	return gameInfoProvider
+end
+local function getProviderBall(time)
+	local provider = resolveGameInfoProvider(time)
+	local ball = provider and provider.BallModel
+	return isBall(ball) and ball or nil
 end
 local function setBall(ball)
 	if isBall(ball) then
@@ -62,8 +98,11 @@ end
 local function getBall()
 	local time = Utils.now(); local cached = State.ball
 	if cached and cached.Parent ~= nil and time - State.ballAt < BALL_CACHE_TTL then return cached end
-	local ball = Workspace:FindFirstChild("GameBall")
-	if not ball then ball = Workspace:FindFirstChild("GameBall", true) end
+	local ball = getProviderBall(time)
+	if not ball then
+		ball = Workspace:FindFirstChild("GameBall")
+		if not ball then ball = Workspace:FindFirstChild("GameBall", true) end
+	end
 	if isBall(ball) then setBall(ball); return ball end
 	State.ball = nil; State.ballAt = time; return nil
 end
@@ -200,12 +239,29 @@ end
 -- watcher
 local function installBallWatcher(trackConnection)
 	if type(trackConnection) ~= "function" then return false end
-	local gameFolder = Workspace:WaitForChild("Game", 30); local ballFolder = gameFolder and gameFolder:FindFirstChild("Ball")
-	if not ballFolder then return false end
-	trackConnection(ballFolder.ChildAdded:Connect(function(child)
-		if child.Name == "GameBall" and child:IsA("BasePart") then setBall(child) end
+	local gameFolder = Workspace:FindFirstChild("Game")
+	local ballFolder = gameFolder and gameFolder:FindFirstChild("Ball")
+	if ballFolder then
+		trackConnection(ballFolder.ChildAdded:Connect(function(child)
+			if child.Name == "GameBall" and child:IsA("BasePart") then setBall(child) end
+		end))
+		trackConnection(ballFolder.ChildRemoved:Connect(clearBall))
+		setBall(ballFolder:FindFirstChild("GameBall") or getProviderBall(Utils.now()))
+		return true
+	end
+
+	-- Algumas versões expõem a bola apenas por TS.GameInfo.BallModel ou em outra
+	-- hierarquia do Workspace. Observe alterações gerais e resolva a fonte atual.
+	trackConnection(Workspace.DescendantAdded:Connect(function(child)
+		if child.Name == "GameBall" and child:IsA("BasePart") then
+			setBall(child)
+			return
+		end
+		if getProviderBall(Utils.now()) == child then setBall(child) end
 	end))
-	trackConnection(ballFolder.ChildRemoved:Connect(clearBall)); setBall(ballFolder:FindFirstChild("GameBall")); return true
+	trackConnection(Workspace.DescendantRemoving:Connect(clearBall))
+	setBall(getBall())
+	return true
 end
 
 -- setup
