@@ -20,10 +20,12 @@ local Tuning = {
 	PING_WINDOW_FACTOR = 1,
 	PING_WINDOW_CAP = 0.400,
 	CLIENT_CD_PROPAGATION = 0.30,
+	MIN_LOCAL_PARRY_LOCK = 0.080,
 }
 
-local PING_SAMPLE_INTERVAL = 0.35
-local PING_EMA_ALPHA = 0.08
+local PING_SAMPLE_INTERVAL = 0.10
+local PING_EMA_ALPHA_UP = 0.50
+local PING_EMA_ALPHA_DOWN = 0.20
 local DEFAULT_PING_ONE_WAY = 0.030
 local TELEPORT_LOCK_BASE = 0.400
 local WINDOW_CURVE_B = (Tuning.WINDOW_LOW - Tuning.WINDOW_REFERENCE)
@@ -83,6 +85,7 @@ local Runtime = {
 	connections = {},
 	pingTimer = 0,
 	pingOneWay = DEFAULT_PING_ONE_WAY,
+	pingSource = "default",
 	minPing = nil,
 	resilienceBonus = 0,
 	resilienceBonusAt = -1,
@@ -97,6 +100,7 @@ local Runtime = {
 	lastDistanceToParryRadius = 0,
 	lastSpeed = 0,
 	lastFireAt = 0,
+	localParryLockUntil = 0,
 	cooldownObservedAt = 0,
 	phase = PHASE_DETACHED,
 	passivePhase = "idle",
@@ -157,15 +161,29 @@ end
 
 -- PING
 local function samplePing()
-	if not StatsService then return end
-	local ok, item = pcall(function() return StatsService.Network.ServerStatsItem["Data Ping"] end)
-	if not ok or not item then return end
-	local valid, ping = pcall(item.GetValue, item)
-	if not valid or type(ping) ~= "number" then return end
-	ping *= 0.001
-	if ping <= 0 or ping >= 0.5 or not Utils.isFiniteNumber(ping) then return end
+	local ping, source
+	if StatsService then
+		local ok, item = pcall(function() return StatsService.Network.ServerStatsItem["Data Ping"] end)
+		if ok and item then
+			local valid, value = pcall(item.GetValue, item)
+			if valid and type(value) == "number" and Utils.isFiniteNumber(value) then
+				ping = value > 1 and value * 0.001 or value; source = "Stats.Data Ping"
+			end
+		end
+	end
+	if not ping or ping <= 0 or ping >= 1 then
+		local player = Runtime.player
+		local ok, value = pcall(function() return player and player:GetNetworkPing() end)
+		if ok and type(value) == "number" and Utils.isFiniteNumber(value) and value > 0 and value < 1 then
+			ping = value; source = "Player:GetNetworkPing"
+		end
+	end
+	if not ping or ping <= 0 or ping >= 1 or not Utils.isFiniteNumber(ping) then return end
 	if not Runtime.minPing or ping < Runtime.minPing then Runtime.minPing = ping end
-	local oneWay = ping * 0.5; Runtime.pingOneWay += (oneWay - Runtime.pingOneWay) * PING_EMA_ALPHA
+	local oneWay = ping * 0.5
+	local alpha = oneWay > Runtime.pingOneWay and PING_EMA_ALPHA_UP or PING_EMA_ALPHA_DOWN
+	Runtime.pingOneWay += (oneWay - Runtime.pingOneWay) * alpha
+	Runtime.pingSource = source or "unknown"
 end
 
 -- TIMING
@@ -174,23 +192,26 @@ local function computeBaseDeflectWindow(speed)
 	if raw < 40 then window *= 0.7 end
 	return math.max(window, 0)
 end
-local function computeDeflectWindow(speed)
-	local window = computeBaseDeflectWindow(speed); local ping = Runtime.pingOneWay
-	if ping > 0 then window += math.min(ping * 2 * Tuning.PING_WINDOW_FACTOR, Tuning.PING_WINDOW_CAP) end
-	return window
+local function computePingWindow()
+	return math.min(Runtime.pingOneWay * 2 * Tuning.PING_WINDOW_FACTOR, Tuning.PING_WINDOW_CAP)
 end
-local function computeEffectiveWindow(speed) return computeDeflectWindow(speed) * Tuning.WINDOW_FACTOR end
+local function computeDeflectWindow(speed)
+	return computeBaseDeflectWindow(speed) + computePingWindow()
+end
+local function computeEffectiveWindow(speed, factor)
+	return computeBaseDeflectWindow(speed) * (factor or Tuning.WINDOW_FACTOR) + computePingWindow()
+end
 local function computePingRadius(speed)
 	local rawSpeed = tonumber(speed) or 0
 	if rawSpeed <= 0 then return 0 end
-	return rawSpeed * math.min(Runtime.pingOneWay * 2 * Tuning.PING_WINDOW_FACTOR, Tuning.PING_WINDOW_CAP)
+	return rawSpeed * computePingWindow()
 end
 local function computeNoWindowParryRadius(speed, resilience)
 	return Tuning.DEFLECT_RADIUS + (resilience or 0) + computePingRadius(speed)
 end
 local function computeTiming(rootPosition, position, speed, time)
 	if typeof(rootPosition) ~= "Vector3" or typeof(position) ~= "Vector3" or type(speed) ~= "number" or speed <= 0 then return nil end
-	local resilience = getResilienceBonus(time); local deflectWindow = computeDeflectWindow(speed); local effectiveWindow = deflectWindow * Tuning.WINDOW_FACTOR
+	local resilience = getResilienceBonus(time); local deflectWindow = computeDeflectWindow(speed); local effectiveWindow = computeEffectiveWindow(speed)
 	local pingRadius = computePingRadius(speed); local noWindowParryRadius = Tuning.DEFLECT_RADIUS + resilience + pingRadius
 	local parryRadius = Tuning.DEFLECT_RADIUS + resilience + speed * effectiveWindow; local distSq = distanceSquared(rootPosition, position); local distance = math.sqrt(distSq)
 	local delta = distance - parryRadius; local tti = delta <= 0 and 0 or delta / speed
@@ -304,11 +325,25 @@ end
 -- PARRY
 local function requestParry(ball)
 	if not Runtime.alive or not Runtime.bound then return false end
+	local time = now()
+	if ParryState.fired or time < Runtime.localParryLockUntil then
+		setPhase(PHASE_COOLDOWN, "local_parry_lock")
+		return false
+	end
+	if GameInfo and type(GameInfo.getDeflectCD) == "function" then
+		local okCooldown, cooldown = pcall(GameInfo.getDeflectCD)
+		cooldown = okCooldown and tonumber(cooldown) or 0
+		if cooldown and Utils.isFiniteNumber(cooldown) and cooldown > 0 then
+			Runtime.localParryLockUntil = math.max(Runtime.localParryLockUntil, time + cooldown + 0.05)
+			setPhase(PHASE_COOLDOWN, "game_cooldown")
+			return false
+		end
+	end
 	if not Remote or type(Remote.fireParry) ~= "function" then
 		if Utils.recordError then Utils.recordError("AutoParry", "Remote.fireParry indisponivel") end
 		setPhase(PHASE_WAITING, "remote_unavailable"); return false
 	end
-	local time = now()
+	Runtime.localParryLockUntil = time + Tuning.MIN_LOCAL_PARRY_LOCK
 	ParryState.fired = true; ParryState.firedBall = ball; local ok = pcall(Remote.fireParry, 1)
 	if not ok then
 		clearFired()
@@ -449,11 +484,11 @@ end
 local function resetState()
 	invalidateLife(); Runtime.teleportLockUntil = 0; Runtime.lastTarget = -1; Runtime.lastWasMe = nil
 	Runtime.targetId = -1; Runtime.targetKnown = false; Runtime.pingTimer = 0; Runtime.minPing = nil
-	Runtime.pingOneWay = DEFAULT_PING_ONE_WAY; Runtime.parryRadius = 0; Runtime.baseParryRadius = Tuning.DEFLECT_RADIUS
+	Runtime.pingOneWay = DEFAULT_PING_ONE_WAY; Runtime.pingSource = "default"; Runtime.parryRadius = 0; Runtime.baseParryRadius = Tuning.DEFLECT_RADIUS
 	Runtime.noWindowParryRadius = Tuning.DEFLECT_RADIUS; Runtime.pingRadius = 0; Runtime.resilienceBonus = 0
 	Runtime.resilienceBonusAt = -1; Runtime.deflectWindow = 0; Runtime.effectiveWindow = 0; Runtime.lastTTI = math.huge
 	Runtime.lastDistance = 0; Runtime.lastDistanceToParryRadius = 0; Runtime.lastSpeed = 0; Runtime.lastFireAt = 0
-	Runtime.cooldownObservedAt = 0
+	Runtime.cooldownObservedAt = 0; Runtime.localParryLockUntil = 0
 	setPhase(PHASE_DETACHED, "reset")
 end
 
@@ -629,6 +664,9 @@ function AutoParry.getStatus()
 
 		ping = {
 			oneWay = Runtime.pingOneWay,
+			roundTrip = Runtime.pingOneWay * 2,
+			compensationWindow = computePingWindow(),
+			source = Runtime.pingSource,
 			minimum = Runtime.minPing,
 		},
 
@@ -636,6 +674,7 @@ function AutoParry.getStatus()
 			fired = ParryState.fired == true,
 			lastFireAt = Runtime.lastFireAt,
 			lastTTI = Runtime.lastTTI,
+			localLockRemaining = math.max(0, Runtime.localParryLockUntil - now()),
 		},
 
 	}
