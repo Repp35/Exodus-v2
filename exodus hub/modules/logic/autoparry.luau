@@ -2,6 +2,7 @@
 
 local AutoParry = {}
 local Remote, GameInfo, Utils, BallReplicator, StatsService
+local TargetTracker
 
 -- tuning
 local Tuning = {
@@ -26,6 +27,7 @@ local PING_SAMPLE_INTERVAL = 0.35
 local PING_EMA_ALPHA = 0.08
 local DEFAULT_PING_ONE_WAY = 0.030
 local TELEPORT_LOCK_BASE = 0.400
+local TARGET_DEBOUNCE = 0.180
 local WINDOW_CURVE_B = (Tuning.WINDOW_LOW - Tuning.WINDOW_REFERENCE)
 	/ ((1 / Tuning.WINDOW_LOW_SPEED) - (1 / Tuning.WINDOW_REFERENCE_SPEED))
 local WINDOW_CURVE_A = Tuning.WINDOW_REFERENCE - WINDOW_CURVE_B / Tuning.WINDOW_REFERENCE_SPEED
@@ -51,10 +53,6 @@ local HitboxState = type(namespace.AutoParryHitbox) == "table" and namespace.Aut
 	}
 namespace.AutoParryHitbox = HitboxState
 _G.Exodus = namespace
-local ParryState = {
-	fired = false,
-	firedBall = nil,
-}
 
 local Resilience = {
 	stack = 0,
@@ -112,12 +110,6 @@ local function setPhase(phase, reason)
 	if Utils and Utils.recordTransition then Utils.recordTransition("AutoParry", PHASE_STRINGS[old] or "detached", phaseString, reason) end
 end
 local function isValidBall(ball) return ball ~= nil and ball.Parent ~= nil end
-local function clearFired()
-	ParryState.fired = false; ParryState.firedBall = nil
-end
-local function clearCycle()
-	clearFired(); Resilience.lastFireBall = nil; Resilience.lastFireAt = 0
-end
 local function disconnectConnections()
 	for i = #Runtime.connections, 1, -1 do
 		local connection = Runtime.connections[i]; Runtime.connections[i] = nil
@@ -137,7 +129,8 @@ local function resetResilience()
 	Resilience.hitboxConfirmed = false; Resilience.lifeGeneration = Runtime.lifeGeneration; Runtime.resilienceBonus = 0; Runtime.resilienceBonusAt = -1
 end
 local function invalidateLife()
-	Runtime.lifeGeneration += 1; Runtime.alive = false; Runtime.bound = false; clearCycle()
+	Runtime.lifeGeneration += 1; Runtime.alive = false; Runtime.bound = false
+	TargetTracker.reset("life_invalidated")
 	resetResilience()
 end
 local function isResilienceUsable()
@@ -212,7 +205,8 @@ local function computeTiming(rootPosition, position, speed, time)
 	}
 end
 
--- TARGET
+-- TARGET SOURCE
+-- apenas leitura: quem sou eu como alvo, segundo o BallReplicator e os fallbacks.
 local function refreshTargetCache()
 	local syncData = BallReplicator and BallReplicator.syncData; local target = tonumber(syncData and syncData.TargetPlayerID)
 	if target ~= nil then Runtime.targetId = target; Runtime.targetKnown = true; return target end
@@ -258,11 +252,175 @@ local function isBallInParryWindow(time)
 	if not timing then return false, false end
 	return (timing.distance <= timing.parryRadius), true
 end
+
+-- PARRY
+-- unico ponto do modulo que encosta no remote.
+local function requestParry(ball)
+	if not Runtime.alive or not Runtime.bound then return false end
+	if not Remote or type(Remote.fireParry) ~= "function" then
+		if Utils.recordError then Utils.recordError("AutoParry", "Remote.fireParry indisponivel") end
+		setPhase(PHASE_WAITING, "remote_unavailable"); return false
+	end
+	local time = now()
+	local ok = pcall(Remote.fireParry, 1)
+	if not ok then
+		if Utils.recordError then Utils.recordError("AutoParry", "Remote.fireParry falhou") end
+		setPhase(PHASE_WAITING, "remote_failed"); return false
+	end
+	Runtime.lastFireAt = time; Runtime.cooldownObservedAt = 0
+	if Resilience.hitboxConfirmed then Resilience.hitboxConfirmed = false end
+	local firedBall = ball
+	if not isValidBall(firedBall) then
+		local okBall, currentBall = pcall(GameInfo.getBall)
+		if okBall then firedBall = currentBall end
+	end
+	if
+		isValidBall(firedBall)
+		and Runtime.alive
+		and Runtime.bound
+		and Resilience.lifeGeneration == Runtime.lifeGeneration
+	then
+		Resilience.lastFireBall = firedBall; Resilience.lastFireAt = time
+	else
+		Resilience.lastFireBall = nil; Resilience.lastFireAt = 0
+	end
+	setPhase(PHASE_FIRED, "parry_requested"); return true
+end
+
+-- PARRY SLOT
+-- nasce `open` no onBecameTarget, carrega no maximo um remote e trava em `locked`.
+-- `locked` e terminal. Nao existe unlock, nao existe reset interno.
+-- o unico fim de um slot e a destruicao feita pelo TargetTracker.
+local SLOT_OPEN = "open"
+local SLOT_LOCKED = "locked"
+
+local ParrySlot = {}
+ParrySlot.__index = ParrySlot
+
+local function newSlot(generation)
+	return setmetatable({
+		generation = generation,
+		state = SLOT_OPEN,
+		destroyed = false,
+		createdAt = now(),
+		lockedAt = 0,
+	}, ParrySlot)
+end
+
+function ParrySlot:isLocked()
+	return self.state == SLOT_LOCKED
+end
+
+function ParrySlot:lock()
+	if self.destroyed or self.state == SLOT_LOCKED then return end
+	self.state = SLOT_LOCKED; self.lockedAt = now()
+end
+
+function ParrySlot:destroy()
+	self.destroyed = true
+end
+
+function ParrySlot:update(ballData, rootPosition, time)
+	if self.destroyed then return false end
+	if self.state == SLOT_LOCKED then return false end
+	if self.generation ~= TargetTracker.generation then return false end
+	if type(ballData) ~= "table" then return false end
+	local ball = ballData.ball; local position = ballData.position; local speed = ballData.speed
+	if not isValidBall(ball) or typeof(position) ~= "Vector3" then return false end
+	if time < Runtime.teleportLockUntil then setPhase(PHASE_WAITING, "teleport_lock"); return false end
+	local deflectCooldown = tonumber(GameInfo.getDeflectCD()) or 0
+	if deflectCooldown > 0 then
+		if Runtime.cooldownObservedAt <= 0 then Runtime.cooldownObservedAt = time end
+		if time - Runtime.cooldownObservedAt >= Tuning.CLIENT_CD_PROPAGATION then setPhase(PHASE_COOLDOWN, "cooldown_propagation")
+		else setPhase(PHASE_COOLDOWN, "cooldown_observed") end
+		return false
+	end
+	Runtime.cooldownObservedAt = 0
+	local timing = computeTiming(rootPosition, position, speed, time)
+	if not timing then return false end
+	Runtime.parryRadius = timing.parryRadius; Runtime.baseParryRadius = timing.pureRadius; Runtime.noWindowParryRadius = timing.noWindowParryRadius
+	Runtime.pingRadius = timing.pingRadius; Runtime.resilienceBonus = timing.resilienceBonus
+	Runtime.deflectWindow = timing.deflectWindow; Runtime.effectiveWindow = timing.effectiveWindow
+	Runtime.lastTTI = timing.tti; Runtime.lastDistance = timing.distance; Runtime.lastDistanceToParryRadius = timing.distanceToParryRadius; Runtime.lastSpeed = timing.speed
+	if timing.distance > timing.parryRadius then setPhase(PHASE_WAITING, "outside_radius"); return false end
+	if not requestParry(ball) then return false end
+	self:lock(); return true
+end
+
+-- TARGET TRACKER
+-- consome onBallSync e o heartbeat como fonte de dados e mantem dois estados:
+-- `confirmed` (eu sou o alvo confirmado) e `pendingLost` (debounce).
+-- Nao existe caminho que emita dois onBecameTarget sem um onLostTarget entre eles.
+TargetTracker = {
+	generation = 0,
+	confirmed = false,
+	pendingLost = nil,
+	currentSlot = nil,
+}
+
+local function destroySlot()
+	local slot = TargetTracker.currentSlot
+	TargetTracker.currentSlot = nil
+	if slot then slot:destroy() end
+end
+
+-- emissao: alvo chegou em mim
+function TargetTracker.observe(isMe, at)
+	local time = tonumber(at) or now()
+	if isMe then
+		if TargetTracker.pendingLost then TargetTracker.pendingLost = nil end
+		if TargetTracker.confirmed then return end
+		TargetTracker.confirmed = true; TargetTracker.generation += 1
+		TargetTracker.currentSlot = newSlot(TargetTracker.generation); return
+	end
+	if not TargetTracker.confirmed then return end
+	if TargetTracker.pendingLost then return end
+	TargetTracker.pendingLost = { startedAt = time, expiresAt = time + TARGET_DEBOUNCE }
+end
+
+-- emissao: o debounce expirou sem eu voltar a ser alvo
+function TargetTracker.tick(time)
+	local pending = TargetTracker.pendingLost
+	if not pending then return end
+	if (tonumber(time) or now()) < pending.expiresAt then return end
+	TargetTracker.pendingLost = nil; TargetTracker.confirmed = false
+	destroySlot()
+end
+
+-- teardown de ciclo de vida: nao e unlock, e destruicao do tracker inteiro.
+-- o slot velho morre; um slot novo so nasce de um onBecameTarget novo.
+function TargetTracker.reset()
+	TargetTracker.confirmed = false; TargetTracker.pendingLost = nil
+	destroySlot()
+end
+
+function TargetTracker.getStatus()
+	local pending = TargetTracker.pendingLost
+	local slot = TargetTracker.currentSlot
+	return {
+		confirmed = TargetTracker.confirmed == true,
+		generation = TargetTracker.generation,
+		debounce = TARGET_DEBOUNCE,
+		pendingLost = pending ~= nil,
+		pendingLostIn = pending and math.max(pending.expiresAt - now(), 0) or 0,
+		slot = slot and {
+			generation = slot.generation,
+			state = slot.state,
+			locked = slot:isLocked(),
+			createdAt = slot.createdAt,
+			lockedAt = slot.lockedAt,
+		} or nil,
+	}
+end
+
+-- SYNC
+-- o sync alimenta o tracker e a resiliencia passiva. Nao decide disparo.
 local function onBallSync(data)
 	if typeof(data) ~= "table" or not Runtime.alive or not Runtime.bound then return end
 	local time = now()
 	if data.Teleported == true then
-		Runtime.teleportLockUntil = math.max(Runtime.teleportLockUntil, time + TELEPORT_LOCK_BASE + Runtime.pingOneWay); clearCycle(); Runtime.passivePhase = "idle"; Runtime.passiveBallAtValid = false
+		Runtime.teleportLockUntil = math.max(Runtime.teleportLockUntil, time + TELEPORT_LOCK_BASE + Runtime.pingOneWay)
+		TargetTracker.reset(); Runtime.passivePhase = "idle"; Runtime.passiveBallAtValid = false
 		setPhase(PHASE_WAITING, "teleport_lock"); return
 	end
 	local targetId = tonumber(data.TargetPlayerID) or -1; Runtime.targetId = targetId; Runtime.targetKnown = true; local previousTarget = Runtime.lastTarget
@@ -292,47 +450,36 @@ local function onBallSync(data)
 	else
 		Runtime.passivePhase = "idle"; Runtime.passiveBallAtValid = false
 	end
-	if isMe then
-		clearFired()
-	elseif targetId ~= -1 then
-		if previousWasMe == true then clearFired() end
-	else
-		clearFired()
-	end
+	TargetTracker.observe(isMe, time)
 end
 
--- PARRY
-local function requestParry(ball)
-	if not Runtime.alive or not Runtime.bound then return false end
-	if not Remote or type(Remote.fireParry) ~= "function" then
-		if Utils.recordError then Utils.recordError("AutoParry", "Remote.fireParry indisponivel") end
-		setPhase(PHASE_WAITING, "remote_unavailable"); return false
-	end
-	local time = now()
-	ParryState.fired = true; ParryState.firedBall = ball; local ok = pcall(Remote.fireParry, 1)
-	if not ok then
-		clearFired()
-		if Utils.recordError then Utils.recordError("AutoParry", "Remote.fireParry falhou") end
-		setPhase(PHASE_WAITING, "remote_failed"); return false
-	end
-	Runtime.lastFireAt = time; Runtime.cooldownObservedAt = 0
-	if Resilience.hitboxConfirmed then Resilience.hitboxConfirmed = false end
-	local firedBall = ball
-	if not isValidBall(firedBall) then
-		local okBall, currentBall = pcall(GameInfo.getBall)
-		if okBall then firedBall = currentBall end
-	end
-	if
-		isValidBall(firedBall)
-		and Runtime.alive
-		and Runtime.bound
-		and Resilience.lifeGeneration == Runtime.lifeGeneration
-	then
-		Resilience.lastFireBall = firedBall; Resilience.lastFireAt = time
-	else
-		Resilience.lastFireBall = nil; Resilience.lastFireAt = 0
-	end
-	setPhase(PHASE_FIRED, "parry_requested"); return true
+-- HEARTBEAT
+-- responsavel unica por coletar dado da bola e alimentar o slot ativo.
+-- nao decide, nao checa fired, nao chama remote.
+local function onHeartbeat(character, root, getConfig, isSpamActive, getSnapshotRef, isSnapshotValid, finite, dt)
+	if not character.Parent or not root.Parent then return end
+	local timeNow = now()
+	local config = getConfig()
+	if type(config) ~= "table" or config.AutoParry ~= true then TargetTracker.reset(); return end
+	if isSpamActive() then TargetTracker.reset(); return end
+	Runtime.pingTimer += math.max(dt, 0)
+	if Runtime.pingTimer >= PING_SAMPLE_INTERVAL then Runtime.pingTimer = 0; samplePing() end
+	TargetTracker.tick(timeNow)
+	refreshTargetCache()
+	local targeted = isLocallyTargeted()
+	TargetTracker.observe(targeted, timeNow)
+	if not targeted then setPhase(PHASE_WAITING, "not_targeted"); return end
+	local slot = TargetTracker.currentSlot
+	if not slot then return end
+	local snapshot = getSnapshotRef(Runtime.lastTarget, timeNow)
+	if type(snapshot) ~= "table" or not isSnapshotValid(snapshot, timeNow) then return end
+	local ball = snapshot.ball
+	if not isValidBall(ball) then return end
+	local speed = getBallSpeed(ball, snapshot)
+	if not speed or speed < Tuning.MIN_BALL_SPEED or not finite(speed) then return end
+	local position = snapshot.position
+	if typeof(position) ~= "Vector3" then return end
+	slot:update({ ball = ball, position = position, speed = speed }, root.Position, timeNow)
 end
 
 -- HITBOX
@@ -395,44 +542,10 @@ local function bindCharacter(character)
 		Runtime.connections[#Runtime.connections + 1] = diedConnection; Utils.trackCharacter(diedConnection)
 	end
 	local runService = Utils.getRunService(); local heartbeat = runService.Heartbeat; local getConfig = Utils.getConfig; local isSpamActive = Utils.isSpamActive
-	local getSnapshot = GameInfo.getSnapshot; local isSnapshotValid = GameInfo.isSnapshotValid; local getDeflectCD = GameInfo.getDeflectCD; local finite = Utils.isFiniteNumber
+	local getSnapshotRef = GameInfo.getSnapshot; local isSnapshotValid = GameInfo.isSnapshotValid; local finite = Utils.isFiniteNumber
 	local heartbeatConnection = heartbeat:Connect(function(dt)
 		if generation ~= Runtime.generation or not Runtime.alive or not Runtime.bound then return end
-		if not character.Parent or not root.Parent then return end
-		local config = getConfig()
-		if type(config) ~= "table" or config.AutoParry ~= true then clearCycle(); return end
-		local timeNow = now()
-		if timeNow < Runtime.teleportLockUntil then clearCycle(); return end
-		if isSpamActive() then clearCycle(); return end
-		Runtime.pingTimer += math.max(dt, 0)
-		if Runtime.pingTimer >= PING_SAMPLE_INTERVAL then Runtime.pingTimer = 0; samplePing() end
-		refreshTargetCache()
-		if not isLocallyTargeted() then setPhase(PHASE_WAITING, "not_targeted"); return end
-		if ParryState.fired then return end
-		local snapshot = getSnapshot(Runtime.lastTarget, timeNow)
-		if type(snapshot) ~= "table" or not isSnapshotValid(snapshot, timeNow) then return end
-		local ball = snapshot.ball
-		if not isValidBall(ball) then return end
-		local speed = getBallSpeed(ball, snapshot)
-		if not speed or speed < Tuning.MIN_BALL_SPEED or not finite(speed) then return end
-		local position = snapshot.position
-		if typeof(position) ~= "Vector3" then return end
-		local deflectCooldown = tonumber(getDeflectCD()) or 0
-		if deflectCooldown > 0 then
-			if Runtime.cooldownObservedAt <= 0 then Runtime.cooldownObservedAt = timeNow end
-			if timeNow - Runtime.cooldownObservedAt >= Tuning.CLIENT_CD_PROPAGATION then setPhase(PHASE_COOLDOWN, "cooldown_propagation")
-			else setPhase(PHASE_COOLDOWN, "cooldown_observed") end
-			return
-		end
-		Runtime.cooldownObservedAt = 0
-		local timing = computeTiming(root.Position, position, speed, timeNow)
-		if not timing then return end
-		Runtime.parryRadius = timing.parryRadius; Runtime.baseParryRadius = timing.pureRadius; Runtime.noWindowParryRadius = timing.noWindowParryRadius
-		Runtime.pingRadius = timing.pingRadius; Runtime.resilienceBonus = timing.resilienceBonus
-		Runtime.deflectWindow = timing.deflectWindow; Runtime.effectiveWindow = timing.effectiveWindow
-		Runtime.lastTTI = timing.tti; Runtime.lastDistance = timing.distance; Runtime.lastDistanceToParryRadius = timing.distanceToParryRadius; Runtime.lastSpeed = timing.speed
-		if timing.distance > timing.parryRadius then setPhase(PHASE_WAITING, "outside_radius"); return end
-		requestParry(ball)
+		onHeartbeat(character, root, getConfig, isSpamActive, getSnapshotRef, isSnapshotValid, finite, dt)
 	end)
 	Runtime.connections[#Runtime.connections + 1] = heartbeatConnection; Utils.trackCharacter(heartbeatConnection)
 	local ancestryConnection = character.AncestryChanged:Connect(function(_, parent)
@@ -504,7 +617,10 @@ end
 -- PUBLIC
 function AutoParry.fire()
 	if not Remote or not GameInfo or not Utils or not Runtime.alive or not Runtime.bound then return false end
-	local ball = GameInfo.getBall(); return requestParry(ball)
+	local ok = requestParry(GameInfo.getBall())
+	local slot = TargetTracker and TargetTracker.currentSlot
+	if ok and slot then slot:lock() end
+	return ok
 end
 function AutoParry.bindCharacter(character)
 	if not Remote or not GameInfo or not Utils then return false end
@@ -520,6 +636,10 @@ function AutoParry.detachCharacter()
 end
 function AutoParry.onBallSync(data)
 	if Utils then onBallSync(data) end
+end
+function AutoParry.getTargetStatus()
+	if not Utils then return nil end
+	return TargetTracker.getStatus()
 end
 
 -- API
@@ -595,15 +715,17 @@ function AutoParry.getTiming(snapshot, time, rootPosition)
 	return computeTiming(rootPosition, position, speed, time)
 end
 function AutoParry.getStatus()
+	local target = TargetTracker.getStatus()
 	return {
 		schema = Utils and Utils.apiVersion and Utils.apiVersion() or nil,
 		api = {
 			name = "AutoParry",
-			version = 3,
+			version = 4,
 			endpoints = {
 				"getRadius",
 				"getTiming",
 				"getStatus",
+				"getTargetStatus",
 			},
 		},
 
@@ -632,8 +754,10 @@ function AutoParry.getStatus()
 			minimum = Runtime.minPing,
 		},
 
+		target = target,
+
 		cycle = {
-			fired = ParryState.fired == true,
+			fired = target.slot ~= nil and target.slot.locked == true,
 			lastFireAt = Runtime.lastFireAt,
 			lastTTI = Runtime.lastTTI,
 		},
