@@ -236,12 +236,20 @@ local function getSnapshot(time)
 	if type(snapshot) ~= "table" or not GameInfo.isSnapshotValid(snapshot, time) then return nil end
 	return snapshot
 end
+local function getBallSpeed(ball, snapshot)
+	local ok, velocity = pcall(function() return ball.AssemblyLinearVelocity end)
+	if ok and typeof(velocity) == "Vector3" and velocity.Magnitude > 0.1 then return velocity.Magnitude end
+	local syncData = BallReplicator and BallReplicator.syncData
+	local syncSpeed = tonumber(syncData and syncData.Speed)
+	if syncSpeed and Utils.isFiniteNumber(syncSpeed) and syncSpeed >= 0 then return syncSpeed end
+	return tonumber(snapshot and snapshot.speed)
+end
 local function isBallInParryWindow(time)
 	local snapshot = getSnapshot(time)
 	if not snapshot then return false, false end
 	local ball = snapshot.ball
 	if not isValidBall(ball) then return false, false end
-	local speed = tonumber(snapshot.speed)
+	local speed = getBallSpeed(ball, snapshot)
 	if not speed or speed < Tuning.MIN_BALL_SPEED or not Utils.isFiniteNumber(speed) then return false, false end
 	local position = snapshot.position
 	local root = Runtime.root
@@ -405,7 +413,7 @@ local function bindCharacter(character)
 		if type(snapshot) ~= "table" or not isSnapshotValid(snapshot, timeNow) then return end
 		local ball = snapshot.ball
 		if not isValidBall(ball) then return end
-		local speed = tonumber(snapshot.speed)
+		local speed = getBallSpeed(ball, snapshot)
 		if not speed or speed < Tuning.MIN_BALL_SPEED or not finite(speed) then return end
 		local position = snapshot.position
 		if typeof(position) ~= "Vector3" then return end
