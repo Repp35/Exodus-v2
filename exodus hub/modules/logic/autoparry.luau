@@ -20,7 +20,6 @@ local Tuning = {
 	PING_WINDOW_FACTOR = 1,
 	PING_WINDOW_CAP = 0.400,
 	CLIENT_CD_PROPAGATION = 0.30,
-	MIN_LOCAL_PARRY_LOCK = 0.080,
 }
 
 local PING_SAMPLE_INTERVAL = 0.10
@@ -100,7 +99,6 @@ local Runtime = {
 	lastDistanceToParryRadius = 0,
 	lastSpeed = 0,
 	lastFireAt = 0,
-	localParryLockUntil = 0,
 	cooldownObservedAt = 0,
 	phase = PHASE_DETACHED,
 	passivePhase = "idle",
@@ -326,24 +324,14 @@ end
 local function requestParry(ball)
 	if not Runtime.alive or not Runtime.bound then return false end
 	local time = now()
-	if ParryState.fired or time < Runtime.localParryLockUntil then
-		setPhase(PHASE_COOLDOWN, "local_parry_lock")
+	if ParryState.fired then
+		setPhase(PHASE_FIRED, "duplicate_suppressed")
 		return false
-	end
-	if GameInfo and type(GameInfo.getDeflectCD) == "function" then
-		local okCooldown, cooldown = pcall(GameInfo.getDeflectCD)
-		cooldown = okCooldown and tonumber(cooldown) or 0
-		if cooldown and Utils.isFiniteNumber(cooldown) and cooldown > 0 then
-			Runtime.localParryLockUntil = math.max(Runtime.localParryLockUntil, time + cooldown + 0.05)
-			setPhase(PHASE_COOLDOWN, "game_cooldown")
-			return false
-		end
 	end
 	if not Remote or type(Remote.fireParry) ~= "function" then
 		if Utils.recordError then Utils.recordError("AutoParry", "Remote.fireParry indisponivel") end
 		setPhase(PHASE_WAITING, "remote_unavailable"); return false
 	end
-	Runtime.localParryLockUntil = time + Tuning.MIN_LOCAL_PARRY_LOCK
 	ParryState.fired = true; ParryState.firedBall = ball; local ok = pcall(Remote.fireParry, 1)
 	if not ok then
 		clearFired()
@@ -488,7 +476,7 @@ local function resetState()
 	Runtime.noWindowParryRadius = Tuning.DEFLECT_RADIUS; Runtime.pingRadius = 0; Runtime.resilienceBonus = 0
 	Runtime.resilienceBonusAt = -1; Runtime.deflectWindow = 0; Runtime.effectiveWindow = 0; Runtime.lastTTI = math.huge
 	Runtime.lastDistance = 0; Runtime.lastDistanceToParryRadius = 0; Runtime.lastSpeed = 0; Runtime.lastFireAt = 0
-	Runtime.cooldownObservedAt = 0; Runtime.localParryLockUntil = 0
+	Runtime.cooldownObservedAt = 0
 	setPhase(PHASE_DETACHED, "reset")
 end
 
@@ -674,7 +662,6 @@ function AutoParry.getStatus()
 			fired = ParryState.fired == true,
 			lastFireAt = Runtime.lastFireAt,
 			lastTTI = Runtime.lastTTI,
-			localLockRemaining = math.max(0, Runtime.localParryLockUntil - now()),
 		},
 
 	}
