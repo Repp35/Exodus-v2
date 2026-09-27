@@ -209,7 +209,11 @@ end
 -- apenas leitura: quem sou eu como alvo, segundo o BallReplicator e os fallbacks.
 local function refreshTargetCache()
 	local syncData = BallReplicator and BallReplicator.syncData; local target = tonumber(syncData and syncData.TargetPlayerID)
-	if target ~= nil then Runtime.targetId = target; Runtime.targetKnown = true; return target end
+	if target ~= nil then
+		Runtime.targetId = target; Runtime.targetKnown = true
+		if target > 0 then Runtime.lastTarget = target end
+		return target
+	end
 	Runtime.targetKnown = false; return nil
 end
 local function isLocallyTargeted()
@@ -288,9 +292,10 @@ local function requestParry(ball)
 end
 
 -- PARRY SLOT
--- nasce `open` no onBecameTarget, carrega no maximo um remote e trava em `locked`.
--- `locked` e terminal. Nao existe unlock, nao existe reset interno.
--- o unico fim de um slot e a destruicao feita pelo TargetTracker.
+-- token atomico de disparo, e nada mais. nasce `open` no onBecameTarget,
+-- vira `locked` no primeiro requestParry bem-sucedido e nunca mais destrava.
+-- nao existe unlock, nao existe reset interno. o unico fim de um slot e a
+-- destruicao feita pelo TargetTracker. o heartbeat e quem calcula o timing.
 local SLOT_OPEN = "open"
 local SLOT_LOCKED = "locked"
 
@@ -318,33 +323,6 @@ end
 
 function ParrySlot:destroy()
 	self.destroyed = true
-end
-
-function ParrySlot:update(ballData, rootPosition, time)
-	if self.destroyed then return false end
-	if self.state == SLOT_LOCKED then return false end
-	if self.generation ~= TargetTracker.generation then return false end
-	if type(ballData) ~= "table" then return false end
-	local ball = ballData.ball; local position = ballData.position; local speed = ballData.speed
-	if not isValidBall(ball) or typeof(position) ~= "Vector3" then return false end
-	if time < Runtime.teleportLockUntil then setPhase(PHASE_WAITING, "teleport_lock"); return false end
-	local deflectCooldown = tonumber(GameInfo.getDeflectCD()) or 0
-	if deflectCooldown > 0 then
-		if Runtime.cooldownObservedAt <= 0 then Runtime.cooldownObservedAt = time end
-		if time - Runtime.cooldownObservedAt >= Tuning.CLIENT_CD_PROPAGATION then setPhase(PHASE_COOLDOWN, "cooldown_propagation")
-		else setPhase(PHASE_COOLDOWN, "cooldown_observed") end
-		return false
-	end
-	Runtime.cooldownObservedAt = 0
-	local timing = computeTiming(rootPosition, position, speed, time)
-	if not timing then return false end
-	Runtime.parryRadius = timing.parryRadius; Runtime.baseParryRadius = timing.pureRadius; Runtime.noWindowParryRadius = timing.noWindowParryRadius
-	Runtime.pingRadius = timing.pingRadius; Runtime.resilienceBonus = timing.resilienceBonus
-	Runtime.deflectWindow = timing.deflectWindow; Runtime.effectiveWindow = timing.effectiveWindow
-	Runtime.lastTTI = timing.tti; Runtime.lastDistance = timing.distance; Runtime.lastDistanceToParryRadius = timing.distanceToParryRadius; Runtime.lastSpeed = timing.speed
-	if timing.distance > timing.parryRadius then setPhase(PHASE_WAITING, "outside_radius"); return false end
-	if not requestParry(ball) then return false end
-	self:lock(); return true
 end
 
 -- TARGET TRACKER
@@ -454,13 +432,14 @@ local function onBallSync(data)
 end
 
 -- HEARTBEAT
--- responsavel unica por coletar dado da bola e alimentar o slot ativo.
--- nao decide, nao checa fired, nao chama remote.
+-- fluxo identico a v1: guardas, alvo, snapshot, cooldown, timing, raio.
+-- o slot entra so no fim, como trava de disparo: sem slot ou slot travado, nao ha remote.
 local function onHeartbeat(character, root, getConfig, isSpamActive, getSnapshotRef, isSnapshotValid, finite, dt)
 	if not character.Parent or not root.Parent then return end
 	local timeNow = now()
 	local config = getConfig()
 	if type(config) ~= "table" or config.AutoParry ~= true then TargetTracker.reset(); return end
+	if timeNow < Runtime.teleportLockUntil then TargetTracker.reset(); return end
 	if isSpamActive() then TargetTracker.reset(); return end
 	Runtime.pingTimer += math.max(dt, 0)
 	if Runtime.pingTimer >= PING_SAMPLE_INTERVAL then Runtime.pingTimer = 0; samplePing() end
@@ -469,8 +448,6 @@ local function onHeartbeat(character, root, getConfig, isSpamActive, getSnapshot
 	local targeted = isLocallyTargeted()
 	TargetTracker.observe(targeted, timeNow)
 	if not targeted then setPhase(PHASE_WAITING, "not_targeted"); return end
-	local slot = TargetTracker.currentSlot
-	if not slot then return end
 	local snapshot = getSnapshotRef(Runtime.lastTarget, timeNow)
 	if type(snapshot) ~= "table" or not isSnapshotValid(snapshot, timeNow) then return end
 	local ball = snapshot.ball
@@ -479,7 +456,25 @@ local function onHeartbeat(character, root, getConfig, isSpamActive, getSnapshot
 	if not speed or speed < Tuning.MIN_BALL_SPEED or not finite(speed) then return end
 	local position = snapshot.position
 	if typeof(position) ~= "Vector3" then return end
-	slot:update({ ball = ball, position = position, speed = speed }, root.Position, timeNow)
+	local deflectCooldown = tonumber(GameInfo.getDeflectCD()) or 0
+	if deflectCooldown > 0 then
+		if Runtime.cooldownObservedAt <= 0 then Runtime.cooldownObservedAt = timeNow end
+		if timeNow - Runtime.cooldownObservedAt >= Tuning.CLIENT_CD_PROPAGATION then setPhase(PHASE_COOLDOWN, "cooldown_propagation")
+		else setPhase(PHASE_COOLDOWN, "cooldown_observed") end
+		return
+	end
+	Runtime.cooldownObservedAt = 0
+	local timing = computeTiming(root.Position, position, speed, timeNow)
+	if not timing then return end
+	Runtime.parryRadius = timing.parryRadius; Runtime.baseParryRadius = timing.pureRadius; Runtime.noWindowParryRadius = timing.noWindowParryRadius
+	Runtime.pingRadius = timing.pingRadius; Runtime.resilienceBonus = timing.resilienceBonus
+	Runtime.deflectWindow = timing.deflectWindow; Runtime.effectiveWindow = timing.effectiveWindow
+	Runtime.lastTTI = timing.tti; Runtime.lastDistance = timing.distance; Runtime.lastDistanceToParryRadius = timing.distanceToParryRadius; Runtime.lastSpeed = timing.speed
+	if timing.distance > timing.parryRadius then setPhase(PHASE_WAITING, "outside_radius"); return end
+	local slot = TargetTracker.currentSlot
+	if not slot or slot:isLocked() then return end
+	if not requestParry(ball) then return end
+	slot:lock()
 end
 
 -- HITBOX
