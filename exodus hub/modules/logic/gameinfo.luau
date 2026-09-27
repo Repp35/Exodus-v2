@@ -211,7 +211,9 @@ end
 
 -- sync
 local function applySync(data)
-	if typeof(data) ~= "table" then return false end
+	if typeof(data) ~= "table" then
+		return false, ("BallSyncData payload esperado table; recebido typeof=%s, type=%s"):format(tostring(typeof(data)), type(data))
+	end
 	local time = Utils.now(); State.speed = 0; State.speedAt = 0
 	if Utils.isFiniteNumber(data.Speed) and data.Speed >= 0 then State.speed = data.Speed; State.speedAt = time end
 	State.hasRealPosition = false; State.positionAt = 0
