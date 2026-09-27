@@ -33,6 +33,10 @@ local abilityCheckedAt = 0
 local gameInfoModule = nil
 local gameInfoProvider = nil
 local gameInfoCheckedAt = 0
+local gameInfoProviderStatus = "not_checked"
+local gameInfoProviderError = nil
+local ballSource = "none"
+local lastReportedIssue = nil
 local cachedCharacter = nil
 local cachedRoot = nil
 local function clearSyncState()
@@ -45,6 +49,7 @@ end
 local function resetState()
 	State.ball = nil; State.ballAt = 0; clearSyncState(); cachedCharacter = nil
 	cachedRoot = nil; gameInfoModule = nil; gameInfoProvider = nil; gameInfoCheckedAt = 0
+	gameInfoProviderStatus = "not_checked"; gameInfoProviderError = nil; ballSource = "none"; lastReportedIssue = nil
 end
 
 -- ball
@@ -64,47 +69,64 @@ local function resolveGameInfoProvider(time)
 		return nil
 	end
 	gameInfoCheckedAt = time
-	gameInfoModule = nil; gameInfoProvider = nil
+	gameInfoModule = nil; gameInfoProvider = nil; gameInfoProviderError = nil
 	local replicatedStorage = Utils.getReplicatedStorage()
+	if not replicatedStorage then gameInfoProviderStatus = "replicated_storage_missing"; return nil end
 	local ts = replicatedStorage and replicatedStorage:FindFirstChild("TS")
+	if not ts then gameInfoProviderStatus = "ts_folder_missing"; return nil end
 	local candidate = ts and ts:FindFirstChild("GameInfo")
-	if not candidate or not candidate:IsA("ModuleScript") then return nil end
+	if not candidate then gameInfoProviderStatus = "gameinfo_module_missing"; return nil end
+	if not candidate:IsA("ModuleScript") then gameInfoProviderStatus = "gameinfo_instance_not_module"; return nil end
 	gameInfoModule = candidate
 	local ok, result = pcall(require, candidate)
-	if not ok or type(result) ~= "table" then return nil end
+	if not ok then
+		gameInfoProviderStatus = "require_failed"
+		gameInfoProviderError = tostring(result)
+		return nil
+	end
+	if type(result) ~= "table" then gameInfoProviderStatus = "require_returned_non_table"; return nil end
 	if type(result.GameInfo) == "table" then
 		gameInfoProvider = result.GameInfo
 	elseif result.BallModel ~= nil then
-		-- Algumas versões expõem BallModel diretamente; o formato atual observado
-		-- no jogo disponibiliza a tabela em result.GameInfo.
+		-- Também aceita versões que exponham BallModel diretamente.
 		gameInfoProvider = result
 	end
+	gameInfoProviderStatus = gameInfoProvider and "provider_ready" or "provider_table_missing"
 	return gameInfoProvider
 end
 local function getProviderBall(time)
 	local provider = resolveGameInfoProvider(time)
 	local ball = provider and provider.BallModel
-	return isBall(ball) and ball or nil
+	if isBall(ball) then gameInfoProviderStatus = "ballmodel_found"; return ball end
+	if provider and ball == nil then gameInfoProviderStatus = "ballmodel_missing"
+	elseif provider then gameInfoProviderStatus = "ballmodel_not_basepart" end
+	return nil
 end
-local function setBall(ball)
+local function setBall(ball, source)
 	if isBall(ball) then
 		if State.ball ~= ball then clearSyncState() end
-		State.ball = ball; State.ballAt = Utils.now()
+		State.ball = ball; State.ballAt = Utils.now(); ballSource = source or ballSource
 	end
 end
 local function clearBall(ball)
-	if State.ball == ball then State.ball = nil; State.ballAt = Utils.now(); clearSyncState() end
+	if State.ball == ball then State.ball = nil; State.ballAt = Utils.now(); ballSource = "none"; clearSyncState() end
 end
 local function getBall()
 	local time = Utils.now(); local cached = State.ball
 	if cached and cached.Parent ~= nil and time - State.ballAt < BALL_CACHE_TTL then return cached end
 	local ball = getProviderBall(time)
+	local source = ball and "TS.GameInfo.GameInfo.BallModel" or nil
 	if not ball then
 		ball = Workspace:FindFirstChild("GameBall")
-		if not ball then ball = Workspace:FindFirstChild("GameBall", true) end
+		if ball then source = "Workspace.GameBall" end
+		if not ball then
+			ball = Workspace:FindFirstChild("GameBall", true)
+			if ball then source = "Workspace descendant named GameBall" end
+		end
 	end
-	if isBall(ball) then setBall(ball); return ball end
-	State.ball = nil; State.ballAt = time; return nil
+	if isBall(ball) then setBall(ball, source); return ball end
+	if ball ~= nil then gameInfoProviderStatus = "workspace_gameball_not_basepart" end
+	State.ball = nil; State.ballAt = time; ballSource = "none"; return nil
 end
 
 -- motion
@@ -243,10 +265,12 @@ local function installBallWatcher(trackConnection)
 	local ballFolder = gameFolder and gameFolder:FindFirstChild("Ball")
 	if ballFolder then
 		trackConnection(ballFolder.ChildAdded:Connect(function(child)
-			if child.Name == "GameBall" and child:IsA("BasePart") then setBall(child) end
+			if child.Name == "GameBall" and child:IsA("BasePart") then setBall(child, "Workspace.Game.Ball.GameBall") end
 		end))
 		trackConnection(ballFolder.ChildRemoved:Connect(clearBall))
-		setBall(ballFolder:FindFirstChild("GameBall") or getProviderBall(Utils.now()))
+		local existingBall = ballFolder:FindFirstChild("GameBall")
+		if existingBall then setBall(existingBall, "Workspace.Game.Ball.GameBall")
+		else setBall(getProviderBall(Utils.now()), "TS.GameInfo.GameInfo.BallModel") end
 		return true
 	end
 
@@ -254,10 +278,10 @@ local function installBallWatcher(trackConnection)
 	-- hierarquia do Workspace. Observe alterações gerais e resolva a fonte atual.
 	trackConnection(Workspace.DescendantAdded:Connect(function(child)
 		if child.Name == "GameBall" and child:IsA("BasePart") then
-			setBall(child)
+			setBall(child, "Workspace descendant named GameBall")
 			return
 		end
-		if getProviderBall(Utils.now()) == child then setBall(child) end
+		if getProviderBall(Utils.now()) == child then setBall(child, "TS.GameInfo.GameInfo.BallModel") end
 	end))
 	trackConnection(Workspace.DescendantRemoving:Connect(clearBall))
 	setBall(getBall())
@@ -287,14 +311,43 @@ function GameInfo.getBall() return getBall() end
 function GameInfo.getSnapshot(lastTarget, time) return getSnapshot(lastTarget, time) end
 function GameInfo.getStatus()
 	local snapshot = getSnapshot(nil, Utils.now())
+	local validReason
+	if not snapshot.valid then
+		validReason = snapshot.ballValid and "ball_position_unavailable" or "ball_not_found_or_not_a_basepart"
+	end
+	if validReason and validReason ~= lastReportedIssue then
+		lastReportedIssue = validReason
+		if type(Utils.recordError) == "function" then pcall(Utils.recordError, "GameInfo", validReason .. "; provider=" .. tostring(gameInfoProviderStatus)) end
+	elseif not validReason then
+		lastReportedIssue = nil
+	end
+	local ballName, ballClass, ballPath
+	local syncReason
+	if not snapshot.syncFresh then syncReason = "BallSyncData ausente ou sem atualização recente" end
+	if snapshot.ball then
+		pcall(function()
+			ballName = snapshot.ball.Name
+			ballClass = snapshot.ball.ClassName
+			ballPath = snapshot.ball:GetFullName()
+		end)
+	end
 	return {
 		schema = Utils.apiVersion(),
 		snapshotSchema = SNAPSHOT_SCHEMA,
 		generatedAt = snapshot.generatedAt,
 		valid = snapshot.valid == true,
+		validReason = validReason,
 		ballValid = snapshot.ballValid == true,
+		ballSource = ballSource,
+		ballName = ballName,
+		ballClass = ballClass,
+		ballPath = ballPath,
+		providerStatus = gameInfoProviderStatus,
+		providerError = gameInfoProviderError,
 		syncFresh = snapshot.syncFresh == true,
 		syncValid = snapshot.syncValid == true,
+		syncAge = snapshot.syncAge,
+		syncReason = syncReason,
 		targeted = snapshot.targeted == true,
 	}
 end
