@@ -36,6 +36,9 @@ end
 
 -- state
 local DiagnosticsModules = {}
+local ConsoleErrorAt = {}
+local ConsoleErrorCount = 0
+local CONSOLE_ERROR_COOLDOWN = 2
 local State = {
 	active = false,
 	connections = {},
@@ -126,14 +129,38 @@ local function recordTransition(source, fromState, toState, reason)
 	updateNamespace()
 end
 local function recordError(source, message)
+	source = tostring(source)
+	message = tostring(message)
 	State.diagnostics.lastError = {
-		source = tostring(source),
-		message = tostring(message),
+		source = source,
+		message = message,
 		at = os.clock(),
 	}
 	table.insert(State.diagnostics.errors, State.diagnostics.lastError)
 	if #State.diagnostics.errors > MAX_DIAGNOSTIC_ENTRIES then table.remove(State.diagnostics.errors, 1) end
 	updateNamespace()
+
+	local key = source .. "\0" .. message
+	local now = os.clock()
+	local previous = ConsoleErrorAt[key]
+	if previous and now - previous < CONSOLE_ERROR_COOLDOWN then return end
+	if not previous then
+		ConsoleErrorCount += 1
+		if ConsoleErrorCount > 128 then ConsoleErrorAt = {}; ConsoleErrorCount = 1 end
+	end
+	ConsoleErrorAt[key] = now
+
+	local output = ("[Exodus][%s] %s"):format(source, message)
+	if type(debug) == "table" and type(debug.traceback) == "function" then
+		local ok, trace = pcall(debug.traceback, output, 3)
+		if ok and type(trace) == "string" then output = trace end
+	end
+	if type(task) == "table" and type(task.spawn) == "function" then
+		local ok = pcall(task.spawn, function() error(output, 0) end)
+		if ok then return end
+	end
+	if type(warn) == "function" then pcall(warn, output)
+	elseif type(print) == "function" then pcall(print, output) end
 end
 
 -- filesystem
