@@ -10,6 +10,7 @@ local BALL_CACHE_TTL = 0.5
 local SYNC_FRESH_TIME = 1.0
 local ABILITY_RETRY_TIME = 2.0
 local GAMEINFO_RETRY_TIME = 2.0
+local BALL_REPLICATOR_RETRY_TIME = 2.0
 local SNAPSHOT_SCHEMA = 1
 
 -- state
@@ -18,13 +19,18 @@ local State = {
 	ballAt = 0,
 	speed = 0,
 	speedAt = 0,
+	maxSpeed = 0,
+	acceleration = 0,
 	realPosition = Vector3.new(0, 0, 0),
 	hasRealPosition = false,
 	target = nil,
+	highlightTarget = nil,
 	targetAt = 0,
 	lastSyncAt = 0,
+	lastSyncData = nil,
 	positionAt = 0,
 	deflectDirection = Vector3.new(0, 0, 0),
+	teleported = false,
 }
 
 local deflectAbility = nil
@@ -35,14 +41,22 @@ local gameInfoProvider = nil
 local gameInfoCheckedAt = 0
 local gameInfoProviderStatus = "not_checked"
 local gameInfoProviderError = nil
+local ballReplicatorModule = nil
+local ballReplicatorProvider = nil
+local ballReplicatorCheckedAt = 0
+local ballReplicatorAttempted = false
+local ballReplicatorStatus = "not_checked"
+local ballReplicatorError = nil
+local refreshDecodedSync = nil
 local ballSource = "none"
 local lastReportedIssue = nil
 local cachedCharacter = nil
 local cachedRoot = nil
 local function clearSyncState()
-	State.speed = 0; State.speedAt = 0; State.realPosition = Vector3.new(0, 0, 0); State.hasRealPosition = false
-	State.target = nil; State.targetAt = 0; State.lastSyncAt = 0; State.positionAt = 0
-	State.deflectDirection = Vector3.new(0, 0, 0)
+	State.speed = 0; State.speedAt = 0; State.maxSpeed = 0; State.acceleration = 0
+	State.realPosition = Vector3.new(0, 0, 0); State.hasRealPosition = false
+	State.target = nil; State.highlightTarget = nil; State.targetAt = 0; State.lastSyncAt = 0; State.lastSyncData = nil; State.positionAt = 0
+	State.deflectDirection = Vector3.new(0, 0, 0); State.teleported = false
 end
 
 -- reset
@@ -50,6 +64,8 @@ local function resetState()
 	State.ball = nil; State.ballAt = 0; clearSyncState(); cachedCharacter = nil
 	cachedRoot = nil; gameInfoModule = nil; gameInfoProvider = nil; gameInfoCheckedAt = 0
 	gameInfoProviderStatus = "not_checked"; gameInfoProviderError = nil; ballSource = "none"; lastReportedIssue = nil
+	ballReplicatorModule = nil; ballReplicatorProvider = nil; ballReplicatorCheckedAt = 0; ballReplicatorAttempted = false
+	ballReplicatorStatus = "not_checked"; ballReplicatorError = nil
 end
 
 -- ball
@@ -101,6 +117,57 @@ local function getProviderBall(time)
 	if provider and ball == nil then gameInfoProviderStatus = "ballmodel_missing"
 	elseif provider then gameInfoProviderStatus = "ballmodel_not_basepart" end
 	return nil
+end
+local function resolveBallReplicator(time)
+	time = time or Utils.now()
+	if ballReplicatorProvider and ballReplicatorModule and ballReplicatorModule.Parent ~= nil
+		and time - ballReplicatorCheckedAt < BALL_REPLICATOR_RETRY_TIME
+	then
+		return ballReplicatorProvider
+	end
+	if ballReplicatorAttempted and time - ballReplicatorCheckedAt < BALL_REPLICATOR_RETRY_TIME then return nil end
+	ballReplicatorAttempted = true; ballReplicatorCheckedAt = time
+	ballReplicatorModule = nil; ballReplicatorProvider = nil; ballReplicatorError = nil
+	local replicatedStorage = Utils.getReplicatedStorage()
+	if not replicatedStorage then ballReplicatorStatus = "replicated_storage_missing"; return nil end
+	local ts = replicatedStorage:FindFirstChild("TS")
+	if not ts then ballReplicatorStatus = "ts_folder_missing"; return nil end
+	local folder = ts:FindFirstChild("BallReplicator")
+	if not folder then ballReplicatorStatus = "ballreplicator_folder_missing"; return nil end
+	local candidate = folder:FindFirstChild("BallReplicator")
+	if not candidate then ballReplicatorStatus = "ballreplicator_module_missing"; return nil end
+	if not candidate:IsA("ModuleScript") then ballReplicatorStatus = "ballreplicator_instance_not_module"; return nil end
+	ballReplicatorModule = candidate
+	local ok, result = pcall(require, candidate)
+	if not ok then
+		ballReplicatorStatus = "require_failed"
+		ballReplicatorError = tostring(result)
+		return nil
+	end
+	if type(result) ~= "table" then ballReplicatorStatus = "require_returned_non_table"; return nil end
+	if type(result.BallReplicator) == "table" then
+		ballReplicatorProvider = result.BallReplicator
+	elseif result.syncData ~= nil then
+		ballReplicatorProvider = result
+	end
+	ballReplicatorStatus = ballReplicatorProvider and "provider_ready" or "provider_table_missing"
+	return ballReplicatorProvider
+end
+local function getDecodedSyncData(time)
+	local provider = resolveBallReplicator(time)
+	if not provider then return nil end
+	local ok, data = pcall(function() return provider.syncData end)
+	if not ok then
+		ballReplicatorStatus = "syncdata_read_failed"
+		ballReplicatorError = tostring(data)
+		return nil
+	end
+	if type(data) ~= "table" then
+		ballReplicatorStatus = "syncdata_not_table"
+		return nil
+	end
+	ballReplicatorStatus = "syncdata_ready"
+	return data
 end
 local function setBall(ball, source)
 	if isBall(ball) then
@@ -156,18 +223,25 @@ end
 
 -- target
 local function normalizeTargetId(value)
-	if Utils.isFiniteNumber(value) then return value end
-	if type(value) == "string" then local number = tonumber(value); return Utils.isFiniteNumber(number) and number or nil end
+	if Utils.isFiniteNumber(value) then return value > 0 and value or nil end
+	if type(value) == "string" then
+		local number = tonumber(value)
+		return Utils.isFiniteNumber(number) and number > 0 and number or nil
+	end
 	return nil
 end
-local function getTargetAttribute() return normalizeTargetId(Workspace:GetAttribute("GameBallTarget")) end
 local function isTargeted(lastTarget, userId)
+	local rawWorkspaceTarget = Workspace:GetAttribute("GameBallTarget")
+	if rawWorkspaceTarget ~= nil then return rawWorkspaceTarget == userId end
+	if State.highlightTarget == userId then return true end
 	if State.target == userId then return true end
 	if normalizeTargetId(lastTarget) == userId then return true end
-	return getTargetAttribute() == userId
+	return false
 end
 local function getSnapshot(lastTarget, time)
-	time = resolveTime(time); local ball = getBall(); local ballValid = ball ~= nil and ball.Parent ~= nil
+	time = resolveTime(time)
+	if refreshDecodedSync then refreshDecodedSync(time, false) end
+	local ball = getBall(); local ballValid = ball ~= nil and ball.Parent ~= nil
 	local rawVelocity
 	local rawSpeed = 0
 	local rawPosition
@@ -175,8 +249,8 @@ local function getSnapshot(lastTarget, time)
 	local validPosition = rawPosition ~= nil; local rawSyncAge = State.lastSyncAt > 0 and math.max(0, time - State.lastSyncAt) or nil
 	local syncFresh = rawSyncAge ~= nil and rawSyncAge <= SYNC_FRESH_TIME; local syncValid = syncFresh and ballValid; local normalizedLastTarget = normalizeTargetId(lastTarget)
 	local targetId
-	if syncValid and State.targetAt == State.lastSyncAt then targetId = State.target end
-	local player = Players.LocalPlayer; local userId = player and player.UserId or -1; local targeted = syncValid and targetId ~= nil and isTargeted(lastTarget, userId) or false
+	if syncValid and State.targetAt == State.lastSyncAt then targetId = State.target or State.highlightTarget end
+	local player = Players.LocalPlayer; local userId = player and player.UserId or -1; local targeted = syncValid and isTargeted(lastTarget, userId) or false
 	local approachingSpeed
 	if rawPosition and rawVelocity and player then
 		local root = cachedRoot
@@ -198,10 +272,14 @@ local function getSnapshot(lastTarget, time)
 		position = ballValid and rawPosition or nil,
 		velocity = ballValid and rawVelocity or nil,
 		speed = ballValid and rawSpeed or nil,
+		maxSpeed = syncFresh and State.maxSpeed or nil,
+		acceleration = syncFresh and State.acceleration or nil,
 		approachingSpeed = approachingSpeed,
 		targetId = targetId,
+		highlightTargetId = syncFresh and State.highlightTarget or nil,
 		lastTarget = normalizedLastTarget,
 		targeted = targeted,
+		teleported = syncFresh and State.teleported or false,
 		syncAt = syncFresh and State.lastSyncAt or nil,
 		syncAge = syncFresh and rawSyncAge or nil,
 		syncFresh = syncFresh,
@@ -210,19 +288,59 @@ local function getSnapshot(lastTarget, time)
 end
 
 -- sync
-local function applySync(data)
-	if typeof(data) ~= "table" then
-		return false, ("BallSyncData payload esperado table; recebido typeof=%s, type=%s"):format(tostring(typeof(data)), type(data))
+local function cloneSyncData(data)
+	local copy = {}
+	for key, value in pairs(data) do copy[key] = value end
+	return copy
+end
+local function consumerSyncData(data)
+	local copy = cloneSyncData(data)
+	local target = normalizeTargetId(data.TargetPlayerID)
+	local highlightTarget = normalizeTargetId(data.HighlightTargetPlayerID)
+	copy.TargetPlayerID = target or highlightTarget or -1
+	copy.HighlightTargetPlayerID = highlightTarget or -1
+	return copy
+end
+refreshDecodedSync = function(time, force)
+	time = resolveTime(time)
+	local data = getDecodedSyncData(time)
+	if not data then
+		return false, ("BallReplicator.syncData indisponivel: %s%s"):format(
+			tostring(ballReplicatorStatus),
+			ballReplicatorError and ("; " .. tostring(ballReplicatorError)) or ""
+		)
 	end
-	local time = Utils.now(); State.speed = 0; State.speedAt = 0
-	if Utils.isFiniteNumber(data.Speed) and data.Speed >= 0 then State.speed = data.Speed; State.speedAt = time end
-	State.hasRealPosition = false; State.positionAt = 0
-	if typeof(data.RealPosition) == "Vector3" then State.realPosition = data.RealPosition; State.hasRealPosition = true; State.positionAt = time end
-	State.deflectDirection = Vector3.new(0, 0, 0)
-	if typeof(data.DeflectDirection) == "Vector3" then State.deflectDirection = data.DeflectDirection end
-	State.target = nil; State.targetAt = 0
-	if data.TargetPlayerID ~= nil then State.target = normalizeTargetId(data.TargetPlayerID); State.targetAt = time end
-	State.lastSyncAt = time; return true
+	local changed = State.lastSyncData == nil
+	if not changed then
+		for key, value in pairs(data) do
+			if State.lastSyncData[key] ~= value then changed = true; break end
+		end
+		if not changed then
+			for key, value in pairs(State.lastSyncData) do
+				if data[key] ~= value then changed = true; break end
+			end
+		end
+	end
+	if not force and not changed then return true, consumerSyncData(data) end
+
+	State.speed = Utils.isFiniteNumber(data.Speed) and math.max(0, data.Speed) or 0
+	State.maxSpeed = Utils.isFiniteNumber(data.MaxSpeed) and math.max(0, data.MaxSpeed) or 0
+	State.acceleration = Utils.isFiniteNumber(data.Accel) and data.Accel or 0
+	State.speedAt = Utils.isFiniteNumber(data.Speed) and data.Speed >= 0 and time or 0
+	State.hasRealPosition = typeof(data.RealPosition) == "Vector3"
+	State.positionAt = State.hasRealPosition and time or 0
+	if State.hasRealPosition then State.realPosition = data.RealPosition end
+	State.deflectDirection = typeof(data.DeflectDirection) == "Vector3" and data.DeflectDirection or ZERO_VELOCITY
+	State.target = normalizeTargetId(data.TargetPlayerID)
+	State.highlightTarget = normalizeTargetId(data.HighlightTargetPlayerID)
+	State.targetAt = (data.TargetPlayerID ~= nil or data.HighlightTargetPlayerID ~= nil) and time or 0
+	State.teleported = data.Teleported == true
+	State.lastSyncAt = time
+	State.lastSyncData = cloneSyncData(data)
+	return true, consumerSyncData(data)
+end
+local function applySync(_rawPayload)
+	return refreshDecodedSync(Utils.now(), true)
 end
 
 -- ability
@@ -311,6 +429,10 @@ end
 -- api
 function GameInfo.getBall() return getBall() end
 function GameInfo.getSnapshot(lastTarget, time) return getSnapshot(lastTarget, time) end
+function GameInfo.getSyncData()
+	if refreshDecodedSync then refreshDecodedSync(Utils.now(), false) end
+	return State.lastSyncData and consumerSyncData(State.lastSyncData) or nil
+end
 function GameInfo.getStatus()
 	local snapshot = getSnapshot(nil, Utils.now())
 	local validReason
@@ -325,7 +447,7 @@ function GameInfo.getStatus()
 	end
 	local ballName, ballClass, ballPath
 	local syncReason
-	if not snapshot.syncFresh then syncReason = "BallSyncData ausente ou sem atualização recente" end
+	if not snapshot.syncFresh then syncReason = "BallReplicator.syncData ausente ou sem atualização recente" end
 	if snapshot.ball then
 		pcall(function()
 			ballName = snapshot.ball.Name
@@ -350,6 +472,14 @@ function GameInfo.getStatus()
 		syncValid = snapshot.syncValid == true,
 		syncAge = snapshot.syncAge,
 		syncReason = syncReason,
+		syncProviderStatus = ballReplicatorStatus,
+		syncProviderError = ballReplicatorError,
+		speed = snapshot.speed,
+		maxSpeed = snapshot.maxSpeed,
+		acceleration = snapshot.acceleration,
+		targetId = snapshot.targetId,
+		highlightTargetId = snapshot.highlightTargetId,
+		teleported = snapshot.teleported,
 		targeted = snapshot.targeted == true,
 	}
 end
