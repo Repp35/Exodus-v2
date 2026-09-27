@@ -6,6 +6,7 @@ observes sync-related RemoteEvents and replicated tables for 30 seconds. It
 does not send remotes or mutate game state.
 
 Output file: BallSyncDiagnostic.txt (executor working directory)
+The TXT includes raw sync values; review it for player IDs/text before sharing.
 Console prefix: [BallSyncDiag]
 Stop early with: _G.ExodusBallSyncDiagnostic.stop()
 ]=]
@@ -13,11 +14,12 @@ Stop early with: _G.ExodusBallSyncDiagnostic.stop()
 local TAG = "[BallSyncDiag]"
 local LOG_PATH = "BallSyncDiagnostic.txt"
 local DURATION = 30
-local POLL_INTERVAL = 0.5
+local POLL_INTERVAL = 0.1
+local FILE_FLUSH_INTERVAL = 0.5
 local MAX_DEPTH = 5
 local MAX_NODES = 300
-local MAX_LINES = 6000
-local MAX_SAMPLES_PER_REMOTE = 12
+local MAX_OUTPUT_BYTES = 2000000
+local MAX_EVENTS_PER_REMOTE = 600
 
 local old = rawget(_G, "ExodusBallSyncDiagnostic")
 if type(old) == "table" and type(old.stop) == "function" then
@@ -31,6 +33,8 @@ local startedAt = os.clock()
 local stopped = false
 local lines = {}
 local truncated = false
+local outputBytes = 0
+local lastFileFlushAt = 0
 local eventConnections = {}
 local lastReplicatorSignature
 local lastGameInfoSignature
@@ -38,18 +42,28 @@ local lastGameInfoSignature
 local function saveFile()
 	if type(writefile) ~= "function" then return false, "writefile unavailable" end
 	local ok, err = pcall(writefile, LOG_PATH, table.concat(lines, "\n") .. "\n")
-	return ok, ok and nil or tostring(err)
+	if ok then return true, nil end
+	return false, tostring(err)
+end
+
+local function appendOutput(message)
+	message = tostring(message)
+	local extraBytes = #message + 1
+	if outputBytes + extraBytes <= MAX_OUTPUT_BYTES then
+		lines[#lines + 1] = message
+		outputBytes += extraBytes
+	elseif not truncated then
+		truncated = true
+		local marker = "[output truncated: 2MB cap reached]"
+		lines[#lines + 1] = marker
+		outputBytes += #marker + 1
+	end
+	return not truncated
 end
 
 local function log(message)
-	message = tostring(message)
-	if #lines < MAX_LINES then
-		lines[#lines + 1] = message
-	elseif not truncated then
-		truncated = true
-		lines[#lines + 1] = "[output truncated: line cap reached]"
-	end
-	print(TAG .. " " .. message)
+	appendOutput(message)
+	print(TAG .. " " .. tostring(message))
 end
 
 local function getChild(parent, name)
@@ -79,6 +93,20 @@ local function sortedKeys(value)
 	return keys
 end
 
+local function rawValue(value)
+	if value == nil then return "nil" end
+	if type(value) == "string" then
+		local truncatedValue = #value > 512 and (string.sub(value, 1, 512) .. "...<truncated>") or value
+		return string.format("%q", truncatedValue)
+	end
+	if type(value) == "number" then return ("%.17g"):format(value) end
+	if type(value) == "boolean" then return tostring(value) end
+	if typeof(value) == "Instance" then return ("Instance<%s> %s"):format(value.ClassName, safePath(value)) end
+	local ok, rendered = pcall(tostring, value)
+	if ok then return rendered end
+	return "<value unavailable>"
+end
+
 local function appendTree(value, label, depth, visited, nodeCount, output)
 	depth = depth or 0
 	visited = visited or {}
@@ -93,7 +121,7 @@ local function appendTree(value, label, depth, visited, nodeCount, output)
 		return output, nodeCount
 	end
 	if type(value) ~= "table" then
-		output[#output + 1] = ("%s%s: typeof=%s type=%s"):format(indent, label, tostring(kind), type(value))
+		output[#output + 1] = ("%s%s: typeof=%s type=%s value=%s"):format(indent, label, tostring(kind), type(value), rawValue(value))
 		return output, nodeCount
 	end
 	if visited[value] then
@@ -136,7 +164,8 @@ end
 
 local function recordStructure(label, value)
 	local text = structure(value, label)
-	log(text)
+	appendOutput(text)
+	log(label .. " structure written to TXT")
 	return text
 end
 
@@ -147,20 +176,16 @@ end
 local remoteConnections = {}
 local function inspectEvent(remote, ...)
 	local state = remoteConnections[remote]
-	if not state or state.samples >= MAX_SAMPLES_PER_REMOTE then return end
+	if not state or state.events >= MAX_EVENTS_PER_REMOTE then return end
 	state.events += 1
 	local argCount = select("#", ...)
-	local sections = { ("%s args=%d"):format(state.path, argCount) }
+	local elapsed = os.clock() - startedAt
+	local sections = { ("RAW RESPONSE %s #%d elapsed=%.3fs args=%d"):format(state.path, state.events, elapsed, argCount) }
 	for index = 1, argCount do
 		local value = select(index, ...)
 		sections[#sections + 1] = structure(value, "arg" .. tostring(index))
 	end
-	local signature = table.concat(sections, "\n")
-	if signature ~= state.lastSignature then
-		state.lastSignature = signature
-		state.samples += 1
-		log("EVENT SHAPE\n" .. signature)
-	end
+	appendOutput(table.concat(sections, "\n"))
 end
 
 local function stop(reason)
@@ -170,6 +195,9 @@ local function stop(reason)
 		pcall(function() connection:Disconnect() end)
 	end
 	eventConnections = {}
+	for _, state in pairs(remoteConnections) do
+		log(("REMOTE SUMMARY %s: captured=%d limit=%d"):format(state.path, state.events, MAX_EVENTS_PER_REMOTE))
+	end
 	log("observation ended: " .. tostring(reason or "manual"))
 	local ok, err = saveFile()
 	if ok then print(TAG .. " saved " .. LOG_PATH)
@@ -212,8 +240,9 @@ else
 	log("TS.BallReplicator unavailable: " .. tostring(ballReplicatorError))
 end
 
--- Inventory replicated remotes and module names without requiring unknown modules.
-local syncKeywords = { "sync", "replicat" }
+-- Observe only remotes with sync/ball/physics-related names to avoid logging
+-- unrelated gameplay traffic.
+local syncKeywords = { "sync", "replicat", "ball", "physics", "velocity" }
 local function looksSyncRelated(instance)
 	local text = (instance.Name .. " " .. safePath(instance)):lower()
 	for _, keyword in ipairs(syncKeywords) do
@@ -228,7 +257,7 @@ for _, instance in ipairs(descendants) do
 	if instance:IsA("RemoteEvent") and looksSyncRelated(instance) then
 		local path = safePath(instance)
 		log(("SYNC REMOTE: %s (%s)"):format(path, instance.ClassName))
-		local state = { path = path, events = 0, samples = 0, lastSignature = nil }
+			local state = { path = path, events = 0 }
 		remoteConnections[instance] = state
 		local connected, connection = pcall(function()
 			return instance.OnClientEvent:Connect(function(...) inspectEvent(instance, ...) end)
@@ -273,8 +302,11 @@ task.spawn(function()
 				log("BallModel class=" .. (typeof(ball) == "Instance" and ball.ClassName or tostring(typeof(ball))) .. "; path=" .. safePath(ball))
 			end
 		end
-		local okSave, saveError = saveFile()
-		if not okSave and type(writefile) == "function" then log("TXT save failed: " .. tostring(saveError)) end
+		if os.clock() - lastFileFlushAt >= FILE_FLUSH_INTERVAL then
+			local okSave, saveError = saveFile()
+			lastFileFlushAt = os.clock()
+			if not okSave and type(writefile) == "function" then log("TXT save failed: " .. tostring(saveError)) end
+		end
 		task.wait(POLL_INTERVAL)
 	end
 	stop("30-second observation complete")
