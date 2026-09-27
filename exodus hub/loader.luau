@@ -339,9 +339,10 @@ local function bindRuntime(loaded, log)
 		end
 	end
 	local function callSync(name, handler, data)
-		local ok, result = pcall(handler, data)
+		local ok, result, detail = pcall(handler, data)
 		if not ok or result == false then
-			local message = result
+			local message = result == false and detail or result
+			if message == nil then message = result end
 			if type(log.recordError) == "function" then log.recordError(name, tostring(message))
 			else printRawError(name, message) end
 		end
