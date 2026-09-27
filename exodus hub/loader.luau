@@ -343,14 +343,20 @@ local function bindRuntime(loaded, log)
 		if not ok or result == false then
 			local message = result == false and detail or result
 			if message == nil then message = result end
-			if type(log.recordError) == "function" then log.recordError(name, tostring(message))
-			else printRawError(name, message) end
+			if type(log.recordError) == "function" then
+				log.recordError(name, tostring(message))
+			else
+				printRawError(name, message)
+			end
+			return nil
 		end
+		return detail or data
 	end
 	local function onBallSync(data)
-		callSync("GameInfo", gameInfo.applySync, data)
+		local decodedData = callSync("GameInfo", gameInfo.applySync, data)
+		if type(decodedData) ~= "table" then return end
 		for _, sub in ipairs(ballSyncSubscribers) do
-			callSync(sub.name, sub.handler, data)
+			callSync(sub.name, sub.handler, decodedData)
 		end
 	end
 	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
