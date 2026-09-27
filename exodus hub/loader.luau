@@ -2,6 +2,14 @@
 
 local function printRawError(moduleName, message)
 	local output = tostring(moduleName) .. ": " .. tostring(message)
+	if type(debug) == "table" and type(debug.traceback) == "function" then
+		local ok, trace = pcall(debug.traceback, output, 2)
+		if ok and type(trace) == "string" then output = trace end
+	end
+	if type(task) == "table" and type(task.spawn) == "function" then
+		local ok = pcall(task.spawn, function() error(output, 0) end)
+		if ok then return end
+	end
 	if type(warn) == "function" then pcall(warn, output)
 	elseif type(print) == "function" then pcall(print, output) end
 end
@@ -334,8 +342,8 @@ local function bindRuntime(loaded, log)
 		local ok, result = pcall(handler, data)
 		if not ok or result == false then
 			local message = result
-			if type(log.recordError) == "function" then log.recordError(name, tostring(message)) end
-			printRawError(name, message)
+			if type(log.recordError) == "function" then log.recordError(name, tostring(message))
+			else printRawError(name, message) end
 		end
 	end
 	local function onBallSync(data)
@@ -348,15 +356,15 @@ local function bindRuntime(loaded, log)
 	if watcherReady then
 		log.info("GameInfo conectado 脿 bola")
 	else
-		if type(log.recordError) == "function" then log.recordError("GameInfo", "observador da bola indispon铆vel") end
-		printRawError("GameInfo", "observador da bola indisponível")
+		if type(log.recordError) == "function" then log.recordError("GameInfo", "observador da bola indispon铆vel")
+		else printRawError("GameInfo", "observador da bola indisponível") end
 	end
 	local syncReady = remote.bindBallSync(onBallSync)
 	if syncReady then
 		log.info("Remote conectado ao BallSyncData"); log.info(("%d assinantes de BallSync"):format(#ballSyncSubscribers))
 	else
-		if type(log.recordError) == "function" then log.recordError("Remote", "BallSyncData indispon铆vel") end
-		printRawError("Remote", "BallSyncData indisponível")
+		if type(log.recordError) == "function" then log.recordError("Remote", "BallSyncData indispon铆vel")
+		else printRawError("Remote", "BallSyncData indisponível") end
 	end
 	local maintenanceOk, maintenanceReady = pcall(remote.startMaintenance, {
 		isActive = utils.isActive,
@@ -364,8 +372,8 @@ local function bindRuntime(loaded, log)
 	})
 	if not maintenanceOk or maintenanceReady ~= true then
 		local message = maintenanceReady
-		if type(log.recordError) == "function" then log.recordError("Remote", tostring(message)) end
-		printRawError("Remote", message)
+		if type(log.recordError) == "function" then log.recordError("Remote", tostring(message))
+		else printRawError("Remote", message) end
 	else
 		log.info("manuten莽茫o do Remote iniciada")
 	end
