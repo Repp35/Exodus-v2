@@ -29,7 +29,6 @@ local State = {
 	realPosition = Vector3.new(0, 0, 0),
 	hasRealPosition = false,
 	target = nil,
-	highlightTarget = nil,
 	lastSyncAt = 0,
 	lastSyncData = nil,
 	syncPayloadType = "none",
@@ -62,7 +61,7 @@ local cachedRoot = nil
 local function clearSyncState()
 	State.speed = 0; State.speedAt = 0; State.maxSpeed = 0; State.acceleration = 0
 	State.realPosition = Vector3.new(0, 0, 0); State.hasRealPosition = false
-	State.target = nil; State.highlightTarget = nil; State.lastSyncAt = 0; State.lastSyncData = nil; State.syncPayloadType = "none"; State.syncEventAt = 0; State.positionAt = 0
+	State.target = nil; State.lastSyncAt = 0; State.lastSyncData = nil; State.syncPayloadType = "none"; State.syncEventAt = 0; State.positionAt = 0
 	State.deflectDirection = Vector3.new(0, 0, 0); State.teleported = false; State.teleportedAt = 0
 end
 
@@ -241,11 +240,6 @@ local function normalizeTargetId(value)
 	end
 	return nil
 end
-local function isTargeted(userId)
-	if State.target == userId then return true end
-	if State.highlightTarget == userId then return true end
-	return normalizeTargetId(Workspace:GetAttribute("GameBallTarget")) == userId
-end
 local function getSnapshot(_, time)
 	time = resolveTime(time)
 	if refreshDecodedSync then refreshDecodedSync(time, false) end
@@ -256,8 +250,8 @@ local function getSnapshot(_, time)
 	if ballValid then rawVelocity = getAssemblyVelocity(ball); rawSpeed = ballSpeed(ball, time, rawVelocity); rawPosition = ballPosition(ball, time, rawVelocity) end
 	local validPosition = rawPosition ~= nil; local rawSyncAge = State.lastSyncAt > 0 and math.max(0, time - State.lastSyncAt) or nil
 	local syncFresh = rawSyncAge ~= nil and rawSyncAge <= T.SYNC_FRESH_TIME
-	local targetId = State.target or State.highlightTarget
-	local player = Players.LocalPlayer; local userId = player and player.UserId or -1; local targeted = ballValid and isTargeted(userId)
+	local targetId = State.target
+	local player = Players.LocalPlayer
 	local approachingSpeed
 	if rawPosition and rawVelocity and player then
 		local root = cachedRoot
@@ -283,9 +277,7 @@ local function getSnapshot(_, time)
 		acceleration = State.acceleration,
 		approachingSpeed = approachingSpeed,
 		targetId = targetId,
-		highlightTargetId = State.highlightTarget,
 		lastTarget = targetId,
-		targeted = targeted,
 		teleported = State.teleported and (time - State.teleportedAt) < T.TELEPORT_EVENT_TIME,
 		syncAt = State.lastSyncAt > 0 and State.lastSyncAt or nil,
 		syncAge = rawSyncAge,
@@ -301,10 +293,7 @@ local function cloneSyncData(data)
 end
 local function consumerSyncData(data)
 	local copy = cloneSyncData(data)
-	local target = normalizeTargetId(data.TargetPlayerID)
-	local highlightTarget = normalizeTargetId(data.HighlightTargetPlayerID)
-	copy.TargetPlayerID = target or highlightTarget or -1
-	copy.HighlightTargetPlayerID = highlightTarget or -1
+	copy.TargetPlayerID = normalizeTargetId(data.TargetPlayerID) or -1
 	return copy
 end
 refreshDecodedSync = function(time, force)
@@ -338,7 +327,6 @@ refreshDecodedSync = function(time, force)
 	if State.hasRealPosition then State.realPosition = data.RealPosition end
 	State.deflectDirection = typeof(data.DeflectDirection) == "Vector3" and data.DeflectDirection or ZERO_VELOCITY
 	State.target = normalizeTargetId(data.TargetPlayerID)
-	State.highlightTarget = normalizeTargetId(data.HighlightTargetPlayerID)
 	State.teleported = data.Teleported == true
 	State.teleportedAt = State.teleported and time or 0
 	State.lastSyncAt = time
@@ -486,9 +474,7 @@ function GameInfo.getStatus()
 		maxSpeed = snapshot.maxSpeed,
 		acceleration = snapshot.acceleration,
 		targetId = snapshot.targetId,
-		highlightTargetId = snapshot.highlightTargetId,
 		teleported = snapshot.teleported,
-		targeted = snapshot.targeted == true,
 	}
 end
 function GameInfo.isSnapshotValid(snapshot, time)

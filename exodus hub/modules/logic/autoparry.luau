@@ -965,26 +965,23 @@ local function onHeartbeat(
                 return
         end
 
-        local targeted =
-                snapshot.targeted == true
-
-        Runtime.targetId =
+        local targetId =
                 tonumber(snapshot.targetId)
                 or -1
 
-        Runtime.targetKnown =
-                snapshot.targetId ~= nil
+        local isMe =
+                targetId == Runtime.localUserId
 
-        Runtime.lastTarget =
-                tonumber(snapshot.targetId)
-                or -1
+        Runtime.targetId = targetId
+        Runtime.targetKnown = snapshot.targetId ~= nil
+        Runtime.lastTarget = targetId
 
         TargetTracker.observe(
-                targeted,
+                isMe,
                 timeNow
         )
 
-        if not targeted then
+        if not isMe then
                 setPhase(
                         PHASE_WAITING,
                         "not_targeted"
