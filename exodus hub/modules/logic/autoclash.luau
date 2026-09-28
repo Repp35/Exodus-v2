@@ -355,7 +355,7 @@ local function canReactivate(t)
 end
 local function shouldActivate(snapshot, t)
 	if not snapshot or not snapshot.ball or not snapshot.ball.Parent then R.lastGate = "no_ball"; return false end
-	if tonumber(snapshot.targetId) ~= R.localUserId then R.lastGate = "target_not_me"; return false end
+	if snapshot.targeted ~= true then R.lastGate = "target_not_me"; return false end
 	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
 	if not root then R.lastGate = "no_root"; return false end
 	if not position or R.parryRadius <= 0 then R.lastGate = "no_effective_radius"; return false end
@@ -377,7 +377,7 @@ local function shouldActivate(snapshot, t)
 	R.lastGate = "activation_ready"; return true
 end
 local function tryReturnActivate(snapshot, t)
-	if not snapshot or tonumber(snapshot.targetId) ~= R.localUserId then R.lastGate = "act_not_targeted"; return false end
+	if not snapshot or snapshot.targeted ~= true then R.lastGate = "act_not_targeted"; return false end
 	if not R.returnPending then R.lastGate = "act_no_return_pending"; return false end
 	if R.returnExpiresAt <= 0 or t >= R.returnExpiresAt then R.lastGate = "act_return_expired"; return false end
 	return canReactivate(t) and shouldActivate(snapshot, t)
@@ -409,7 +409,7 @@ function Deactivation.confirm(t, reason)
 	Deactivation.clearConfirmation(); R.lastGate = reason; return true
 end
 function Deactivation.direction(t, snapshot, speed)
-	if tonumber(snapshot.targetId) == R.localUserId then R.lastGate = "deact_direction_targeted"; return false end
+	if snapshot.targeted == true then R.lastGate = "deact_direction_targeted"; return false end
 	local radius = AutoParry.getRadius("geometry", 0, speed)
 	local parryRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil
 	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
