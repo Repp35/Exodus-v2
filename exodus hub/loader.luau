@@ -370,16 +370,12 @@ local function bindRuntime(loaded, log)
 		notifyBallSync(callSync("GameInfo", gameInfo.applySync, data))
 	end
 	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
-	if watcherReady then
-		log.info("GameInfo conectado 脿 bola")
-	else
+	if not watcherReady then
 		if type(log.recordError) == "function" then log.recordError("GameInfo", "observador da bola indispon铆vel")
 		else printRawError("GameInfo", "observador da bola indisponível") end
 	end
 	local syncReady = remote.bindBallSync(onBallSync)
-	if syncReady then
-		log.info("Remote conectado ao BallSyncData"); log.info(("%d assinantes de BallSync"):format(#ballSyncSubscribers))
-	else
+	if not syncReady then
 		if type(log.recordError) == "function" then log.recordError("Remote", "BallSyncData indispon铆vel")
 		else printRawError("Remote", "BallSyncData indisponível") end
 	end
@@ -391,8 +387,6 @@ local function bindRuntime(loaded, log)
 		local message = maintenanceReady
 		if type(log.recordError) == "function" then log.recordError("Remote", tostring(message))
 		else printRawError("Remote", message) end
-	else
-		log.info("manuten莽茫o do Remote iniciada")
 	end
 	return {
 		watcher = watcherReady == true,
