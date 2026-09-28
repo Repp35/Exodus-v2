@@ -187,11 +187,23 @@ local function buildURLs(version)
 	for _, entry in ipairs(MODULE_MANIFEST) do urls[entry.name] = root .. entry.path end
 	return urls
 end
+local function buildCDNURL(url)
+	local repository, version, path = string.match(url, "^https://raw%.githubusercontent%.com/([^/]+/[^/]+)/refs/heads/([^/]+)/(.+)$")
+	if not repository or not version or not path then return nil end
+	return "https://cdn.jsdelivr.net/gh/" .. repository .. "@" .. version .. "/" .. path
+end
 local function loadModule(name, relativePath, url)
-	local source, fetchError = request(url)
+	local source, fetchError = request(url); local sourceKind = "github"
+	if not source then
+		local fallbackURL = buildCDNURL(url)
+		if fallbackURL then
+			local fallbackSource, fallbackError = request(fallbackURL)
+			if fallbackSource then source, fetchError, sourceKind = fallbackSource, nil, "cdn" else fetchError = tostring(fetchError or "falha no GitHub Raw") .. "; CDN: " .. tostring(fallbackError) end
+		end
+	end
 	if source then
 		local chunk, compileError = compile(name, source)
-		if chunk then return chunk, nil, "github" end
+		if chunk then return chunk, nil, sourceKind end
 		fetchError = compileError
 	end
 	local localSource, localPath = findLocalModule(name, relativePath)
