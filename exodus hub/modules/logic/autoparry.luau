@@ -1,7 +1,7 @@
 -- [[ autoparry ]]
 
 local AutoParry = {}
-local Remote, GameInfo, Utils, BallReplicator, StatsService
+local Remote, GameInfo, Utils, StatsService
 local TargetTracker
 
 -- tuning
@@ -21,13 +21,13 @@ local Tuning = {
 	PING_WINDOW_FACTOR = 1,
 	PING_WINDOW_CAP = 0.400,
 	CLIENT_CD_PROPAGATION = 0.30,
+	PING_SAMPLE_INTERVAL = 0.35,
+	PING_EMA_ALPHA = 0.08,
+	DEFAULT_PING_ONE_WAY = 0.030,
+	TELEPORT_LOCK_BASE = 0.400,
+	TARGET_DEBOUNCE = 0.180,
 }
 
-local PING_SAMPLE_INTERVAL = 0.35
-local PING_EMA_ALPHA = 0.08
-local DEFAULT_PING_ONE_WAY = 0.030
-local TELEPORT_LOCK_BASE = 0.400
-local TARGET_DEBOUNCE = 0.180
 local WINDOW_CURVE_B = (Tuning.WINDOW_LOW - Tuning.WINDOW_REFERENCE)
 	/ ((1 / Tuning.WINDOW_LOW_SPEED) - (1 / Tuning.WINDOW_REFERENCE_SPEED))
 local WINDOW_CURVE_A = Tuning.WINDOW_REFERENCE - WINDOW_CURVE_B / Tuning.WINDOW_REFERENCE_SPEED
@@ -80,7 +80,7 @@ local Runtime = {
 	teleportLockUntil = 0,
 	connections = {},
 	pingTimer = 0,
-	pingOneWay = DEFAULT_PING_ONE_WAY,
+	pingOneWay = Tuning.DEFAULT_PING_ONE_WAY,
 	minPing = nil,
 	resilienceBonus = 0,
 	resilienceBonusAt = -1,
@@ -158,7 +158,7 @@ local function samplePing()
 	ping *= 0.001
 	if ping <= 0 or ping >= 0.5 or not Utils.isFiniteNumber(ping) then return end
 	if not Runtime.minPing or ping < Runtime.minPing then Runtime.minPing = ping end
-	local oneWay = ping * 0.5; Runtime.pingOneWay += (oneWay - Runtime.pingOneWay) * PING_EMA_ALPHA
+	local oneWay = ping * 0.5; Runtime.pingOneWay += (oneWay - Runtime.pingOneWay) * Tuning.PING_EMA_ALPHA
 end
 
 -- TIMING
@@ -172,7 +172,6 @@ local function computeDeflectWindow(speed)
 	if ping > 0 then window += math.min(ping * 2 * Tuning.PING_WINDOW_FACTOR, Tuning.PING_WINDOW_CAP) end
 	return window
 end
-local function computeEffectiveWindow(speed) return computeDeflectWindow(speed) * Tuning.WINDOW_FACTOR end
 local function computePingRadius(speed)
 	local rawSpeed = tonumber(speed) or 0
 	if rawSpeed <= 0 then return 0 end
@@ -184,7 +183,7 @@ end
 local function computeTiming(rootPosition, position, speed, time)
 	if typeof(rootPosition) ~= "Vector3" or typeof(position) ~= "Vector3" or type(speed) ~= "number" or speed <= 0 then return nil end
 	local resilience = getResilienceBonus(time); local deflectWindow = computeDeflectWindow(speed); local effectiveWindow = deflectWindow * Tuning.WINDOW_FACTOR
-	local pingRadius = computePingRadius(speed); local noWindowParryRadius = Tuning.DEFLECT_RADIUS + resilience + pingRadius
+	local pingRadius = computePingRadius(speed); local noWindowParryRadius = computeNoWindowParryRadius(speed, resilience)
 	local parryRadius = Tuning.DEFLECT_RADIUS + resilience + speed * effectiveWindow; local distSq = distanceSquared(rootPosition, position); local distance = math.sqrt(distSq)
 	local delta = distance - parryRadius; local tti = delta <= 0 and 0 or delta / speed
 	return {
@@ -205,49 +204,17 @@ local function computeTiming(rootPosition, position, speed, time)
 	}
 end
 
--- TARGET SOURCE
--- apenas leitura: quem sou eu como alvo, segundo o BallReplicator e os fallbacks.
-local function refreshTargetCache()
-	local syncData = BallReplicator and BallReplicator.syncData; local target = tonumber(syncData and syncData.TargetPlayerID)
-	if target ~= nil then
-		Runtime.targetId = target; Runtime.targetKnown = true
-		if target > 0 then Runtime.lastTarget = target end
-		return target
-	end
-	Runtime.targetKnown = false; return nil
-end
-local function isLocallyTargeted()
-	if Runtime.localUserId <= 0 then return false end
-	local target = Runtime.targetId
-	if Runtime.targetKnown then return target == Runtime.localUserId end
-	local syncData = BallReplicator and BallReplicator.syncData; local highlight = tonumber(syncData and syncData.HighlightTargetPlayerID)
-	if highlight ~= nil then return highlight == Runtime.localUserId end
-	local workspaceService = Runtime.workspace
-	if workspaceService then
-		local targetAttribute = tonumber(workspaceService:GetAttribute("GameBallTarget"))
-		if targetAttribute ~= nil then return targetAttribute == Runtime.localUserId end
-	end
-	return false
-end
 local function getSnapshot(time)
-	local snapshot = GameInfo.getSnapshot(Runtime.lastTarget, time)
+	local snapshot = GameInfo.getSnapshot(nil, time)
 	if type(snapshot) ~= "table" or not GameInfo.isSnapshotValid(snapshot, time) then return nil end
 	return snapshot
-end
-local function getBallSpeed(ball, snapshot)
-	local ok, velocity = pcall(function() return ball.AssemblyLinearVelocity end)
-	if ok and typeof(velocity) == "Vector3" and velocity.Magnitude > 0.1 then return velocity.Magnitude end
-	local syncData = BallReplicator and BallReplicator.syncData
-	local syncSpeed = tonumber(syncData and syncData.Speed)
-	if syncSpeed and Utils.isFiniteNumber(syncSpeed) and syncSpeed >= 0 then return syncSpeed end
-	return tonumber(snapshot and snapshot.speed)
 end
 local function isBallInParryWindow(time)
 	local snapshot = getSnapshot(time)
 	if not snapshot then return false, false end
 	local ball = snapshot.ball
 	if not isValidBall(ball) then return false, false end
-	local speed = getBallSpeed(ball, snapshot)
+	local speed = tonumber(snapshot.speed)
 	if not speed or speed < Tuning.MIN_BALL_SPEED or not Utils.isFiniteNumber(speed) then return false, false end
 	local position = snapshot.position
 	local root = Runtime.root
@@ -353,7 +320,7 @@ function TargetTracker.observe(isMe, at)
 	end
 	if not TargetTracker.confirmed then return end
 	if TargetTracker.pendingLost then return end
-	TargetTracker.pendingLost = { startedAt = time, expiresAt = time + TARGET_DEBOUNCE }
+	TargetTracker.pendingLost = { startedAt = time, expiresAt = time + Tuning.TARGET_DEBOUNCE }
 end
 
 -- emissao: o debounce expirou sem eu voltar a ser alvo
@@ -378,7 +345,7 @@ function TargetTracker.getStatus()
 	return {
 		confirmed = TargetTracker.confirmed == true,
 		generation = TargetTracker.generation,
-		debounce = TARGET_DEBOUNCE,
+		debounce = Tuning.TARGET_DEBOUNCE,
 		pendingLost = pending ~= nil,
 		pendingLostIn = pending and math.max(pending.expiresAt - now(), 0) or 0,
 		slot = slot and {
@@ -397,7 +364,7 @@ local function onBallSync(data)
 	if typeof(data) ~= "table" or not Runtime.alive or not Runtime.bound then return end
 	local time = now()
 	if data.Teleported == true then
-		Runtime.teleportLockUntil = math.max(Runtime.teleportLockUntil, time + TELEPORT_LOCK_BASE + Runtime.pingOneWay)
+		Runtime.teleportLockUntil = math.max(Runtime.teleportLockUntil, time + Tuning.TELEPORT_LOCK_BASE + Runtime.pingOneWay)
 		TargetTracker.reset(); Runtime.passivePhase = "idle"; Runtime.passiveBallAtValid = false
 		setPhase(PHASE_WAITING, "teleport_lock"); return
 	end
@@ -442,17 +409,18 @@ local function onHeartbeat(character, root, getConfig, isSpamActive, getSnapshot
 	if timeNow < Runtime.teleportLockUntil then TargetTracker.reset(); return end
 	if isSpamActive() then TargetTracker.reset(); return end
 	Runtime.pingTimer += math.max(dt, 0)
-	if Runtime.pingTimer >= PING_SAMPLE_INTERVAL then Runtime.pingTimer = 0; samplePing() end
+	if Runtime.pingTimer >= Tuning.PING_SAMPLE_INTERVAL then Runtime.pingTimer = 0; samplePing() end
 	TargetTracker.tick(timeNow)
-	refreshTargetCache()
-	local targeted = isLocallyTargeted()
+	local snapshot = getSnapshotRef(nil, timeNow)
+	if type(snapshot) ~= "table" or not isSnapshotValid(snapshot, timeNow) then return end
+	local targeted = snapshot.targeted == true
+	Runtime.targetId = tonumber(snapshot.targetId) or -1; Runtime.targetKnown = snapshot.targetId ~= nil
+	Runtime.lastTarget = tonumber(snapshot.targetId) or -1
 	TargetTracker.observe(targeted, timeNow)
 	if not targeted then setPhase(PHASE_WAITING, "not_targeted"); return end
-	local snapshot = getSnapshotRef(Runtime.lastTarget, timeNow)
-	if type(snapshot) ~= "table" or not isSnapshotValid(snapshot, timeNow) then return end
 	local ball = snapshot.ball
 	if not isValidBall(ball) then return end
-	local speed = getBallSpeed(ball, snapshot)
+	local speed = tonumber(snapshot.speed)
 	if not speed or speed < Tuning.MIN_BALL_SPEED or not finite(speed) then return end
 	local position = snapshot.position
 	if typeof(position) ~= "Vector3" then return end
@@ -557,7 +525,7 @@ end
 local function resetState()
 	invalidateLife(); Runtime.teleportLockUntil = 0; Runtime.lastTarget = -1; Runtime.lastWasMe = nil
 	Runtime.targetId = -1; Runtime.targetKnown = false; Runtime.pingTimer = 0; Runtime.minPing = nil
-	Runtime.pingOneWay = DEFAULT_PING_ONE_WAY; Runtime.parryRadius = 0; Runtime.baseParryRadius = Tuning.DEFLECT_RADIUS
+	Runtime.pingOneWay = Tuning.DEFAULT_PING_ONE_WAY; Runtime.parryRadius = 0; Runtime.baseParryRadius = Tuning.DEFLECT_RADIUS
 	Runtime.noWindowParryRadius = Tuning.DEFLECT_RADIUS; Runtime.pingRadius = 0; Runtime.resilienceBonus = 0
 	Runtime.resilienceBonusAt = -1; Runtime.deflectWindow = 0; Runtime.effectiveWindow = 0; Runtime.lastTTI = math.huge
 	Runtime.lastDistance = 0; Runtime.lastDistanceToParryRadius = 0; Runtime.lastSpeed = 0; Runtime.lastFireAt = 0
@@ -597,13 +565,7 @@ function AutoParry.setup(deps)
 		return false, "dependencia ausente: Utils"
 	end
 	Remote = remote; GameInfo = gameInfo; Utils = utils; StatsService = game:GetService("Stats")
-	Runtime.player = Utils.getLocalPlayer(); Runtime.localUserId = Runtime.player and tonumber(Runtime.player.UserId) or -1; Runtime.workspace = Utils.getWorkspace(); BallReplicator = nil
-	pcall(function()
-		local ReplicatedStorage = game:GetService("ReplicatedStorage")
-		local module =
-			require(ReplicatedStorage:WaitForChild("TS"):WaitForChild("BallReplicator"):WaitForChild("BallReplicator"))
-		if module and module.BallReplicator then BallReplicator = module.BallReplicator end
-	end)
+	Runtime.player = Utils.getLocalPlayer(); Runtime.localUserId = Runtime.player and tonumber(Runtime.player.UserId) or -1; Runtime.workspace = Utils.getWorkspace()
 	HitboxState.handler = handleHitbox; resetState()
 	if not installHitboxHook() and Utils.warn then Utils.warn("hook de hitbox indisponivel") end
 	return true
@@ -628,6 +590,14 @@ function AutoParry.detachCharacter()
 	if not Utils then return end
 	Runtime.generation += 1; disconnectConnections(); invalidateLife(); Runtime.character = nil
 	Runtime.root = nil; setPhase(PHASE_DETACHED, "detach")
+end
+function AutoParry.teardown()
+	AutoParry.detachCharacter()
+	if HitboxState.connection then
+		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(HitboxState.connection) end
+		pcall(HitboxState.connection.Disconnect, HitboxState.connection); HitboxState.connection = nil
+	end
+	Remote = nil; GameInfo = nil; Utils = nil
 end
 function AutoParry.onBallSync(data)
 	if Utils then onBallSync(data) end
@@ -658,10 +628,10 @@ function AutoParry.getRadius(mode, windowFactor, speedOverride)
 	windowFactor = math.clamp(windowFactor, 0, 1.5); local deflectWindow = computeDeflectWindow(speed)
 	local effectiveWindow = deflectWindow * windowFactor
 	local resilience = getResilienceBonus(now()); local pingRadius = computePingRadius(speed)
-	local noWindowParryRadius = Tuning.DEFLECT_RADIUS + resilience + pingRadius
+	local noWindowParryRadius = computeNoWindowParryRadius(speed, resilience)
 	local fullRadius = Tuning.DEFLECT_RADIUS + resilience + speed * effectiveWindow; local value = fullRadius
 	if mode == "tti" then
-		value = tti
+		value = math.max(distance - fullRadius, 0) / math.max(speed, 1)
 	elseif mode == "speed_distance" then
 		value = {
 			speed = speed,

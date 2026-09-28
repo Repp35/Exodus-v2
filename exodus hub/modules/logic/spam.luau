@@ -7,17 +7,19 @@ local math_floor = math.floor
 local clock = os.clock
 
 -- tuning
-local DEFLECT_COOLDOWN_THRESHOLD = 0
-local TARGET_SWITCH_BOOST_ENABLED = true
-local TARGET_SWITCH_BOOST_MULTIPLIER = 1.5
-local TARGET_SWITCH_BOOST_DURATION = 3
-local TARGET_SWITCH_MIN_CPF = 10
-local TARGET_SWITCH_THRESHOLD_CPS = 15
-local TARGET_SWITCH_PING_FACTOR = 1 / 3
-local SPAM_PARRY_RADIUS_GUARD = false
-local SPAM_PARRY_WINDOW_FACTOR = 1.1
-local DYNAMIC_SPAM_WINDOW_FACTOR = 0.6
-local DYNAMIC_SPAM_CLICK_COOLDOWN = 0.010
+local T = {
+	DEFLECT_COOLDOWN_THRESHOLD = 0,
+	TARGET_SWITCH_BOOST_ENABLED = true,
+	TARGET_SWITCH_BOOST_MULTIPLIER = 1.5,
+	TARGET_SWITCH_BOOST_DURATION = 3,
+	TARGET_SWITCH_MIN_CPF = 10,
+	TARGET_SWITCH_THRESHOLD_CPS = 15,
+	TARGET_SWITCH_PING_FACTOR = 1 / 3,
+	SPAM_PARRY_RADIUS_GUARD = false,
+	SPAM_PARRY_WINDOW_FACTOR = 1.1,
+	DYNAMIC_SPAM_WINDOW_FACTOR = 0.6,
+	DYNAMIC_SPAM_CLICK_COOLDOWN = 0.010,
+}
 
 -- state
 local heartbeatConnection
@@ -209,7 +211,7 @@ local function checkParryRadiusGuard(forceDynamic)
 
 	Scheduler.antiDashRadiusBypass = false
 
-	if not SPAM_PARRY_RADIUS_GUARD then
+	if not T.SPAM_PARRY_RADIUS_GUARD then
 		Scheduler.parryRadiusGuard = false
 		Scheduler.parryRadiusTTI = 0
 		Scheduler.parryRadiusLimit = 0
@@ -277,8 +279,8 @@ local function checkParryRadiusGuard(forceDynamic)
 
 	local windowFactor =
 		dynamicSpamActive
-		and DYNAMIC_SPAM_WINDOW_FACTOR
-		or SPAM_PARRY_WINDOW_FACTOR
+		and T.DYNAMIC_SPAM_WINDOW_FACTOR
+		or T.SPAM_PARRY_WINDOW_FACTOR
 
 	local okRadius, radiusStatus =
 		pcall(
@@ -328,12 +330,12 @@ function Spam.isDynamicParryAllowed()
 end
 
 function Spam.getDynamicClickCooldown()
-	return DYNAMIC_SPAM_CLICK_COOLDOWN
+	return T.DYNAMIC_SPAM_CLICK_COOLDOWN
 end
 
 function Spam.getDynamicClickReadyAt()
 	return lastDynamicClickAt
-		and lastDynamicClickAt + DYNAMIC_SPAM_CLICK_COOLDOWN
+		and lastDynamicClickAt + T.DYNAMIC_SPAM_CLICK_COOLDOWN
 		or getNow()
 end
 
@@ -373,7 +375,7 @@ function Spam.requestDynamicClick()
 	local timestamp = getNow()
 
 	if lastDynamicClickAt
-		and timestamp - lastDynamicClickAt < DYNAMIC_SPAM_CLICK_COOLDOWN
+		and timestamp - lastDynamicClickAt < T.DYNAMIC_SPAM_CLICK_COOLDOWN
 	then
 		return false
 	end
@@ -381,7 +383,7 @@ function Spam.requestDynamicClick()
 	local deflectCd = readDeflectCooldown()
 
 	if deflectCd ~= nil
-		and deflectCd > DEFLECT_COOLDOWN_THRESHOLD
+		and deflectCd > T.DEFLECT_COOLDOWN_THRESHOLD
 	then
 		return false
 	end
@@ -640,7 +642,7 @@ local function getTargetSwitchRate()
 
 	local compensationMs =
 		math.max(pingOneWay, 0)
-		* TARGET_SWITCH_PING_FACTOR
+		* T.TARGET_SWITCH_PING_FACTOR
 
 	local effectiveIntervalMs =
 		math.max(intervalMs - compensationMs, 1)
@@ -670,10 +672,10 @@ local function applyTargetSwitchBoost(mode, rate)
 			switchRate.cps
 
 		if
-			TARGET_SWITCH_BOOST_ENABLED
+			T.TARGET_SWITCH_BOOST_ENABLED
 			and mode == "CPF"
-			and rate > TARGET_SWITCH_MIN_CPF
-			and switchRate.cps > TARGET_SWITCH_THRESHOLD_CPS
+			and rate > T.TARGET_SWITCH_MIN_CPF
+			and switchRate.cps > T.TARGET_SWITCH_THRESHOLD_CPS
 		then
 			local partnerKey =
 				tostring(switchRate.partnerId)
@@ -683,21 +685,21 @@ local function applyTargetSwitchBoost(mode, rate)
 
 				Scheduler.targetSwitchBoostUntil =
 					getNow()
-					+ TARGET_SWITCH_BOOST_DURATION
+					+ T.TARGET_SWITCH_BOOST_DURATION
 			end
 		end
 	end
 
 	local active =
-		TARGET_SWITCH_BOOST_ENABLED
+		T.TARGET_SWITCH_BOOST_ENABLED
 		and mode == "CPF"
-		and rate > TARGET_SWITCH_MIN_CPF
+		and rate > T.TARGET_SWITCH_MIN_CPF
 		and getNow() < Scheduler.targetSwitchBoostUntil
 
 	Scheduler.targetSwitchBoost = active
 
 	if active then
-		return rate * TARGET_SWITCH_BOOST_MULTIPLIER
+		return rate * T.TARGET_SWITCH_BOOST_MULTIPLIER
 	end
 
 	return rate
@@ -730,7 +732,7 @@ local function tick(dt)
 		Scheduler.lastCooldownAt = clock()
 		Scheduler.lastCooldownValue = deflectCd
 
-		if deflectCd > DEFLECT_COOLDOWN_THRESHOLD then
+		if deflectCd > T.DEFLECT_COOLDOWN_THRESHOLD then
 			if wasActive then
 				invalidate("deflect_cooldown")
 
@@ -965,7 +967,7 @@ function Spam.setup(deps)
 	end
 
 	if
-		SPAM_PARRY_RADIUS_GUARD
+		T.SPAM_PARRY_RADIUS_GUARD
 		and (
 			not AutoParry
 			or type(AutoParry.getTiming) ~= "function"
@@ -1025,6 +1027,13 @@ function Spam.resetState()
 	Scheduler.antiDashRadiusBypass = false
 	Scheduler.parryRadiusTTI = 0
 	Scheduler.parryRadiusLimit = 0
+end
+function Spam.teardown()
+	if heartbeatConnection then
+		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(heartbeatConnection) end
+		pcall(heartbeatConnection.Disconnect, heartbeatConnection); heartbeatConnection = nil
+	end
+	Spam.resetState(); Remote = nil; GameInfo = nil; Utils = nil; AutoParry = nil; AutoClash = nil
 end
 
 function Spam.getStatus()

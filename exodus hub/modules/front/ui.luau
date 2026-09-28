@@ -131,7 +131,7 @@ end
 local function viewport()
 	local currentCamera = workspace.CurrentCamera or Camera; return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
 end
-local function setConfigValue(key, value) Utils.setConfig({ [key] = value }) end
+local function setConfigValue(key, value) return Utils.setConfig({ [key] = value }) end
 
 -- connections
 local function trackConn(c)
@@ -591,25 +591,23 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
 		ZIndex = 7,
 		Parent = f,
 	})
-	local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local state = initial; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
+		local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
 	if configKey == "AutoClash" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
 	trackConn(inst("TextButton", {
 		Size = UDim2.new(1, 0, 1, 0),
 		BackgroundTransparency = 1,
 		Text = "",
-		ZIndex = 9,
-		Parent = f,
-	}).Activated:Connect(function()
-		state = not state
-		if configKey then setConfigValue(configKey, state) end
-		setVisual(state)
-		if onAfter then onAfter(state) end
-	end))
+			ZIndex = 9,
+			Parent = f,
+		}).Activated:Connect(function()
+			local current = Utils.getConfig(); local state = not (configKey and current[configKey] == true)
+			if not configKey or setConfigValue(configKey, state) then setVisual(state); if onAfter then onAfter(state) end end
+		end))
 	return nextCardY(yPos, CARD_H)
 end
 local function createRateSelector(yPos, parent)
-	local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig(); config.CPS = Utils.normalizeSpamRate(config.CPS, 4); config.CPF = Utils.normalizeSpamRate(config.CPF, 16)
-	config.SpamRateMode = config.SpamRateMode == "CPS" and "CPS" or "CPF"
+	local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig(); config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.3917)
+	config.SpamRateMode = config.SpamRateMode == "CPF" and "CPF" or "CPS"
 	Utils.setConfig({
 		CPS = config.CPS,
 		CPF = config.CPF,

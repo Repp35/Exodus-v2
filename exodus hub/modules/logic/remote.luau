@@ -10,16 +10,19 @@ local parryInitialized = false
 local maintenanceGeneration = 0
 local parryRemoteSource
 local remoteState = "uninitialized"
+local captureEnabled = false
 local HttpService = game:GetService("HttpService")
-local STORAGE_SCHEMA = 1
-local STORAGE_FILE = "deflect_remotes.json"
-local MAX_CAPTURED_REMOTES = 128
+local T = {
+	STORAGE_SCHEMA = 1,
+	STORAGE_FILE = "deflect_remotes.json",
+	MAX_CAPTURED_REMOTES = 128,
+}
 local Storage = {
 initialized = false,
 available = false,
 writeBlocked = false,
 flushQueued = false,
-path = STORAGE_FILE,
+path = T.STORAGE_FILE,
 captures = {},
 lastWriteAt = 0,
 lastError = nil,
@@ -91,9 +94,9 @@ end
 
 local function emptyStorageDocument()
 return {
-schema = STORAGE_SCHEMA,
+schema = T.STORAGE_SCHEMA,
 hub = "Exodus Hub",
-file = STORAGE_FILE,
+file = T.STORAGE_FILE,
 captures = {},
 }
 end
@@ -111,7 +114,7 @@ local function initializeStorage()
 if Storage.initialized then return Storage.available end
 Storage.initialized = true; local folderOk, folderPath = Utils.ensureDataFolder()
 if not folderOk then reportStorageError(folderPath); return false end
-Storage.path = folderPath .. "/" .. STORAGE_FILE
+Storage.path = folderPath .. "/" .. T.STORAGE_FILE
 if type(isfile) ~= "function" or type(readfile) ~= "function" or type(writefile) ~= "function" then reportStorageError("APIs de arquivo do executor indisponíveis"); return false end
 local fileOk, fileExists = pcall(isfile, Storage.path)
 if not fileOk then reportStorageError(fileExists); return false end
@@ -125,12 +128,12 @@ local decodeOk, document = pcall(HttpService.JSONDecode, HttpService, body)
 if
 not decodeOk
 or type(document) ~= "table"
-or document.schema ~= STORAGE_SCHEMA
+or document.schema ~= T.STORAGE_SCHEMA
 or type(document.captures) ~= "table"
 then
 reportStorageError(Storage.path .. " possui JSON inválido ou schema incompatível"); return false
 end
-local firstCapture = math.max(1, #document.captures - MAX_CAPTURED_REMOTES + 1)
+local firstCapture = math.max(1, #document.captures - T.MAX_CAPTURED_REMOTES + 1)
 for index = firstCapture, #document.captures do
 local capture = document.captures[index]
 if type(capture) == "table" then Storage.captures[#Storage.captures + 1] = capture end
@@ -151,7 +154,8 @@ end)
 end
 
 local function captureRemote(remote)
-if CapturedRemotes[remote] then return end
+	if not captureEnabled then return end
+	if CapturedRemotes[remote] then return end
 CapturedRemotes[remote] = true
 task.spawn(function()
 local ok, errorMessage = pcall(function()
@@ -187,7 +191,7 @@ payloadFlags = { 1, 2 },
 },
 }
 
-		if #Storage.captures >= MAX_CAPTURED_REMOTES then table.remove(Storage.captures, 1) end
+		if #Storage.captures >= T.MAX_CAPTURED_REMOTES then table.remove(Storage.captures, 1) end
 		Storage.captures[#Storage.captures + 1] = capture; queueStorageWrite()
 	end)
 	if not ok then reportStorageError(errorMessage) end
@@ -197,12 +201,13 @@ end
 
 local function getStorageStatus()
 return {
-schema = STORAGE_SCHEMA,
-available = Storage.available == true,
-path = Storage.path,
-captures = #Storage.captures,
-lastWriteAt = Storage.lastWriteAt,
-lastError = Storage.lastError,
+	schema = T.STORAGE_SCHEMA,
+	enabled = captureEnabled == true,
+	available = captureEnabled == true and Storage.available == true or false,
+	path = captureEnabled == true and Storage.path or nil,
+	captures = captureEnabled == true and #Storage.captures or 0,
+	lastWriteAt = captureEnabled == true and Storage.lastWriteAt or 0,
+	lastError = captureEnabled == true and Storage.lastError or nil,
 }
 end
 
@@ -324,13 +329,12 @@ if type(deps) ~= "table" or not deps.Utils then
 return false, "dependência ausente: Utils"
 end
 
-Utils = deps.Utils
+	Utils = deps.Utils
+	captureEnabled = deps.captureDiagnostics == true
 
-remoteState = "phantomballz"
+	remoteState = "phantomballz"
 
-initializeStorage()
-
-return true
+	return true
 
 end
 

@@ -1,6 +1,7 @@
 -- [[ utils ]]
 
 local Utils = {}
+local ConfigModule
 
 -- services
 local PlayersService = game:GetService("Players")
@@ -9,36 +10,31 @@ local RunServiceService = game:GetService("RunService")
 local WorkspaceService = game:GetService("Workspace")
 
 -- metadata
-local SCRIPT_VERSION = "35.22"
-local API_VERSION = 1
-local SCRIPT_NAME = "Exodus Hub"
-local INTERNAL_NAME = "Exodus"
-local SCRIPT_AUTHOR = "ppzudo"
+local M = {
+	SCRIPT_VERSION = "35.28",
+	API_VERSION = 1,
+	SCRIPT_NAME = "Exodus Hub",
+	INTERNAL_NAME = "Exodus",
+	SCRIPT_AUTHOR = "ppzudo",
+}
 
--- limits
-local SPAM_RATE_MIN = 0
-local SPAM_RATE_MAX = 5000000000
-local MAX_DIAGNOSTIC_ENTRIES = 32
-local DATA_FOLDER = "Exodus Hub"
+-- tuning
+local T = {
+	SPAM_RATE_MIN = 0,
+	SPAM_RATE_MAX = 5000000000,
+	MAX_DIAGNOSTIC_ENTRIES = 32,
+	DATA_FOLDER = "Exodus Hub",
+	CONSOLE_ERROR_COOLDOWN = 2,
+}
 
 -- bootstrap
 task.defer(function()
 	pcall(function() workspace:SetAttribute("CPS_LIMIT", 9999) end)
 end)
-local function isValidConfigValue(key, value)
-	if key == "AutoParry" or key == "AutoClash" or key == "DynamicParry" or key == "ClashBallVisible" then return type(value) == "boolean" end
-	if key == "CPS" or key == "CPF" then return tonumber(value) ~= nil end
-	if key == "SpamRateMode" then return value == "CPS" or value == "CPF" end
-	if key == "SpamMode" then return value == "Toggle" or value == "Hold" end
-	if key == "Keybind" or key == "SpamKeybind" then return value ~= nil end
-	return true
-end
-
 -- state
 local DiagnosticsModules = {}
 local ConsoleErrorAt = {}
 local ConsoleErrorCount = 0
-local CONSOLE_ERROR_COOLDOWN = 2
 local State = {
 	active = false,
 	connections = {},
@@ -108,8 +104,8 @@ local function getModuleStatuses()
 	return result
 end
 local function updateNamespace()
-	local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}; namespace.Name = SCRIPT_NAME; namespace.InternalName = INTERNAL_NAME; namespace.Version = SCRIPT_VERSION
-	namespace.ApiVersion = API_VERSION; namespace.Author = SCRIPT_AUTHOR; namespace.State = Utils.getStateSnapshot(); namespace.Config = Utils.getConfigSnapshot()
+	local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}; namespace.Name = M.SCRIPT_NAME; namespace.InternalName = M.INTERNAL_NAME; namespace.Version = M.SCRIPT_VERSION
+	namespace.ApiVersion = M.API_VERSION; namespace.Author = M.SCRIPT_AUTHOR; namespace.State = Utils.getStateSnapshot(); namespace.Config = Utils.getConfigSnapshot()
 	namespace.ModuleURLs = Utils.getModuleURLsSnapshot(); namespace.Diagnostics = Utils.getDiagnostics(); _G.Exodus = namespace
 end
 local function setLifecyclePhase(phase)
@@ -125,7 +121,7 @@ local function recordTransition(source, fromState, toState, reason)
 	}
 
 	State.diagnostics.lastTransitionAt = os.clock(); table.insert(State.diagnostics.transitions, State.diagnostics.lastTransition)
-	if #State.diagnostics.transitions > MAX_DIAGNOSTIC_ENTRIES then table.remove(State.diagnostics.transitions, 1) end
+	if #State.diagnostics.transitions > T.MAX_DIAGNOSTIC_ENTRIES then table.remove(State.diagnostics.transitions, 1) end
 	updateNamespace()
 end
 local function recordError(source, message)
@@ -137,13 +133,13 @@ local function recordError(source, message)
 		at = os.clock(),
 	}
 	table.insert(State.diagnostics.errors, State.diagnostics.lastError)
-	if #State.diagnostics.errors > MAX_DIAGNOSTIC_ENTRIES then table.remove(State.diagnostics.errors, 1) end
+	if #State.diagnostics.errors > T.MAX_DIAGNOSTIC_ENTRIES then table.remove(State.diagnostics.errors, 1) end
 	updateNamespace()
 
 	local key = source .. "\0" .. message
 	local now = os.clock()
 	local previous = ConsoleErrorAt[key]
-	if previous and now - previous < CONSOLE_ERROR_COOLDOWN then return end
+	if previous and now - previous < T.CONSOLE_ERROR_COOLDOWN then return end
 	if not previous then
 		ConsoleErrorCount += 1
 		if ConsoleErrorCount > 128 then ConsoleErrorAt = {}; ConsoleErrorCount = 1 end
@@ -166,13 +162,13 @@ end
 -- filesystem
 local function ensureDataFolder()
 	if type(makefolder) ~= "function" or type(isfolder) ~= "function" then return false, "APIs de pasta do executor indisponíveis" end
-	local folderOk, folderExists = pcall(isfolder, DATA_FOLDER)
+	local folderOk, folderExists = pcall(isfolder, T.DATA_FOLDER)
 	if not folderOk then return false, tostring(folderExists) end
 	if not folderExists then
-		local makeOk, makeError = pcall(makefolder, DATA_FOLDER)
-		if not makeOk then return false, tostring(makeError or ("falha ao criar " .. DATA_FOLDER)) end
+		local makeOk, makeError = pcall(makefolder, T.DATA_FOLDER)
+		if not makeOk then return false, tostring(makeError or ("falha ao criar " .. T.DATA_FOLDER)) end
 	end
-	return true, DATA_FOLDER
+	return true, T.DATA_FOLDER
 end
 function Utils.ensureDataFolder() return ensureDataFolder() end
 
@@ -202,7 +198,7 @@ function Utils.stop()
 	updateNamespace()
 end
 function Utils.isActive() return State.active == true end
-function Utils.getConfig() return State.config end
+function Utils.getConfig() return copyMap(State.config) end
 function Utils.getConfigSnapshot() return copyMap(State.config) end
 function Utils.getModuleURLsSnapshot() return copyMap(State.moduleURLs) end
 function Utils.setDiagnosticsModules(modules)
@@ -211,7 +207,7 @@ function Utils.setDiagnosticsModules(modules)
 end
 function Utils.getDiagnostics()
 	return {
-		schema = API_VERSION,
+		schema = M.API_VERSION,
 		generatedAt = os.clock(),
 		lastError = State.diagnostics.lastError and copyMap(State.diagnostics.lastError) or nil,
 		lastTransition = State.diagnostics.lastTransition and copyMap(State.diagnostics.lastTransition) or nil,
@@ -230,11 +226,11 @@ function Utils.getDiagnostics()
 
 end
 function Utils.getLifecycle()
-	local snapshot = copyMap(State.lifecycle); snapshot.schema = API_VERSION; snapshot.generatedAt = os.clock(); return snapshot
+	local snapshot = copyMap(State.lifecycle); snapshot.schema = M.API_VERSION; snapshot.generatedAt = os.clock(); return snapshot
 end
 function Utils.getStateSnapshot()
 	return {
-		schema = API_VERSION,
+		schema = M.API_VERSION,
 		generatedAt = os.clock(),
 		active = State.active,
 		manualSpamActive = State.manualSpamActive,
@@ -296,24 +292,26 @@ end
 function Utils.normalizeSpamRate(value, fallback)
 	local rate = tonumber(value)
 	if not Utils.isFiniteNumber(rate) then rate = tonumber(fallback) end
-	if not Utils.isFiniteNumber(rate) then rate = SPAM_RATE_MIN end
-	return math.clamp(rate, SPAM_RATE_MIN, SPAM_RATE_MAX)
+	if not Utils.isFiniteNumber(rate) then rate = T.SPAM_RATE_MIN end
+	return math.clamp(rate, T.SPAM_RATE_MIN, T.SPAM_RATE_MAX)
 end
 function Utils.setConfig(config)
 	if type(config) ~= "table" then return false end
-	local normalized = {}
-	for key, value in pairs(config) do
-		if not isValidConfigValue(key, value) then
-			if type(Utils.recordError) == "function" then Utils.recordError("Config", "valor inválido para " .. tostring(key)) end
-			return false
-		end
-		if key == "CPS" or key == "CPF" then normalized[key] = Utils.normalizeSpamRate(value, State.config[key])
-		else normalized[key] = value end
+	local normalized, reason
+	if ConfigModule and type(ConfigModule.normalizePatch) == "function" then normalized, reason = ConfigModule.normalizePatch(config)
+	else normalized = copyMap(config) end
+	if type(normalized) ~= "table" then
+		if type(Utils.recordError) == "function" then Utils.recordError("Config", reason or "configuração inválida") end
+		return false
 	end
 	for key, value in pairs(normalized) do
 		State.config[key] = value
 	end
 	updateNamespace(); return true
+end
+function Utils.setConfigModule(module)
+	if type(module) ~= "table" or type(module.normalizePatch) ~= "function" or type(module.validate) ~= "function" then return false end
+	ConfigModule = module; return true
 end
 function Utils.setModuleURLs(urls)
 	if type(urls) ~= "table" then return false end
@@ -333,12 +331,12 @@ function Utils.getRunService() return RunServiceService end
 function Utils.getWorkspace() return WorkspaceService end
 function Utils.getLocalPlayer() return PlayersService.LocalPlayer end
 function Utils.now() return os.clock() end
-function Utils.name() return SCRIPT_NAME end
-function Utils.version() return SCRIPT_VERSION end
-function Utils.apiVersion() return API_VERSION end
-function Utils.author() return SCRIPT_AUTHOR end
+function Utils.name() return M.SCRIPT_NAME end
+function Utils.version() return M.SCRIPT_VERSION end
+function Utils.apiVersion() return M.API_VERSION end
+function Utils.author() return M.SCRIPT_AUTHOR end
 function Utils.log(level, message)
-	local text = ("[%s] %s"):format(INTERNAL_NAME, tostring(message))
+	local text = ("[%s] %s"):format(M.INTERNAL_NAME, tostring(message))
 	if level == "warn" then warn(text)
 	else print(text) end
 end

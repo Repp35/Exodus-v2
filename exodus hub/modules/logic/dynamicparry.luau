@@ -8,11 +8,13 @@ local onStateChanged
 local onEarlyClickStateChanged
 
 -- tuning
-local HOLD_THRESHOLD = 0.10
-local AP_DELAY = 0.010
-local EARLY_CLICK_WINDOW = 0.20
-local DEFAULT_RELEASE_DELAY = 0.20
-local MAX_RELEASE_DELAY = 5
+local T = {
+	HOLD_THRESHOLD = 0.10,
+	AP_DELAY = 0.010,
+	EARLY_CLICK_WINDOW = 0.20,
+	DEFAULT_RELEASE_DELAY = 0.20,
+	MAX_RELEASE_DELAY = 5,
+}
 
 -- state
 local State = {
@@ -35,7 +37,7 @@ local function emit(state)
 	if type(onStateChanged) == "function" then pcall(onStateChanged, state) end
 end
 local function emitEarlyClickState(state)
-	if type(onEarlyClickStateChanged) == "function" then pcall(onEarlyClickStateChanged, state, EARLY_CLICK_WINDOW) end
+	if type(onEarlyClickStateChanged) == "function" then pcall(onEarlyClickStateChanged, state, T.EARLY_CLICK_WINDOW) end
 end
 local function ready()
 	local config = Utils and type(Utils.getConfig) == "function" and Utils.getConfig() or nil; return type(config) == "table"
@@ -60,12 +62,12 @@ local function releaseDelay()
 		local config = Utils.getConfig()
 		if type(config) == "table" then
 			local value = tonumber(config.DynamicParryReleaseDelay)
-			if value and value == value and value >= 0 then return math.min(value, MAX_RELEASE_DELAY) end
+			if value and value == value and value >= 0 then return math.min(value, T.MAX_RELEASE_DELAY) end
 		end
 	end
-	return DEFAULT_RELEASE_DELAY
+	return T.DEFAULT_RELEASE_DELAY
 end
-local function earlyClickWindow() return EARLY_CLICK_WINDOW end
+local function earlyClickWindow() return T.EARLY_CLICK_WINDOW end
 local function isInsideDynamicRadius()
 	local ok, allowed = pcall(Spam.isDynamicParryAllowed); return ok and allowed == true
 end
@@ -73,7 +75,7 @@ local function fire(generation, deadline)
 	if generation ~= State.generation or not ready() or not isInsideDynamicRadius() or State.firing then return false end
 	State.fireToken += 1; local fireToken = State.fireToken; State.firing = true
 	while generation == State.generation and fireToken == State.fireToken do
-		local nextClickAt = math.max(Spam.getDynamicClickReadyAt(), lastAutoParry() + AP_DELAY); local remaining = nextClickAt - now()
+		local nextClickAt = math.max(Spam.getDynamicClickReadyAt(), lastAutoParry() + T.AP_DELAY); local remaining = nextClickAt - now()
 		if remaining <= 0 then break end
 		if deadline and now() + remaining > deadline then break end
 		task.wait(math.min(remaining, 0.005))
@@ -169,7 +171,7 @@ function DynamicParry.press()
 	cancelPendingClick(); State.pressed = true; State.holding = false; Utils.setDynamicSpamActive(false)
 	State.generation += 1; State.releaseGeneration += 1; local generation = State.generation; emit("pressed")
 	requestClick(generation)
-	task.delay(HOLD_THRESHOLD, function() enableHold(generation) end)
+	task.delay(T.HOLD_THRESHOLD, function() enableHold(generation) end)
 	return true
 end
 function DynamicParry.release()
@@ -201,7 +203,7 @@ function DynamicParry.getStatus()
 		schema = Utils and Utils.apiVersion and Utils.apiVersion() or 1,
 		pressed = State.pressed,
 		holding = State.holding,
-		holdThreshold = HOLD_THRESHOLD,
+		holdThreshold = T.HOLD_THRESHOLD,
 		releaseDelay = releaseDelay(),
 		dynamicSpamActive = Utils and type(Utils.isDynamicSpamActive) == "function" and Utils.isDynamicSpamActive()
 			or false,
@@ -217,7 +219,6 @@ DynamicParry.__contract = {
 		Spam = "spam",
 		Utils = "utils",
 	},
-
 }
 
 return DynamicParry

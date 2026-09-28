@@ -667,7 +667,7 @@ local function heartbeatStep(generation, character, root)
 	if R.returnExpiresAt > 0 and t >= R.returnExpiresAt then clearReturnState(); R.lastGate = "return_expired" end
 	local getSnapshot = FN.getSnapshot; local isSnapshotValid = FN.isSnapshotValid
 	if not getSnapshot or not isSnapshotValid then R.lastGate = "no_gameinfo"; return end
-	local snapshot = getSnapshot(R.lastTarget, t)
+		local snapshot = getSnapshot(nil, t)
 	if type(snapshot) ~= "table" then R.lastGate = "snapshot_error"; return end
 	if isSnapshotValid(snapshot, t) ~= true then return end
 	local target = normalizeTarget(snapshot.targetId)
@@ -765,8 +765,9 @@ function AutoClash.setup(deps)
 	if type(deps) ~= "table" then return false, "dependências inválidas" end
 	local required = {
 		{ "AutoParry", "getRadius" },
-		{ "AutoParry", "getStatus" },
-		{ "Dash", "setHandler" },
+			{ "AutoParry", "getStatus" },
+			{ "Dash", "setHandler" },
+			{ "Dash", "tick" },
 		{ "GameInfo", "getSnapshot" },
 		{ "GameInfo", "isSnapshotValid" },
 		{ "Utils", "now" },

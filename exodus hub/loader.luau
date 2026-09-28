@@ -18,30 +18,36 @@ local function printStartup(message)
 end
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
-Exodus.Modules = Modules
-_G.Exodus = Exodus
-_G.ExodusModules = Modules
 local Loader = {}
 
 -- metadata
 local REPOSITORY = "Repp35/Exodus-v2"
 local BRANCH = "main"
 local PROJECT_PATH = "exodus%20hub/"
-local LOCAL_ROOTS = { "Exodus-v2", "exodus hub", "Exodus Hub" }
+local LOCAL_ROOTS = { "Exodus-v2/exodus hub", "exodus hub", "Exodus Hub" }
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
-local MODULE_ORDER = {
-	"config",
-	"uiconfig",
-	"utils",
-	"gameinfo",
-	"remote",
-	"autoparry",
-	"dynamicparry",
-	"dash",
-	"autoclash",
-	"spam",
-	"character",
+local MODULE_MANIFEST = {
+	{ name = "config", path = "front/config.luau" },
+	{ name = "uiconfig", path = "front/uiconfig.luau" },
+	{ name = "utils", path = "logic/utils.luau" },
+	{ name = "antitamper", path = "security/antitamper.luau" },
+	{ name = "gameinfo", path = "logic/gameinfo.luau" },
+	{ name = "remote", path = "logic/remote.luau" },
+	{ name = "autoparry", path = "logic/autoparry.luau" },
+	{ name = "dynamicparry", path = "logic/dynamicparry.luau" },
+	{ name = "dash", path = "logic/dash.luau" },
+	{ name = "autoclash", path = "logic/autoclash.luau" },
+	{ name = "spam", path = "logic/spam.luau" },
+	{ name = "character", path = "logic/character.luau" },
+	{ name = "ui", path = "front/ui.luau" },
 }
+local MODULE_ORDER = {}
+local MODULE_BY_NAME = {}
+for _, entry in ipairs(MODULE_MANIFEST) do
+	MODULE_BY_NAME[entry.name] = entry
+	if entry.name ~= "ui" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
+end
+local ALLOW_LOCAL_FALLBACK = false
 
 -- http
 local function getGlobalEnvironment()
@@ -65,6 +71,16 @@ local function getRequestFunction()
 		if type(candidate) == "function" then return candidate end
 	end
 	return nil
+end
+local function validateExecutor()
+	local requestFunction = getRequestFunction()
+	if type(requestFunction) ~= "function" then return false, "executor sem request suportado" end
+	if type(loadstring) ~= "function" then return false, "executor sem loadstring" end
+	local okCompile, chunk = pcall(loadstring, "return true", "ExodusPreflight")
+	if not okCompile or type(chunk) ~= "function" then return false, "loadstring rejeitou o preflight" end
+	local okRun, result = pcall(chunk)
+	if not okRun or result ~= true then return false, "preflight de compilação falhou" end
+	return true
 end
 local function isRetryableHttp(message)
 	local statusCode = tonumber(string.match(tostring(message), "HTTP%s+(%d+)")); return statusCode == 408
@@ -98,55 +114,29 @@ local function request(url, headers)
 			if ok and type(responseBody) == "string" and responseBody ~= "" then return responseBody end
 			lastError = tostring(responseBody)
 		end
-		local httpGet
-		local httpGetOk = pcall(function() httpGet = game.HttpGet end)
-		if httpGetOk and type(httpGet) == "function" then
-			local ok, responseBody = pcall(function() return game:HttpGet(url) end)
-			if ok and type(responseBody) == "string" and responseBody ~= "" then return responseBody end
-			lastError = tostring(responseBody)
-		end
 		if not isRetryableHttp(lastError) then break end
 		waitBeforeRetry(attempt)
 	end
 	local message = lastError or "Nenhum servi莽o HTTP dispon铆vel"; return nil, message
 end
-local function localBaseName(path) return string.match(path, "[^\\/]+$") or path end
-local function findLocalModule(name)
+local function findLocalModule(name, relativePath)
+	if not ALLOW_LOCAL_FALLBACK then return nil, name .. ".luau local desabilitado" end
 	if
-		type(listfiles) ~= "function"
-		or type(isfile) ~= "function"
-		or type(isfolder) ~= "function"
+		type(isfile) ~= "function"
 		or type(readfile) ~= "function"
 	then
-		return nil, "APIs de filesystem do executor indispon铆veis"
+		return nil, "APIs de arquivo do executor indisponíveis"
 	end
-	local target = string.lower(name .. ".luau"); local matches = {}; local visited = {}
-	local function walk(folder, depth)
-		if depth > 32 or visited[folder] then return end
-		visited[folder] = true; local listOk, entries = pcall(listfiles, folder)
-		if not listOk or type(entries) ~= "table" then return end
-		for _, entry in ipairs(entries) do
-			if type(entry) == "string" then
-				local fileOk, fileExists = pcall(isfile, entry)
-				if fileOk and fileExists then
-					if string.lower(localBaseName(entry)) == target then matches[#matches + 1] = entry end
-				else
-					local folderOk, folderExists = pcall(isfolder, entry)
-					if folderOk and folderExists then walk(entry, depth + 1) end
-				end
-			end
+	for _, root in ipairs(LOCAL_ROOTS) do
+		local path = root .. "/" .. relativePath
+		local fileOk, fileExists = pcall(isfile, path)
+		if fileOk and fileExists then
+			local readOk, source = pcall(readfile, path)
+			if readOk and type(source) == "string" and source ~= "" then return source, path end
+			return nil, "falha ao ler " .. path
 		end
 	end
-	local availableRoots = {}
-	for _, root in ipairs(LOCAL_ROOTS) do
-		local rootOk, rootExists = pcall(isfolder, root)
-		if rootOk and rootExists then availableRoots[#availableRoots + 1] = root; walk(root, 0) end
-	end
-	if #matches == 0 then return nil, name .. ".luau n茫o encontrado; pastas verificadas: " .. table.concat(availableRoots, ", ") end
-	if #matches > 1 then return nil, name .. ".luau amb铆guo: " .. tostring(#matches) .. " arquivos encontrados" end
-	local readOk, source = pcall(readfile, matches[1])
-	if not readOk or type(source) ~= "string" or source == "" then return nil, "falha ao ler " .. matches[1] end
-	return source, matches[1]
+	return nil, name .. ".luau não encontrado no caminho do manifesto"
 end
 
 -- registry
@@ -164,6 +154,13 @@ local function clearRegistry()
 end
 local function stopPreviousRuntime()
 	if type(Modules.remote) == "table" and type(Modules.remote.stopMaintenance) == "function" then pcall(Modules.remote.stopMaintenance) end
+	for _, name in ipairs({ "character", "spam", "autoclash", "dash", "dynamicparry", "autoparry", "antitamper" }) do
+		local module = Modules[name]
+		if type(module) == "table" then
+			if type(module.teardown) == "function" then pcall(module.teardown)
+			elseif type(module.resetState) == "function" then pcall(module.resetState) end
+		end
+	end
 	local stopped = false
 	if type(_G.ExodusStop) == "function" then local ok = pcall(_G.ExodusStop); stopped = ok == true end
 	if not stopped and type(_G.ExodusUICleanup) == "function" then pcall(_G.ExodusUICleanup) end
@@ -174,42 +171,33 @@ local function compile(name, source)
 	if type(loadstring) ~= "function" then return nil, "loadstring indisponível" end
 	local chunk, compileError = loadstring(source, name)
 	if not chunk then return nil, compileError end
+	return chunk
+end
+local function execute(name, chunk)
 	local ok, module = pcall(chunk)
 	if not ok then return nil, module end
-	if type(module) ~= "table" then return nil, "módulo não retornou uma tabela" end
+	if type(module) ~= "table" then return nil, name .. " não retornou uma tabela" end
 	return module
 end
 
 -- urls
 local function buildURLs(version)
-	local root = BASE_URL .. (version or ("refs/heads/" .. BRANCH)) .. "/" .. PROJECT_PATH .. "modules/"; local query = "?t=" .. tostring(os.time())
-	return {
-		config = root .. "front/config.luau" .. query,
-		uiconfig = root .. "front/uiconfig.luau" .. query,
-		utils = root .. "logic/utils.luau" .. query,
-		gameinfo = root .. "logic/gameinfo.luau" .. query,
-		remote = root .. "logic/remote.luau" .. query,
-		autoparry = root .. "logic/autoparry.luau" .. query,
-		dynamicparry = root .. "logic/dynamicparry.luau" .. query,
-		dash = root .. "logic/dash.luau" .. query,
-		autoclash = root .. "logic/autoclash.luau" .. query,
-		spam = root .. "logic/spam.luau" .. query,
-		character = root .. "logic/character.luau" .. query,
-		ui = root .. "front/ui.luau" .. query,
-	}
-
+	local root = BASE_URL .. (version or ("refs/heads/" .. BRANCH)) .. "/" .. PROJECT_PATH
+	local urls = {}
+	for _, entry in ipairs(MODULE_MANIFEST) do urls[entry.name] = root .. entry.path end
+	return urls
 end
-local function loadModule(name, url)
+local function loadModule(name, relativePath, url)
 	local source, fetchError = request(url)
 	if source then
-		local module, compileError = compile(name, source)
-		if module then return register(name, module), nil, "github" end
+		local chunk, compileError = compile(name, source)
+		if chunk then return chunk, nil, "github" end
 		fetchError = compileError
 	end
-	local localSource, localPath = findLocalModule(name)
+	local localSource, localPath = findLocalModule(name, relativePath)
 	if localSource then
-		local module, compileError = compile(name .. " [local]", localSource)
-		if module then return register(name, module), nil, "local" end
+		local chunk, compileError = compile(name .. " [local]", localSource)
+		if chunk then return chunk, nil, "local" end
 		return nil, compileError
 	end
 	return nil, fetchError or localPath
@@ -221,9 +209,11 @@ local function loadModules(urls)
 	end
 	names[#names + 1] = "ui"; local results = {}
 	local function load(name)
-		local module, loadError, source = loadModule(name, urls[name])
+		local entry = MODULE_BY_NAME[name]
+		if not entry then results[name] = { error = "módulo ausente no manifesto" }; return end
+		local chunk, loadError, source = loadModule(name, entry.path, urls[name])
 		results[name] = {
-			module = module,
+			chunk = chunk,
 			error = loadError,
 			source = source,
 		}
@@ -246,8 +236,12 @@ local function loadModules(urls)
 	end
 	for _, name in ipairs(names) do
 		local result = results[name]
-		if not result or not result.module then return nil, name, result and result.error or "resultado de carregamento ausente" end
-		loaded[name] = result.module
+		if not result or not result.chunk then return nil, name, result and result.error or "resultado de carregamento ausente" end
+	end
+	for _, name in ipairs(names) do
+		local module, executeError = execute(name, results[name].chunk)
+		if not module then clearRegistry(); return nil, name, executeError end
+		loaded[name] = module; register(name, module)
 	end
 	return loaded
 end
@@ -318,6 +312,7 @@ local function bindRuntime(loaded, log)
 		type(gameInfo) ~= "table"
 		or type(gameInfo.applySync) ~= "function"
 		or type(gameInfo.installBallWatcher) ~= "function"
+		or type(gameInfo.getSyncData) ~= "function"
 		or type(remote) ~= "table"
 		or type(remote.bindBallSync) ~= "function"
 		or type(remote.startMaintenance) ~= "function"
@@ -329,7 +324,10 @@ local function bindRuntime(loaded, log)
 		local module = loaded[name]
 		if name ~= "utils" and type(module) == "table" then
 			local contract = contractOf(module)
-			if contract.onBallSync == true and type(module.onBallSync) == "function" then
+			if contract.onBallSync == true and type(module.onBallSync) ~= "function" then
+				return nil, "contrato BallSync incompleto: " .. name
+			end
+			if contract.onBallSync == true then
 				ballSyncSubscribers[#ballSyncSubscribers + 1] = {
 					name = name,
 					handler = module.onBallSync,
@@ -352,12 +350,12 @@ local function bindRuntime(loaded, log)
 		end
 		return detail or data
 	end
-	local function onBallSync(data)
-		local decodedData = callSync("GameInfo", gameInfo.applySync, data)
+	local function notifyBallSync(decodedData)
 		if type(decodedData) ~= "table" then return end
-		for _, sub in ipairs(ballSyncSubscribers) do
-			callSync(sub.name, sub.handler, decodedData)
-		end
+		for _, sub in ipairs(ballSyncSubscribers) do callSync(sub.name, sub.handler, decodedData) end
+	end
+	local function onBallSync(data)
+		notifyBallSync(callSync("GameInfo", gameInfo.applySync, data))
 	end
 	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
 	if watcherReady then
@@ -406,6 +404,7 @@ local function loadInterface(interface, utils, controls, uiConfig)
 end
 
 -- start
+local activeLoaded
 local function waitForLocalPlayer(timeout)
 	local ok, players = pcall(game.GetService, game, "Players")
 	if not ok or not players then return false, "servi莽o Players indispon铆vel" end
@@ -418,14 +417,21 @@ local function waitForLocalPlayer(timeout)
 	until os.clock() >= deadline
 	return false, "LocalPlayer indispon铆vel ap贸s esperar " .. tostring(timeout or 10) .. "s"
 end
-function Loader.start()
+local function startInternal()
 	printStartup("Exodus: iniciando"); stopPreviousRuntime(); clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
 	if not playerReady then return false, "Loader", playerError end
 	local version = "refs/heads/" .. BRANCH; local urls = buildURLs(version); local loaded, moduleName, loadError = loadModules(urls)
 	if not loaded then return false, moduleName, loadError end
+	activeLoaded = loaded
 	local utils = loaded.utils; utils.start()
-	if type(utils.log) == "function" then utils.log = function() end end
-	utils.setLifecyclePhase("loading"); Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot(); Exodus.Context = loaded
+	utils.setLifecyclePhase("loading"); Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot()
+	for _, entry in ipairs(MODULE_MANIFEST) do
+		local module = loaded[entry.name]
+		if type(module) == "table" and module.__config and not loaded.config.register(entry.name, module.__config) then
+			utils.stop(); return false, "Config", "schema duplicado ou inválido: " .. entry.name
+		end
+	end
+	if type(utils.setConfigModule) ~= "function" or not utils.setConfigModule(loaded.config) then utils.stop(); return false, "Utils", "schema de Config indisponível" end
 	local defaultsOk, defaults = pcall(loaded.config.defaults)
 	if not defaultsOk or type(defaults) ~= "table" then utils.stop(); return false, "Config", defaults end
 	local configCallOk, configValid, configReason = pcall(loaded.config.validate, defaults)
@@ -454,11 +460,40 @@ function Loader.start()
 		utils.stop()
 		return false, uiModule, uiError
 	end
-	Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true
+	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true
 	Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
 end
-Exodus.Loader = Loader
-Modules.Loader = Loader
+local function rollbackLoaded(loaded)
+	if type(loaded) ~= "table" then return end
+	for index = #MODULE_ORDER, 1, -1 do
+		local module = loaded[MODULE_ORDER[index]]
+		if type(module) == "table" then
+			if type(module.teardown) == "function" then pcall(module.teardown)
+			elseif type(module.detachCharacter) == "function" then pcall(module.detachCharacter)
+			elseif type(module.resetState) == "function" then pcall(module.resetState)
+			end
+		end
+	end
+	if type(loaded.remote) == "table" and type(loaded.remote.stopMaintenance) == "function" then pcall(loaded.remote.stopMaintenance) end
+	if type(loaded.utils) == "table" and type(loaded.utils.stop) == "function" then pcall(loaded.utils.stop) end
+end
+local startLock = false
+function Loader.start()
+	if startLock then return false, "Loader", "startup já em andamento" end
+	local ready, reason = validateExecutor()
+	if not ready then return false, "Loader", reason end
+	startLock = true
+	Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules; Exodus.Loader = Loader; Modules.Loader = Loader
+	local ok, started, moduleName, startError = xpcall(startInternal, function(errorValue) return errorValue end)
+	startLock = false
+	if not ok or started ~= true then
+		rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry()
+		if not ok then return false, "Loader", started end
+		return started, moduleName, startError
+	end
+	activeLoaded = nil
+	return started, moduleName, startError
+end
 local function startSafely()
 	local ok, started, moduleName, startError = xpcall(Loader.start, function(errorValue) return errorValue end)
 	if not ok then startError = started; moduleName = "Loader"; started = false end
