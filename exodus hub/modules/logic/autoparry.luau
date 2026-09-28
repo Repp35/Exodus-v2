@@ -28,7 +28,7 @@ local Tuning = {
         WINDOW_REFERENCE = 0.200,
 
         -- what is actually used for the click
-        WINDOW_FACTOR = 0.45,
+        WINDOW_FACTOR = 0.7,
 
         -- ping remains separate from the window
         PING_WINDOW_FACTOR = 1,
