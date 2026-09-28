@@ -46,7 +46,7 @@ UIConfig.__config = {
 	},
 	defaults = {
 		AutoParry = true, AutoClash = true, DynamicParry = false, ClashBallVisible = false,
-		DynamicParryReleaseDelay = 0.2, CPS = 25.5, CPF = 0.3917, SpamRateMode = "CPS",
+		DynamicParryReleaseDelay = 0.2, CPS = 23.5, CPF = 0.3917, SpamRateMode = "CPS",
 		Keybind = Enum.KeyCode.F9, SpamKeybind = Enum.KeyCode.F, SpamMode = "Toggle",
 	},
 }
