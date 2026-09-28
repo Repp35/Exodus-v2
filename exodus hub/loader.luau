@@ -27,19 +27,19 @@ local PROJECT_PATH = "exodus%20hub/"
 local LOCAL_ROOTS = { "Exodus-v2/exodus hub", "exodus hub", "Exodus Hub" }
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local MODULE_MANIFEST = {
-	{ name = "config", path = "front/config.luau" },
-	{ name = "uiconfig", path = "front/uiconfig.luau" },
-	{ name = "utils", path = "logic/utils.luau" },
+	{ name = "config", path = "modules/front/config.luau" },
+	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
+	{ name = "utils", path = "modules/logic/utils.luau" },
 	{ name = "antitamper", path = "security/antitamper.luau" },
-	{ name = "gameinfo", path = "logic/gameinfo.luau" },
-	{ name = "remote", path = "logic/remote.luau" },
-	{ name = "autoparry", path = "logic/autoparry.luau" },
-	{ name = "dynamicparry", path = "logic/dynamicparry.luau" },
-	{ name = "dash", path = "logic/dash.luau" },
-	{ name = "autoclash", path = "logic/autoclash.luau" },
-	{ name = "spam", path = "logic/spam.luau" },
-	{ name = "character", path = "logic/character.luau" },
-	{ name = "ui", path = "front/ui.luau" },
+	{ name = "gameinfo", path = "modules/logic/gameinfo.luau" },
+	{ name = "remote", path = "modules/logic/remote.luau" },
+	{ name = "autoparry", path = "modules/logic/autoparry.luau" },
+	{ name = "dynamicparry", path = "modules/logic/dynamicparry.luau" },
+	{ name = "dash", path = "modules/logic/dash.luau" },
+	{ name = "autoclash", path = "modules/logic/autoclash.luau" },
+	{ name = "spam", path = "modules/logic/spam.luau" },
+	{ name = "character", path = "modules/logic/character.luau" },
+	{ name = "ui", path = "modules/front/ui.luau" },
 }
 local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
