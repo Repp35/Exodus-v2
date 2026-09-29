@@ -19,6 +19,18 @@ local T = {
 	SPAM_PARRY_WINDOW_FACTOR = 1.1,
 	DYNAMIC_SPAM_WINDOW_FACTOR = 0.6,
 	DYNAMIC_SPAM_CLICK_COOLDOWN = 0.010,
+
+	-- CPS only
+	-- O intervalo nunca fica menor que 1/CPS.
+	-- Portanto nunca passa do CPS configurado.
+	CPS_RANDOM_MIN_MULTIPLIER = 1.0,
+	CPS_RANDOM_MAX_MULTIPLIER = 1.40,
+
+	-- Pequenas pausas ocasionais para quebrar
+	-- periodicidade sem aumentar a taxa.
+	CPS_RANDOM_PAUSE_CHANCE = 0.035,
+	CPS_RANDOM_PAUSE_MIN = 1.35,
+	CPS_RANDOM_PAUSE_MAX = 2.0,
 }
 
 -- state
@@ -34,6 +46,11 @@ local lastDynamicClickAt
 local clickQueue = 0
 local clickAccumulator = 0
 local clickInterval = 0
+
+-- CPS-only scheduler
+local cpsNextClickAt = 0
+local cpsScheduledRate = 0
+local cpsSchedulerGeneration = 0
 
 local lastTargetSwitchTimestampMs = 0
 local lastTargetResetToken
@@ -75,6 +92,12 @@ local function clearClickScheduler()
 	clickInterval = 0
 end
 
+local function clearCPSScheduler()
+	cpsNextClickAt = 0
+	cpsScheduledRate = 0
+	cpsSchedulerGeneration = generation
+end
+
 local function resetRuntime()
 	accumulator = 0
 	cpfFps = nil
@@ -83,6 +106,7 @@ local function resetRuntime()
 	chainRunning = false
 
 	clearClickScheduler()
+	clearCPSScheduler()
 
 	lastTargetSwitchTimestampMs = 0
 	lastTargetResetToken = nil
@@ -705,6 +729,112 @@ local function applyTargetSwitchBoost(mode, rate)
 	return rate
 end
 
+----------------------------------------------------------------
+-- CPS RANDOM SCHEDULER
+--
+-- Somente CPS usa isso.
+-- CPF continua usando o scheduler antigo acima.
+----------------------------------------------------------------
+
+local function randomRange(minimum, maximum)
+	return minimum
+		+ (maximum - minimum) * math.random()
+end
+
+local function getRandomCPSInterval(rate)
+	local baseInterval = 1 / rate
+
+	-- Distribuição inclinada:
+	-- a maioria fica perto do intervalo normal,
+	-- alguns ficam maiores.
+	local r = math.random()
+	local shaped = r * r
+
+	local multiplier =
+		T.CPS_RANDOM_MIN_MULTIPLIER
+		+ (
+			T.CPS_RANDOM_MAX_MULTIPLIER
+			- T.CPS_RANDOM_MIN_MULTIPLIER
+		) * shaped
+
+	-- pausa ocasional
+	if math.random() < T.CPS_RANDOM_PAUSE_CHANCE then
+		multiplier =
+			multiplier
+			* randomRange(
+				T.CPS_RANDOM_PAUSE_MIN,
+				T.CPS_RANDOM_PAUSE_MAX
+			)
+	end
+
+	-- Segurança absoluta:
+	-- nunca pode ficar abaixo de 1/CPS.
+	return math_max(
+		baseInterval,
+		baseInterval * multiplier
+	)
+end
+
+local function clearCPSSchedulerState()
+	cpsNextClickAt = 0
+	cpsScheduledRate = 0
+	cpsSchedulerGeneration = generation
+end
+
+local function scheduleNaturalCPS(rate)
+	if rate <= 0 then
+		clearCPSSchedulerState()
+		return
+	end
+
+	local now = getNow()
+
+	-- Primeira inicialização ou mudança de taxa.
+	if
+		cpsNextClickAt <= 0
+		or cpsScheduledRate ~= rate
+		or cpsSchedulerGeneration ~= generation
+	then
+		cpsScheduledRate = rate
+		cpsSchedulerGeneration = generation
+
+		local interval =
+			getRandomCPSInterval(rate)
+
+		cpsNextClickAt =
+			now + interval
+
+		return
+	end
+
+	-- Ainda não chegou no próximo click.
+	if now < cpsNextClickAt then
+		return
+	end
+
+	-- Nunca acumula clicks atrasados.
+	--
+	-- Se houve lag de 500ms, não tenta compensar
+	-- mandando vários clicks de uma vez.
+	if
+		not isRegularSpamActive()
+		or not checkParryRadiusGuard()
+	then
+		clearCPSSchedulerState()
+		return
+	end
+
+	requestParry()
+
+	-- Novo intervalo começa a partir do momento
+	-- real do click.
+	local interval =
+		getRandomCPSInterval(rate)
+
+	cpsNextClickAt =
+		now + interval
+end
+
 -- runtime
 local function tick(dt)
 	if
@@ -849,19 +979,25 @@ local function tick(dt)
 		accumulator = 0
 
 		clearClickScheduler()
+		clearCPSSchedulerState()
 	end
 
 	if rate ~= lastRate then
 		lastRate = rate
 
 		if mode == "CPF" then
+			-- CPF: exatamente como antes
 			clearClickScheduler()
 		else
+			-- CPS: limpa somente o scheduler CPS
 			accumulator = 0
+			clearCPSSchedulerState()
 		end
 	end
 
 	-- CPF
+	--
+	-- NÃO ALTERADO.
 	if mode == "CPF" then
 		scheduleCPF(rate, dt)
 		processClickQueue(dt)
@@ -872,44 +1008,13 @@ local function tick(dt)
 	if rate <= 0 then
 		accumulator = 0
 		clearClickScheduler()
+		clearCPSSchedulerState()
 		return
 	end
 
-	local interval = 1 / rate
-
-	accumulator = accumulator + dt
-
-	local currentGeneration = generation
-
-	if accumulator >= interval then
-		local clicks =
-			math_floor(
-				accumulator / interval
-			)
-
-		accumulator =
-			accumulator
-			- (clicks * interval)
-
-		if accumulator < 0 then
-			accumulator = 0
-		end
-
-		if
-			currentGeneration ~= generation
-			or not isRegularSpamActive()
-			or not checkParryRadiusGuard()
-		then
-			return
-		end
-
-		queueClicks(
-			clicks,
-			interval
-		)
-	end
-
-	processClickQueue(dt)
+	-- CPS novo:
+	-- distribuição aleatória sem acumular clicks.
+	scheduleNaturalCPS(rate)
 end
 
 -- setup
@@ -1028,12 +1133,28 @@ function Spam.resetState()
 	Scheduler.parryRadiusTTI = 0
 	Scheduler.parryRadiusLimit = 0
 end
+
 function Spam.teardown()
 	if heartbeatConnection then
-		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(heartbeatConnection) end
-		pcall(heartbeatConnection.Disconnect, heartbeatConnection); heartbeatConnection = nil
+		if Utils and type(Utils.untrackGlobal) == "function" then
+			Utils.untrackGlobal(heartbeatConnection)
+		end
+
+		pcall(
+			heartbeatConnection.Disconnect,
+			heartbeatConnection
+		)
+
+		heartbeatConnection = nil
 	end
-	Spam.resetState(); Remote = nil; GameInfo = nil; Utils = nil; AutoParry = nil; AutoClash = nil
+
+	Spam.resetState()
+
+	Remote = nil
+	GameInfo = nil
+	Utils = nil
+	AutoParry = nil
+	AutoClash = nil
 end
 
 function Spam.getStatus()
