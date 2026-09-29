@@ -40,8 +40,9 @@ local Tuning = {
         PING_EMA_ALPHA = 0.08,
         DEFAULT_PING_ONE_WAY = 0.030,
 
-        TELEPORT_LOCK_BASE = 0.400,
-        TARGET_DEBOUNCE = 0.180,
+	        TELEPORT_LOCK_BASE = 0.400,
+	        RESET_LOCK_BASE = 0.400,
+	        TARGET_DEBOUNCE = 0.180,
 }
 
 local WINDOW_SLOPE =
@@ -774,12 +775,12 @@ local function onBallSync(data)
 
         local time = now()
 
-        if data.Teleported == true then
+        if data.Teleported == true or data.Grace == true or data.OldGrace == true then
                 Runtime.teleportLockUntil =
                         math.max(
                                 Runtime.teleportLockUntil,
                                 time
-                                        + Tuning.TELEPORT_LOCK_BASE
+                                        + Tuning.RESET_LOCK_BASE
                                         + Runtime.pingOneWay
                         )
 
@@ -962,6 +963,11 @@ local function onHeartbeat(
                         timeNow
                 )
         then
+                return
+        end
+
+        if snapshot.resetting == true then
+                TargetTracker.reset()
                 return
         end
 

@@ -37,6 +37,9 @@ local State = {
 	deflectDirection = Vector3.new(0, 0, 0),
 	teleported = false,
 	teleportedAt = 0,
+	grace = false,
+	oldGrace = false,
+	resetAt = 0,
 }
 
 local deflectAbility = nil
@@ -62,7 +65,7 @@ local function clearSyncState()
 	State.speed = 0; State.speedAt = 0; State.maxSpeed = 0; State.acceleration = 0
 	State.realPosition = Vector3.new(0, 0, 0); State.hasRealPosition = false
 	State.target = nil; State.lastSyncAt = 0; State.lastSyncData = nil; State.syncPayloadType = "none"; State.syncEventAt = 0; State.positionAt = 0
-	State.deflectDirection = Vector3.new(0, 0, 0); State.teleported = false; State.teleportedAt = 0
+	State.deflectDirection = Vector3.new(0, 0, 0); State.teleported = false; State.teleportedAt = 0; State.grace = false; State.oldGrace = false; State.resetAt = 0
 end
 
 -- reset
@@ -279,6 +282,9 @@ local function getSnapshot(_, time)
 		targetId = targetId,
 		lastTarget = targetId,
 		teleported = State.teleported and (time - State.teleportedAt) < T.TELEPORT_EVENT_TIME,
+		grace = State.grace,
+		oldGrace = State.oldGrace,
+		resetting = State.grace or State.oldGrace or (State.teleported and (time - State.teleportedAt) < T.TELEPORT_EVENT_TIME),
 		syncAt = State.lastSyncAt > 0 and State.lastSyncAt or nil,
 		syncAge = rawSyncAge,
 		syncFresh = syncFresh,
@@ -318,10 +324,10 @@ refreshDecodedSync = function(time, force)
 	end
 	if not force and not changed then return true, consumerSyncData(data) end
 
-	State.speed = Utils.isFiniteNumber(data.Speed) and math.max(0, data.Speed) or 0
-	State.maxSpeed = Utils.isFiniteNumber(data.MaxSpeed) and math.max(0, data.MaxSpeed) or 0
-	State.acceleration = Utils.isFiniteNumber(data.Accel) and data.Accel or 0
-	State.speedAt = Utils.isFiniteNumber(data.Speed) and data.Speed >= 0 and time or 0
+	State.speed = Utils.isNonNegativeFiniteNumber(data.Speed) and data.Speed or 0
+	State.maxSpeed = Utils.isNonNegativeFiniteNumber(data.MaxSpeed) and data.MaxSpeed or 0
+	State.acceleration = Utils.isNonNegativeFiniteNumber(data.Accel) and data.Accel or 0
+	State.speedAt = Utils.isNonNegativeFiniteNumber(data.Speed) and time or 0
 	State.hasRealPosition = typeof(data.RealPosition) == "Vector3"
 	State.positionAt = State.hasRealPosition and time or 0
 	if State.hasRealPosition then State.realPosition = data.RealPosition end
@@ -329,6 +335,9 @@ refreshDecodedSync = function(time, force)
 	State.target = normalizeTargetId(data.TargetPlayerID)
 	State.teleported = data.Teleported == true
 	State.teleportedAt = State.teleported and time or 0
+	State.grace = data.Grace == true
+	State.oldGrace = data.OldGrace == true
+	State.resetAt = (State.grace or State.oldGrace or State.teleported) and time or State.resetAt
 	State.lastSyncAt = time
 	State.lastSyncData = cloneSyncData(data)
 	return true, consumerSyncData(data)
@@ -369,7 +378,7 @@ local function getDeflectCooldown()
 	local ability = locateDeflectAbility()
 	if not ability then return 0 end
 	local cooldown = ability.Cooldown
-	if Utils.isFiniteNumber(cooldown) then return math.max(0, cooldown) end
+	if Utils.isNonNegativeFiniteNumber(cooldown) then return cooldown end
 	return 0
 end
 
@@ -411,6 +420,7 @@ function GameInfo.setup(deps)
 		or type(deps.Utils.now) ~= "function"
 		or type(deps.Utils.apiVersion) ~= "function"
 		or type(deps.Utils.isFiniteNumber) ~= "function"
+		or type(deps.Utils.isNonNegativeFiniteNumber) ~= "function"
 		or type(deps.Utils.getPlayers) ~= "function"
 		or type(deps.Utils.getReplicatedStorage) ~= "function"
 		or type(deps.Utils.getWorkspace) ~= "function"
@@ -485,8 +495,7 @@ function GameInfo.isSnapshotValid(snapshot, time)
 		or snapshot.ballValid ~= true
 		or not isBall(snapshot.ball)
 		or typeof(snapshot.position) ~= "Vector3"
-		or not Utils.isFiniteNumber(snapshot.speed)
-		or snapshot.speed < 0
+		or not Utils.isNonNegativeFiniteNumber(snapshot.speed)
 	then
 		return false
 	end

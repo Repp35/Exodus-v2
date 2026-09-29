@@ -21,6 +21,7 @@ local T = {
 	DASH_WINDOW_FACTOR = 1.0,
 	REACTIVATE_COOLDOWN = 0.070,
 	REACTIVATE_RETURN_GRACE = 0.050,
+	RESET_LOCK_BASE = 0.400,
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
 	ACT_DEACT_LOCK_TIME = 0.05,
 	PROXIMITY_RADIUS = 6,
@@ -136,9 +137,9 @@ local FN = {
 }
 
 -- HELPERS
-local function finiteNumber(v, fallback)
-	v = tonumber(v)
-	if not v or v ~= v or v == math.huge or v == -math.huge then return fallback or 0 end
+	local function finiteNumber(v, fallback)
+		v = tonumber(v)
+		if not v or v ~= v or v == math.huge or v == -math.huge then return fallback or 0 end
 	return v
 end
 local function now()
@@ -697,10 +698,11 @@ end
 function AutoClash.onBallSync(data)
 	if type(data) ~= "table" or not Utils or not R.localUserId then return end
 	local t = now(); R.lastSyncAt = t
-	if data.Teleported == true then
+	if data.Teleported == true or data.Grace == true or data.OldGrace == true then
 		if R.active then setActive(false, "teleported") end
-		resetTargetState(); R.lastGate = "teleported"; return
-		end
+		resetTargetState(); R.reactivateBlockedUntil = math.max(R.reactivateBlockedUntil, t + T.RESET_LOCK_BASE + pingCompensation())
+		R.lastGate = data.Teleported == true and "teleported" or "grace_reset"; return
+	end
 		local target = normalizeTarget(data.TargetPlayerID)
 	if not target then
 		if R.active then

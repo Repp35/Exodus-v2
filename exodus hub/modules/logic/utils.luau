@@ -286,8 +286,12 @@ function Utils.setDynamicSpamActive(value)
 		"dynamic_spam_toggle"
 	)
 end
+
 function Utils.isFiniteNumber(value)
 	return type(value) == "number" and value == value and value < math.huge and value > -math.huge
+end
+function Utils.isNonNegativeFiniteNumber(value)
+	return Utils.isFiniteNumber(value) and value >= 0
 end
 function Utils.normalizeSpamRate(value, fallback)
 	local rate = tonumber(value)
