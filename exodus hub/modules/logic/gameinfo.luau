@@ -63,9 +63,10 @@ local cachedCharacter = nil
 local cachedRoot = nil
 local function clearSyncState()
 	State.speed = 0; State.speedAt = 0; State.maxSpeed = 0; State.acceleration = 0
-	State.realPosition = Vector3.new(0, 0, 0); State.hasRealPosition = false
-	State.target = nil; State.lastSyncAt = 0; State.lastSyncData = nil; State.syncPayloadType = "none"; State.syncEventAt = 0; State.positionAt = 0
-	State.deflectDirection = Vector3.new(0, 0, 0); State.teleported = false; State.teleportedAt = 0; State.grace = false; State.oldGrace = false; State.resetAt = 0
+	State.realPosition = Vector3.new(0, 0, 0); State.hasRealPosition = false; State.target = nil; State.lastSyncAt = 0
+	State.lastSyncData = nil; State.syncPayloadType = "none"; State.syncEventAt = 0; State.positionAt = 0
+	State.deflectDirection = Vector3.new(0, 0, 0); State.teleported = false; State.teleportedAt = 0; State.grace = false
+	State.oldGrace = false; State.resetAt = 0
 end
 
 -- reset
@@ -79,20 +80,20 @@ end
 
 -- ball
 local function isBall(instance)
-	return typeof(instance) == "Instance"
-		and instance.Parent ~= nil
-		and instance:IsA("BasePart")
+	return typeof(instance) == "Instance" and instance.Parent ~= nil and instance:IsA("BasePart")
 end
 local function resolveGameInfoProvider(time)
 	time = time or Utils.now()
-	if gameInfoProvider and gameInfoModule and gameInfoModule.Parent ~= nil
+	if
+		gameInfoProvider
+		and gameInfoModule
+		and gameInfoModule.Parent ~= nil
 		and time - gameInfoCheckedAt < T.PROVIDER_RECHECK_TIME
 	then
 		return gameInfoProvider
 	end
 	if gameInfoCheckedAt > 0 and time - gameInfoCheckedAt < T.ACQUIRE_RETRY_TIME then return nil end
-	gameInfoCheckedAt = time
-	gameInfoModule = nil; gameInfoProvider = nil; gameInfoProviderError = nil
+	gameInfoCheckedAt = time; gameInfoModule = nil; gameInfoProvider = nil; gameInfoProviderError = nil
 	local replicatedStorage = Utils.getReplicatedStorage()
 	if not replicatedStorage then gameInfoProviderStatus = "replicated_storage_missing"; return nil end
 	local ts = replicatedStorage and replicatedStorage:FindFirstChild("TS")
@@ -116,15 +117,17 @@ local function getProviderBall(time)
 end
 local function resolveBallReplicator(time)
 	time = time or Utils.now()
-	if ballReplicatorProvider and ballReplicatorModule and ballReplicatorModule.Parent ~= nil
+	if
+		ballReplicatorProvider
+		and ballReplicatorModule
+		and ballReplicatorModule.Parent ~= nil
 		and time - ballReplicatorCheckedAt < T.PROVIDER_RECHECK_TIME
 	then
 		return ballReplicatorProvider
 	end
 	if ballReplicatorAttempted and time - ballReplicatorCheckedAt < T.ACQUIRE_RETRY_TIME then return nil end
-	ballReplicatorAttempted = true; ballReplicatorCheckedAt = time
-	ballReplicatorModule = nil; ballReplicatorProvider = nil; ballReplicatorError = nil
-	local replicatedStorage = Utils.getReplicatedStorage()
+	ballReplicatorAttempted = true; ballReplicatorCheckedAt = time; ballReplicatorModule = nil; ballReplicatorProvider = nil
+	ballReplicatorError = nil; local replicatedStorage = Utils.getReplicatedStorage()
 	if not replicatedStorage then ballReplicatorStatus = "replicated_storage_missing"; return nil end
 	local ts = replicatedStorage:FindFirstChild("TS")
 	if not ts then ballReplicatorStatus = "ts_folder_missing"; return nil end
@@ -261,7 +264,9 @@ local function getSnapshot(_, time)
 		teleported = State.teleported and (time - State.teleportedAt) < T.TELEPORT_EVENT_TIME,
 		grace = State.grace,
 		oldGrace = State.oldGrace,
-		resetting = State.grace or State.oldGrace or (State.teleported and (time - State.teleportedAt) < T.TELEPORT_EVENT_TIME),
+		resetting = State.grace
+			or State.oldGrace
+			or (State.teleported and (time - State.teleportedAt) < T.TELEPORT_EVENT_TIME),
 		syncAt = State.lastSyncAt > 0 and State.lastSyncAt or nil,
 		syncAge = rawSyncAge,
 		syncFresh = syncFresh,
@@ -271,7 +276,9 @@ end
 -- sync
 local function cloneSyncData(data)
 	local copy = {}
-	for key, value in pairs(data) do copy[key] = value end
+	for key, value in pairs(data) do
+		copy[key] = value
+	end
 	return copy
 end
 local function consumerSyncData(data)
@@ -280,13 +287,13 @@ end
 refreshDecodedSync = function(time, force)
 	time = resolveTime(time); local data = getDecodedSyncData(time)
 	if not data then
-		return false, ("BallReplicator.syncData indisponivel: %s%s"):format(
-			tostring(ballReplicatorStatus),
-			ballReplicatorError and ("; " .. tostring(ballReplicatorError)) or ""
-		)
+		return false,
+			("BallReplicator.syncData indisponivel: %s%s"):format(
+				tostring(ballReplicatorStatus),
+				ballReplicatorError and ("; " .. tostring(ballReplicatorError)) or ""
+			)
 	end
-	State.target = resolveTargetId(data)
-	local changed = State.lastSyncData == nil
+	State.target = resolveTargetId(data); local changed = State.lastSyncData == nil
 	if not changed then
 		for key, value in pairs(data) do
 			if State.lastSyncData[key] ~= value then changed = true; break end
@@ -302,14 +309,13 @@ refreshDecodedSync = function(time, force)
 	State.acceleration = Utils.isNonNegativeFiniteNumber(data.Accel) and data.Accel or 0; State.speedAt = Utils.isNonNegativeFiniteNumber(data.Speed) and time or 0
 	State.hasRealPosition = typeof(data.RealPosition) == "Vector3"; State.positionAt = State.hasRealPosition and time or 0
 	if State.hasRealPosition then State.realPosition = data.RealPosition end
-	State.deflectDirection = typeof(data.DeflectDirection) == "Vector3" and data.DeflectDirection or ZERO_VELOCITY; State.target = resolveTargetId(data)
-	State.teleported = data.Teleported == true; State.teleportedAt = State.teleported and time or 0; State.grace = data.Grace == true; State.oldGrace = data.OldGrace == true
+	State.deflectDirection = typeof(data.DeflectDirection) == "Vector3" and data.DeflectDirection or ZERO_VELOCITY; State.target = resolveTargetId(data); State.teleported = data.Teleported == true
+	State.teleportedAt = State.teleported and time or 0; State.grace = data.Grace == true; State.oldGrace = data.OldGrace == true
 	State.resetAt = (State.grace or State.oldGrace or State.teleported) and time or State.resetAt; State.lastSyncAt = time; State.lastSyncData = cloneSyncData(data)
 	return true, consumerSyncData(data)
 end
 local function applySync(rawPayload)
-	local time = Utils.now(); State.syncPayloadType = rawPayload == nil and "nil" or typeof(rawPayload); State.syncEventAt = time
-	return refreshDecodedSync(time, true)
+	local time = Utils.now(); State.syncPayloadType = rawPayload == nil and "nil" or typeof(rawPayload); State.syncEventAt = time; return refreshDecodedSync(time, true)
 end
 
 -- ability

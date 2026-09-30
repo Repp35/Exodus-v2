@@ -104,6 +104,7 @@ local function request(url, headers)
 					Method = "GET",
 					Headers = headers,
 				})
+
 				if type(response) ~= "table" then error("Resposta HTTP inválida") end
 				local statusCode = tonumber(response.StatusCode or response.status_code)
 				if statusCode and statusCode >= 400 then error("HTTP " .. tostring(statusCode)) end
@@ -121,12 +122,7 @@ local function request(url, headers)
 end
 local function findLocalModule(name, relativePath)
 	if not ALLOW_LOCAL_FALLBACK then return nil, name .. ".luau local desabilitado" end
-	if
-		type(isfile) ~= "function"
-		or type(readfile) ~= "function"
-	then
-		return nil, "APIs de arquivo do executor indisponíveis"
-	end
+	if type(isfile) ~= "function" or type(readfile) ~= "function" then return nil, "APIs de arquivo do executor indisponíveis" end
 	for _, root in ipairs(LOCAL_ROOTS) do
 		local path = root .. "/" .. relativePath; local fileOk, fileExists = pcall(isfile, path)
 		if fileOk and fileExists then
@@ -182,11 +178,14 @@ end
 -- urls
 local function buildURLs(version)
 	local root = BASE_URL .. (version or ("refs/heads/" .. BRANCH)) .. "/" .. PROJECT_PATH; local urls = {}
-	for _, entry in ipairs(MODULE_MANIFEST) do urls[entry.name] = root .. entry.path end
+	for _, entry in ipairs(MODULE_MANIFEST) do
+		urls[entry.name] = root .. entry.path
+	end
 	return urls
 end
 local function buildCDNURL(url)
-	local repository, version, path = string.match(url, "^https://raw%.githubusercontent%.com/([^/]+/[^/]+)/refs/heads/([^/]+)/(.+)$")
+	local repository, version, path =
+		string.match(url, "^https://raw%.githubusercontent%.com/([^/]+/[^/]+)/refs/heads/([^/]+)/(.+)$")
 	if not repository or not version or not path then return nil end
 	return "https://cdn.jsdelivr.net/gh/" .. repository .. "@" .. version .. "/" .. path
 end
@@ -196,7 +195,8 @@ local function loadModule(name, relativePath, url)
 		local fallbackURL = buildCDNURL(url)
 		if fallbackURL then
 			local fallbackSource, fallbackError = request(fallbackURL)
-			if fallbackSource then source, fetchError, sourceKind = fallbackSource, nil, "cdn" else fetchError = tostring(fetchError or "falha no GitHub Raw") .. "; CDN: " .. tostring(fallbackError) end
+			if fallbackSource then source, fetchError, sourceKind = fallbackSource, nil, "cdn"
+			else fetchError = tostring(fetchError or "falha no GitHub Raw") .. "; CDN: " .. tostring(fallbackError) end
 		end
 	end
 	if source then
@@ -250,7 +250,10 @@ local function loadModules(urls)
 	end
 	for _, name in ipairs(names) do
 		local module, executeError = execute(name, results[name].chunk)
-		if not module then clearRegistry(); return nil, name, executeError end
+		if not module then
+			clearRegistry()
+			return nil, name, executeError
+		end
 		loaded[name] = module; register(name, module)
 	end
 	return loaded
@@ -357,11 +360,11 @@ local function bindRuntime(loaded, log)
 	end
 	local function notifyBallSync(decodedData)
 		if type(decodedData) ~= "table" then return end
-		for _, sub in ipairs(ballSyncSubscribers) do callSync(sub.name, sub.handler, decodedData) end
+		for _, sub in ipairs(ballSyncSubscribers) do
+			callSync(sub.name, sub.handler, decodedData)
+		end
 	end
-	local function onBallSync(data)
-		notifyBallSync(callSync("GameInfo", gameInfo.applySync, data))
-	end
+	local function onBallSync(data) notifyBallSync(callSync("GameInfo", gameInfo.applySync, data)) end
 	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
 	if not watcherReady then
 		if type(log.recordError) == "function" then log.recordError("GameInfo", "observador da bola indisponível")
@@ -421,9 +424,8 @@ local function startInternal()
 	if not playerReady then return false, "Loader", playerError end
 	local version = "refs/heads/" .. BRANCH; local urls = buildURLs(version); local loaded, moduleName, loadError = loadModules(urls)
 	if not loaded then return false, moduleName, loadError end
-	activeLoaded = loaded
-	local utils = loaded.utils; utils.start()
-	utils.setLifecyclePhase("loading"); Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot()
+	activeLoaded = loaded; local utils = loaded.utils; utils.start(); utils.setLifecyclePhase("loading")
+	Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot()
 	for _, entry in ipairs(MODULE_MANIFEST) do
 		local module = loaded[entry.name]
 		if type(module) == "table" and module.__config and not loaded.config.register(entry.name, module.__config) then
@@ -459,8 +461,8 @@ local function startInternal()
 		utils.stop()
 		return false, uiModule, uiError
 	end
-	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true
-	Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
+	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
+	Exodus.Started = true; Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
 end
 local function rollbackLoaded(loaded)
 	if type(loaded) ~= "table" then return end
@@ -469,8 +471,7 @@ local function rollbackLoaded(loaded)
 		if type(module) == "table" then
 			if type(module.teardown) == "function" then pcall(module.teardown)
 			elseif type(module.detachCharacter) == "function" then pcall(module.detachCharacter)
-			elseif type(module.resetState) == "function" then pcall(module.resetState)
-			end
+			elseif type(module.resetState) == "function" then pcall(module.resetState) end
 		end
 	end
 	if type(loaded.remote) == "table" and type(loaded.remote.stopMaintenance) == "function" then pcall(loaded.remote.stopMaintenance) end
@@ -481,8 +482,8 @@ function Loader.start()
 	if startLock then return false, "Loader", "startup já em andamento" end
 	local ready, reason = validateExecutor()
 	if not ready then return false, "Loader", reason end
-	startLock = true
-	Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules; Exodus.Loader = Loader; Modules.Loader = Loader
+	startLock = true; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules
+	Exodus.Loader = Loader; Modules.Loader = Loader
 	local ok, started, moduleName, startError = xpcall(startInternal, function(errorValue) return errorValue end)
 	startLock = false
 	if not ok or started ~= true then
