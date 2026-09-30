@@ -666,7 +666,7 @@ local function resolveTargetId(data)
 
 	if attribute ~= nil then
 		local normalizedAttribute = normalizeTargetId(attribute)
-		if normalizedAttribute then return normalizedAttribute end
+		return normalizedAttribute or -1
 	end
 
 	local highlighted =
@@ -677,6 +677,27 @@ local function resolveTargetId(data)
 	end
 
 	return normalizeTargetId(data.TargetPlayerID) or -1
+end
+
+local function isLocalTarget(data)
+	local localPlayer = Players and Players.LocalPlayer
+	local localUserId = localPlayer and tonumber(localPlayer.UserId)
+	if not localUserId then return false end
+
+	local attribute
+	local attributeOk, attributeValue = pcall(function()
+		return Workspace:GetAttribute("GameBallTarget")
+	end)
+	if attributeOk and attributeValue ~= nil then
+		return normalizeTargetId(attributeValue) == localUserId
+	end
+
+	data = type(data) == "table" and data or {}
+	if data.HighlightTargetPlayerID ~= nil then
+		return normalizeTargetId(data.HighlightTargetPlayerID) == localUserId
+	end
+
+	return normalizeTargetId(data.TargetPlayerID) == localUserId
 end
 
 
@@ -793,6 +814,7 @@ local function consumerSyncData(data)
 	end
 
 	copy.TargetPlayerID = resolveTargetId(data)
+	copy.Targeted = isLocalTarget(data)
 
 	return copy
 end
@@ -929,10 +951,10 @@ local function getSnapshot(_, time)
 	local syncFresh =
 		rawSyncAge ~= nil
 		and rawSyncAge <= T.SYNC_FRESH_TIME
-	local localPlayer = Players and Players.LocalPlayer
-	local localUserId = localPlayer and tonumber(localPlayer.UserId)
-	local targetId = normalizeTargetId(State.target)
-	local targeted = localUserId ~= nil and targetId ~= nil and targetId == localUserId
+	local syncData = State.lastSyncData
+	local targetId = resolveTargetId(syncData)
+	local targeted = isLocalTarget(syncData)
+	State.target = targetId
 
 	local approachingSpeed
 
