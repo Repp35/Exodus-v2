@@ -31,11 +31,21 @@ local Tuning = {
 	RESET_LOCK_BASE = 0.400,
 }
 
+local math_max = math.max
+local math_min = math.min
+local math_sqrt = math.sqrt
+local math_clamp = math.clamp
+local math_floor = math.floor
+local tonumber = tonumber
+local typeof = typeof
+local type = type
+local pcall = pcall
+
 local WINDOW_SLOPE =
 	(Tuning.WINDOW_REFERENCE - Tuning.WINDOW_LOW)
 	/ (Tuning.WINDOW_REFERENCE_SPEED - Tuning.WINDOW_LOW_SPEED)
 
-local MAX_RES_STACK = math.floor(
+local MAX_RES_STACK = math_floor(
 	Tuning.RES_CAP_STUDS / Tuning.RES_PER_PARRY
 )
 
@@ -150,13 +160,24 @@ local Runtime = {
 	passivePhase = "idle",
 	passiveCycleStart = 0,
 	passiveBallAtValid = false,
+
+	-- cached references
+	getConfig = nil,
+	isSpamActive = nil,
+	getSnapshot = nil,
+	isSnapshotValid = nil,
+	isFiniteNumber = nil,
 }
 
 -- HELPERS
 
 local function now()
-	if Utils and type(Utils.now) == "function" then
-		return Utils.now()
+	if Utils then
+		local fn = Utils.now
+
+		if type(fn) == "function" then
+			return fn()
+		end
 	end
 
 	return os.clock()
@@ -167,11 +188,11 @@ local function isFiniteNumber(value)
 		return false
 	end
 
-	if Utils and type(Utils.isFiniteNumber) == "function" then
-		local ok, result = pcall(Utils.isFiniteNumber, value)
+	if Utils then
+		local fn = Utils.isFiniteNumber
 
-		if ok then
-			return result == true
+		if type(fn) == "function" then
+			return fn(value) == true
 		end
 	end
 
@@ -190,14 +211,18 @@ local function setPhase(phase, reason)
 	Runtime.phase = phase
 	phaseString = PHASE_STRINGS[phase] or "detached"
 
-	if Utils and type(Utils.recordTransition) == "function" then
-		pcall(
-			Utils.recordTransition,
-			"AutoParry",
-			PHASE_STRINGS[old] or "detached",
-			phaseString,
-			reason
-		)
+	if Utils then
+		local fn = Utils.recordTransition
+
+		if type(fn) == "function" then
+			pcall(
+				fn,
+				"AutoParry",
+				PHASE_STRINGS[old] or "detached",
+				phaseString,
+				reason
+			)
+		end
 	end
 end
 
@@ -208,11 +233,16 @@ end
 local function disconnectConnections()
 	for i = #Runtime.connections, 1, -1 do
 		local connection = Runtime.connections[i]
+
 		Runtime.connections[i] = nil
 
 		if connection then
-			if Utils and type(Utils.untrackCharacter) == "function" then
-				pcall(Utils.untrackCharacter, connection)
+			if Utils then
+				local untrack = Utils.untrackCharacter
+
+				if type(untrack) == "function" then
+					pcall(untrack, connection)
+				end
 			end
 
 			pcall(function()
@@ -223,7 +253,9 @@ local function disconnectConnections()
 end
 
 local function distanceSquared(a, b)
-	if typeof(a) ~= "Vector3" or typeof(b) ~= "Vector3" then
+	if typeof(a) ~= "Vector3"
+		or typeof(b) ~= "Vector3"
+	then
 		return math.huge
 	end
 
@@ -301,14 +333,16 @@ local function getResilienceBonus(time)
 		return Runtime.resilienceBonus
 	end
 
-	Runtime.resilienceBonus = math.min(
-		Resilience.stack * Tuning.RES_PER_PARRY,
-		Tuning.RES_CAP_STUDS
-	)
+	local bonus =
+		math_min(
+			Resilience.stack * Tuning.RES_PER_PARRY,
+			Tuning.RES_CAP_STUDS
+		)
 
+	Runtime.resilienceBonus = bonus
 	Runtime.resilienceBonusAt = time
 
-	return Runtime.resilienceBonus
+	return bonus
 end
 
 -- PING
@@ -361,32 +395,34 @@ local function computeDeflectWindow(speed)
 		return Tuning.WINDOW_LOW
 	end
 
-	local window =
+	return math_max(
 		Tuning.WINDOW_LOW
-		+ (raw - Tuning.WINDOW_LOW_SPEED)
-		* WINDOW_SLOPE
-
-	return math.max(window, 0)
+			+ (raw - Tuning.WINDOW_LOW_SPEED)
+			* WINDOW_SLOPE,
+		0
+	)
 end
 
 local function computePingRadius(speed)
-	local rawSpeed = tonumber(speed) or 0
-
-	if rawSpeed <= 0 then
+	if speed <= 0 then
 		return 0
 	end
 
-	local pingWindow = math.min(
-		Runtime.pingOneWay
-			* 2
-			* Tuning.PING_WINDOW_FACTOR,
-		Tuning.PING_WINDOW_CAP
-	)
+	local pingWindow =
+		math_min(
+			Runtime.pingOneWay
+				* 2
+				* Tuning.PING_WINDOW_FACTOR,
+			Tuning.PING_WINDOW_CAP
+		)
 
-	return rawSpeed * pingWindow
+	return speed * pingWindow
 end
 
-local function computeNoWindowParryRadius(speed, resilience)
+local function computeNoWindowParryRadius(
+	speed,
+	resilience
+)
 	return Tuning.DEFLECT_RADIUS
 		+ (resilience or 0)
 		+ computePingRadius(speed)
@@ -408,11 +444,14 @@ local function computeTiming(
 		return nil
 	end
 
-	local resilience = getResilienceBonus(time)
+	local resilience =
+		getResilienceBonus(time)
 
-	local deflectWindow = computeDeflectWindow(speed)
+	local deflectWindow =
+		computeDeflectWindow(speed)
 
-	local factor = tonumber(windowFactor)
+	local factor =
+		tonumber(windowFactor)
 
 	if
 		not factor
@@ -421,7 +460,7 @@ local function computeTiming(
 		factor = Tuning.WINDOW_FACTOR
 	end
 
-	factor = math.clamp(factor, 0, 1.5)
+	factor = math_clamp(factor, 0, 1.5)
 
 	local effectiveWindow =
 		deflectWindow * factor
@@ -430,15 +469,12 @@ local function computeTiming(
 		computePingRadius(speed)
 
 	local noWindowParryRadius =
-		computeNoWindowParryRadius(
-			speed,
-			resilience
-		)
-
-	local parryRadius =
 		Tuning.DEFLECT_RADIUS
 		+ resilience
 		+ pingRadius
+
+	local parryRadius =
+		noWindowParryRadius
 		+ speed * effectiveWindow
 
 	local distSq =
@@ -447,7 +483,12 @@ local function computeTiming(
 			position
 		)
 
-	local distance = math.sqrt(distSq)
+	if distSq == math.huge then
+		return nil
+	end
+
+	local distance =
+		math_sqrt(distSq)
 
 	local delta =
 		distance - parryRadius
@@ -459,67 +500,47 @@ local function computeTiming(
 
 	return {
 		parryRadius = parryRadius,
-
 		pureRadius = Tuning.DEFLECT_RADIUS,
-
-		noWindowParryRadius =
-			noWindowParryRadius,
-
+		noWindowParryRadius = noWindowParryRadius,
 		pingRadius = pingRadius,
-
 		resilienceBonus = resilience,
-
 		deflectWindow = deflectWindow,
-
 		effectiveWindow = effectiveWindow,
-
 		tti = tti,
-
 		speed = speed,
-
 		distance = distance,
-
 		distanceSquared = distSq,
-
 		distanceToParryRadius = delta,
-
 		pingOneWay = Runtime.pingOneWay,
-
 		windowFactor = factor,
-
 		stationary = false,
 	}
 end
 
 local function getSnapshot(time)
+	local getSnapshotRef =
+		GameInfo
+		and GameInfo.getSnapshot
+
+	local validate =
+		GameInfo
+		and GameInfo.isSnapshotValid
+
 	if
-		not GameInfo
-		or type(GameInfo.getSnapshot) ~= "function"
-		or type(GameInfo.isSnapshotValid) ~= "function"
+		type(getSnapshotRef) ~= "function"
+		or type(validate) ~= "function"
 	then
 		return nil
 	end
 
-	local ok, snapshot = pcall(
-		GameInfo.getSnapshot,
-		nil,
-		time
-	)
+	local snapshot =
+		getSnapshotRef(nil, time)
 
-	if
-		not ok
-		or type(snapshot) ~= "table"
-	then
+	if type(snapshot) ~= "table" then
 		return nil
 	end
 
-	local valid, result = pcall(
-		GameInfo.isSnapshotValid,
-		snapshot,
-		time
-	)
-
-	if not valid or result ~= true then
+	if not validate(snapshot, time) then
 		return nil
 	end
 
@@ -527,19 +548,22 @@ local function getSnapshot(time)
 end
 
 local function isBallInParryWindow(time)
-	local snapshot = getSnapshot(time)
+	local snapshot =
+		getSnapshot(time)
 
 	if not snapshot then
 		return false, false
 	end
 
-	local ball = snapshot.ball
+	local ball =
+		snapshot.ball
 
 	if not isValidBall(ball) then
 		return false, false
 	end
 
-	local speed = tonumber(snapshot.speed)
+	local speed =
+		tonumber(snapshot.speed)
 
 	if
 		not speed
@@ -549,8 +573,11 @@ local function isBallInParryWindow(time)
 		return false, false
 	end
 
-	local position = snapshot.position
-	local root = Runtime.root
+	local position =
+		snapshot.position
+
+	local root =
+		Runtime.root
 
 	if
 		typeof(position) ~= "Vector3"
@@ -589,12 +616,17 @@ local function requestParry(ball)
 		not Remote
 		or type(Remote.fireParry) ~= "function"
 	then
-		if Utils and type(Utils.recordError) == "function" then
-			pcall(
-				Utils.recordError,
-				"AutoParry",
-				"Remote.fireParry indisponivel"
-			)
+		if Utils then
+			local recordError =
+				Utils.recordError
+
+			if type(recordError) == "function" then
+				pcall(
+					recordError,
+					"AutoParry",
+					"Remote.fireParry indisponivel"
+				)
+			end
 		end
 
 		setPhase(
@@ -605,20 +637,27 @@ local function requestParry(ball)
 		return false
 	end
 
-	local time = now()
+	local time =
+		now()
 
-	local ok = pcall(
-		Remote.fireParry,
-		1
-	)
+	local ok =
+		pcall(
+			Remote.fireParry,
+			1
+		)
 
 	if not ok then
-		if Utils and type(Utils.recordError) == "function" then
-			pcall(
-				Utils.recordError,
-				"AutoParry",
-				"Remote.fireParry falhou"
-			)
+		if Utils then
+			local recordError =
+				Utils.recordError
+
+			if type(recordError) == "function" then
+				pcall(
+					recordError,
+					"AutoParry",
+					"Remote.fireParry falhou"
+				)
+			end
 		end
 
 		setPhase(
@@ -630,7 +669,6 @@ local function requestParry(ball)
 	end
 
 	Runtime.lastFireAt = time
-
 	Resilience.hitboxConfirmed = false
 
 	local firedBall = ball
@@ -651,11 +689,8 @@ local function requestParry(ball)
 		and Resilience.lifeGeneration
 			== Runtime.lifeGeneration
 	then
-		Resilience.lastFireBall =
-			firedBall
-
-		Resilience.lastFireAt =
-			time
+		Resilience.lastFireBall = firedBall
+		Resilience.lastFireAt = time
 	else
 		Resilience.lastFireBall = nil
 		Resilience.lastFireAt = 0
@@ -680,7 +715,8 @@ local function onBallSync(data)
 		return
 	end
 
-	local time = now()
+	local time =
+		now()
 
 	if
 		data.Teleported == true
@@ -688,7 +724,7 @@ local function onBallSync(data)
 		or data.OldGrace == true
 	then
 		Runtime.teleportLockUntil =
-			math.max(
+			math_max(
 				Runtime.teleportLockUntil,
 				time
 					+ Tuning.RESET_LOCK_BASE
@@ -710,12 +746,18 @@ local function onBallSync(data)
 
 	local targetId = -1
 
-	if GameInfo and type(GameInfo.getTargetId) == "function" then
-		local ok, value =
-			pcall(GameInfo.getTargetId)
+	if GameInfo then
+		local getTargetId =
+			GameInfo.getTargetId
 
-		if ok then
-			targetId = tonumber(value) or -1
+		if type(getTargetId) == "function" then
+			local ok, value =
+				pcall(getTargetId)
+
+			if ok then
+				targetId =
+					tonumber(value) or -1
+			end
 		end
 	end
 
@@ -749,8 +791,7 @@ local function onBallSync(data)
 				isBallInParryWindow(time)
 
 			if valid and inside then
-				Runtime.passiveBallAtValid =
-					true
+				Runtime.passiveBallAtValid = true
 			end
 		end
 
@@ -771,22 +812,18 @@ local function onBallSync(data)
 
 	if spamActive then
 		if not isMe then
-			if
-				Runtime.passivePhase
-					== "awaiting_leave"
-			then
+			if Runtime.passivePhase == "awaiting_leave" then
 				if
 					Runtime.passiveBallAtValid
 					and isResilienceUsable()
 				then
 					Resilience.stack =
-						math.min(
+						math_min(
 							Resilience.stack + 1,
 							MAX_RES_STACK
 						)
 
-					Runtime.resilienceBonusAt =
-						-1
+					Runtime.resilienceBonusAt = -1
 				end
 
 				Runtime.passivePhase = "idle"
@@ -810,8 +847,7 @@ local function onBallSync(data)
 					isBallInParryWindow(time)
 
 				if valid and inside then
-					Runtime.passiveBallAtValid =
-						true
+					Runtime.passiveBallAtValid = true
 				end
 			end
 		end
@@ -826,11 +862,6 @@ end
 local function onHeartbeat(
 	character,
 	root,
-	getConfig,
-	isSpamActive,
-	getSnapshotRef,
-	isSnapshotValid,
-	finite,
 	dt
 )
 	if
@@ -842,9 +873,35 @@ local function onHeartbeat(
 		return
 	end
 
-	local timeNow = now()
+	local timeNow =
+		now()
 
-	local config = getConfig()
+	local getConfig =
+		Runtime.getConfig
+
+	local isSpamActive =
+		Runtime.isSpamActive
+
+	local getSnapshotRef =
+		Runtime.getSnapshot
+
+	local isSnapshotValid =
+		Runtime.isSnapshotValid
+
+	local finite =
+		Runtime.isFiniteNumber
+
+	if
+		not getConfig
+		or not isSpamActive
+		or not getSnapshotRef
+		or not isSnapshotValid
+	then
+		return
+	end
+
+	local config =
+		getConfig()
 
 	if
 		type(config) ~= "table"
@@ -864,29 +921,25 @@ local function onHeartbeat(
 		return
 	end
 
+	-- Ping is sampled independently from the actual
+	-- parry calculation, so it never blocks the
+	-- immediate decision.
 	Runtime.pingTimer +=
-		math.max(tonumber(dt) or 0, 0)
+		math_max(
+			tonumber(dt) or 0,
+			0
+		)
 
-	if
-		Runtime.pingTimer
-			>= Tuning.PING_SAMPLE_INTERVAL
-	then
+	if Runtime.pingTimer >= Tuning.PING_SAMPLE_INTERVAL then
 		Runtime.pingTimer = 0
 		samplePing()
 	end
 
-	local snapshot
-
-	local okSnapshot, result =
-		pcall(
-			getSnapshotRef,
+	local snapshot =
+		getSnapshotRef(
 			nil,
 			timeNow
 		)
-
-	if okSnapshot then
-		snapshot = result
-	end
 
 	if
 		type(snapshot) ~= "table"
@@ -905,8 +958,7 @@ local function onHeartbeat(
 	end
 
 	local targetId =
-		tonumber(snapshot.targetId)
-		or -1
+		tonumber(snapshot.targetId) or -1
 
 	local isMe =
 		targetId == Runtime.localUserId
@@ -928,7 +980,8 @@ local function onHeartbeat(
 		return
 	end
 
-	local ball = snapshot.ball
+	local ball =
+		snapshot.ball
 
 	if not isValidBall(ball) then
 		resetParryLock()
@@ -953,9 +1006,16 @@ local function onHeartbeat(
 		return
 	end
 
+	local rootPosition =
+		root.Position
+
+	if typeof(rootPosition) ~= "Vector3" then
+		return
+	end
+
 	local timing =
 		computeTiming(
-			root.Position,
+			rootPosition,
 			position,
 			speed,
 			timeNow
@@ -1011,13 +1071,6 @@ local function onHeartbeat(
 		return
 	end
 
-	if
-		speed < Tuning.MIN_BALL_SPEED
-		or timing.distance > timing.parryRadius
-	then
-		return
-	end
-
 	if requestParry(ball) then
 		ParryLock.armed = false
 	end
@@ -1041,7 +1094,8 @@ local function handleHitbox(instance)
 		return
 	end
 
-	local time = now()
+	local time =
+		now()
 
 	if
 		time - Resilience.lastFireAt
@@ -1066,18 +1120,8 @@ local function handleHitbox(instance)
 	local position =
 		instance.Position
 
-	local ballPosition
-
-	local okBallPosition, result =
-		pcall(function()
-			return ball.Position
-		end)
-
-	if not okBallPosition then
-		return
-	end
-
-	ballPosition = result
+	local ballPosition =
+		ball.Position
 
 	if
 		typeof(position) ~= "Vector3"
@@ -1108,7 +1152,7 @@ local function handleHitbox(instance)
 	Resilience.lastHitboxAt = time
 
 	Resilience.stack =
-		math.min(
+		math_min(
 			Resilience.stack + 1,
 			MAX_RES_STACK
 		)
@@ -1149,11 +1193,16 @@ local function installHitboxHook()
 	HitboxState.connection =
 		connection
 
-	if Utils and type(Utils.trackGlobal) == "function" then
-		pcall(
-			Utils.trackGlobal,
-			connection
-		)
+	if Utils then
+		local trackGlobal =
+			Utils.trackGlobal
+
+		if type(trackGlobal) == "function" then
+			pcall(
+				trackGlobal,
+				connection
+			)
+		end
 	end
 
 	return true
@@ -1236,9 +1285,7 @@ local function bindCharacter(character)
 		local diedConnection =
 			humanoid.Died:Connect(
 				function()
-					if generation
-						~= Runtime.generation
-					then
+					if generation ~= Runtime.generation then
 						return
 					end
 
@@ -1272,30 +1319,27 @@ local function bindCharacter(character)
 		return false, "RunService indisponivel"
 	end
 
-	local heartbeat =
-		runService.Heartbeat
-
-	local getConfig =
+	-- Cache all functions used every frame.
+	Runtime.getConfig =
 		Utils.getConfig
 
-	local isSpamActive =
+	Runtime.isSpamActive =
 		Utils.isSpamActive
 
-	local getSnapshotRef =
+	Runtime.getSnapshot =
 		GameInfo.getSnapshot
 
-	local isSnapshotValid =
+	Runtime.isSnapshotValid =
 		GameInfo.isSnapshotValid
 
-	local finite =
+	Runtime.isFiniteNumber =
 		Utils.isFiniteNumber
 
 	local heartbeatConnection =
-		heartbeat:Connect(
+		runService.Heartbeat:Connect(
 			function(dt)
 				if
-					generation
-						~= Runtime.generation
+					generation ~= Runtime.generation
 					or not Runtime.alive
 					or not Runtime.bound
 				then
@@ -1305,11 +1349,6 @@ local function bindCharacter(character)
 				onHeartbeat(
 					character,
 					root,
-					getConfig,
-					isSpamActive,
-					getSnapshotRef,
-					isSnapshotValid,
-					finite,
 					dt
 				)
 			end
@@ -1328,8 +1367,7 @@ local function bindCharacter(character)
 			function(_, parent)
 				if
 					not parent
-					and generation
-						== Runtime.generation
+					and generation == Runtime.generation
 				then
 					Runtime.generation += 1
 
@@ -1415,6 +1453,12 @@ local function resetState()
 	Runtime.passiveCycleStart = 0
 	Runtime.passiveBallAtValid = false
 
+	Runtime.getConfig = nil
+	Runtime.isSpamActive = nil
+	Runtime.getSnapshot = nil
+	Runtime.isSnapshotValid = nil
+	Runtime.isFiniteNumber = nil
+
 	setPhase(
 		PHASE_DETACHED,
 		"reset"
@@ -1488,9 +1532,7 @@ function AutoParry.setup(deps)
 
 	Runtime.localUserId =
 		Runtime.player
-		and tonumber(
-			Runtime.player.UserId
-		)
+		and tonumber(Runtime.player.UserId)
 		or -1
 
 	Runtime.workspace =
@@ -1588,8 +1630,7 @@ function AutoParry.teardown()
 	if HitboxState.connection then
 		if
 			Utils
-			and type(Utils.untrackGlobal)
-				== "function"
+			and type(Utils.untrackGlobal) == "function"
 		then
 			pcall(
 				Utils.untrackGlobal,
@@ -1612,6 +1653,12 @@ function AutoParry.teardown()
 
 	Runtime.player = nil
 	Runtime.workspace = nil
+
+	Runtime.getConfig = nil
+	Runtime.isSpamActive = nil
+	Runtime.getSnapshot = nil
+	Runtime.isSnapshotValid = nil
+	Runtime.isFiniteNumber = nil
 end
 
 function AutoParry.onBallSync(data)
@@ -1704,7 +1751,7 @@ function AutoParry.getRadius(
 	end
 
 	requestedFactor =
-		math.clamp(
+		math_clamp(
 			requestedFactor,
 			0,
 			1.5
@@ -1723,26 +1770,23 @@ function AutoParry.getRadius(
 		computePingRadius(speed)
 
 	local noWindowParryRadius =
-		computeNoWindowParryRadius(
-			speed,
-			resilience
-		)
-
-	local fullRadius =
 		Tuning.DEFLECT_RADIUS
 		+ resilience
 		+ pingRadius
+
+	local fullRadius =
+		noWindowParryRadius
 		+ speed * effectiveWindow
 
 	local value = fullRadius
 
 	if mode == "tti" then
 		value =
-			math.max(
+			math_max(
 				distance - fullRadius,
 				0
 			)
-			/ math.max(speed, 1)
+			/ math_max(speed, 1)
 
 	elseif mode == "speed_distance" then
 		value = {
