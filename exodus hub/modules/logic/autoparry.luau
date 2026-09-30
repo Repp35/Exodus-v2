@@ -13,7 +13,10 @@ local Tuning = {
         HITBOX_OWN_WINDOW = 0.5,
         HITBOX_PROXIMITY = 12,
         HITBOX_GAP = 0.4,
+        WINDOW_LOW_SPEED = 16,
         WINDOW_LOW = 0.820,
+        WINDOW_REFERENCE_SPEED = 600,
+        WINDOW_REFERENCE = 0.200,
         WINDOW_FACTOR = 0.45,
         PING_WINDOW_FACTOR = 1,
         PING_WINDOW_CAP = 0.400,
@@ -26,6 +29,9 @@ local Tuning = {
 	        TARGET_DEBOUNCE = 0.180,
 }
 
+local WINDOW_SLOPE =
+        (Tuning.WINDOW_REFERENCE - Tuning.WINDOW_LOW)
+        / (Tuning.WINDOW_REFERENCE_SPEED - Tuning.WINDOW_LOW_SPEED)
 local MAX_RES_STACK = math.floor(Tuning.RES_CAP_STUDS / Tuning.RES_PER_PARRY)
 local HITBOX_PROXIMITY_SQ = Tuning.HITBOX_PROXIMITY * Tuning.HITBOX_PROXIMITY
 local PHASE_DETACHED = 1
@@ -212,8 +218,15 @@ local function samplePing()
 end
 
 -- TIMING
-local function computeDeflectWindow(_)
-        return Tuning.WINDOW_LOW
+local function computeDeflectWindow(speed)
+        local raw = tonumber(speed) or 0
+        if raw <= Tuning.WINDOW_LOW_SPEED then
+                return Tuning.WINDOW_LOW
+        end
+        local window =
+                Tuning.WINDOW_LOW
+                + (raw - Tuning.WINDOW_LOW_SPEED) * WINDOW_SLOPE
+        return math.max(window, 0)
 end
 local function computePingRadius(speed)
         local rawSpeed = tonumber(speed) or 0
