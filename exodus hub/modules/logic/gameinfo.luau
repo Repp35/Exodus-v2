@@ -10,7 +10,7 @@ local Workspace
 local T = {
 	-- Ball reference is kept directly while valid.
 	-- This is only the fallback re-acquisition interval.
-	BALL_CACHE_TTL = 0.02,
+	BALL_CACHE_TTL = 0.05,
 
 	-- Only describes whether the last received sync is considered fresh.
 	-- It does NOT delay snapshots.
@@ -29,6 +29,7 @@ local T = {
 	ACQUIRE_RETRY_TIME = 0.02,
 	PROVIDER_RECHECK_TIME = 0.05,
 	ABILITY_RETRY_TIME = 0.05,
+	SNAPSHOT_CACHE_WINDOW = 0.002,
 
 	SNAPSHOT_SCHEMA = 2,
 }
@@ -68,6 +69,8 @@ local State = {
 	grace = false,
 	oldGrace = false,
 	resetAt = 0,
+	snapshotCache = nil,
+	snapshotCacheAt = 0,
 }
 
 
@@ -165,6 +168,8 @@ local function clearSyncState()
 	State.grace = false
 	State.oldGrace = false
 	State.resetAt = 0
+	State.snapshotCache = nil
+	State.snapshotCacheAt = 0
 end
 
 local function resetState()
@@ -757,6 +762,8 @@ local function updateSyncState(data, time, force)
 
 	State.grace = grace
 	State.oldGrace = oldGrace
+	State.snapshotCache = nil
+	State.snapshotCacheAt = 0
 
 	if grace or oldGrace or teleported then
 		State.resetAt = time
@@ -872,6 +879,12 @@ end
 
 local function getSnapshot(_, time)
 	time = resolveTime(time)
+	if State.snapshotCache
+		and time >= State.snapshotCacheAt
+		and time - State.snapshotCacheAt < T.SNAPSHOT_CACHE_WINDOW
+	then
+		return State.snapshotCache
+	end
 
 	-- Poll sync every snapshot.
 	-- This is intentionally lightweight: no table clone and no
@@ -947,7 +960,7 @@ local function getSnapshot(_, time)
 		and time - State.teleportedAt
 			< T.TELEPORT_EVENT_TIME
 
-	return {
+	local snapshot = {
 		schema = T.SNAPSHOT_SCHEMA,
 
 		generatedAt = time,
@@ -1007,6 +1020,9 @@ local function getSnapshot(_, time)
 		syncAge = rawSyncAge,
 		syncFresh = syncFresh,
 	}
+	State.snapshotCache = snapshot
+	State.snapshotCacheAt = time
+	return snapshot
 end
 
 

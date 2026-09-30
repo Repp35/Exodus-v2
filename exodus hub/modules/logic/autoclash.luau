@@ -69,6 +69,8 @@ local R = {
 	ttiEma = nil,
 	ttiEmaAt = 0,
 	parryRadius = 0,
+	radiusCacheAt = 0,
+	radiusCacheSpeed = -1,
 	radiusActivation = 0,
 	radiusSafety = 0,
 	dashBonusUntil = 0,
@@ -273,10 +275,20 @@ local function queryRadius(factor)
 	if radius and radius == radius and radius >= 0 and radius < math.huge then return radius end
 	return R.parryRadius
 end
-local function refreshRadiusCache()
+local function refreshRadiusCache(t)
+	t = t or now()
+	if
+		R.radiusCacheAt > 0
+		and t - R.radiusCacheAt < 1 / 60
+		and math.abs(R.lastSpeed - R.radiusCacheSpeed) < 2
+	then
+		return
+	end
 	local base = queryRadius(1.0)
 	if base > 0 then R.parryRadius = base; R.radiusSafety = base end
 	if not R.active then R.radiusActivation = queryRadius(T.ACTIVATION_WINDOW_FACTOR) end
+	R.radiusCacheAt = t
+	R.radiusCacheSpeed = R.lastSpeed
 end
 local function getActivationRadius(t)
 	if t < R.dashBonusUntil then
@@ -325,7 +337,7 @@ local function resetRuntime(reason)
 	R.generation += 1
 	if R.active then setActive(false, reason or "reset") end
 	disconnectList(R.connections, true); R.bound = false; R.boundRoot = nil; R.lastSpeed = 0
-	R.parryRadius = 0; R.radiusActivation = 0; R.radiusSafety = 0; R.lastSyncAt = 0
+	R.parryRadius = 0; R.radiusCacheAt = 0; R.radiusCacheSpeed = -1; R.radiusActivation = 0; R.radiusSafety = 0; R.lastSyncAt = 0
 	R.lastEvalAt = 0; R.reactivateBlockedUntil = 0; R.activationDeactLockedUntil = 0; resetTargetState()
 	resetDeactivationState(); R.lastGate = "detached"; setPhase("detached", reason or "reset")
 end
@@ -345,7 +357,7 @@ local function updateTtiEma(t, root, snapshot)
 	R.ttiEmaAt = t
 end
 local function updateParryState(t, snapshot)
-	R.lastSpeed = math.max(finiteNumber(snapshot and snapshot.speed, 0), 0); refreshRadiusCache(); local root = getRootPosition()
+	R.lastSpeed = math.max(finiteNumber(snapshot and snapshot.speed, 0), 0); refreshRadiusCache(t); local root = getRootPosition()
 	if root then updateTtiEma(t, root, snapshot) end
 end
 local function canReactivate(t)

@@ -11,7 +11,7 @@ local WorkspaceService = game:GetService("Workspace")
 
 -- metadata
 local M = {
-	SCRIPT_VERSION = "35.38",
+	SCRIPT_VERSION = "35.39",
 	API_VERSION = 1,
 	SCRIPT_NAME = "Exodus Hub",
 	INTERNAL_NAME = "Exodus",
