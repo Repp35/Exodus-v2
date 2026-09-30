@@ -2,12 +2,10 @@
 
 local AutoParry = {}
 local Remote, GameInfo, Utils, StatsService
-local TargetTracker
 
 -- tuning
 local Tuning = {
         DEFLECT_RADIUS = 8.5,
-        MIN_BALL_SPEED = 16,
         RES_PER_PARRY = 0.225,
         RES_CAP_STUDS = 32,
         HITBOX_OWN_WINDOW = 0.5,
@@ -20,13 +18,11 @@ local Tuning = {
         WINDOW_FACTOR = 0.45,
         PING_WINDOW_FACTOR = 1,
         PING_WINDOW_CAP = 0.400,
-        CLIENT_CD_PROPAGATION = 0.30,
         PING_SAMPLE_INTERVAL = 0.35,
         PING_EMA_ALPHA = 0.08,
         DEFAULT_PING_ONE_WAY = 0.030,
 	        TELEPORT_LOCK_BASE = 0.400,
 	        RESET_LOCK_BASE = 0.400,
-	        TARGET_DEBOUNCE = 0.180,
 }
 
 local WINDOW_SLOPE =
@@ -65,6 +61,17 @@ local Resilience = {
         lifeGeneration = 0,
 }
 
+-- Phantom-style parry lock
+local ParryLock = { armed = true, lastTargeted = false }
+local function resetParryLock()
+        ParryLock.armed = true; ParryLock.lastTargeted = false
+end
+local function updateParryLock(targeted)
+        if not targeted then ParryLock.armed = true
+        elseif not ParryLock.lastTargeted then ParryLock.armed = true end
+        ParryLock.lastTargeted = targeted
+end
+
 local Runtime = {
         generation = 0,
         lifeGeneration = 0,
@@ -97,7 +104,6 @@ local Runtime = {
         lastDistanceToParryRadius = 0,
         lastSpeed = 0,
         lastFireAt = 0,
-        cooldownObservedAt = 0,
         phase = PHASE_DETACHED,
         passivePhase = "idle",
         passiveCycleStart = 0,
@@ -148,7 +154,7 @@ local function resetResilience()
         Resilience.hitboxConfirmed = false; Resilience.lifeGeneration = Runtime.lifeGeneration; Runtime.resilienceBonus = 0; Runtime.resilienceBonusAt = -1
 end
 local function invalidateLife()
-        Runtime.lifeGeneration += 1; Runtime.alive = false; Runtime.bound = false; TargetTracker.reset("life_invalidated")
+        Runtime.lifeGeneration += 1; Runtime.alive = false; Runtime.bound = false; resetParryLock()
         resetResilience()
 end
 local function isResilienceUsable()
@@ -320,7 +326,7 @@ local function isBallInParryWindow(time)
         local speed = tonumber(snapshot.speed)
         if
                 not speed
-                or speed < Tuning.MIN_BALL_SPEED
+                or speed <= 5
                 or not Utils.isFiniteNumber(speed)
         then
                 return false, false
@@ -387,7 +393,7 @@ local function requestParry(ball)
                 )
                 return false
         end
-        Runtime.lastFireAt = time; Runtime.cooldownObservedAt = 0
+        Runtime.lastFireAt = time
         if Resilience.hitboxConfirmed then
                 Resilience.hitboxConfirmed = false
         end
@@ -416,132 +422,6 @@ local function requestParry(ball)
         )
         return true
 end
-local SLOT_OPEN = "open"
-local SLOT_LOCKED = "locked"
-local ParrySlot = {}
-ParrySlot.__index = ParrySlot
-local function newSlot(generation)
-        return setmetatable({
-                generation = generation,
-                state = SLOT_OPEN,
-                destroyed = false,
-                createdAt = now(),
-                lockedAt = 0,
-        }, ParrySlot)
-
-end
-function ParrySlot:isLocked()
-        return self.state == SLOT_LOCKED
-end
-function ParrySlot:lock()
-        if
-                self.destroyed
-                or self.state == SLOT_LOCKED
-        then
-                return
-        end
-        self.state = SLOT_LOCKED; self.lockedAt = now()
-end
-function ParrySlot:destroy()
-        self.destroyed = true
-end
-TargetTracker = {
-        generation = 0,
-        confirmed = false,
-        pendingLost = nil,
-        currentSlot = nil,
-}
-
-local function destroySlot()
-        local slot = TargetTracker.currentSlot; TargetTracker.currentSlot = nil
-        if slot then
-                slot:destroy()
-        end
-end
-function TargetTracker.observe(isMe, at)
-        local time = tonumber(at) or now()
-        if isMe then
-                if TargetTracker.pendingLost then
-                        TargetTracker.pendingLost = nil
-                end
-                if TargetTracker.confirmed then
-                        return
-                end
-                TargetTracker.confirmed = true; TargetTracker.generation += 1
-                TargetTracker.currentSlot =
-                        newSlot(
-                                TargetTracker.generation
-                        )
-                return
-        end
-        if not TargetTracker.confirmed then
-                return
-        end
-        if TargetTracker.pendingLost then
-                return
-        end
-        TargetTracker.pendingLost = {
-                startedAt = time,
-                expiresAt =
-                        time + Tuning.TARGET_DEBOUNCE,
-        }
-end
-function TargetTracker.tick(time)
-        local pending =
-                TargetTracker.pendingLost
-        if not pending then
-                return
-        end
-        if
-                (tonumber(time) or now())
-                        < pending.expiresAt
-        then
-                return
-        end
-        TargetTracker.pendingLost = nil; TargetTracker.confirmed = false; destroySlot()
-end
-function TargetTracker.reset()
-        TargetTracker.confirmed = false; TargetTracker.pendingLost = nil; destroySlot()
-end
-function TargetTracker.getStatus()
-        local pending =
-                TargetTracker.pendingLost
-        local slot =
-                TargetTracker.currentSlot
-        return {
-                confirmed =
-                        TargetTracker.confirmed == true,
-                generation =
-                        TargetTracker.generation,
-                debounce =
-                        Tuning.TARGET_DEBOUNCE,
-                pendingLost =
-                        pending ~= nil,
-                pendingLostIn =
-                        pending
-                        and math.max(
-                                pending.expiresAt - now(),
-                                0
-                        )
-                        or 0,
-                slot =
-                        slot
-                        and {
-                                generation =
-                                        slot.generation,
-                                state =
-                                        slot.state,
-                                locked =
-                                        slot:isLocked(),
-                                createdAt =
-                                        slot.createdAt,
-                                lockedAt =
-                                        slot.lockedAt,
-                        }
-                        or nil,
-        }
-end
-
 -- SYNC
 local function onBallSync(data)
         if
@@ -560,7 +440,7 @@ local function onBallSync(data)
                                         + Tuning.RESET_LOCK_BASE
                                         + Runtime.pingOneWay
                         )
-                TargetTracker.reset(); Runtime.passivePhase = "idle"; Runtime.passiveBallAtValid = false
+                resetParryLock(); Runtime.passivePhase = "idle"; Runtime.passiveBallAtValid = false
                 setPhase(
                         PHASE_WAITING,
                         "teleport_lock"
@@ -640,10 +520,6 @@ local function onBallSync(data)
         else
                 Runtime.passivePhase = "idle"; Runtime.passiveBallAtValid = false
         end
-        TargetTracker.observe(
-                isMe,
-                time
-        )
 end
 
 -- HEARTBEAT
@@ -668,15 +544,15 @@ local function onHeartbeat(
                 type(config) ~= "table"
                 or config.AutoParry ~= true
         then
-                TargetTracker.reset(); return
+                resetParryLock(); return
         end
         if
                 timeNow < Runtime.teleportLockUntil
         then
-                TargetTracker.reset(); return
+                resetParryLock(); return
         end
         if isSpamActive() then
-                TargetTracker.reset(); return
+                resetParryLock(); return
         end
         Runtime.pingTimer +=
                 math.max(dt, 0)
@@ -686,7 +562,6 @@ local function onHeartbeat(
         then
                 Runtime.pingTimer = 0; samplePing()
         end
-        TargetTracker.tick(timeNow)
         local snapshot =
                 getSnapshotRef(
                         nil,
@@ -699,10 +574,10 @@ local function onHeartbeat(
                         timeNow
                 )
         then
-                return
+                resetParryLock(); return
         end
         if snapshot.resetting == true then
-                TargetTracker.reset(); return
+                resetParryLock(); return
         end
         local targetId =
                 tonumber(snapshot.targetId)
@@ -710,10 +585,7 @@ local function onHeartbeat(
         local isMe =
                 targetId == Runtime.localUserId
         Runtime.targetId = targetId; Runtime.targetKnown = snapshot.targetId ~= nil; Runtime.lastTarget = targetId
-        TargetTracker.observe(
-                isMe,
-                timeNow
-        )
+        updateParryLock(isMe)
         if not isMe then
                 setPhase(
                         PHASE_WAITING,
@@ -723,13 +595,13 @@ local function onHeartbeat(
         end
         local ball = snapshot.ball
         if not isValidBall(ball) then
-                return
+                resetParryLock(); return
         end
         local speed =
                 tonumber(snapshot.speed)
         if
                 not speed
-                or speed < Tuning.MIN_BALL_SPEED
+                or speed <= 5
                 or not finite(speed)
         then
                 return
@@ -739,34 +611,6 @@ local function onHeartbeat(
         if typeof(position) ~= "Vector3" then
                 return
         end
-        local deflectCooldown =
-                tonumber(
-                        GameInfo.getDeflectCD()
-                )
-                or 0
-        if deflectCooldown > 0 then
-                if Runtime.cooldownObservedAt <= 0 then
-                        Runtime.cooldownObservedAt =
-                                timeNow
-                end
-                if
-                        timeNow
-                                - Runtime.cooldownObservedAt
-                                >= Tuning.CLIENT_CD_PROPAGATION
-                then
-                        setPhase(
-                                PHASE_COOLDOWN,
-                                "cooldown_propagation"
-                        )
-                else
-                        setPhase(
-                                PHASE_COOLDOWN,
-                                "cooldown_observed"
-                        )
-                end
-                return
-        end
-        Runtime.cooldownObservedAt = 0
         local timing =
                 computeTiming(
                         root.Position,
@@ -809,18 +653,13 @@ local function onHeartbeat(
                 )
                 return
         end
-        local slot =
-                TargetTracker.currentSlot
-        if
-                not slot
-                or slot:isLocked()
-        then
-                return
-        end
-        if not requestParry(ball) then
-                return
-        end
-        slot:lock()
+        if not ParryLock.armed then return end
+        local velocity = snapshot.velocity
+        if typeof(velocity) ~= "Vector3" then velocity = Vector3.zero end
+        local offset = root.Position - position
+        local approaching = offset.Magnitude > 0 and velocity:Dot(offset) > 0
+        if not approaching or speed <= 5 or timing.distance > timing.parryRadius then return end
+        if requestParry(ball) then ParryLock.armed = false end
 end
 
 -- HITBOX
@@ -1071,7 +910,7 @@ local function resetState()
                 Tuning.DEFLECT_RADIUS
         Runtime.pingRadius = 0; Runtime.resilienceBonus = 0; Runtime.resilienceBonusAt = -1; Runtime.deflectWindow = 0
         Runtime.effectiveWindow = 0; Runtime.lastTTI = math.huge; Runtime.lastDistance = 0; Runtime.lastDistanceToParryRadius = 0
-        Runtime.lastSpeed = 0; Runtime.lastFireAt = 0; Runtime.cooldownObservedAt = 0
+        Runtime.lastSpeed = 0; Runtime.lastFireAt = 0
         setPhase(
                 PHASE_DETACHED,
                 "reset"
@@ -1094,8 +933,6 @@ function AutoParry.setup(deps)
         end
         if
                 type(gameInfo) ~= "table"
-                or type(gameInfo.getDeflectCD)
-                        ~= "function"
                 or type(gameInfo.getBall)
                         ~= "function"
                 or type(gameInfo.getSnapshot)
@@ -1176,12 +1013,7 @@ function AutoParry.fire()
                 requestParry(
                         GameInfo.getBall()
                 )
-        local slot =
-                TargetTracker
-                and TargetTracker.currentSlot
-        if ok and slot then
-                slot:lock()
-        end
+        if ok then ParryLock.armed = false end
         return ok
 end
 function AutoParry.bindCharacter(character)
@@ -1240,7 +1072,10 @@ function AutoParry.getTargetStatus()
         if not Utils then
                 return nil
         end
-        return TargetTracker.getStatus()
+        return {
+                armed = ParryLock.armed == true,
+                lastTargeted = ParryLock.lastTargeted == true,
+        }
 end
 
 -- API
@@ -1434,8 +1269,7 @@ function AutoParry.getTiming(
         )
 end
 function AutoParry.getStatus()
-        local target =
-                TargetTracker.getStatus()
+        local target = AutoParry.getTargetStatus()
         return {
                 schema =
                         Utils
@@ -1500,9 +1334,7 @@ function AutoParry.getStatus()
                         target,
                 cycle = {
                         fired =
-                                target.slot ~= nil
-                                and target.slot.locked
-                                        == true,
+                                target.armed == false,
                         lastFireAt =
                                 Runtime.lastFireAt,
                         lastTTI =
