@@ -165,7 +165,7 @@ local function requestParry()
 	Scheduler.lastError = errorMessage
 	if timestamp - Scheduler.lastErrorAt >= 1 then
 		Scheduler.lastErrorAt = timestamp
-		if Utils and type(Utils.recordError) == "function" then Utils.recordError("Spam", errorMessage, true) end
+		if Utils and type(Utils.recordError) == "function" then Utils.recordError("Spam", errorMessage) end
 	end
 	return false
 end

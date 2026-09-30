@@ -43,7 +43,7 @@ local function bind(character, currentGeneration)
 		local ok, result = pcall(entry.bind, character)
 		if not ok or result ~= true then
 			local message = ("%s não vinculou o personagem: %s"):format(entry.name, tostring(result)); Utils.warn(message)
-			if type(Utils.recordError) == "function" then Utils.recordError("Character", message, true) end
+			if type(Utils.recordError) == "function" then Utils.recordError("Character", message) end
 			for detachIndex = boundCount, 1, -1 do
 				pcall(characterBinds[detachIndex].detach)
 			end

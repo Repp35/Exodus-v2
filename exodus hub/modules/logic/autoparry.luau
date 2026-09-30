@@ -624,8 +624,7 @@ local function requestParry(ball)
 				pcall(
 					recordError,
 					"AutoParry",
-					"Remote.fireParry indisponivel",
-					true
+					"Remote.fireParry indisponivel"
 				)
 			end
 		end
@@ -656,8 +655,7 @@ local function requestParry(ball)
 				pcall(
 					recordError,
 					"AutoParry",
-					"Remote.fireParry falhou: " .. tostring(result),
-					true
+					"Remote.fireParry falhou: " .. tostring(result)
 				)
 			end
 		end

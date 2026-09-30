@@ -299,8 +299,18 @@ function Remote.getStatus()
 	}
 end
 local function locateBallSync()
-	local remotes = Utils.getReplicatedStorage():FindFirstChild("Remotes"); local candidate = remotes and remotes:FindFirstChild("BallSyncData")
-	return candidate and candidate:IsA("RemoteEvent") and candidate or nil
+	local replicatedStorage = Utils.getReplicatedStorage()
+	if not replicatedStorage then return nil end
+	local remotes = replicatedStorage:FindFirstChild("Remotes")
+	local candidates = {
+		remotes and remotes:FindFirstChild("BallSyncData"),
+		replicatedStorage:FindFirstChild("BallSyncData"),
+		replicatedStorage:FindFirstChild("BallSyncData", true),
+	}
+	for _, candidate in ipairs(candidates) do
+		if candidate and candidate:IsA("RemoteEvent") then return candidate end
+	end
+	return nil
 end
 local function disconnectBallSync()
 	if ballSyncConnection then
@@ -331,11 +341,14 @@ function Remote.startMaintenance(options)
 	if type(isActive) ~= "function" then return false end
 	maintenanceGeneration = maintenanceGeneration + 1; local currentGeneration = maintenanceGeneration
 	task.spawn(function()
-		while currentGeneration == maintenanceGeneration and isActive() do
-			local remote = Remote.getRemote()
+		while currentGeneration == maintenanceGeneration do
+			local activeOk, active = pcall(isActive)
+			if not activeOk or active ~= true then break end
+			local remoteOk, remote = pcall(Remote.getRemote)
+			if not remoteOk then remote = nil end
 			if remote and not isAlive(remote) then parryRemote = nil; parryInitialized = false; remote = nil end
-			if remote then Remote.initParry() end
-			if type(onBallSync) == "function" then Remote.bindBallSync(onBallSync) end
+			if remote then pcall(Remote.initParry) end
+			if type(onBallSync) == "function" then pcall(Remote.bindBallSync, onBallSync) end
 			task.wait(remote and 3 or 1)
 		end
 	end)

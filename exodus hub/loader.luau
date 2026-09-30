@@ -364,13 +364,13 @@ local function bindRuntime(loaded, log)
 		end
 	end
 	local function onBallSync(data) notifyBallSync(callSync("GameInfo", gameInfo.applySync, data)) end
-	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
-	if not watcherReady then
-		return nil, "GameInfo: observador da bola indisponível"
+	local watcherCallOk, watcherReady = pcall(gameInfo.installBallWatcher, utils.trackGlobal)
+	if not watcherCallOk or watcherReady ~= true then
+		if type(log.recordError) == "function" then log.recordError("GameInfo", "observador da bola indisponível") end
 	end
-	local syncReady = remote.bindBallSync(onBallSync)
-	if not syncReady then
-		return nil, "Remote: BallSyncData indisponível"
+	local syncCallOk, syncReady = pcall(remote.bindBallSync, onBallSync)
+	if not syncCallOk or syncReady ~= true then
+		if type(log.recordError) == "function" then log.recordError("Remote", "BallSyncData indisponível; manutenção continuará tentando") end
 	end
 	local maintenanceOk, maintenanceReady = pcall(remote.startMaintenance, {
 		isActive = utils.isActive,
@@ -378,11 +378,11 @@ local function bindRuntime(loaded, log)
 	})
 	if not maintenanceOk or maintenanceReady ~= true then
 		local message = maintenanceReady
-		return nil, "Remote: " .. tostring(message)
+		if type(log.recordError) == "function" then log.recordError("Remote", tostring(message)) end
 	end
 	return {
-		watcher = watcherReady == true,
-		ballSync = syncReady == true,
+		watcher = watcherCallOk and watcherReady == true,
+		ballSync = syncCallOk and syncReady == true,
 		maintenance = maintenanceOk and maintenanceReady == true,
 		ballSyncSubscribers = #ballSyncSubscribers,
 	}

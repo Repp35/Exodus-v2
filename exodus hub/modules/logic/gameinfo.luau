@@ -249,6 +249,9 @@ local function resolveGameInfoProvider(time)
 	end
 
 	local candidate = ts:FindFirstChild("GameInfo")
+	if candidate and not candidate:IsA("ModuleScript") then
+		candidate = candidate:FindFirstChild("GameInfo")
+	end
 
 	if not candidate then
 		gameInfoProviderStatus = "gameinfo_module_missing"
@@ -371,7 +374,7 @@ local function resolveBallReplicator(time)
 		return nil
 	end
 
-	local candidate = folder:FindFirstChild("BallReplicator")
+	local candidate = folder:IsA("ModuleScript") and folder or folder:FindFirstChild("BallReplicator")
 
 	if not candidate then
 		ballReplicatorStatus = "ballreplicator_module_missing"
@@ -817,6 +820,16 @@ local function applySync(rawPayload)
 		or typeof(rawPayload)
 
 	State.syncEventAt = time
+	if type(rawPayload) == "table" then
+		local hasSyncFields = rawPayload.Speed ~= nil
+			or rawPayload.MaxSpeed ~= nil
+			or rawPayload.RealPosition ~= nil
+			or rawPayload.DeflectDirection ~= nil
+			or rawPayload.TargetPlayerID ~= nil
+		if hasSyncFields and updateSyncState(rawPayload, time, true) then
+			return true, consumerSyncData(rawPayload)
+		end
+	end
 
 	return refreshDecodedSync(time, true)
 end
