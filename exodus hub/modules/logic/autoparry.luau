@@ -655,11 +655,7 @@ local function onHeartbeat(
                 return
         end
         if not ParryLock.armed then return end
-        local velocity = ball.AssemblyLinearVelocity
-        if typeof(velocity) ~= "Vector3" then velocity = Vector3.zero end
-        local offset = root.Position - ball.Position
-        local approaching = offset.Magnitude > 0 and velocity:Dot(offset) > 0
-        if not approaching or speed < Tuning.MIN_BALL_SPEED or timing.distance > timing.parryRadius then return end
+        if speed < Tuning.MIN_BALL_SPEED or timing.distance > timing.parryRadius then return end
         if requestParry(ball) then ParryLock.armed = false end
 end
 
