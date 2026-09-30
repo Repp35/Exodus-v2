@@ -327,9 +327,19 @@ local function bindRuntime(loaded, log)
 		or type(gameInfo.getSyncData) ~= "function"
 		or type(remote) ~= "table"
 		or type(remote.bindBallSync) ~= "function"
+		or type(remote.getRemote) ~= "function"
+		or type(remote.initParry) ~= "function"
 		or type(remote.startMaintenance) ~= "function"
 	then
 		return nil, "contrato de runtime incompleto"
+	end
+	local remoteCallOk, parryRemote = pcall(remote.getRemote)
+	if not remoteCallOk or not parryRemote then
+		return nil, "Remote: remote de parry indisponível"
+	end
+	local initCallOk, initialized = pcall(remote.initParry)
+	if not initCallOk or initialized ~= true then
+		return nil, "Remote: inicialização do parry falhou"
 	end
 	local ballSyncSubscribers = {}
 	for _, name in ipairs(MODULE_ORDER) do
@@ -366,11 +376,13 @@ local function bindRuntime(loaded, log)
 	local function onBallSync(data) notifyBallSync(callSync("GameInfo", gameInfo.applySync, data)) end
 	local watcherCallOk, watcherReady = pcall(gameInfo.installBallWatcher, utils.trackGlobal)
 	if not watcherCallOk or watcherReady ~= true then
-		if type(log.recordError) == "function" then log.recordError("GameInfo", "observador da bola indisponível") end
+		local reason = watcherCallOk and "observador da bola indisponível" or tostring(watcherReady)
+		return nil, "GameInfo: " .. reason
 	end
 	local syncCallOk, syncReady = pcall(remote.bindBallSync, onBallSync)
 	if not syncCallOk or syncReady ~= true then
-		if type(log.recordError) == "function" then log.recordError("Remote", "BallSyncData indisponível; manutenção continuará tentando") end
+		local reason = syncCallOk and "BallSyncData indisponível" or tostring(syncReady)
+		return nil, "Remote: " .. reason
 	end
 	local maintenanceOk, maintenanceReady = pcall(remote.startMaintenance, {
 		isActive = utils.isActive,
@@ -378,7 +390,7 @@ local function bindRuntime(loaded, log)
 	})
 	if not maintenanceOk or maintenanceReady ~= true then
 		local message = maintenanceReady
-		if type(log.recordError) == "function" then log.recordError("Remote", tostring(message)) end
+		return nil, "Remote: " .. tostring(message)
 	end
 	return {
 		watcher = watcherCallOk and watcherReady == true,
