@@ -93,7 +93,7 @@ local function fire(generation, deadline)
 	local ok, result = pcall(Spam.requestDynamicClick)
 	if fireToken == State.fireToken then State.firing = false end
 	if not ok then
-		if Utils and type(Utils.recordError) == "function" then Utils.recordError("DynamicParry", tostring(result)) end
+		if Utils and type(Utils.recordError) == "function" then Utils.recordError("DynamicParry", tostring(result), true) end
 		return false
 	end
 	if result == false then return false end

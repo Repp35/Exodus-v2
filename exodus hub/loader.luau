@@ -6,12 +6,9 @@ local function printRawError(moduleName, message)
 		local ok, trace = pcall(debug.traceback, output, 2)
 		if ok and type(trace) == "string" then output = trace end
 	end
-	if type(task) == "table" and type(task.spawn) == "function" then
-		local ok = pcall(task.spawn, function() error(output, 0) end)
-		if ok then return end
-	end
-	if type(warn) == "function" then pcall(warn, output)
-	elseif type(print) == "function" then pcall(print, output) end
+	local warned = false
+	if type(warn) == "function" then warned = pcall(warn, output) end
+	if not warned and type(print) == "function" then pcall(print, output) end
 end
 local function printStartup(message)
 	if type(print) == "function" then pcall(print, message) end
@@ -233,7 +230,9 @@ local function loadModules(urls)
 		local pending = #names
 		for _, name in ipairs(names) do
 			task.spawn(function()
-				load(name); pending -= 1
+				local ok, loadError = xpcall(function() load(name) end, function(errorValue) return errorValue end)
+				if not ok then results[name] = { error = loadError } end
+				pending -= 1
 			end)
 		end
 		while pending > 0 do
@@ -367,13 +366,11 @@ local function bindRuntime(loaded, log)
 	local function onBallSync(data) notifyBallSync(callSync("GameInfo", gameInfo.applySync, data)) end
 	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
 	if not watcherReady then
-		if type(log.recordError) == "function" then log.recordError("GameInfo", "observador da bola indisponível")
-		else printRawError("GameInfo", "observador da bola indisponível") end
+		return nil, "GameInfo: observador da bola indisponível"
 	end
 	local syncReady = remote.bindBallSync(onBallSync)
 	if not syncReady then
-		if type(log.recordError) == "function" then log.recordError("Remote", "BallSyncData indisponível")
-		else printRawError("Remote", "BallSyncData indisponível") end
+		return nil, "Remote: BallSyncData indisponível"
 	end
 	local maintenanceOk, maintenanceReady = pcall(remote.startMaintenance, {
 		isActive = utils.isActive,
@@ -381,8 +378,7 @@ local function bindRuntime(loaded, log)
 	})
 	if not maintenanceOk or maintenanceReady ~= true then
 		local message = maintenanceReady
-		if type(log.recordError) == "function" then log.recordError("Remote", tostring(message))
-		else printRawError("Remote", message) end
+		return nil, "Remote: " .. tostring(message)
 	end
 	return {
 		watcher = watcherReady == true,

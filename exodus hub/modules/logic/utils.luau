@@ -11,7 +11,7 @@ local WorkspaceService = game:GetService("Workspace")
 
 -- metadata
 local M = {
-	SCRIPT_VERSION = "35.29",
+	SCRIPT_VERSION = "35.34",
 	API_VERSION = 1,
 	SCRIPT_NAME = "Exodus Hub",
 	INTERNAL_NAME = "Exodus",
@@ -125,32 +125,36 @@ local function recordTransition(source, fromState, toState, reason)
 	if #State.diagnostics.transitions > T.MAX_DIAGNOSTIC_ENTRIES then table.remove(State.diagnostics.transitions, 1) end
 	updateNamespace()
 end
-local function recordError(source, message)
+local function recordError(source, message, fatal)
 	source = tostring(source); message = tostring(message)
 	State.diagnostics.lastError = {
 		source = source,
 		message = message,
+		fatal = fatal == true,
 		at = os.clock(),
 	}
 	table.insert(State.diagnostics.errors, State.diagnostics.lastError)
-	if #State.diagnostics.errors > T.MAX_DIAGNOSTIC_ENTRIES then table.remove(State.diagnostics.errors, 1) end
-	updateNamespace(); local key = source .. "\0" .. message; local now = os.clock(); local previous = ConsoleErrorAt[key]
-	if previous and now - previous < T.CONSOLE_ERROR_COOLDOWN then return end
-	if not previous then
-		ConsoleErrorCount += 1
-		if ConsoleErrorCount > 128 then ConsoleErrorAt = {}; ConsoleErrorCount = 1 end
-	end
-	ConsoleErrorAt[key] = now; local output = ("[Exodus][%s] %s"):format(source, message)
+	local output = ("[Exodus][%s] %s"):format(source, message)
 	if type(debug) == "table" and type(debug.traceback) == "function" then
 		local ok, trace = pcall(debug.traceback, output, 3)
 		if ok and type(trace) == "string" then output = trace end
 	end
-	if type(task) == "table" and type(task.spawn) == "function" then
-		local ok = pcall(task.spawn, function() error(output, 0) end)
-		if ok then return end
+	State.diagnostics.lastError.traceback = output
+	updateNamespace()
+	local key = source .. "\0" .. message
+	local now = os.clock()
+	local previous = ConsoleErrorAt[key]
+	if fatal ~= true and previous and now - previous < T.CONSOLE_ERROR_COOLDOWN then return end
+	ConsoleErrorAt[key] = now
+	ConsoleErrorCount += 1
+	if ConsoleErrorCount > 128 then ConsoleErrorAt = {}; ConsoleErrorCount = 1 end
+	local warned = false
+	if type(warn) == "function" then warned = pcall(warn, output) end
+	if not warned and type(print) == "function" then pcall(print, output) end
+	if fatal == true then
+		State.active = false; setLifecyclePhase("error")
+		if type(Utils.stop) == "function" then Utils.stop() end
 	end
-	if type(warn) == "function" then pcall(warn, output)
-	elseif type(print) == "function" then pcall(print, output) end
 end
 
 -- filesystem
@@ -246,7 +250,7 @@ function Utils.setLifecyclePhase(phase)
 	return changed
 end
 function Utils.recordTransition(source, fromState, toState, reason) recordTransition(source, fromState, toState, reason) end
-function Utils.recordError(source, message) recordError(source, message) end
+function Utils.recordError(source, message, fatal) recordError(source, message, fatal) end
 function Utils.isManualSpamActive() return State.manualSpamActive == true end
 function Utils.isAutoSpamActive() return State.autoSpamActive == true end
 function Utils.isSpamActive()
