@@ -7,13 +7,6 @@ local Remote, GameInfo, Utils, StatsService
 local Tuning = {
 	DEFLECT_RADIUS = 8.5,
 	MIN_BALL_SPEED = 16,
-	PHANTOM_BASE_RADIUS = 9.25,
-	PHANTOM_LEAD_BASE = 0.20,
-	PHANTOM_LEAD_PING_FACTOR = 0.5,
-	PHANTOM_LEAD_MIN = 0.24,
-	PHANTOM_LEAD_MAX = 0.42,
-	PHANTOM_RADIUS_MIN = 12,
-	PHANTOM_RADIUS_MAX = 240,
 
 	RES_PER_PARRY = 0.225,
 	RES_CAP_STUDS = 32,
@@ -22,9 +15,16 @@ local Tuning = {
 	HITBOX_PROXIMITY = 12,
 	HITBOX_GAP = 0.4,
 
+	WINDOW_LOW_SPEED = 16,
+	WINDOW_LOW = 0.820,
+	WINDOW_REFERENCE_SPEED = 600,
+	WINDOW_REFERENCE = 0.200,
 	WINDOW_FACTOR = 0.45,
+
+	PING_WINDOW_FACTOR = 1,
+	PING_WINDOW_CAP = 0.400,
 	PING_SAMPLE_INTERVAL = 0.35,
-	PING_EMA_ALPHA = 0.02,
+	PING_EMA_ALPHA = 0.08,
 	DEFAULT_PING_ONE_WAY = 0.030,
 
 	TELEPORT_LOCK_BASE = 0.400,
@@ -40,6 +40,10 @@ local tonumber = tonumber
 local typeof = typeof
 local type = type
 local pcall = pcall
+
+local WINDOW_SLOPE =
+	(Tuning.WINDOW_REFERENCE - Tuning.WINDOW_LOW)
+	/ (Tuning.WINDOW_REFERENCE_SPEED - Tuning.WINDOW_LOW_SPEED)
 
 local MAX_RES_STACK = math_floor(
 	Tuning.RES_CAP_STUDS / Tuning.RES_PER_PARRY
@@ -385,30 +389,43 @@ end
 -- TIMING
 
 local function computeDeflectWindow(speed)
-	local leadTime = Tuning.PHANTOM_LEAD_BASE
-		+ Runtime.pingOneWay * Tuning.PHANTOM_LEAD_PING_FACTOR
-	leadTime = math_clamp(
-		leadTime,
-		Tuning.PHANTOM_LEAD_MIN,
-		Tuning.PHANTOM_LEAD_MAX
+	local raw = tonumber(speed) or 0
+
+	if raw <= Tuning.WINDOW_LOW_SPEED then
+		return Tuning.WINDOW_LOW
+	end
+
+	return math_max(
+		Tuning.WINDOW_LOW
+			+ (raw - Tuning.WINDOW_LOW_SPEED)
+			* WINDOW_SLOPE,
+		0
 	)
-	return math_floor(leadTime * 100 + 0.5) / 100
 end
 
 local function computePingRadius(speed)
-	return 0
+	if speed <= 0 then
+		return 0
+	end
+
+	local pingWindow =
+		math_min(
+			Runtime.pingOneWay
+				* 2
+				* Tuning.PING_WINDOW_FACTOR,
+			Tuning.PING_WINDOW_CAP
+		)
+
+	return speed * pingWindow
 end
 
 local function computeNoWindowParryRadius(
 	speed,
 	resilience
 )
-	return Tuning.PHANTOM_BASE_RADIUS + (resilience or 0)
-end
-
-local function computeCompensatedTTI(distance, parryRadius, speed)
-	local rawTTI = math_max(distance - parryRadius, 0) / math_max(speed, 1)
-	return math_max(rawTTI - Runtime.pingOneWay, 0)
+	return Tuning.DEFLECT_RADIUS
+		+ (resilience or 0)
+		+ computePingRadius(speed)
 end
 
 local function computeTiming(
@@ -446,19 +463,19 @@ local function computeTiming(
 	factor = math_clamp(factor, 0, 1.5)
 
 	local effectiveWindow =
-		deflectWindow
+		deflectWindow * factor
 
 	local pingRadius =
 		computePingRadius(speed)
 
 	local noWindowParryRadius =
-		computeNoWindowParryRadius(speed, resilience)
+		Tuning.DEFLECT_RADIUS
+		+ resilience
+		+ pingRadius
 
-	local parryRadius = math_clamp(
-		noWindowParryRadius + speed * effectiveWindow,
-		Tuning.PHANTOM_RADIUS_MIN,
-		Tuning.PHANTOM_RADIUS_MAX
-	)
+	local parryRadius =
+		noWindowParryRadius
+		+ speed * effectiveWindow
 
 	local distSq =
 		distanceSquared(
@@ -476,11 +493,14 @@ local function computeTiming(
 	local delta =
 		distance - parryRadius
 
-	local tti = computeCompensatedTTI(distance, parryRadius, speed)
+	local tti =
+		delta <= 0
+			and 0
+			or delta / speed
 
 	return {
 		parryRadius = parryRadius,
-		pureRadius = Tuning.PHANTOM_BASE_RADIUS,
+		pureRadius = Tuning.DEFLECT_RADIUS,
 		noWindowParryRadius = noWindowParryRadius,
 		pingRadius = pingRadius,
 		resilienceBonus = resilience,
@@ -1005,15 +1025,6 @@ local function onHeartbeat(
 		return
 	end
 
-	local approachingSpeed = tonumber(snapshot.approachingSpeed)
-	if not approachingSpeed or not finite(approachingSpeed) or approachingSpeed <= 0 then
-		setPhase(
-			PHASE_WAITING,
-			"not_approaching"
-		)
-		return
-	end
-
 	Runtime.parryRadius =
 		timing.parryRadius
 
@@ -1060,13 +1071,8 @@ local function onHeartbeat(
 		return
 	end
 
-	ParryLock.armed = false
-	if type(task) == "table" and type(task.defer) == "function" then
-		task.defer(function()
-			requestParry(ball)
-		end)
-	else
-		requestParry(ball)
+	if requestParry(ball) then
+		ParryLock.armed = false
 	end
 end
 
@@ -1728,6 +1734,11 @@ function AutoParry.getRadius(
 	local distance =
 		Runtime.lastDistance
 
+	local tti =
+		speed > 0
+		and distance / speed
+		or math.huge
+
 	local requestedFactor =
 		tonumber(windowFactor)
 
@@ -1750,7 +1761,7 @@ function AutoParry.getRadius(
 		computeDeflectWindow(speed)
 
 	local effectiveWindow =
-		deflectWindow
+		deflectWindow * requestedFactor
 
 	local resilience =
 		getResilienceBonus(now())
@@ -1759,23 +1770,23 @@ function AutoParry.getRadius(
 		computePingRadius(speed)
 
 	local noWindowParryRadius =
-		computeNoWindowParryRadius(speed, resilience)
+		Tuning.DEFLECT_RADIUS
+		+ resilience
+		+ pingRadius
 
-	local fullRadius = math_clamp(
-		noWindowParryRadius + speed * effectiveWindow,
-		Tuning.PHANTOM_RADIUS_MIN,
-		Tuning.PHANTOM_RADIUS_MAX
-	)
-
-	local tti =
-		speed > 0
-		and computeCompensatedTTI(distance, fullRadius, speed)
-		or math.huge
+	local fullRadius =
+		noWindowParryRadius
+		+ speed * effectiveWindow
 
 	local value = fullRadius
 
 	if mode == "tti" then
-		value = computeCompensatedTTI(distance, fullRadius, speed)
+		value =
+			math_max(
+				distance - fullRadius,
+				0
+			)
+			/ math_max(speed, 1)
 
 	elseif mode == "speed_distance" then
 		value = {
@@ -1790,7 +1801,7 @@ function AutoParry.getRadius(
 		value = value,
 
 		pureRadius =
-			Tuning.PHANTOM_BASE_RADIUS,
+			Tuning.DEFLECT_RADIUS,
 
 		noWindowParryRadius =
 			noWindowParryRadius,
