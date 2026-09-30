@@ -56,10 +56,12 @@ end
 local function kick()
 	if State.kicked then return end
 	State.kicked = true
-	local ok, player = pcall(
-		function() return Utils and type(Utils.getLocalPlayer) == "function" and Utils.getLocalPlayer() or nil end
-	)
-	if ok and player and type(player.Kick) == "function" then pcall(function() player:Kick(T.KICK_MESSAGE) end) end
+	local ok, player = pcall(function()
+		return Utils and type(Utils.getLocalPlayer) == "function" and Utils.getLocalPlayer() or nil
+	end)
+	if ok and player and type(player.Kick) == "function" then
+		pcall(function() player:Kick(T.KICK_MESSAGE) end)
+	end
 end
 local function violation(reason)
 	State.violations += 1; State.lastViolation = reason; State.passed = false; recordError(reason)
@@ -152,12 +154,12 @@ end
 function AntiTamper.teardown()
 	State.ready = false; State.passed = false; State.watching = false; State.generation += 1
 	State.hooked = false; State.violations = 0; State.kicked = false; State.lastViolation = nil
-	for key in pairs(Owned) do
-		Owned[key] = nil
-	end
+	for key in pairs(Owned) do Owned[key] = nil end
 	Utils = nil
 end
-function AntiTamper.isPassed() return State.ready == true and State.passed == true end
+function AntiTamper.isPassed()
+	return State.ready == true and State.passed == true
+end
 function AntiTamper.getStatus()
 	return {
 		schema = Utils and Utils.apiVersion and Utils.apiVersion() or 1,

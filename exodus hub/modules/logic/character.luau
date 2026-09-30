@@ -102,8 +102,7 @@ function Character.setup(deps)
 	then
 		return false, "dependência ausente: Utils, Spam ou characterBinds"
 	end
-	Utils = deps.Utils; Spam = deps.Spam; DynamicParry = deps.DynamicParry; characterBinds = deps.characterBinds
-	local player = Utils.getLocalPlayer()
+	Utils = deps.Utils; Spam = deps.Spam; DynamicParry = deps.DynamicParry; characterBinds = deps.characterBinds; local player = Utils.getLocalPlayer()
 	if not player then Utils.recordError("Character", "LocalPlayer indisponível"); setPhase("invalid", "player_unavailable"); return false, "Players.LocalPlayer indisponível" end
 	if characterAddedConnection then Utils.untrackGlobal(characterAddedConnection); pcall(characterAddedConnection.Disconnect, characterAddedConnection) end
 	generation = generation + 1; setPhase("ready", "character_controller_ready"); characterAddedConnection = player.CharacterAdded:Connect(setupCharacter); Utils.trackGlobal(characterAddedConnection)
@@ -117,8 +116,7 @@ function Character.teardown()
 		pcall(characterAddedConnection.Disconnect, characterAddedConnection); characterAddedConnection = nil
 	end
 	if Utils then disconnectCharacterRuntime() end
-	phase = "stopped"; Utils = nil; Spam = nil; DynamicParry = nil
-	characterBinds = {}
+	phase = "stopped"; Utils = nil; Spam = nil; DynamicParry = nil; characterBinds = {}
 end
 Character.__contract = {
 	requires = {
@@ -126,6 +124,7 @@ Character.__contract = {
 		DynamicParry = "dynamicparry",
 		Utils = "utils",
 	},
+
 }
 
 return Character

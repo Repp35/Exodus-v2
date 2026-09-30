@@ -591,21 +591,18 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
 		ZIndex = 7,
 		Parent = f,
 	})
-	local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
+		local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
 	if configKey == "AutoClash" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
 	trackConn(inst("TextButton", {
 		Size = UDim2.new(1, 0, 1, 0),
 		BackgroundTransparency = 1,
 		Text = "",
-		ZIndex = 9,
-		Parent = f,
-	}).Activated:Connect(function()
-		local current = Utils.getConfig(); local state = not (configKey and current[configKey] == true)
-		if not configKey or setConfigValue(configKey, state) then
-			setVisual(state)
-			if onAfter then onAfter(state) end
-		end
-	end))
+			ZIndex = 9,
+			Parent = f,
+		}).Activated:Connect(function()
+			local current = Utils.getConfig(); local state = not (configKey and current[configKey] == true)
+			if not configKey or setConfigValue(configKey, state) then setVisual(state); if onAfter then onAfter(state) end end
+		end))
 	return nextCardY(yPos, CARD_H)
 end
 local function createRateSelector(yPos, parent)
@@ -647,8 +644,8 @@ local function createRateSelector(yPos, parent)
 			Font = Enum.Font.GothamBold,
 			ZIndex = 9,
 			Parent = modeTrack,
-		})
-
+		}
+)
 		modeButtons[mode] = button
 	end
 	local inputBox = inst("TextBox", {

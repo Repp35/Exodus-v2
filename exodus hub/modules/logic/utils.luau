@@ -175,8 +175,8 @@ function Utils.start()
 end
 function Utils.stop()
 	local previousPhase = State.lifecycle.phase; State.active = false; State.manualSpamActive = false; State.autoSpamActive = false
-	State.dynamicSpamActive = false; State.config = {}; State.moduleURLs = {}; DiagnosticsModules = {}
-	State.lifecycle.stoppedAt = os.clock(); setLifecyclePhase("stopped"); recordTransition("Utils", previousPhase, "stopped", "stop")
+	State.dynamicSpamActive = false; State.config = {}; State.moduleURLs = {}; DiagnosticsModules = {}; State.lifecycle.stoppedAt = os.clock(); setLifecyclePhase("stopped")
+	recordTransition("Utils", previousPhase, "stopped", "stop")
 	if type(_G.ExodusUICleanup) == "function" then pcall(_G.ExodusUICleanup) end
 	disconnectAll(State.characterConnections); disconnectAll(State.connections)
 	_G.ExodusOnBurst = function() end
@@ -215,9 +215,9 @@ function Utils.getDiagnostics()
 			autoSpamActive = State.autoSpamActive,
 			dynamicSpamActive = State.dynamicSpamActive,
 		},
+
 		modules = getModuleStatuses(),
 	}
-
 end
 function Utils.getLifecycle()
 	local snapshot = copyMap(State.lifecycle); snapshot.schema = M.API_VERSION; snapshot.generatedAt = os.clock(); return snapshot
@@ -283,7 +283,9 @@ end
 function Utils.isFiniteNumber(value)
 	return type(value) == "number" and value == value and value < math.huge and value > -math.huge
 end
-function Utils.isNonNegativeFiniteNumber(value) return Utils.isFiniteNumber(value) and value >= 0 end
+function Utils.isNonNegativeFiniteNumber(value)
+	return Utils.isFiniteNumber(value) and value >= 0
+end
 function Utils.normalizeSpamRate(value, fallback)
 	local rate = tonumber(value)
 	if not Utils.isFiniteNumber(rate) then rate = tonumber(fallback) end
