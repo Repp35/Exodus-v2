@@ -10,11 +10,11 @@ local Workspace
 local T = {
 	-- Ball reference is kept directly while valid.
 	-- This is only the fallback re-acquisition interval.
-	BALL_CACHE_TTL = 0.05,
+	BALL_CACHE_TTL = 0.02,
 
 	-- Only describes whether the last received sync is considered fresh.
 	-- It does NOT delay snapshots.
-	SYNC_FRESH_TIME = 1.0,
+	SYNC_FRESH_TIME = 0.05,
 
 	-- How far a received RealPosition may be extrapolated.
 	PREDICTION_HORIZON = 0.6,
@@ -23,12 +23,12 @@ local T = {
 
 	-- Only used by isSnapshotValid().
 	-- It does not make getSnapshot() wait.
-	SNAPSHOT_LIFETIME = 0.25,
+	SNAPSHOT_LIFETIME = 0.05,
 
 	-- Provider acquisition/recovery.
-	ACQUIRE_RETRY_TIME = 0.1,
-	PROVIDER_RECHECK_TIME = 0.5,
-	ABILITY_RETRY_TIME = 2.0,
+	ACQUIRE_RETRY_TIME = 0.02,
+	PROVIDER_RECHECK_TIME = 0.05,
+	ABILITY_RETRY_TIME = 0.05,
 
 	SNAPSHOT_SCHEMA = 2,
 }
@@ -473,6 +473,17 @@ end
 local function getBall()
 	local time = now()
 	local cached = State.ball
+	if not cached
+		and State.ballAt > 0
+		and time - State.ballAt < T.BALL_CACHE_TTL
+	then
+		return nil
+	end
+	local providerBall = getProviderBall(time)
+	if providerBall and providerBall ~= cached then
+		setBall(providerBall, "TS.GameInfo.GameInfo.BallModel")
+		return providerBall
+	end
 
 	-- Main fast path.
 	-- If the ball reference is still alive, there is no reason to
@@ -481,15 +492,7 @@ local function getBall()
 		return cached
 	end
 
-	-- If there is no cached ball, avoid hammering the hierarchy.
-	if
-		State.ballAt > 0
-		and time - State.ballAt < T.BALL_CACHE_TTL
-	then
-		return nil
-	end
-
-	local ball = getProviderBall(time)
+	local ball = providerBall
 	local source
 
 	if ball then
