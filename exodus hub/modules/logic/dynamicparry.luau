@@ -219,6 +219,7 @@ DynamicParry.__contract = {
 		Spam = "spam",
 		Utils = "utils",
 	},
+
 }
 
 return DynamicParry

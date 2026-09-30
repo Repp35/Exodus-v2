@@ -211,10 +211,7 @@ local function getReturnWindow(speed)
 end
 local function extendReturnPastCooldown(t)
 	local minimumExpiry = math.max(t, R.reactivateBlockedUntil) + T.REACTIVATE_RETURN_GRACE
-	if R.returnExpiresAt < minimumExpiry then
-		R.returnExpiresAt = minimumExpiry
-		R.returnWindow = math.max(R.returnWindow, minimumExpiry - R.lostMeAt)
-	end
+	if R.returnExpiresAt < minimumExpiry then R.returnExpiresAt = minimumExpiry; R.returnWindow = math.max(R.returnWindow, minimumExpiry - R.lostMeAt) end
 end
 local function beginReturnWindow(t, fromTarget)
 	local window = getReturnWindow(R.lastSpeed)
@@ -224,8 +221,7 @@ local function beginReturnWindow(t, fromTarget)
 	extendReturnPastCooldown(t)
 end
 local function armReturnActivation(t, fromTarget)
-	beginReturnWindow(t, fromTarget)
-	R.returnPending = true
+	beginReturnWindow(t, fromTarget); R.returnPending = true
 end
 local function setPhase(phase, reason)
 	if R.phase == phase then return end
@@ -277,7 +273,6 @@ end
 local function refreshRadiusCache()
 	local base = queryRadius(1.0)
 	if base > 0 then R.parryRadius = base; R.radiusSafety = base end
-	-- Normal activation stays on its original radius; dash-only radii are queried on demand.
 	if not R.active then R.radiusActivation = queryRadius(T.ACTIVATION_WINDOW_FACTOR) end
 end
 local function getActivationRadius(t)
@@ -411,8 +406,7 @@ function Deactivation.confirm(t, reason)
 end
 function Deactivation.direction(t, snapshot, speed)
 	if snapshot.targeted == true then R.lastGate = "deact_direction_targeted"; return false end
-	local radius = AutoParry.getRadius("geometry", 0, speed)
-	local parryRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil
+	local radius = AutoParry.getRadius("geometry", 0, speed); local parryRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil
 	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
 	if not parryRadius or parryRadius ~= parryRadius or parryRadius < 0 or parryRadius == math.huge or not root or not position then
 		Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_unavailable"; return false
@@ -456,7 +450,7 @@ end
 -- RALLY
 local function rallyCheck(data)
 	if not R.active or type(data) ~= "table" then return true end
-	local target = normalizeTarget(data.TargetPlayerID)
+	local target = type(GameInfo.getTargetId) == "function" and GameInfo.getTargetId() or normalizeTarget(data.TargetPlayerID)
 	if not target or target == R.localUserId or target == R.clashPartnerId then return true end
 	local position = getDataPosition(data); local root = getRootPosition()
 	if not position or not root or R.parryRadius <= 0 then return true end
@@ -703,7 +697,7 @@ function AutoClash.onBallSync(data)
 		resetTargetState(); R.reactivateBlockedUntil = math.max(R.reactivateBlockedUntil, t + T.RESET_LOCK_BASE + pingCompensation())
 		R.lastGate = data.Teleported == true and "teleported" or "grace_reset"; return
 	end
-		local target = normalizeTarget(data.TargetPlayerID)
+	local target = type(GameInfo.getTargetId) == "function" and GameInfo.getTargetId() or normalizeTarget(data.TargetPlayerID)
 	if not target then
 		if R.active then
 			if Deactivation.confirm(t, "invalid_target") then setActive(false, "invalid_target") end
@@ -754,9 +748,7 @@ function AutoClash.onBallSync(data)
 				clearReturnState(); R.lastGate = "return_too_late"
 			else
 				if previousTarget ~= -1 and previousTarget ~= R.localUserId then R.clashPartnerId = previousTarget end
-				R.returnPending = true
-				extendReturnPastCooldown(t)
-				R.lastGate = "target_return"
+				R.returnPending = true; extendReturnPastCooldown(t); R.lastGate = "target_return"
 		end
 	end
 	R.wasMeTarget = isMe

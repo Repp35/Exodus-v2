@@ -11,7 +11,7 @@ local WorkspaceService = game:GetService("Workspace")
 
 -- metadata
 local M = {
-	SCRIPT_VERSION = "35.28",
+	SCRIPT_VERSION = "35.29",
 	API_VERSION = 1,
 	SCRIPT_NAME = "Exodus Hub",
 	INTERNAL_NAME = "Exodus",
@@ -31,6 +31,7 @@ local T = {
 task.defer(function()
 	pcall(function() workspace:SetAttribute("CPS_LIMIT", 9999) end)
 end)
+
 -- state
 local DiagnosticsModules = {}
 local ConsoleErrorAt = {}
@@ -125,8 +126,7 @@ local function recordTransition(source, fromState, toState, reason)
 	updateNamespace()
 end
 local function recordError(source, message)
-	source = tostring(source)
-	message = tostring(message)
+	source = tostring(source); message = tostring(message)
 	State.diagnostics.lastError = {
 		source = source,
 		message = message,
@@ -134,19 +134,13 @@ local function recordError(source, message)
 	}
 	table.insert(State.diagnostics.errors, State.diagnostics.lastError)
 	if #State.diagnostics.errors > T.MAX_DIAGNOSTIC_ENTRIES then table.remove(State.diagnostics.errors, 1) end
-	updateNamespace()
-
-	local key = source .. "\0" .. message
-	local now = os.clock()
-	local previous = ConsoleErrorAt[key]
+	updateNamespace(); local key = source .. "\0" .. message; local now = os.clock(); local previous = ConsoleErrorAt[key]
 	if previous and now - previous < T.CONSOLE_ERROR_COOLDOWN then return end
 	if not previous then
 		ConsoleErrorCount += 1
 		if ConsoleErrorCount > 128 then ConsoleErrorAt = {}; ConsoleErrorCount = 1 end
 	end
-	ConsoleErrorAt[key] = now
-
-	local output = ("[Exodus][%s] %s"):format(source, message)
+	ConsoleErrorAt[key] = now; local output = ("[Exodus][%s] %s"):format(source, message)
 	if type(debug) == "table" and type(debug.traceback) == "function" then
 		local ok, trace = pcall(debug.traceback, output, 3)
 		if ok and type(trace) == "string" then output = trace end
@@ -181,7 +175,7 @@ function Utils.start()
 end
 function Utils.stop()
 	local previousPhase = State.lifecycle.phase; State.active = false; State.manualSpamActive = false; State.autoSpamActive = false
-	State.dynamicSpamActive = false; DiagnosticsModules = {}; State.lifecycle.stoppedAt = os.clock(); setLifecyclePhase("stopped")
+	State.dynamicSpamActive = false; State.config = {}; State.moduleURLs = {}; DiagnosticsModules = {}; State.lifecycle.stoppedAt = os.clock(); setLifecyclePhase("stopped")
 	recordTransition("Utils", previousPhase, "stopped", "stop")
 	if type(_G.ExodusUICleanup) == "function" then pcall(_G.ExodusUICleanup) end
 	disconnectAll(State.characterConnections); disconnectAll(State.connections)
@@ -221,9 +215,9 @@ function Utils.getDiagnostics()
 			autoSpamActive = State.autoSpamActive,
 			dynamicSpamActive = State.dynamicSpamActive,
 		},
+
 		modules = getModuleStatuses(),
 	}
-
 end
 function Utils.getLifecycle()
 	local snapshot = copyMap(State.lifecycle); snapshot.schema = M.API_VERSION; snapshot.generatedAt = os.clock(); return snapshot
@@ -286,7 +280,6 @@ function Utils.setDynamicSpamActive(value)
 		"dynamic_spam_toggle"
 	)
 end
-
 function Utils.isFiniteNumber(value)
 	return type(value) == "number" and value == value and value < math.huge and value > -math.huge
 end

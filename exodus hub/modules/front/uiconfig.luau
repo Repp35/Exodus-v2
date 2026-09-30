@@ -44,11 +44,13 @@ UIConfig.__config = {
 		MiniX = "position", MiniY = "position", DynamicParryX = "position", DynamicParryY = "position",
 		PanelX = "position", PanelY = "position",
 	},
+
 	defaults = {
 		AutoParry = true, AutoClash = true, DynamicParry = false, ClashBallVisible = false,
 		DynamicParryReleaseDelay = 0.2, CPS = 23.5, CPF = 0.3917, SpamRateMode = "CPS",
 		Keybind = Enum.KeyCode.F9, SpamKeybind = Enum.KeyCode.F, SpamMode = "Toggle",
 	},
+
 }
 UIConfig.__contract = {
 	requires = {},

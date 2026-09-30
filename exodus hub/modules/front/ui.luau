@@ -645,7 +645,6 @@ local function createRateSelector(yPos, parent)
 			ZIndex = 9,
 			Parent = modeTrack,
 		}
-
 )
 		modeButtons[mode] = button
 	end

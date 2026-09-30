@@ -41,6 +41,7 @@ local MODULE_MANIFEST = {
 	{ name = "character", path = "modules/logic/character.luau" },
 	{ name = "ui", path = "modules/front/ui.luau" },
 }
+
 local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
 for _, entry in ipairs(MODULE_MANIFEST) do
@@ -92,7 +93,7 @@ local function waitBeforeRetry(attempt)
 	if type(task) == "table" and type(task.wait) == "function" then local delays = { 0.25, 0.75, 1.5 }; task.wait(delays[attempt] or delays[#delays]) end
 end
 local function request(url, headers)
-	if type(url) ~= "string" or url == "" then return nil, "URL inv谩lida" end
+	if type(url) ~= "string" or url == "" then return nil, "URL inválida" end
 	local lastError
 	local requestFunction = getRequestFunction()
 	for attempt = 1, 3 do
@@ -103,12 +104,11 @@ local function request(url, headers)
 					Method = "GET",
 					Headers = headers,
 				})
-
-				if type(response) ~= "table" then error("Resposta HTTP inv谩lida") end
+				if type(response) ~= "table" then error("Resposta HTTP inválida") end
 				local statusCode = tonumber(response.StatusCode or response.status_code)
 				if statusCode and statusCode >= 400 then error("HTTP " .. tostring(statusCode)) end
 				local body = response.Body or response.body or response.ResponseBody
-				if type(body) ~= "string" or body == "" then error("Corpo HTTP vazio ou inv谩lido") end
+				if type(body) ~= "string" or body == "" then error("Corpo HTTP vazio ou inválido") end
 				return body
 			end)
 			if ok and type(responseBody) == "string" and responseBody ~= "" then return responseBody end
@@ -117,7 +117,7 @@ local function request(url, headers)
 		if not isRetryableHttp(lastError) then break end
 		waitBeforeRetry(attempt)
 	end
-	local message = lastError or "Nenhum servi莽o HTTP dispon铆vel"; return nil, message
+	local message = lastError or "Nenhum serviço HTTP disponível"; return nil, message
 end
 local function findLocalModule(name, relativePath)
 	if not ALLOW_LOCAL_FALLBACK then return nil, name .. ".luau local desabilitado" end
@@ -128,8 +128,7 @@ local function findLocalModule(name, relativePath)
 		return nil, "APIs de arquivo do executor indisponíveis"
 	end
 	for _, root in ipairs(LOCAL_ROOTS) do
-		local path = root .. "/" .. relativePath
-		local fileOk, fileExists = pcall(isfile, path)
+		local path = root .. "/" .. relativePath; local fileOk, fileExists = pcall(isfile, path)
 		if fileOk and fileExists then
 			local readOk, source = pcall(readfile, path)
 			if readOk and type(source) == "string" and source ~= "" then return source, path end
@@ -182,8 +181,7 @@ end
 
 -- urls
 local function buildURLs(version)
-	local root = BASE_URL .. (version or ("refs/heads/" .. BRANCH)) .. "/" .. PROJECT_PATH
-	local urls = {}
+	local root = BASE_URL .. (version or ("refs/heads/" .. BRANCH)) .. "/" .. PROJECT_PATH; local urls = {}
 	for _, entry in ipairs(MODULE_MANIFEST) do urls[entry.name] = root .. entry.path end
 	return urls
 end
@@ -336,9 +334,7 @@ local function bindRuntime(loaded, log)
 		local module = loaded[name]
 		if name ~= "utils" and type(module) == "table" then
 			local contract = contractOf(module)
-			if contract.onBallSync == true and type(module.onBallSync) ~= "function" then
-				return nil, "contrato BallSync incompleto: " .. name
-			end
+			if contract.onBallSync == true and type(module.onBallSync) ~= "function" then return nil, "contrato BallSync incompleto: " .. name end
 			if contract.onBallSync == true then
 				ballSyncSubscribers[#ballSyncSubscribers + 1] = {
 					name = name,
@@ -353,11 +349,8 @@ local function bindRuntime(loaded, log)
 		if not ok or result == false then
 			local message = result == false and detail or result
 			if message == nil then message = result end
-			if type(log.recordError) == "function" then
-				log.recordError(name, tostring(message))
-			else
-				printRawError(name, message)
-			end
+			if type(log.recordError) == "function" then log.recordError(name, tostring(message))
+			else printRawError(name, message) end
 			return nil
 		end
 		return detail or data
@@ -371,12 +364,12 @@ local function bindRuntime(loaded, log)
 	end
 	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
 	if not watcherReady then
-		if type(log.recordError) == "function" then log.recordError("GameInfo", "observador da bola indispon铆vel")
+		if type(log.recordError) == "function" then log.recordError("GameInfo", "observador da bola indisponível")
 		else printRawError("GameInfo", "observador da bola indisponível") end
 	end
 	local syncReady = remote.bindBallSync(onBallSync)
 	if not syncReady then
-		if type(log.recordError) == "function" then log.recordError("Remote", "BallSyncData indispon铆vel")
+		if type(log.recordError) == "function" then log.recordError("Remote", "BallSyncData indisponível")
 		else printRawError("Remote", "BallSyncData indisponível") end
 	end
 	local maintenanceOk, maintenanceReady = pcall(remote.startMaintenance, {
@@ -413,7 +406,7 @@ end
 local activeLoaded
 local function waitForLocalPlayer(timeout)
 	local ok, players = pcall(game.GetService, game, "Players")
-	if not ok or not players then return false, "servi莽o Players indispon铆vel" end
+	if not ok or not players then return false, "serviço Players indisponível" end
 	local deadline = os.clock() + (tonumber(timeout) or 10)
 	repeat
 		local playerOk, player = pcall(function() return players.LocalPlayer end)
@@ -421,7 +414,7 @@ local function waitForLocalPlayer(timeout)
 		if type(task) ~= "table" or type(task.wait) ~= "function" then break end
 		task.wait()
 	until os.clock() >= deadline
-	return false, "LocalPlayer indispon铆vel ap贸s esperar " .. tostring(timeout or 10) .. "s"
+	return false, "LocalPlayer indisponível após esperar " .. tostring(timeout or 10) .. "s"
 end
 local function startInternal()
 	printStartup("Exodus: iniciando"); stopPreviousRuntime(); clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)

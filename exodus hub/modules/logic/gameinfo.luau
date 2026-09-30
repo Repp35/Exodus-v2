@@ -90,9 +90,7 @@ local function resolveGameInfoProvider(time)
 	then
 		return gameInfoProvider
 	end
-	if gameInfoCheckedAt > 0 and time - gameInfoCheckedAt < T.ACQUIRE_RETRY_TIME then
-		return nil
-	end
+	if gameInfoCheckedAt > 0 and time - gameInfoCheckedAt < T.ACQUIRE_RETRY_TIME then return nil end
 	gameInfoCheckedAt = time
 	gameInfoModule = nil; gameInfoProvider = nil; gameInfoProviderError = nil
 	local replicatedStorage = Utils.getReplicatedStorage()
@@ -102,26 +100,15 @@ local function resolveGameInfoProvider(time)
 	local candidate = ts and ts:FindFirstChild("GameInfo")
 	if not candidate then gameInfoProviderStatus = "gameinfo_module_missing"; return nil end
 	if not candidate:IsA("ModuleScript") then gameInfoProviderStatus = "gameinfo_instance_not_module"; return nil end
-	gameInfoModule = candidate
-	local ok, result = pcall(require, candidate)
-	if not ok then
-		gameInfoProviderStatus = "require_failed"
-		gameInfoProviderError = tostring(result)
-		return nil
-	end
+	gameInfoModule = candidate; local ok, result = pcall(require, candidate)
+	if not ok then gameInfoProviderStatus = "require_failed"; gameInfoProviderError = tostring(result); return nil end
 	if type(result) ~= "table" then gameInfoProviderStatus = "require_returned_non_table"; return nil end
-	if type(result.GameInfo) == "table" then
-		gameInfoProvider = result.GameInfo
-	elseif result.BallModel ~= nil then
-		-- Também aceita versões que exponham BallModel diretamente.
-		gameInfoProvider = result
-	end
-	gameInfoProviderStatus = gameInfoProvider and "provider_ready" or "provider_table_missing"
-	return gameInfoProvider
+	if type(result.GameInfo) == "table" then gameInfoProvider = result.GameInfo
+	elseif result.BallModel ~= nil then gameInfoProvider = result end
+	gameInfoProviderStatus = gameInfoProvider and "provider_ready" or "provider_table_missing"; return gameInfoProvider
 end
 local function getProviderBall(time)
-	local provider = resolveGameInfoProvider(time)
-	local ball = provider and provider.BallModel
+	local provider = resolveGameInfoProvider(time); local ball = provider and provider.BallModel
 	if isBall(ball) then gameInfoProviderStatus = "ballmodel_found"; return ball end
 	if provider and ball == nil then gameInfoProviderStatus = "ballmodel_missing"
 	elseif provider then gameInfoProviderStatus = "ballmodel_not_basepart" end
@@ -146,37 +133,23 @@ local function resolveBallReplicator(time)
 	local candidate = folder:FindFirstChild("BallReplicator")
 	if not candidate then ballReplicatorStatus = "ballreplicator_module_missing"; return nil end
 	if not candidate:IsA("ModuleScript") then ballReplicatorStatus = "ballreplicator_instance_not_module"; return nil end
-	ballReplicatorModule = candidate
-	local ok, result = pcall(require, candidate)
-	if not ok then
-		ballReplicatorStatus = "require_failed"
-		ballReplicatorError = tostring(result)
-		return nil
-	end
+	ballReplicatorModule = candidate; local ok, result = pcall(require, candidate)
+	if not ok then ballReplicatorStatus = "require_failed"; ballReplicatorError = tostring(result); return nil end
 	if type(result) ~= "table" then ballReplicatorStatus = "require_returned_non_table"; return nil end
 	if type(result.BallReplicator) == "table" then
 		ballReplicatorProvider = result.BallReplicator
 	elseif result.syncData ~= nil then
 		ballReplicatorProvider = result
 	end
-	ballReplicatorStatus = ballReplicatorProvider and "provider_ready" or "provider_table_missing"
-	return ballReplicatorProvider
+	ballReplicatorStatus = ballReplicatorProvider and "provider_ready" or "provider_table_missing"; return ballReplicatorProvider
 end
 local function getDecodedSyncData(time)
 	local provider = resolveBallReplicator(time)
 	if not provider then return nil end
 	local ok, data = pcall(function() return provider.syncData end)
-	if not ok then
-		ballReplicatorStatus = "syncdata_read_failed"
-		ballReplicatorError = tostring(data)
-		return nil
-	end
-	if type(data) ~= "table" then
-		ballReplicatorStatus = "syncdata_not_table"
-		return nil
-	end
-	ballReplicatorStatus = "syncdata_ready"
-	return data
+	if not ok then ballReplicatorStatus = "syncdata_read_failed"; ballReplicatorError = tostring(data); return nil end
+	if type(data) ~= "table" then ballReplicatorStatus = "syncdata_not_table"; return nil end
+	ballReplicatorStatus = "syncdata_ready"; return data
 end
 local function setBall(ball, source)
 	if isBall(ball) then
@@ -190,8 +163,7 @@ end
 local function getBall()
 	local time = Utils.now(); local cached = State.ball
 	if cached and cached.Parent ~= nil and time - State.ballAt < T.BALL_CACHE_TTL then return cached end
-	local ball = getProviderBall(time)
-	local source = ball and "TS.GameInfo.GameInfo.BallModel" or nil
+	local ball = getProviderBall(time); local source = ball and "TS.GameInfo.GameInfo.BallModel" or nil
 	if not ball then
 		ball = Workspace:FindFirstChild("GameBall")
 		if ball then source = "Workspace.GameBall" end
@@ -237,11 +209,18 @@ end
 -- target
 local function normalizeTargetId(value)
 	if Utils.isFiniteNumber(value) then return value > 0 and value or nil end
-	if type(value) == "string" then
-		local number = tonumber(value)
-		return Utils.isFiniteNumber(number) and number > 0 and number or nil
-	end
+	if type(value) == "string" then local number = tonumber(value); return Utils.isFiniteNumber(number) and number > 0 and number or nil end
 	return nil
+end
+local function resolveTargetId(data)
+	data = type(data) == "table" and data or State.lastSyncData or {}
+	local attribute
+	local okAttribute, value = pcall(Workspace.GetAttribute, Workspace, "GameBallTarget")
+	if okAttribute then attribute = value end
+	if attribute ~= nil then return normalizeTargetId(attribute) or -1 end
+	local highlighted = normalizeTargetId(data.HighlightTargetPlayerID)
+	if highlighted then return highlighted end
+	return normalizeTargetId(data.TargetPlayerID) or -1
 end
 local function getSnapshot(_, time)
 	time = resolveTime(time)
@@ -252,9 +231,7 @@ local function getSnapshot(_, time)
 	local rawPosition
 	if ballValid then rawVelocity = getAssemblyVelocity(ball); rawSpeed = ballSpeed(ball, time, rawVelocity); rawPosition = ballPosition(ball, time, rawVelocity) end
 	local validPosition = rawPosition ~= nil; local rawSyncAge = State.lastSyncAt > 0 and math.max(0, time - State.lastSyncAt) or nil
-	local syncFresh = rawSyncAge ~= nil and rawSyncAge <= T.SYNC_FRESH_TIME
-	local targetId = State.target
-	local player = Players.LocalPlayer
+	local syncFresh = rawSyncAge ~= nil and rawSyncAge <= T.SYNC_FRESH_TIME; local targetId = State.target; local player = Players.LocalPlayer
 	local approachingSpeed
 	if rawPosition and rawVelocity and player then
 		local root = cachedRoot
@@ -298,19 +275,17 @@ local function cloneSyncData(data)
 	return copy
 end
 local function consumerSyncData(data)
-	local copy = cloneSyncData(data)
-	copy.TargetPlayerID = normalizeTargetId(data.TargetPlayerID) or -1
-	return copy
+	local copy = cloneSyncData(data); copy.TargetPlayerID = resolveTargetId(data); return copy
 end
 refreshDecodedSync = function(time, force)
-	time = resolveTime(time)
-	local data = getDecodedSyncData(time)
+	time = resolveTime(time); local data = getDecodedSyncData(time)
 	if not data then
 		return false, ("BallReplicator.syncData indisponivel: %s%s"):format(
 			tostring(ballReplicatorStatus),
 			ballReplicatorError and ("; " .. tostring(ballReplicatorError)) or ""
 		)
 	end
+	State.target = resolveTargetId(data)
 	local changed = State.lastSyncData == nil
 	if not changed then
 		for key, value in pairs(data) do
@@ -323,23 +298,13 @@ refreshDecodedSync = function(time, force)
 		end
 	end
 	if not force and not changed then return true, consumerSyncData(data) end
-
-	State.speed = Utils.isNonNegativeFiniteNumber(data.Speed) and data.Speed or 0
-	State.maxSpeed = Utils.isNonNegativeFiniteNumber(data.MaxSpeed) and data.MaxSpeed or 0
-	State.acceleration = Utils.isNonNegativeFiniteNumber(data.Accel) and data.Accel or 0
-	State.speedAt = Utils.isNonNegativeFiniteNumber(data.Speed) and time or 0
-	State.hasRealPosition = typeof(data.RealPosition) == "Vector3"
-	State.positionAt = State.hasRealPosition and time or 0
+	State.speed = Utils.isNonNegativeFiniteNumber(data.Speed) and data.Speed or 0; State.maxSpeed = Utils.isNonNegativeFiniteNumber(data.MaxSpeed) and data.MaxSpeed or 0
+	State.acceleration = Utils.isNonNegativeFiniteNumber(data.Accel) and data.Accel or 0; State.speedAt = Utils.isNonNegativeFiniteNumber(data.Speed) and time or 0
+	State.hasRealPosition = typeof(data.RealPosition) == "Vector3"; State.positionAt = State.hasRealPosition and time or 0
 	if State.hasRealPosition then State.realPosition = data.RealPosition end
-	State.deflectDirection = typeof(data.DeflectDirection) == "Vector3" and data.DeflectDirection or ZERO_VELOCITY
-	State.target = normalizeTargetId(data.TargetPlayerID)
-	State.teleported = data.Teleported == true
-	State.teleportedAt = State.teleported and time or 0
-	State.grace = data.Grace == true
-	State.oldGrace = data.OldGrace == true
-	State.resetAt = (State.grace or State.oldGrace or State.teleported) and time or State.resetAt
-	State.lastSyncAt = time
-	State.lastSyncData = cloneSyncData(data)
+	State.deflectDirection = typeof(data.DeflectDirection) == "Vector3" and data.DeflectDirection or ZERO_VELOCITY; State.target = resolveTargetId(data)
+	State.teleported = data.Teleported == true; State.teleportedAt = State.teleported and time or 0; State.grace = data.Grace == true; State.oldGrace = data.OldGrace == true
+	State.resetAt = (State.grace or State.oldGrace or State.teleported) and time or State.resetAt; State.lastSyncAt = time; State.lastSyncData = cloneSyncData(data)
 	return true, consumerSyncData(data)
 end
 local function applySync(rawPayload)
@@ -385,31 +350,21 @@ end
 -- watcher
 local function installBallWatcher(trackConnection)
 	if type(trackConnection) ~= "function" then return false end
-	local gameFolder = Workspace:FindFirstChild("Game")
-	local ballFolder = gameFolder and gameFolder:FindFirstChild("Ball")
+	local gameFolder = Workspace:FindFirstChild("Game"); local ballFolder = gameFolder and gameFolder:FindFirstChild("Ball")
 	if ballFolder then
 		trackConnection(ballFolder.ChildAdded:Connect(function(child)
 			if child.Name == "GameBall" and child:IsA("BasePart") then setBall(child, "Workspace.Game.Ball.GameBall") end
 		end))
-		trackConnection(ballFolder.ChildRemoved:Connect(clearBall))
-		local existingBall = ballFolder:FindFirstChild("GameBall")
+		trackConnection(ballFolder.ChildRemoved:Connect(clearBall)); local existingBall = ballFolder:FindFirstChild("GameBall")
 		if existingBall then setBall(existingBall, "Workspace.Game.Ball.GameBall")
 		else setBall(getProviderBall(Utils.now()), "TS.GameInfo.GameInfo.BallModel") end
 		return true
 	end
-
-	-- Algumas versões expõem a bola apenas por TS.GameInfo.BallModel ou em outra
-	-- hierarquia do Workspace. Observe alterações gerais e resolva a fonte atual.
 	trackConnection(Workspace.DescendantAdded:Connect(function(child)
-		if child.Name == "GameBall" and child:IsA("BasePart") then
-			setBall(child, "Workspace descendant named GameBall")
-			return
-		end
+		if child.Name == "GameBall" and child:IsA("BasePart") then setBall(child, "Workspace descendant named GameBall"); return end
 		if getProviderBall(Utils.now()) == child then setBall(child, "TS.GameInfo.GameInfo.BallModel") end
 	end))
-	trackConnection(Workspace.DescendantRemoving:Connect(clearBall))
-	setBall(getBall())
-	return true
+	trackConnection(Workspace.DescendantRemoving:Connect(clearBall)); setBall(getBall()); return true
 end
 
 -- setup
@@ -438,12 +393,14 @@ function GameInfo.getSyncData()
 	if refreshDecodedSync then refreshDecodedSync(Utils.now(), false) end
 	return State.lastSyncData and consumerSyncData(State.lastSyncData) or nil
 end
+function GameInfo.getTargetId()
+	if refreshDecodedSync then refreshDecodedSync(Utils.now(), false) end
+	return resolveTargetId(State.lastSyncData)
+end
 function GameInfo.getStatus()
 	local snapshot = getSnapshot(nil, Utils.now())
 	local validReason
-	if not snapshot.valid then
-		validReason = snapshot.ballValid and "ball_position_unavailable" or "ball_not_found_or_not_a_basepart"
-	end
+	if not snapshot.valid then validReason = snapshot.ballValid and "ball_position_unavailable" or "ball_not_found_or_not_a_basepart" end
 	if validReason and validReason ~= lastReportedIssue then
 		lastReportedIssue = validReason
 		if type(Utils.recordError) == "function" then pcall(Utils.recordError, "GameInfo", validReason .. "; provider=" .. tostring(gameInfoProviderStatus)) end
@@ -455,9 +412,7 @@ function GameInfo.getStatus()
 	if not snapshot.syncFresh then syncReason = "BallReplicator.syncData ausente ou sem atualização recente" end
 	if snapshot.ball then
 		pcall(function()
-			ballName = snapshot.ball.Name
-			ballClass = snapshot.ball.ClassName
-			ballPath = snapshot.ball:GetFullName()
+			ballName = snapshot.ball.Name; ballClass = snapshot.ball.ClassName; ballPath = snapshot.ball:GetFullName()
 		end)
 	end
 	return {
@@ -486,6 +441,7 @@ function GameInfo.getStatus()
 		targetId = snapshot.targetId,
 		teleported = snapshot.teleported,
 	}
+
 end
 function GameInfo.isSnapshotValid(snapshot, time)
 	if
@@ -501,8 +457,7 @@ function GameInfo.isSnapshotValid(snapshot, time)
 	end
 	time = resolveTime(time)
 	if not Utils.isFiniteNumber(snapshot.generatedAt) then return false end
-	local age = time - snapshot.generatedAt
-	return age >= 0 and age <= T.SNAPSHOT_LIFETIME and snapshot.ball ~= nil and snapshot.ball.Parent ~= nil
+	local age = time - snapshot.generatedAt; return age >= 0 and age <= T.SNAPSHOT_LIFETIME and snapshot.ball ~= nil and snapshot.ball.Parent ~= nil
 end
 function GameInfo.applySync(data) return applySync(data) end
 function GameInfo.installBallWatcher(trackConnection) return installBallWatcher(trackConnection) end

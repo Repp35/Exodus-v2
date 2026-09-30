@@ -17,6 +17,7 @@ local T = {
 	STORAGE_FILE = "deflect_remotes.json",
 	MAX_CAPTURED_REMOTES = 128,
 }
+
 local Storage = {
 initialized = false,
 available = false,
@@ -30,12 +31,10 @@ errorReported = false,
 }
 
 local CapturedRemotes = setmetatable({}, { __mode = "k" })
-
 local function reportStorageError(message)
 Storage.lastError = tostring(message)
 if not Storage.errorReported and Utils and type(Utils.recordError) == "function" then Storage.errorReported = true; Utils.recordError("RemoteStorage", Storage.lastError) end
 end
-
 local function safeInstanceInfo(instance)
 if typeof(instance) ~= "Instance" then return nil end
 local info = {}
@@ -47,7 +46,6 @@ if okClass then info.className = className end
 if okFullName then info.fullName = fullName end
 return info
 end
-
 local function safeValue(value, depth)
 depth = depth or 0
 if value == nil then return nil end
@@ -72,13 +70,11 @@ return result
 end
 return tostring(value)
 end
-
 local function safeAttributes(remote)
 local ok, attributes = pcall(function() return remote:GetAttributes() end)
 if not ok or type(attributes) ~= "table" then return {} end
 return safeValue(attributes) or {}
 end
-
 local function safeAncestry(remote)
 local ancestry = {}; local current = remote
 for _ = 1, 64 do
@@ -91,7 +87,6 @@ current = parent
 end
 return ancestry
 end
-
 local function emptyStorageDocument()
 return {
 schema = T.STORAGE_SCHEMA,
@@ -99,8 +94,8 @@ hub = "Exodus Hub",
 file = T.STORAGE_FILE,
 captures = {},
 }
-end
 
+end
 local function writeStorage()
 if not Storage.available or Storage.writeBlocked then return false end
 local document = emptyStorageDocument(); document.captures = Storage.captures; local encodeOk, body = pcall(HttpService.JSONEncode, HttpService, document)
@@ -109,7 +104,6 @@ local writeOk, writeResult = pcall(writefile, Storage.path, body)
 if not writeOk or writeResult == false then Storage.writeBlocked = true; reportStorageError(writeResult or ("falha ao gravar " .. Storage.path)); return false end
 Storage.lastWriteAt = os.time(); Storage.lastError = nil; return true
 end
-
 local function initializeStorage()
 if Storage.initialized then return Storage.available end
 Storage.initialized = true; local folderOk, folderPath = Utils.ensureDataFolder()
@@ -144,7 +138,6 @@ Storage.available = true
 if not fileExists or body == "" then writeStorage() end
 return true
 end
-
 local function queueStorageWrite()
 if not initializeStorage() or Storage.writeBlocked or Storage.flushQueued then return end
 Storage.flushQueued = true
@@ -152,7 +145,6 @@ task.spawn(function()
 Storage.flushQueued = false; writeStorage()
 end)
 end
-
 local function captureRemote(remote)
 	if not captureEnabled then return end
 	if CapturedRemotes[remote] then return end
@@ -196,9 +188,7 @@ payloadFlags = { 1, 2 },
 	end)
 	if not ok then reportStorageError(errorMessage) end
 end)
-
 end
-
 local function getStorageStatus()
 return {
 	schema = T.STORAGE_SCHEMA,
@@ -210,14 +200,8 @@ return {
 	lastError = captureEnabled == true and Storage.lastError or nil,
 }
 end
-
 local function isAlive(remote)
 return remote and typeof(remote) == "Instance" and remote:IsA("RemoteEvent") and remote.Parent ~= nil
-end
-
--- old method intentionally disabled
-local function installHooks()
-return false
 end
 
 -- discovery
@@ -225,51 +209,29 @@ local function resolvePhantomBallzRemote()
 if isAlive(parryRemote) then
 return parryRemote
 end
-
 parryRemote = nil
-
 local ReplicatedStorage = Utils.getReplicatedStorage()
 local touchTap = ReplicatedStorage and ReplicatedStorage:FindFirstChild("TouchTap")
-
-if not touchTap or not touchTap:IsA("BindableEvent") then
-	return nil
-end
-
-if type(getconnections) ~= "function" then
-	return nil
-end
-
+if not touchTap or not touchTap:IsA("BindableEvent") then return nil end
+if type(getconnections) ~= "function" then return nil end
 local okConnections, connections = pcall(getconnections, touchTap.Event)
-if not okConnections or type(connections) ~= "table" then
-	return nil
-end
-
+if not okConnections or type(connections) ~= "table" then return nil end
 local lp = game:GetService("Players").LocalPlayer
-
 for _, connection in ipairs(connections) do
 	local fn = connection.Function
-
 	if type(fn) == "function" then
 		if type(getfenv) == "function" then
 			local okEnv, env = pcall(getfenv, fn)
-
 			if okEnv and type(env) == "table" then
-				local globalEnv = rawget(env, "_G")
-				local did = type(globalEnv) == "table" and rawget(globalEnv, "did2") or nil
-
+				local globalEnv = rawget(env, "_G"); local did = type(globalEnv) == "table" and rawget(globalEnv, "did2") or nil
 				if isAlive(did) then
-					parryRemote = did
-					parryRemoteSource = "phantomballz:getfenv:_G.did2"
-					remoteState = "captured"
-					captureRemote(did)
+					parryRemote = did; parryRemoteSource = "phantomballz:getfenv:_G.did2"; remoteState = "captured"; captureRemote(did)
 					return did
 				end
 			end
 		end
-
 		if debug and type(debug.getupvalues) == "function" then
 			local okUps, upvalues = pcall(debug.getupvalues, fn)
-
 			if okUps and type(upvalues) == "table" then
 				for _, value in pairs(upvalues) do
 					if
@@ -278,12 +240,8 @@ for _, connection in ipairs(connections) do
 						and rawget(value, "BaseDistance") == 8.5
 					then
 						local did = rawget(value, "did")
-
 						if isAlive(did) then
-							parryRemote = did
-							parryRemoteSource = "phantomballz:getupvalues:did"
-							remoteState = "captured"
-							captureRemote(did)
+							parryRemote = did; parryRemoteSource = "phantomballz:getupvalues:did"; remoteState = "captured"; captureRemote(did)
 							return did
 						end
 					end
@@ -292,35 +250,23 @@ for _, connection in ipairs(connections) do
 		end
 	end
 end
-
 return nil
-
 end
 
 -- payload
 local function payloadFor(flag)
 local value = flag == 2 and "\x02" or "\x01"
-
-if type(buffer) == "table" and type(buffer.fromstring) == "function" then
-	return buffer.fromstring(value)
-end
-
+if type(buffer) == "table" and type(buffer.fromstring) == "function" then return buffer.fromstring(value) end
 return value
-
 end
-
 function Remote.setParryRemote(remote)
 if not isAlive(remote) then return false end
-
 parryRemote = remote
 parryRemoteSource = "external"
 parryInitialized = false
 remoteState = "captured"
-
 captureRemote(remote)
-
 return true
-
 end
 
 -- setup
@@ -328,73 +274,37 @@ function Remote.setup(deps)
 if type(deps) ~= "table" or not deps.Utils then
 return false, "dependência ausente: Utils"
 end
-
-	Utils = deps.Utils
-	captureEnabled = deps.captureDiagnostics == true
-
-	remoteState = "phantomballz"
-
-	return true
-
+	Utils = deps.Utils; captureEnabled = deps.captureDiagnostics == true; remoteState = "phantomballz"; return true
 end
 
 -- parry
 function Remote.fireParry(flag)
 local remote = resolvePhantomBallzRemote()
-
-if not remote then
-	return false
-end
-
+if not remote then return false end
 local ok = pcall(function()
 	remote:FireServer(payloadFor(flag))
 end)
-
-if not ok then
-	parryRemote = nil
-	parryInitialized = false
-	remoteState = "lost"
-end
-
+if not ok then parryRemote = nil; parryInitialized = false; remoteState = "lost" end
 return ok
-
 end
-
 function Remote.initParry()
 local remote = resolvePhantomBallzRemote()
-
-if not remote then
-	return false
-end
-
-if parryInitialized then
-	return true
-end
-
+if not remote then return false end
+if parryInitialized then return true end
 local ok = pcall(function()
 	remote:FireServer(payloadFor(2))
 end)
-
 parryInitialized = ok
-
-if ok then
-	remoteState = "initialized"
-end
-
+if ok then remoteState = "initialized" end
 return ok
-
 end
-
 function Remote.getRemote()
 if not isAlive(parryRemote) then
 parryRemote = nil
 parryInitialized = false
 end
-
 return resolvePhantomBallzRemote()
-
 end
-
 function Remote.getStatus()
 return {
 schema = Utils.apiVersion(),
@@ -405,119 +315,65 @@ hasBallSync = ballSyncConnection ~= nil and ballSyncConnection.Connected == true
 storage = getStorageStatus(),
 }
 end
-
 local function locateBallSync()
 local remotes = Utils.getReplicatedStorage():FindFirstChild("Remotes")
 local candidate = remotes and remotes:FindFirstChild("BallSyncData")
-
 return candidate and candidate:IsA("RemoteEvent") and candidate or nil
-
 end
-
 local function disconnectBallSync()
 if ballSyncConnection then
 pcall(function()
 ballSyncConnection:Disconnect()
 end)
-
-	if Utils and Utils.untrackGlobal then
-		Utils.untrackGlobal(ballSyncConnection)
-	end
+	if Utils and Utils.untrackGlobal then Utils.untrackGlobal(ballSyncConnection) end
 end
-
 ballSyncConnection = nil
 ballSyncRemote = nil
-
 end
-
 function Remote.bindBallSync(handler)
 if type(handler) ~= "function" then
 return false
 end
-
 local candidate = locateBallSync()
-
 if not candidate then
-	if ballSyncRemote and not isAlive(ballSyncRemote) then
-		disconnectBallSync()
-	end
-
+	if ballSyncRemote and not isAlive(ballSyncRemote) then disconnectBallSync() end
 	return ballSyncConnection ~= nil and ballSyncConnection.Connected
 end
-
-if ballSyncConnection and ballSyncConnection.Connected and ballSyncRemote == candidate then
-	return true
-end
-
+if ballSyncConnection and ballSyncConnection.Connected and ballSyncRemote == candidate then return true end
 disconnectBallSync()
-
 local ok, connection = pcall(function()
 	return candidate.OnClientEvent:Connect(handler)
 end)
-
-if not ok or not connection then
-	ballSyncConnection = nil
-	ballSyncRemote = nil
-	return false
-end
-
+if not ok or not connection then ballSyncConnection = nil; ballSyncRemote = nil; return false end
 ballSyncConnection = connection
 ballSyncRemote = candidate
-
-if Utils then
-	Utils.trackGlobal(ballSyncConnection)
-end
-
+if Utils then Utils.trackGlobal(ballSyncConnection) end
 return true
-
 end
 
 -- maintenance
 function Remote.startMaintenance(options)
 options = type(options) == "table" and options or {}
-
 local onBallSync = options.onBallSync
 local isActive = options.isActive
-
-if type(isActive) ~= "function" then
-	return false
-end
-
+if type(isActive) ~= "function" then return false end
 maintenanceGeneration = maintenanceGeneration + 1
-
 local currentGeneration = maintenanceGeneration
-
 task.spawn(function()
 	while currentGeneration == maintenanceGeneration and isActive() do
 		local remote = Remote.getRemote()
-
-		if remote and not isAlive(remote) then
-			parryRemote = nil
-			parryInitialized = false
-			remote = nil
-		end
-
-		if remote then
-			Remote.initParry()
-		end
-
-		if type(onBallSync) == "function" then
-			Remote.bindBallSync(onBallSync)
-		end
-
+		if remote and not isAlive(remote) then parryRemote = nil; parryInitialized = false; remote = nil end
+		if remote then Remote.initParry() end
+		if type(onBallSync) == "function" then Remote.bindBallSync(onBallSync) end
 		task.wait(remote and 3 or 1)
 	end
 end)
-
 return true
-
 end
-
 function Remote.stopMaintenance()
 maintenanceGeneration = maintenanceGeneration + 1
 disconnectBallSync()
 end
-
 Remote.__contract = {
 requires = { Utils = "utils" },
 ballSync = true,
