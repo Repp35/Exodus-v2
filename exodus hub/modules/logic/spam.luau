@@ -32,6 +32,7 @@ local generation = 0
 local wasActive = false
 local accumulator = 0
 local cpfFps
+local cpfClickCarry = 0
 local lastMode
 local lastRate
 local chainRunning = false
@@ -78,7 +79,7 @@ local function clearCPSScheduler()
 	cpsNextClickAt = 0; cpsScheduledRate = 0; cpsSchedulerGeneration = generation
 end
 local function resetRuntime()
-	accumulator = 0; cpfFps = nil; lastMode = nil; lastRate = nil
+	accumulator = 0; cpfFps = nil; cpfClickCarry = 0; lastMode = nil; lastRate = nil
 	chainRunning = false; clearClickScheduler(); clearCPSScheduler(); lastTargetSwitchTimestampMs = 0
 	lastTargetResetToken = nil; boostedPartners = {}; Scheduler.cpfFps = 0; Scheduler.cpfClicks = 0
 	Scheduler.cpfCompensation = false; Scheduler.targetSwitchBoost = false; Scheduler.targetSwitchBoostUntil = 0; Scheduler.targetSwitchIntervalMs = 0
@@ -203,8 +204,11 @@ end
 
 -- CPF
 local function calculateCPFClicks(rate)
-	if rate <= 0 then return 0 end
-	return math_max(1, math_floor(rate))
+	if rate <= 0 then cpfClickCarry = 0; return 0 end
+	local budget = rate + cpfClickCarry
+	local clicks = math_floor(budget)
+	cpfClickCarry = budget - clicks
+	return clicks
 end
 local function scheduleCPF(rate, dt)
 	if rate <= 0 then Scheduler.cpfClicks = 0; clearClickScheduler(); return end
@@ -350,12 +354,12 @@ local function tick(dt)
 		return
 	end
 	if mode ~= lastMode then
-		lastMode = mode; lastRate = nil; accumulator = 0; clearClickScheduler()
+		lastMode = mode; lastRate = nil; accumulator = 0; cpfClickCarry = 0; clearClickScheduler()
 		clearCPSSchedulerState()
 	end
 	if rate ~= lastRate then
 		lastRate = rate
-		if mode == "CPF" then clearClickScheduler()
+		if mode == "CPF" then cpfClickCarry = 0; clearClickScheduler()
 		else accumulator = 0; clearCPSSchedulerState() end
 	end
 

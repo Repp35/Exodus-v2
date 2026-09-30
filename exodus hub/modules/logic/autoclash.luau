@@ -189,6 +189,10 @@ end
 local function getSnapshotPosition(snapshot)
 	local position = snapshot and snapshot.position; return typeof(position) == "Vector3" and position or nil
 end
+local function isSnapshotTargeted(snapshot)
+	return snapshot ~= nil
+		and (snapshot.targeted == true or normalizeTarget(snapshot.targetId) == R.localUserId)
+end
 local function getDataPosition(data)
 	local position = data and data.RealPosition; return typeof(position) == "Vector3" and position or nil
 end
@@ -326,7 +330,8 @@ local function resetRuntime(reason)
 	resetDeactivationState(); R.lastGate = "detached"; setPhase("detached", reason or "reset")
 end
 local function updateTtiEma(t, root, snapshot)
-	local position = getSnapshotPosition(snapshot); local ball = snapshot and snapshot.ball; local velocity = ball and ball.AssemblyLinearVelocity
+	local position = getSnapshotPosition(snapshot); local ball = snapshot and snapshot.ball; local velocity = snapshot and snapshot.velocity
+	if typeof(velocity) ~= "Vector3" then velocity = ball and ball.AssemblyLinearVelocity end
 	if not position or typeof(velocity) ~= "Vector3" then R.ttiEma = nil; return end
 	local dx = root.X - position.X; local dz = root.Z - position.Z; local distSq = dx * dx + dz * dz
 	if distSq <= 0.000001 then R.ttiEma = nil; return end
@@ -349,14 +354,15 @@ local function canReactivate(t)
 end
 local function shouldActivate(snapshot, t)
 	if not snapshot or not snapshot.ball or not snapshot.ball.Parent then R.lastGate = "no_ball"; return false end
-	if snapshot.targeted ~= true then R.lastGate = "target_not_me"; return false end
+	if not isSnapshotTargeted(snapshot) then R.lastGate = "target_not_me"; return false end
 	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
 	if not root then R.lastGate = "no_root"; return false end
 	if not position or R.parryRadius <= 0 then R.lastGate = "no_effective_radius"; return false end
 	local dx = root.X - position.X; local dy = root.Y - position.Y; local dz = root.Z - position.Z; local distanceSq = dx * dx + dy * dy + dz * dz
 	local effectiveRadius = getActivationRadius(t)
 	if distanceSq > effectiveRadius * effectiveRadius then R.lastGate = "outside_effective_radius"; return false end
-	local velocity = snapshot.ball.AssemblyLinearVelocity
+	local velocity = snapshot.velocity
+	if typeof(velocity) ~= "Vector3" then velocity = snapshot.ball.AssemblyLinearVelocity end
 	if typeof(velocity) == "Vector3" then
 		local horizontalDistSq = dx * dx + dz * dz
 		if horizontalDistSq > 0.000001 then
@@ -371,7 +377,7 @@ local function shouldActivate(snapshot, t)
 	R.lastGate = "activation_ready"; return true
 end
 local function tryReturnActivate(snapshot, t)
-	if not snapshot or snapshot.targeted ~= true then R.lastGate = "act_not_targeted"; return false end
+	if not isSnapshotTargeted(snapshot) then R.lastGate = "act_not_targeted"; return false end
 	if not R.returnPending then R.lastGate = "act_no_return_pending"; return false end
 	if R.returnExpiresAt <= 0 or t >= R.returnExpiresAt then R.lastGate = "act_return_expired"; return false end
 	return canReactivate(t) and shouldActivate(snapshot, t)
@@ -403,7 +409,7 @@ function Deactivation.confirm(t, reason)
 	Deactivation.clearConfirmation(); R.lastGate = reason; return true
 end
 function Deactivation.direction(t, snapshot, speed)
-	if snapshot.targeted == true then R.lastGate = "deact_direction_targeted"; return false end
+	if isSnapshotTargeted(snapshot) then R.lastGate = "deact_direction_targeted"; return false end
 	local radius = AutoParry.getRadius("geometry", 0, speed); local parryRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil; local root = getRootPosition()
 	local position = getSnapshotPosition(snapshot)
 	if
@@ -434,7 +440,8 @@ function Deactivation.direction(t, snapshot, speed)
 	local directionMax = baseMax
 	if R.clashIntervalEma and R.clashIntervalEmaSamples >= T.CLASH_INTERVAL_EMA_MIN_SAMPLES then directionMax = math.max(R.clashIntervalEma * T.CLASH_INTERVAL_DIRECTION_FACTOR, baseMax) end
 	if t - R.lastDirectionSwitchAt <= directionMax then return false end
-	local ball = snapshot.ball; local velocity = ball and ball.AssemblyLinearVelocity
+	local ball = snapshot.ball; local velocity = snapshot.velocity
+	if typeof(velocity) ~= "Vector3" then velocity = ball and ball.AssemblyLinearVelocity end
 	if typeof(velocity) == "Vector3" then
 		local dx = root.X - position.X; local dz = root.Z - position.Z; local distSq = dx * dx + dz * dz
 		if distSq > 0.000001 then
@@ -666,9 +673,10 @@ local function heartbeatStep(generation, character, root)
 	if R.returnExpiresAt > 0 and t >= R.returnExpiresAt then clearReturnState(); R.lastGate = "return_expired" end
 	local getSnapshot = FN.getSnapshot; local isSnapshotValid = FN.isSnapshotValid
 	if not getSnapshot or not isSnapshotValid then R.lastGate = "no_gameinfo"; return end
-	local snapshot = getSnapshot(nil, t)
-	if type(snapshot) ~= "table" then R.lastGate = "snapshot_error"; return end
-	if isSnapshotValid(snapshot, t) ~= true then return end
+		local snapshotCallOk, snapshot = pcall(getSnapshot, nil, t)
+		if not snapshotCallOk or type(snapshot) ~= "table" then R.lastGate = "snapshot_error"; return end
+		local validCallOk, snapshotValid = pcall(isSnapshotValid, snapshot, t)
+		if not validCallOk or snapshotValid ~= true then R.lastGate = "snapshot_invalid"; return end
 	local target = normalizeTarget(snapshot.targetId)
 	if target then R.lastTarget = target end
 	evaluateClash(t, snapshot)

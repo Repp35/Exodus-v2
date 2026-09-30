@@ -935,19 +935,17 @@ local function onHeartbeat(
 		samplePing()
 	end
 
-	local snapshot =
-		getSnapshotRef(
-			nil,
-			timeNow
-		)
+	local snapshotCallOk, snapshot = pcall(getSnapshotRef, nil, timeNow)
 
 	if
-		type(snapshot) ~= "table"
-		or not isSnapshotValid(
-			snapshot,
-			timeNow
-		)
+		not snapshotCallOk
+		or type(snapshot) ~= "table"
 	then
+		resetParryLock()
+		return
+	end
+	local validCallOk, snapshotValid = pcall(isSnapshotValid, snapshot, timeNow)
+	if not validCallOk or snapshotValid ~= true then
 		resetParryLock()
 		return
 	end
@@ -962,6 +960,7 @@ local function onHeartbeat(
 
 	local isMe =
 		targetId == Runtime.localUserId
+			or snapshot.targeted == true
 
 	Runtime.targetId = targetId
 	Runtime.targetKnown =

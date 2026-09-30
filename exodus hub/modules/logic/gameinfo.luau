@@ -620,6 +620,9 @@ end
 -- [[ target ]]
 
 local function normalizeTargetId(value)
+	if typeof(value) == "Instance" and value:IsA("Player") then
+		return tonumber(value.UserId)
+	end
 	if isFiniteNumber(value) then
 		return value > 0 and value or nil
 	end
@@ -654,7 +657,8 @@ local function resolveTargetId(data)
 	end
 
 	if attribute ~= nil then
-		return normalizeTargetId(attribute) or -1
+		local normalizedAttribute = normalizeTargetId(attribute)
+		if normalizedAttribute then return normalizedAttribute end
 	end
 
 	local highlighted =
@@ -909,6 +913,10 @@ local function getSnapshot(_, time)
 	local syncFresh =
 		rawSyncAge ~= nil
 		and rawSyncAge <= T.SYNC_FRESH_TIME
+	local localPlayer = Players and Players.LocalPlayer
+	local localUserId = localPlayer and tonumber(localPlayer.UserId)
+	local targetId = normalizeTargetId(State.target)
+	local targeted = localUserId ~= nil and targetId ~= nil and targetId == localUserId
 
 	local approachingSpeed
 
@@ -973,7 +981,8 @@ local function getSnapshot(_, time)
 		approachingSpeed =
 			approachingSpeed,
 
-		targetId = State.target,
+		targetId = targetId or -1,
+		targeted = targeted,
 		lastTarget = State.target,
 
 		teleported =
