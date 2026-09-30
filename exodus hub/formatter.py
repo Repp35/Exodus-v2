@@ -20,6 +20,7 @@ SECTION_PATTERNS = (
 )
 SECTION_PART_RE = re.compile(r"[/-]")
 LOCAL_TABLE_RE = re.compile(r"^\s*(?:local\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{")
+LONG_COMMENT_RE = re.compile(r"--\[(=*)\[.*?\]\1\]", re.DOTALL)
 
 
 def normalize(value: str) -> str:
@@ -93,10 +94,17 @@ def strip_inline_comment(line: str) -> str:
     return "".join(result).rstrip()
 
 
+def strip_long_comments(source: str) -> str:
+    def blank(match: re.Match[str]) -> str:
+        return "".join("\n" if char == "\n" else " " for char in match.group(0))
+
+    return LONG_COMMENT_RE.sub(blank, source)
+
+
 def collect_lines(source: str) -> list[str]:
     result = []
 
-    for line in source.splitlines():
+    for line in strip_long_comments(source).splitlines():
         stripped = line.strip()
 
         if stripped.startswith("--"):
