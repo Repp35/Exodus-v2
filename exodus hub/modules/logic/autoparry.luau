@@ -6,6 +6,7 @@ local Remote, GameInfo, Utils, StatsService
 -- tuning
 local Tuning = {
         DEFLECT_RADIUS = 8.5,
+        MIN_BALL_SPEED = 16,
         RES_PER_PARRY = 0.225,
         RES_CAP_STUDS = 32,
         HITBOX_OWN_WINDOW = 0.5,
@@ -326,7 +327,7 @@ local function isBallInParryWindow(time)
         local speed = tonumber(snapshot.speed)
         if
                 not speed
-                or speed <= 5
+                or speed < Tuning.MIN_BALL_SPEED
                 or not Utils.isFiniteNumber(speed)
         then
                 return false, false
@@ -601,7 +602,7 @@ local function onHeartbeat(
                 tonumber(snapshot.speed)
         if
                 not speed
-                or speed <= 5
+                or speed < Tuning.MIN_BALL_SPEED
                 or not finite(speed)
         then
                 return
@@ -658,7 +659,7 @@ local function onHeartbeat(
         if typeof(velocity) ~= "Vector3" then velocity = Vector3.zero end
         local offset = root.Position - position
         local approaching = offset.Magnitude > 0 and velocity:Dot(offset) > 0
-        if not approaching or speed <= 5 or timing.distance > timing.parryRadius then return end
+        if not approaching or speed < Tuning.MIN_BALL_SPEED or timing.distance > timing.parryRadius then return end
         if requestParry(ball) then ParryLock.armed = false end
 end
 
