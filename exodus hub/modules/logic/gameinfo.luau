@@ -901,151 +901,58 @@ end
 
 local function getSnapshot(_, time)
 	time = resolveTime(time)
-	if State.snapshotCache
-		and time >= State.snapshotCacheAt
-		and time - State.snapshotCacheAt < T.SNAPSHOT_CACHE_WINDOW
-	then
-		return State.snapshotCache
-	end
 
-	-- Poll sync every snapshot.
-	-- This is intentionally lightweight: no table clone and no
-	-- full-table comparison.
-	if refreshDecodedSync then
+	-- Um snapshot novo por chamada: sync atual + leitura única da bola.
+	-- Não reutiliza, prevê ou invalida snapshots anteriores.
+	local syncOk =
 		refreshDecodedSync(time, false)
+	if syncOk ~= true then
+		return nil
 	end
 
-	local ball = getBall()
-	local ballValid = isBall(ball)
-
-	local rawVelocity
-	local rawSpeed = 0
-	local rawPosition
-
-	if ballValid then
-		rawVelocity = getAssemblyVelocity(ball)
-
-		rawSpeed =
-			ballSpeed(
-				ball,
-				time,
-				rawVelocity
-			)
-
-		rawPosition =
-			ballPosition(
-				ball,
-				time,
-				rawVelocity
-			)
-	end
-
-	local rawSyncAge =
-		State.lastSyncAt > 0
-		and math.max(
-			0,
-			time - State.lastSyncAt
-		)
-		or nil
-
-	local syncFresh =
-		rawSyncAge ~= nil
-		and rawSyncAge <= T.SYNC_FRESH_TIME
 	local syncData = State.lastSyncData
-	local targetId = resolveTargetId(syncData)
-	local targeted = isLocalTarget(syncData)
-	State.target = targetId
-
-	local approachingSpeed
-
-	if rawPosition and rawVelocity then
-		local root = getLocalRoot()
-
-		if root and root.Parent ~= nil then
-			local direction =
-				root.Position - rawPosition
-
-			local magnitude =
-				direction.Magnitude
-
-			if magnitude > 0 then
-				approachingSpeed =
-					rawVelocity:Dot(
-						direction / magnitude
-					)
-			end
-		end
+	if type(syncData) ~= "table" then
+		return nil
 	end
 
-	local recentlyTeleported =
-		State.teleported
-		and time - State.teleportedAt
-			< T.TELEPORT_EVENT_TIME
+	local ball = State.ball
+	if not isBall(ball) then
+		return nil
+	end
 
-	local snapshot = {
+	local position = ball.Position
+	local velocity = ball.AssemblyLinearVelocity
+	local speed = State.speed
+
+	if speed <= 0 then
+		speed = velocity.Magnitude
+	end
+
+	return {
 		schema = T.SNAPSHOT_SCHEMA,
-
 		generatedAt = time,
-
-		valid =
-			ballValid
-			and rawPosition ~= nil,
-
-		ball =
-			ballValid
-			and ball
-			or nil,
-
-		ballValid = ballValid,
-
-		position =
-			ballValid
-			and rawPosition
-			or nil,
-
-		velocity =
-			ballValid
-			and rawVelocity
-			or nil,
-
-		speed =
-			ballValid
-			and rawSpeed
-			or nil,
-
+		valid = true,
+		ball = ball,
+		ballValid = true,
+		position = position,
+		velocity = velocity,
+		speed = speed,
 		maxSpeed = State.maxSpeed,
 		acceleration = State.acceleration,
-
-		approachingSpeed =
-			approachingSpeed,
-
-		targetId = targetId or -1,
-		targeted = targeted,
+		approachingSpeed = nil,
+		targetId = resolveTargetId(syncData),
+		targeted = isLocalTarget(syncData),
 		lastTarget = State.target,
-
-		teleported =
-			recentlyTeleported,
-
-		grace = State.grace,
-		oldGrace = State.oldGrace,
-
-		resetting =
-			State.grace
-			or State.oldGrace
-			or recentlyTeleported,
-
-		syncAt =
-			State.lastSyncAt > 0
-			and State.lastSyncAt
-			or nil,
-
-		syncAge = rawSyncAge,
-		syncFresh = syncFresh,
+		teleported = syncData.Teleported == true,
+		grace = syncData.Grace == true,
+		oldGrace = syncData.OldGrace == true,
+		resetting = false,
+		syncAt = State.lastSyncAt,
+		syncAge = nil,
+		syncFresh = true,
 	}
-	State.snapshotCache = snapshot
-	State.snapshotCacheAt = time
-	return snapshot
 end
+
 
 
 -- [[ ability ]]
@@ -1320,10 +1227,13 @@ end
 
 function GameInfo.getSyncData()
 	if refreshDecodedSync then
-		refreshDecodedSync(
+		local syncOk = refreshDecodedSync(
 			now(),
 			false
 		)
+		if syncOk ~= true then
+			return nil
+		end
 	end
 
 	if not State.lastSyncData then
@@ -1337,10 +1247,13 @@ end
 
 function GameInfo.getTargetId()
 	if refreshDecodedSync then
-		refreshDecodedSync(
+		local syncOk = refreshDecodedSync(
 			now(),
 			false
 		)
+		if syncOk ~= true then
+			return -1
+		end
 	end
 
 	return resolveTargetId(
@@ -1349,139 +1262,14 @@ function GameInfo.getTargetId()
 end
 
 function GameInfo.getStatus()
-	local snapshot =
-		getSnapshot(
-			nil,
-			now()
-		)
-
-	local validReason
-
-	if not snapshot.valid then
-		validReason =
-			snapshot.ballValid
-			and "ball_position_unavailable"
-			or "ball_not_found_or_not_a_basepart"
-	end
-
-	if
-		validReason
-		and validReason ~= lastReportedIssue
-	then
-		lastReportedIssue = validReason
-
-		if type(Utils.recordError)
-			== "function"
-		then
-			pcall(
-				Utils.recordError,
-				"GameInfo",
-				validReason
-					.. "; provider="
-					.. tostring(
-						gameInfoProviderStatus
-					)
-			)
-		end
-	elseif not validReason then
-		lastReportedIssue = nil
-	end
-
-	local ballName
-	local ballClass
-	local ballPath
-
-	if snapshot.ball then
-		pcall(function()
-			ballName =
-				snapshot.ball.Name
-
-			ballClass =
-				snapshot.ball.ClassName
-
-			ballPath =
-				snapshot.ball:GetFullName()
-		end)
-	end
-
-	local syncReason
-
-	if not snapshot.syncFresh then
-		syncReason =
-			"BallReplicator.syncData ausente ou sem atualização recente"
-	end
-
+	local snapshot = getSnapshot(nil, now())
 	return {
 		schema = Utils.apiVersion(),
-
-		snapshotSchema =
-			T.SNAPSHOT_SCHEMA,
-
-		generatedAt =
-			snapshot.generatedAt,
-
-		valid =
-			snapshot.valid == true,
-
-		validReason =
-			validReason,
-
-		ballValid =
-			snapshot.ballValid == true,
-
-		ballSource =
-			ballSource,
-
-		ballName =
-			ballName,
-
-		ballClass =
-			ballClass,
-
-		ballPath =
-			ballPath,
-
-		providerStatus =
-			gameInfoProviderStatus,
-
-		providerError =
-			gameInfoProviderError,
-
-		syncFresh =
-			snapshot.syncFresh == true,
-
-		syncAge =
-			snapshot.syncAge,
-
-		syncReason =
-			syncReason,
-
-		syncPayloadType =
-			State.syncPayloadType,
-
-		syncEventAt =
-			State.syncEventAt,
-
-		syncProviderStatus =
-			ballReplicatorStatus,
-
-		syncProviderError =
-			ballReplicatorError,
-
-		speed =
-			snapshot.speed,
-
-		maxSpeed =
-			snapshot.maxSpeed,
-
-		acceleration =
-			snapshot.acceleration,
-
-		targetId =
-			snapshot.targetId,
-
-		teleported =
-			snapshot.teleported,
+		generatedAt = now(),
+		available = type(snapshot) == "table",
+		targetId = snapshot and snapshot.targetId or -1,
+		targeted = snapshot and snapshot.targeted == true or false,
+		speed = snapshot and snapshot.speed or 0,
 	}
 end
 
@@ -1489,53 +1277,7 @@ function GameInfo.isSnapshotValid(
 	snapshot,
 	time
 )
-	if type(snapshot) ~= "table" then
-		return false
-	end
-
-	if snapshot.schema ~= T.SNAPSHOT_SCHEMA then
-		return false
-	end
-
-	if snapshot.valid ~= true then
-		return false
-	end
-
-	if snapshot.ballValid ~= true then
-		return false
-	end
-
-	if not isBall(snapshot.ball) then
-		return false
-	end
-
-	if typeof(snapshot.position)
-		~= "Vector3"
-	then
-		return false
-	end
-
-	if not isNonNegativeFiniteNumber(
-		snapshot.speed
-	) then
-		return false
-	end
-
-	if not isFiniteNumber(
-		snapshot.generatedAt
-	) then
-		return false
-	end
-
-	time = resolveTime(time)
-
-	local age =
-		time - snapshot.generatedAt
-
-	return
-		age >= 0
-		and age <= T.SNAPSHOT_LIFETIME
-		and snapshot.ball.Parent ~= nil
+	return type(snapshot) == "table"
 end
 
 function GameInfo.applySync(data)
