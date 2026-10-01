@@ -18,8 +18,9 @@ local Tuning = {
 	WINDOW_LOW_SPEED = 16,
 	WINDOW_LOW = 0.400,
 	WINDOW_REFERENCE_SPEED = 600,
-	WINDOW_REFERENCE = 0.880,
-	WINDOW_FACTOR = 0.50,
+	WINDOW_MAX = 0.840,
+	WINDOW_REFERENCE = 0.840,
+	WINDOW_FACTOR = 0.45,
 
 	PING_WINDOW_FACTOR = 1,
 	PING_WINDOW_CAP = 0.400,
@@ -395,11 +396,14 @@ local function computeDeflectWindow(speed)
 		return Tuning.WINDOW_LOW
 	end
 
-	return math_max(
-		Tuning.WINDOW_LOW
-			+ (raw - Tuning.WINDOW_LOW_SPEED)
-			* WINDOW_SLOPE,
-		0
+	return math_min(
+		math_max(
+			Tuning.WINDOW_LOW
+				+ (raw - Tuning.WINDOW_LOW_SPEED)
+				* WINDOW_SLOPE,
+			0
+		),
+		Tuning.WINDOW_MAX
 	)
 end
 
@@ -986,6 +990,18 @@ local function onHeartbeat(
 
 	local speed =
 		tonumber(snapshot.speed)
+	local velocity =
+		snapshot.velocity
+
+	-- O PhantomBallz usa a velocidade instantânea da bola. O GameInfo
+	-- normalmente fornece a velocidade sincronizada, mas ela pode ficar
+	-- abaixo da velocidade física durante uma aceleração.
+	if typeof(velocity) == "Vector3" then
+		speed = math_max(
+			speed or 0,
+			velocity.Magnitude
+		)
+	end
 
 	if
 		not speed
@@ -995,10 +1011,13 @@ local function onHeartbeat(
 		return
 	end
 
-	local position =
-		snapshot.position
+	local position
+	local positionCallOk =
+		pcall(function()
+			position = ball.Position
+		end)
 
-	if typeof(position) ~= "Vector3" then
+	if not positionCallOk or typeof(position) ~= "Vector3" then
 		return
 	end
 
@@ -1331,8 +1350,12 @@ local function bindCharacter(character)
 	Runtime.isFiniteNumber =
 		Utils.isFiniteNumber
 
+	local frameSignal =
+		runService.PostSimulation
+		or runService.Heartbeat
+
 	local heartbeatConnection =
-		runService.Heartbeat:Connect(
+		frameSignal:Connect(
 			function(dt)
 				if
 					generation ~= Runtime.generation
