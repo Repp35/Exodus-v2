@@ -955,22 +955,19 @@ local function onHeartbeat(
 		return
 	end
 
-	local targetId =
-		tonumber(snapshot.targetId) or -1
-
-	local isMe =
-		targetId == Runtime.localUserId
-			or snapshot.targeted == true
+	-- O GameInfo já contém a resolução de alvo do PhantomBallz.
+	local targeted = snapshot.targeted == true
+	local targetId = tonumber(snapshot.targetId) or -1
 
 	Runtime.targetId = targetId
-	Runtime.targetKnown =
-		snapshot.targetId ~= nil
-
+	Runtime.targetKnown = snapshot.targetId ~= nil
 	Runtime.lastTarget = targetId
 
-	updateParryLock(isMe)
+	-- Mesma trava do PhantomBallz: desarma apenas depois de um parry
+	-- e rearma quando deixa de ser alvo ou quando volta a ser alvo.
+	updateParryLock(targeted)
 
-	if not isMe then
+	if not targeted then
 		setPhase(
 			PHASE_WAITING,
 			"not_targeted"
