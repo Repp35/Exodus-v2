@@ -16,11 +16,10 @@ local Tuning = {
 	HITBOX_GAP = 0.4,
 
 	WINDOW_LOW_SPEED = 16,
-	WINDOW_LOW = 0.400,
+	WINDOW_LOW = 0.200,
 	WINDOW_REFERENCE_SPEED = 600,
-	WINDOW_MAX = 0.840,
-	WINDOW_REFERENCE = 0.840,
-	WINDOW_FACTOR = 0.45,
+	WINDOW_REFERENCE = 0.820,
+	WINDOW_FACTOR = 0.5,
 
 	PING_WINDOW_FACTOR = 1,
 	PING_WINDOW_CAP = 0.400,
@@ -396,14 +395,11 @@ local function computeDeflectWindow(speed)
 		return Tuning.WINDOW_LOW
 	end
 
-	return math_min(
-		math_max(
-			Tuning.WINDOW_LOW
-				+ (raw - Tuning.WINDOW_LOW_SPEED)
-				* WINDOW_SLOPE,
-			0
-		),
-		Tuning.WINDOW_MAX
+	return math_max(
+		Tuning.WINDOW_LOW
+			+ (raw - Tuning.WINDOW_LOW_SPEED)
+			* WINDOW_SLOPE,
+		0
 	)
 end
 
