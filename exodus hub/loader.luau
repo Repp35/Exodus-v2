@@ -29,7 +29,7 @@ local MODULE_MANIFEST = {
 	{ name = "config", path = "modules/front/config.luau" },
 	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
 	{ name = "utils", path = "modules/logic/utils.luau" },
-	{ name = "antitamper", path = "security/antitamper.luau" },
+	{ name = "antitamper", path = "modules/security/antitamper.luau" },
 	{ name = "gameinfo", path = "modules/logic/gameinfo.luau" },
 	{ name = "remote", path = "modules/logic/remote.luau" },
 	{ name = "autoparry", path = "modules/logic/autoparry.luau" },
