@@ -3,408 +3,820 @@
 -- [[ spam ]]
 
 local Spam = {}
-local Remote, GameInfo, Utils, AutoParry, AutoClash
-local math_max = math.max
-local math_floor = math.floor
+
+local Remote
+local GameInfo
+local Utils
+local AutoParry
+local AutoClash
+
 local clock = os.clock
+local max = math.max
+local floor = math.floor
 
 -- tuning
 local T = {
 	DEFLECT_COOLDOWN_THRESHOLD = 0,
-	TARGET_SWITCH_BOOST_ENABLED = true,
-	TARGET_SWITCH_BOOST_MULTIPLIER = 1.5,
-	TARGET_SWITCH_BOOST_DURATION = 3,
-	TARGET_SWITCH_MIN_CPF = 10,
-	TARGET_SWITCH_THRESHOLD_CPS = 15,
-	TARGET_SWITCH_PING_FACTOR = 1 / 3,
+
 	SPAM_PARRY_RADIUS_GUARD = false,
 	SPAM_PARRY_WINDOW_FACTOR = 1.1,
-	CPS_RANDOM_MIN_MULTIPLIER = 1.0,
-	CPS_RANDOM_MAX_MULTIPLIER = 1.40,
-	CPS_RANDOM_PAUSE_CHANCE = 0.035,
-	CPS_RANDOM_PAUSE_MIN = 1.35,
-	CPS_RANDOM_PAUSE_MAX = 2.0,
 }
 
--- state
-local heartbeatConnection
+-- runtime
+local connection
 local generation = 0
 local wasActive = false
-local accumulator = 0
-local cpfFps
-local cpfClickCarry = 0
+
 local lastMode
 local lastRate
+
+-- CPF
+local cpfClicks = 0
+
+-- CPS
+local cpsInterval = 0
+local cpsNext = 0
+local cpsRate = 0
+local cpsGeneration = 0
+
+-- CHAIN
 local chainRunning = false
-local clickQueue = 0
-local clickAccumulator = 0
-local clickInterval = 0
-local cpsNextClickAt = 0
-local cpsScheduledRate = 0
-local cpsSchedulerGeneration = 0
-local lastTargetSwitchTimestampMs = 0
-local lastTargetResetToken
-local boostedPartners = {}
+
 local Scheduler = {
 	phase = "stopped",
+
 	lastRequestAt = 0,
 	lastError = nil,
+
 	lastCooldownAt = 0,
 	lastCooldownValue = 0,
+
 	lastErrorAt = 0,
+
 	cpfFps = 0,
 	cpfClicks = 0,
 	cpfCompensation = false,
-	targetSwitchBoost = false,
-	targetSwitchBoostUntil = 0,
-	targetSwitchIntervalMs = 0,
-	targetSwitchEffectiveIntervalMs = 0,
-	targetSwitchCps = 0,
+
 	parryRadiusGuard = false,
 	antiDashRadiusBypass = false,
 	parryRadiusTTI = 0,
 	parryRadiusLimit = 0,
 }
 
--- helpers
-local function getNow()
-	if Utils and type(Utils.now) == "function" then return Utils.now() end
+----------------------------------------------------------------
+-- time
+----------------------------------------------------------------
+
+local function now()
+	if Utils and type(Utils.now) == "function" then
+		return Utils.now()
+	end
+
 	return clock()
 end
-local function clearClickScheduler()
-	clickQueue = 0; clickAccumulator = 0; clickInterval = 0
+
+----------------------------------------------------------------
+-- state
+----------------------------------------------------------------
+
+local function clearCPS()
+	cpsInterval = 0
+	cpsNext = 0
+	cpsRate = 0
+	cpsGeneration = generation
 end
-local function clearCPSScheduler()
-	cpsNextClickAt = 0; cpsScheduledRate = 0; cpsSchedulerGeneration = generation
+
+local function clearRuntime()
+	lastMode = nil
+	lastRate = nil
+
+	cpfClicks = 0
+
+	clearCPS()
+
+	chainRunning = false
+
+	Scheduler.cpfFps = 0
+	Scheduler.cpfClicks = 0
+	Scheduler.cpfCompensation = false
+
+	Scheduler.parryRadiusGuard = false
+	Scheduler.antiDashRadiusBypass = false
+	Scheduler.parryRadiusTTI = 0
+	Scheduler.parryRadiusLimit = 0
 end
-local function resetRuntime()
-	accumulator = 0; cpfFps = nil; cpfClickCarry = 0; lastMode = nil
-	lastRate = nil; chainRunning = false; clearClickScheduler(); clearCPSScheduler()
-	lastTargetSwitchTimestampMs = 0; lastTargetResetToken = nil; boostedPartners = {}; Scheduler.cpfFps = 0
-	Scheduler.cpfClicks = 0; Scheduler.cpfCompensation = false; Scheduler.targetSwitchBoost = false; Scheduler.targetSwitchBoostUntil = 0
-	Scheduler.targetSwitchIntervalMs = 0; Scheduler.targetSwitchEffectiveIntervalMs = 0; Scheduler.targetSwitchCps = 0; Scheduler.parryRadiusGuard = false
-	Scheduler.antiDashRadiusBypass = false; Scheduler.parryRadiusTTI = 0; Scheduler.parryRadiusLimit = 0
-end
+
 local function invalidate(reason)
-	generation = generation + 1; Scheduler.phase = "stopped"; resetRuntime()
-	if wasActive and Utils and type(Utils.recordTransition) == "function" then Utils.recordTransition("Spam", "running", "stopped", reason or "invalidated") end
+	generation += 1
+
+	Scheduler.phase = "stopped"
+
+	clearRuntime()
+
+	if
+		wasActive
+		and Utils
+		and type(Utils.recordTransition) == "function"
+	then
+		Utils.recordTransition(
+			"Spam",
+			"running",
+			"stopped",
+			reason or "invalidated"
+		)
+	end
 end
+
+----------------------------------------------------------------
+-- active
+----------------------------------------------------------------
+
 local function isActive()
-	if not Utils or type(Utils.isActive) ~= "function" or type(Utils.isSpamActive) ~= "function" then return false end
+	if
+		not Utils
+		or type(Utils.isActive) ~= "function"
+		or type(Utils.isSpamActive) ~= "function"
+	then
+		return false
+	end
+
 	return Utils.isActive() and Utils.isSpamActive()
 end
+
 local function isRegularSpamActive()
-	if not Utils or type(Utils.isActive) ~= "function" or not Utils.isActive() then return false end
-	local manual = type(Utils.isManualSpamActive) == "function" and Utils.isManualSpamActive(); local automatic = type(Utils.isAutoSpamActive) == "function" and Utils.isAutoSpamActive()
+	if
+		not Utils
+		or type(Utils.isActive) ~= "function"
+		or not Utils.isActive()
+	then
+		return false
+	end
+
+	local manual =
+		type(Utils.isManualSpamActive) == "function"
+		and Utils.isManualSpamActive()
+
+	local automatic =
+		type(Utils.isAutoSpamActive) == "function"
+		and Utils.isAutoSpamActive()
+
 	return manual or automatic
 end
-local function readDeflectCooldown()
-	if not GameInfo or type(GameInfo.getDeflectCD) ~= "function" then return nil end
+
+----------------------------------------------------------------
+-- cooldown
+----------------------------------------------------------------
+
+local function getDeflectCooldown()
+	if
+		not GameInfo
+		or type(GameInfo.getDeflectCD) ~= "function"
+	then
+		return nil
+	end
+
 	local ok, value = pcall(GameInfo.getDeflectCD)
-	if not ok or type(value) ~= "number" or value ~= value or value == math.huge or value == -math.huge then return nil end
+
+	if
+		not ok
+		or type(value) ~= "number"
+		or value ~= value
+		or value == math.huge
+		or value == -math.huge
+	then
+		return nil
+	end
+
 	return value
 end
-local function isDashRadiusBypass()
-	if not AutoClash or type(AutoClash.getDashData) ~= "function" then Scheduler.antiDashRadiusBypass = false; return false end
-	local ok, data = pcall(AutoClash.getDashData)
-	if not ok or type(data) ~= "table" or data.dangerous ~= true then Scheduler.antiDashRadiusBypass = false; return false end
-	Scheduler.antiDashRadiusBypass = true; return true
-end
-local function checkParryRadiusGuard()
-	local now = getNow(); Scheduler.antiDashRadiusBypass = false
-	if not T.SPAM_PARRY_RADIUS_GUARD then Scheduler.parryRadiusGuard = false; Scheduler.parryRadiusTTI = 0; Scheduler.parryRadiusLimit = 0; return true end
-	if isDashRadiusBypass() then Scheduler.parryRadiusGuard = false; Scheduler.parryRadiusTTI = 0; Scheduler.parryRadiusLimit = 0; return true end
-	if not AutoParry or type(AutoParry.getTiming) ~= "function" or type(AutoParry.getRadius) ~= "function" then
-		Scheduler.parryRadiusGuard = false; Scheduler.parryRadiusTTI = 0; Scheduler.parryRadiusLimit = 0; return true
-	end
-	if not GameInfo or type(GameInfo.getSnapshot) ~= "function" then return true end
-	local okSnapshot, snapshot = pcall(GameInfo.getSnapshot, nil, now)
-	if not okSnapshot or type(snapshot) ~= "table" then return true end
-	local okTiming, timing = pcall(AutoParry.getTiming, snapshot, now)
-	if not okTiming or type(timing) ~= "table" then return true end
-	local distance = tonumber(timing.distance); local speed = tonumber(timing.speed); local okRadius, radiusStatus = pcall(AutoParry.getRadius, "geometry", T.SPAM_PARRY_WINDOW_FACTOR, speed)
-	local parryRadius = okRadius and type(radiusStatus) == "table" and tonumber(radiusStatus.fullRadius) or nil
+
+----------------------------------------------------------------
+-- radius guard
+----------------------------------------------------------------
+
+local function dashBypass()
 	if
-		not distance
-		or not parryRadius
-		or not speed
-		or distance ~= distance
-		or parryRadius ~= parryRadius
-		or speed ~= speed
-		or speed <= 0
+		not AutoClash
+		or type(AutoClash.getDashData) ~= "function"
+	then
+		Scheduler.antiDashRadiusBypass = false
+		return false
+	end
+
+	local ok, data = pcall(AutoClash.getDashData)
+
+	if
+		not ok
+		or type(data) ~= "table"
+		or data.dangerous ~= true
+	then
+		Scheduler.antiDashRadiusBypass = false
+		return false
+	end
+
+	Scheduler.antiDashRadiusBypass = true
+
+	return true
+end
+
+local function radiusAllowed()
+	Scheduler.antiDashRadiusBypass = false
+
+	if not T.SPAM_PARRY_RADIUS_GUARD then
+		Scheduler.parryRadiusGuard = false
+		Scheduler.parryRadiusTTI = 0
+		Scheduler.parryRadiusLimit = 0
+
+		return true
+	end
+
+	if dashBypass() then
+		Scheduler.parryRadiusGuard = false
+		Scheduler.parryRadiusTTI = 0
+		Scheduler.parryRadiusLimit = 0
+
+		return true
+	end
+
+	if
+		not AutoParry
+		or type(AutoParry.getTiming) ~= "function"
+		or type(AutoParry.getRadius) ~= "function"
+		or not GameInfo
+		or type(GameInfo.getSnapshot) ~= "function"
 	then
 		return true
 	end
+
+	local t = now()
+
+	local okSnapshot, snapshot =
+		pcall(GameInfo.getSnapshot, nil, t)
+
+	if
+		not okSnapshot
+		or type(snapshot) ~= "table"
+	then
+		return true
+	end
+
+	local okTiming, timing =
+		pcall(AutoParry.getTiming, snapshot, t)
+
+	if
+		not okTiming
+		or type(timing) ~= "table"
+	then
+		return true
+	end
+
+	local distance = tonumber(timing.distance)
+	local speed = tonumber(timing.speed)
+
+	if
+		not distance
+		or not speed
+		or speed <= 0
+		or distance ~= distance
+		or speed ~= speed
+	then
+		return true
+	end
+
+	local okRadius, radius =
+		pcall(
+			AutoParry.getRadius,
+			"geometry",
+			T.SPAM_PARRY_WINDOW_FACTOR,
+			speed
+		)
+
+	if
+		not okRadius
+		or type(radius) ~= "table"
+	then
+		return true
+	end
+
+	local fullRadius = tonumber(radius.fullRadius)
+
+	if
+		not fullRadius
+		or fullRadius ~= fullRadius
+	then
+		return true
+	end
+
 	Scheduler.parryRadiusLimit = 0
-	if distance <= parryRadius then Scheduler.parryRadiusGuard = false; Scheduler.parryRadiusTTI = 0; return true end
-	local distanceToParryRadius = distance - parryRadius; local tti = distanceToParryRadius / speed; Scheduler.parryRadiusGuard = true; Scheduler.parryRadiusTTI = tti
-	return false
-end
-local function requestParry()
-	local ok, result = pcall(Remote.fireParry, 1); local timestamp = getNow(); Scheduler.lastRequestAt = timestamp
-	if ok and result ~= false then Scheduler.lastError = nil; return true end
-	local errorMessage
-	if not ok then errorMessage = tostring(result)
-	else errorMessage = "Remote.fireParry retornou false" end
-	Scheduler.lastError = errorMessage
-	return false
-end
-local function queueClicks(clicks, interval)
-	if clicks <= 0 then return end
-	clickQueue = clickQueue + clicks
-	if interval > 0 then clickInterval = interval end
-end
-local function processClickQueue(dt)
-	if clickQueue <= 0 then clickAccumulator = 0; return end
-	if clickInterval <= 0 then
-		local currentGeneration = generation
-		while clickQueue > 0 do
-			if currentGeneration ~= generation or not isRegularSpamActive() or not checkParryRadiusGuard() then clearClickScheduler(); return end
-			requestParry(); clickQueue = clickQueue - 1
-		end
-		clickAccumulator = 0; return
+
+	if distance <= fullRadius then
+		Scheduler.parryRadiusGuard = false
+		Scheduler.parryRadiusTTI = 0
+
+		return true
 	end
-	clickAccumulator = clickAccumulator + dt; local currentGeneration = generation
-	while clickQueue > 0 and clickAccumulator >= clickInterval do
-		if currentGeneration ~= generation or not isRegularSpamActive() or not checkParryRadiusGuard() then clearClickScheduler(); return end
-		clickAccumulator = clickAccumulator - clickInterval; clickQueue = clickQueue - 1; requestParry()
-	end
-	if clickQueue <= 0 then clickAccumulator = math.min(clickAccumulator, clickInterval) end
+
+	local tti = (distance - fullRadius) / speed
+
+	Scheduler.parryRadiusGuard = true
+	Scheduler.parryRadiusTTI = tti
+
+	return false
 end
 
+----------------------------------------------------------------
+-- click
+----------------------------------------------------------------
+
+local function click()
+	if
+		not Remote
+		or type(Remote.fireParry) ~= "function"
+	then
+		Scheduler.lastError = "Remote.fireParry ausente"
+		Scheduler.lastErrorAt = now()
+
+		return false
+	end
+
+	local ok, result = pcall(Remote.fireParry, 1)
+
+	Scheduler.lastRequestAt = now()
+
+	if ok and result ~= false then
+		Scheduler.lastError = nil
+		return true
+	end
+
+	Scheduler.lastError =
+		ok
+		and "Remote.fireParry retornou false"
+		or tostring(result)
+
+	Scheduler.lastErrorAt = now()
+
+	return false
+end
+
+----------------------------------------------------------------
+-- config
+----------------------------------------------------------------
+
+local function getConfig()
+	if not Utils or type(Utils.getConfig) ~= "function" then
+		return "CPS", 1
+	end
+
+	local config = Utils.getConfig()
+
+	if type(config) ~= "table" then
+		return "CPS", 1
+	end
+
+	local mode =
+		config.SpamRateMode == "CPF"
+		and "CPF"
+		or config.SpamRateMode == "CHAIN"
+		and "CHAIN"
+		or "CPS"
+
+	local key = mode == "CPF" and "CPF" or "CPS"
+
+	local rate = tonumber(config[key]) or 0
+
+	return mode, max(rate, 0)
+end
+
+----------------------------------------------------------------
 -- CPF
-local function calculateCPFClicks(rate)
-	if rate <= 0 then cpfClickCarry = 0; return 0 end
-	local budget = rate + cpfClickCarry; local clicks = math_floor(budget); cpfClickCarry = budget - clicks; return clicks
-end
-local function scheduleCPF(rate, dt)
-	if rate <= 0 then Scheduler.cpfClicks = 0; clearClickScheduler(); return end
-	local fpsNow = 1 / dt; Scheduler.cpfFps = fpsNow; Scheduler.cpfCompensation = false; local clicks = calculateCPFClicks(rate)
-	Scheduler.cpfClicks = clicks; local interval = dt / clicks; queueClicks(clicks, interval)
+--
+-- Literal:
+--
+-- CPF 1 = 1 click/frame
+-- CPF 2 = 2 clicks/frame
+-- CPF 3 = 3 clicks/frame
+--
+-- Decimal values are floored because
+-- fractional clicks do not exist.
+----------------------------------------------------------------
+
+local function runCPF(rate, dt)
+	local clicks = floor(rate)
+
+	cpfClicks = clicks
+
+	Scheduler.cpfClicks = clicks
+	Scheduler.cpfFps = 1 / dt
+	Scheduler.cpfCompensation = false
+
+	if clicks <= 0 then
+		return
+	end
+
+	for _ = 1, clicks do
+		if not isRegularSpamActive() then
+			return
+		end
+
+		if not radiusAllowed() then
+			return
+		end
+
+		click()
+	end
 end
 
--- chain
-local function scheduleChain()
-	local currentGeneration = generation
-	while currentGeneration == generation and isRegularSpamActive() do
-		if not checkParryRadiusGuard() then invalidate("parry_radius_tti"); break end
-		requestParry(); task.wait()
+----------------------------------------------------------------
+-- CPS
+--
+-- Literal:
+--
+-- CPS 1  = 1 click / 1s
+-- CPS 2  = 1 click / 0.5s
+-- CPS 10 = 1 click / 0.1s
+-- CPS 20 = 1 click / 0.05s
+--
+-- Never catches up with multiple clicks.
+----------------------------------------------------------------
+
+local function runCPS(rate)
+	if rate <= 0 then
+		clearCPS()
+		return
 	end
+
+	local t = now()
+
+	if
+		cpsRate ~= rate
+		or cpsGeneration ~= generation
+		or cpsNext <= 0
+	then
+		cpsRate = rate
+		cpsInterval = 1 / rate
+		cpsGeneration = generation
+
+		cpsNext = t + cpsInterval
+
+		return
+	end
+
+	if t < cpsNext then
+		return
+	end
+
+	if not isRegularSpamActive() then
+		clearCPS()
+		return
+	end
+
+	if not radiusAllowed() then
+		clearCPS()
+		return
+	end
+
+	-- exactly one click
+	click()
+
+	-- resynchronize from now;
+	-- never dump accumulated clicks.
+	cpsNext = t + cpsInterval
+end
+
+----------------------------------------------------------------
+-- CHAIN
+----------------------------------------------------------------
+
+local function runChain()
+	local currentGeneration = generation
+
+	while
+		currentGeneration == generation
+		and isRegularSpamActive()
+	do
+		if not radiusAllowed() then
+			break
+		end
+
+		click()
+
+		task.wait()
+	end
+
 	chainRunning = false
 end
 
--- config
-local function getModeAndRate()
-	local config
-	if Utils and type(Utils.getConfig) == "function" then config = Utils.getConfig() end
-	if type(config) ~= "table" then return "CPS", 1 end
-	local configuredMode = config.SpamRateMode
-	local mode
-	if configuredMode == "CPF" then mode = "CPF"
-	elseif configuredMode == "CHAIN" then mode = "CHAIN"
-	else mode = "CPS" end
-	local rateKey = mode == "CPF" and "CPF" or "CPS"; local rate = tonumber(config[rateKey]) or 1; return mode, math_max(rate, 0)
-end
-local function getTargetSwitchRate()
-	if not AutoClash or type(AutoClash.getTargetSwitch) ~= "function" then return nil end
-	local ok, switch = pcall(AutoClash.getTargetSwitch)
-	if not ok or type(switch) ~= "table" then return nil end
-	local timestampMs = tonumber(switch.timestampMs); local intervalMs = tonumber(switch.intervalMs); local partnerId = tonumber(switch.partnerId); local resetToken = tonumber(switch.resetToken)
-	if not resetToken then return nil end
-	if resetToken ~= lastTargetResetToken then lastTargetResetToken = resetToken; boostedPartners = {} end
-	if not timestampMs or not intervalMs or not partnerId or timestampMs <= 0 or intervalMs <= 0 or partnerId == -1 then return nil end
-	if timestampMs <= lastTargetSwitchTimestampMs then return nil end
-	lastTargetSwitchTimestampMs = timestampMs; local pingOneWay = 0
-	if AutoParry and type(AutoParry.getStatus) == "function" then
-		local pingOk, status = pcall(AutoParry.getStatus)
-		if pingOk and type(status) == "table" and type(status.ping) == "table" then pingOneWay = tonumber(status.ping.oneWay) or 0 end
-	end
-	if pingOneWay ~= pingOneWay or pingOneWay == math.huge or pingOneWay == -math.huge then pingOneWay = 0 end
-	local compensationMs = math.max(pingOneWay, 0) * T.TARGET_SWITCH_PING_FACTOR; local effectiveIntervalMs = math.max(intervalMs - compensationMs, 1); local cps = 1000 / effectiveIntervalMs
-	return {
-		intervalMs = intervalMs,
-		effectiveIntervalMs = effectiveIntervalMs,
-		cps = cps,
-		partnerId = partnerId,
-		resetToken = resetToken,
-	}
+----------------------------------------------------------------
+-- tick
+----------------------------------------------------------------
 
-end
-local function applyTargetSwitchBoost(mode, rate)
-	local switchRate = getTargetSwitchRate()
-	if switchRate then
-		Scheduler.targetSwitchIntervalMs = switchRate.intervalMs; Scheduler.targetSwitchEffectiveIntervalMs = switchRate.effectiveIntervalMs; Scheduler.targetSwitchCps = switchRate.cps
-		if
-			T.TARGET_SWITCH_BOOST_ENABLED
-			and mode == "CPF"
-			and rate > T.TARGET_SWITCH_MIN_CPF
-			and switchRate.cps > T.TARGET_SWITCH_THRESHOLD_CPS
-		then
-			local partnerKey = tostring(switchRate.partnerId)
-			if not boostedPartners[partnerKey] then boostedPartners[partnerKey] = true; Scheduler.targetSwitchBoostUntil = getNow() + T.TARGET_SWITCH_BOOST_DURATION end
-		end
-	end
-	local active = T.TARGET_SWITCH_BOOST_ENABLED
-		and mode == "CPF"
-		and rate > T.TARGET_SWITCH_MIN_CPF
-		and getNow() < Scheduler.targetSwitchBoostUntil
-	Scheduler.targetSwitchBoost = active
-	if active then return rate * T.TARGET_SWITCH_BOOST_MULTIPLIER end
-	return rate
-end
-local function randomRange(minimum, maximum) return minimum + (maximum - minimum) * math.random() end
-local function getRandomCPSInterval(rate)
-	local baseInterval = 1 / rate; local r = math.random(); local shaped = r * r; local multiplier = T.CPS_RANDOM_MIN_MULTIPLIER
-		+ (T.CPS_RANDOM_MAX_MULTIPLIER - T.CPS_RANDOM_MIN_MULTIPLIER) * shaped
-	if math.random() < T.CPS_RANDOM_PAUSE_CHANCE then multiplier = multiplier * randomRange(T.CPS_RANDOM_PAUSE_MIN, T.CPS_RANDOM_PAUSE_MAX) end
-	return math_max(baseInterval, baseInterval * multiplier)
-end
-local function clearCPSSchedulerState()
-	cpsNextClickAt = 0; cpsScheduledRate = 0; cpsSchedulerGeneration = generation
-end
-local function scheduleNaturalCPS(rate)
-	if rate <= 0 then clearCPSSchedulerState(); return end
-	local now = getNow()
-	if cpsNextClickAt <= 0 or cpsScheduledRate ~= rate or cpsSchedulerGeneration ~= generation then
-		cpsScheduledRate = rate; cpsSchedulerGeneration = generation; local interval = getRandomCPSInterval(rate); cpsNextClickAt = now + interval
+local function tick(dt)
+	if
+		type(dt) ~= "number"
+		or dt <= 0
+		or dt ~= dt
+		or dt == math.huge
+		or dt == -math.huge
+	then
 		return
 	end
-	if now < cpsNextClickAt then return end
-	if not isRegularSpamActive() or not checkParryRadiusGuard() then clearCPSSchedulerState(); return end
-	requestParry(); local interval = getRandomCPSInterval(rate); cpsNextClickAt = now + interval
-end
 
--- runtime
-local function tick(dt)
-	if type(dt) ~= "number" or dt <= 0 or dt ~= dt or dt == math.huge or dt == -math.huge then return end
+	------------------------------------------------------------
+	-- inactive
+	------------------------------------------------------------
+
 	if not isActive() then
-		if wasActive then invalidate("spam_disabled") end
-		wasActive = false; return
+		if wasActive then
+			invalidate("spam_disabled")
+		end
+
+		wasActive = false
+		return
 	end
-	local deflectCd = readDeflectCooldown()
-	if deflectCd ~= nil then
-		Scheduler.lastCooldownAt = clock(); Scheduler.lastCooldownValue = deflectCd
-		if deflectCd > T.DEFLECT_COOLDOWN_THRESHOLD then
+
+	------------------------------------------------------------
+	-- cooldown
+	------------------------------------------------------------
+
+	local cooldown = getDeflectCooldown()
+
+	if cooldown ~= nil then
+		Scheduler.lastCooldownAt = clock()
+		Scheduler.lastCooldownValue = cooldown
+
+		if cooldown > T.DEFLECT_COOLDOWN_THRESHOLD then
 			if wasActive then
 				invalidate("deflect_cooldown")
 			end
-			wasActive = false; Scheduler.phase = "cooldown"; return
+
+			wasActive = false
+			Scheduler.phase = "cooldown"
+
+			return
 		end
 	end
-	local manualSpamActive = Utils and type(Utils.isManualSpamActive) == "function" and Utils.isManualSpamActive()
-	local autoSpamActive = Utils and type(Utils.isAutoSpamActive) == "function" and Utils.isAutoSpamActive(); local regularSpamActive = manualSpamActive or autoSpamActive
-	if regularSpamActive and not checkParryRadiusGuard() then
-		if wasActive then invalidate("parry_radius_tti") end
-		wasActive = false; Scheduler.phase = "radius_guard"; return
-	end
-	if not regularSpamActive then wasActive = false; Scheduler.phase = "stopped"; return end
-	local mode, rate = getModeAndRate(); rate = applyTargetSwitchBoost(mode, rate)
-	if not wasActive then
-		Scheduler.phase = "running"
-		if Utils and type(Utils.recordTransition) == "function" then Utils.recordTransition("Spam", "stopped", "running", "spam_active") end
-	end
-	wasActive = true
 
-	-- CHAIN
-	if mode == "CHAIN" then
-		if not chainRunning then chainRunning = true; task.spawn(scheduleChain) end
+	------------------------------------------------------------
+	-- regular spam
+	------------------------------------------------------------
+
+	if not isRegularSpamActive() then
+		wasActive = false
+		Scheduler.phase = "stopped"
+
 		return
 	end
-	if mode ~= lastMode then
-		lastMode = mode; lastRate = nil; accumulator = 0; cpfClickCarry = 0
-		clearClickScheduler(); clearCPSSchedulerState()
+
+	if not radiusAllowed() then
+		if wasActive then
+			invalidate("parry_radius_tti")
+		end
+
+		wasActive = false
+		Scheduler.phase = "radius_guard"
+
+		return
 	end
+
+	------------------------------------------------------------
+	-- activation
+	------------------------------------------------------------
+
+	if not wasActive then
+		Scheduler.phase = "running"
+
+		if Utils and type(Utils.recordTransition) == "function" then
+			Utils.recordTransition(
+				"Spam",
+				"stopped",
+				"running",
+				"spam_active"
+			)
+		end
+	end
+
+	wasActive = true
+
+	------------------------------------------------------------
+	-- config
+	------------------------------------------------------------
+
+	local mode, rate = getConfig()
+
+	------------------------------------------------------------
+	-- mode change
+	------------------------------------------------------------
+
+	if mode ~= lastMode then
+		lastMode = mode
+		lastRate = nil
+
+		cpfClicks = 0
+		clearCPS()
+	end
+
+	------------------------------------------------------------
+	-- rate change
+	------------------------------------------------------------
+
 	if rate ~= lastRate then
 		lastRate = rate
-		if mode == "CPF" then cpfClickCarry = 0; clearClickScheduler()
-		else accumulator = 0; clearCPSSchedulerState() end
+
+		if mode == "CPF" then
+			cpfClicks = 0
+		elseif mode == "CPS" then
+			clearCPS()
+		end
 	end
 
+	------------------------------------------------------------
 	-- CPF
-	if mode == "CPF" then scheduleCPF(rate, dt); processClickQueue(dt); return end
+	------------------------------------------------------------
 
+	if mode == "CPF" then
+		runCPF(rate, dt)
+		return
+	end
+
+	------------------------------------------------------------
 	-- CPS
-	if rate <= 0 then accumulator = 0; clearClickScheduler(); clearCPSSchedulerState(); return end
-	scheduleNaturalCPS(rate)
+	------------------------------------------------------------
+
+	if mode == "CPS" then
+		runCPS(rate)
+		return
+	end
+
+	------------------------------------------------------------
+	-- CHAIN
+	------------------------------------------------------------
+
+	if mode == "CHAIN" and not chainRunning then
+		chainRunning = true
+		task.spawn(runChain)
+	end
 end
 
+----------------------------------------------------------------
 -- setup
+----------------------------------------------------------------
+
 function Spam.setup(deps)
 	if
 		type(deps) ~= "table"
 		or type(deps.Remote) ~= "table"
 		or type(deps.Remote.fireParry) ~= "function"
 		or type(deps.Utils) ~= "table"
-		or type(deps.AutoClash) ~= "table"
-		or type(deps.AutoClash.getTargetSwitch) ~= "function"
-		or type(deps.AutoClash.getDashData) ~= "function"
-		or type(deps.AutoParry) ~= "table"
-		or type(deps.AutoParry.getStatus) ~= "function"
-		or type(deps.AutoParry.getRadius) ~= "function"
 	then
-		return false, "dependência ausente: Remote, Utils, AutoClash ou AutoParry"
+		return false,
+			"dependência ausente: Remote ou Utils"
 	end
-	if heartbeatConnection then
-		pcall(heartbeatConnection.Disconnect, heartbeatConnection)
-		if Utils and type(Utils.untrackGlobal) == "function" then pcall(Utils.untrackGlobal, heartbeatConnection) end
-		heartbeatConnection = nil
+
+	if connection then
+		pcall(connection.Disconnect, connection)
+
+		if
+			Utils
+			and type(Utils.untrackGlobal) == "function"
+		then
+			pcall(Utils.untrackGlobal, connection)
+		end
+
+		connection = nil
 	end
-	Remote = deps.Remote; Utils = deps.Utils; GameInfo = type(deps.GameInfo) == "table" and deps.GameInfo or nil; AutoParry = type(deps.AutoParry) == "table" and deps.AutoParry or nil
-	AutoClash = deps.AutoClash
-	if not GameInfo then return false, "dependência ausente: GameInfo" end
-	if
-		T.SPAM_PARRY_RADIUS_GUARD
-		and (not AutoParry or type(AutoParry.getTiming) ~= "function" or type(AutoParry.getRadius) ~= "function")
-	then
-		return false, "dependência ausente: AutoParry.getTiming"
+
+	Remote = deps.Remote
+	Utils = deps.Utils
+
+	GameInfo =
+		type(deps.GameInfo) == "table"
+		and deps.GameInfo
+		or nil
+
+	AutoParry =
+		type(deps.AutoParry) == "table"
+		and deps.AutoParry
+		or nil
+
+	AutoClash =
+		type(deps.AutoClash) == "table"
+		and deps.AutoClash
+		or nil
+
+	if not GameInfo then
+		return false, "dependência ausente: GameInfo"
 	end
+
 	Spam.resetState()
+
 	local RunService
-	if type(Utils.getRunService) == "function" then RunService = Utils.getRunService() end
-	if not RunService then RunService = game:GetService("RunService") end
-	local signal = RunService.RenderStepped or RunService.Heartbeat; heartbeatConnection = signal:Connect(tick)
-	if type(Utils.trackGlobal) == "function" then Utils.trackGlobal(heartbeatConnection) end
+
+	if type(Utils.getRunService) == "function" then
+		RunService = Utils.getRunService()
+	end
+
+	if not RunService then
+		RunService = game:GetService("RunService")
+	end
+
+	local signal =
+		RunService.RenderStepped
+		or RunService.Heartbeat
+
+	connection = signal:Connect(tick)
+
+	if type(Utils.trackGlobal) == "function" then
+		Utils.trackGlobal(connection)
+	end
+
 	return true
 end
 
+----------------------------------------------------------------
 -- lifecycle
+----------------------------------------------------------------
+
 function Spam.resetState()
-	invalidate("reset"); wasActive = false; Scheduler.phase = "stopped"; Scheduler.lastRequestAt = 0
-	Scheduler.lastError = nil; Scheduler.lastCooldownAt = 0; Scheduler.lastCooldownValue = 0; Scheduler.lastErrorAt = 0
-	Scheduler.cpfFps = 0; Scheduler.cpfClicks = 0; Scheduler.cpfCompensation = false; Scheduler.targetSwitchBoost = false
-	Scheduler.targetSwitchBoostUntil = 0; Scheduler.targetSwitchIntervalMs = 0; Scheduler.targetSwitchEffectiveIntervalMs = 0; Scheduler.targetSwitchCps = 0
-	Scheduler.parryRadiusGuard = false; Scheduler.antiDashRadiusBypass = false; Scheduler.parryRadiusTTI = 0; Scheduler.parryRadiusLimit = 0
+	invalidate("reset")
+
+	wasActive = false
+
+	Scheduler.phase = "stopped"
+
+	Scheduler.lastRequestAt = 0
+	Scheduler.lastError = nil
+	Scheduler.lastCooldownAt = 0
+	Scheduler.lastCooldownValue = 0
+	Scheduler.lastErrorAt = 0
+
+	Scheduler.cpfFps = 0
+	Scheduler.cpfClicks = 0
+	Scheduler.cpfCompensation = false
+
+	Scheduler.parryRadiusGuard = false
+	Scheduler.antiDashRadiusBypass = false
+	Scheduler.parryRadiusTTI = 0
+	Scheduler.parryRadiusLimit = 0
 end
+
 function Spam.teardown()
-	if heartbeatConnection then
-		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(heartbeatConnection) end
-		pcall(heartbeatConnection.Disconnect, heartbeatConnection); heartbeatConnection = nil
+	if connection then
+		if
+			Utils
+			and type(Utils.untrackGlobal) == "function"
+		then
+			Utils.untrackGlobal(connection)
+		end
+
+		pcall(connection.Disconnect, connection)
+
+		connection = nil
 	end
-	Spam.resetState(); Remote = nil; GameInfo = nil; Utils = nil
-	AutoParry = nil; AutoClash = nil
+
+	Spam.resetState()
+
+	Remote = nil
+	GameInfo = nil
+	Utils = nil
+	AutoParry = nil
+	AutoClash = nil
 end
+
+----------------------------------------------------------------
+-- status
+----------------------------------------------------------------
+
 function Spam.getStatus()
 	return {
-		schema = Utils and type(Utils.apiVersion) == "function" and Utils.apiVersion() or 1,
+		schema =
+			Utils
+			and type(Utils.apiVersion) == "function"
+			and Utils.apiVersion()
+			or 1,
+
 		phase = Scheduler.phase,
+
 		lastRequestAt = Scheduler.lastRequestAt,
 		lastError = Scheduler.lastError,
+
 		lastCooldownAt = Scheduler.lastCooldownAt,
 		lastCooldownValue = Scheduler.lastCooldownValue,
+
 		cpfFps = Scheduler.cpfFps,
 		cpfClicks = Scheduler.cpfClicks,
 		cpfCompensation = Scheduler.cpfCompensation,
-		targetSwitchBoost = Scheduler.targetSwitchBoost,
-		targetSwitchBoostUntil = Scheduler.targetSwitchBoostUntil,
-		targetSwitchIntervalMs = Scheduler.targetSwitchIntervalMs,
-		targetSwitchEffectiveIntervalMs = Scheduler.targetSwitchEffectiveIntervalMs,
-		targetSwitchCps = Scheduler.targetSwitchCps,
+
 		parryRadiusGuard = Scheduler.parryRadiusGuard,
 		antiDashRadiusBypass = Scheduler.antiDashRadiusBypass,
 		parryRadiusTTI = Scheduler.parryRadiusTTI,
 		parryRadiusLimit = Scheduler.parryRadiusLimit,
 	}
 end
+
+----------------------------------------------------------------
+-- contract
+----------------------------------------------------------------
+
 Spam.__contract = {
 	requires = {
 		Remote = "remote",
@@ -413,7 +825,6 @@ Spam.__contract = {
 		AutoParry = "autoparry",
 		AutoClash = "autoclash",
 	},
-
 }
 
 return Spam
