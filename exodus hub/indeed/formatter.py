@@ -249,6 +249,11 @@ def format_source(source: str, file_name: str) -> str:
 
 
 def find_stylua() -> str:
+    local_stylua = Path(__file__).with_name("stylua")
+    if local_stylua.is_file():
+        local_stylua.chmod(local_stylua.stat().st_mode | 0o111)
+        return str(local_stylua)
+
     stylua = shutil.which("stylua")
     if not stylua:
         raise RuntimeError("StyLua não encontrado. Instale o StyLua e tente novamente.")
