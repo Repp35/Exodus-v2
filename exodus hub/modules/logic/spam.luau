@@ -147,10 +147,6 @@ local function requestParry()
 	if not ok then errorMessage = tostring(result)
 	else errorMessage = "Remote.fireParry retornou false" end
 	Scheduler.lastError = errorMessage
-	if timestamp - Scheduler.lastErrorAt >= 1 then
-		Scheduler.lastErrorAt = timestamp
-		if Utils and type(Utils.recordError) == "function" then Utils.recordError("Spam", errorMessage) end
-	end
 	return false
 end
 local function queueClicks(clicks, interval)
@@ -291,12 +287,6 @@ local function tick(dt)
 		if deflectCd > T.DEFLECT_COOLDOWN_THRESHOLD then
 			if wasActive then
 				invalidate("deflect_cooldown")
-				if Utils and type(Utils.recordError) == "function" then
-					Utils.recordError(
-						"Spam",
-						string.format("deflect cooldown ativo (%.3fs) — spam desligado", deflectCd)
-					)
-				end
 			end
 			wasActive = false; Scheduler.phase = "cooldown"; return
 		end

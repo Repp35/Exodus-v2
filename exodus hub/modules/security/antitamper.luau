@@ -51,7 +51,6 @@ local State = {
 }
 
 local Utils
-local UtilsRecordError
 local UtilsGetLocalPlayer
 local UtilsApiVersion
 local LocalPlayer
@@ -84,14 +83,9 @@ local function getEnvironment()
 end
 
 -- Run
-local function recordError(reason)
-	if Type(UtilsRecordError) ~= "function" then return end
-	PCall(UtilsRecordError, "AntiTamper", reason)
-end
-
 -- API
 local function fail(reason)
-	State.passed = false; State.lastFailure = reason; recordError(reason); return false, reason
+	State.passed = false; State.lastFailure = reason; return false, reason
 end
 local function kick()
 	if State.kicked then return end
@@ -102,7 +96,6 @@ end
 local function violation(reason)
 	if State.kicked then return end
 	State.violations += 1; State.lastViolation = reason; State.passed = false; State.watching = false
-	recordError(reason)
 	if State.violations >= T.KICK_AFTER then kick() end
 end
 local function getRoots()
@@ -334,7 +327,7 @@ function AntiTamper.setup(deps)
 	if State.ready then return false, "AntiTamper ja configurado" end
 	if Type(deps) ~= "table" then return false, "dependencias ausentes" end
 	if Type(deps.Utils) ~= "table" then return false, "dependencia ausente: Utils" end
-	Utils = deps.Utils; UtilsRecordError = Type(Utils.recordError) == "function" and Utils.recordError or nil
+	Utils = deps.Utils
 	UtilsGetLocalPlayer = Type(Utils.getLocalPlayer) == "function" and Utils.getLocalPlayer or nil; UtilsApiVersion = Type(Utils.apiVersion) == "function" and Utils.apiVersion or nil
 	if Type(UtilsGetLocalPlayer) ~= "function" then Utils = nil; return false, "Utils.getLocalPlayer indisponivel" end
 	local ok, player = PCall(UtilsGetLocalPlayer)
@@ -350,7 +343,7 @@ function AntiTamper.teardown()
 	State.ready = false; State.passed = false; State.watching = false; State.kicked = false
 	State.generation += 1; State.violations = 0; State.fingerprints = 0; State.tables = 0
 	State.lastFailure = nil; State.lastViolation = nil; Baseline = nil; LocalPlayer = nil
-	LocalPlayerKick = nil; UtilsRecordError = nil; UtilsGetLocalPlayer = nil; UtilsApiVersion = nil
+	LocalPlayerKick = nil; UtilsGetLocalPlayer = nil; UtilsApiVersion = nil
 	Utils = nil
 end
 function AntiTamper.isPassed() return State.ready == true and State.passed == true and State.kicked == false end

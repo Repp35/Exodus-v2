@@ -29,13 +29,11 @@ local Storage = {
 	captures = {},
 	lastWriteAt = 0,
 	lastError = nil,
-	errorReported = false,
 }
 
 local CapturedRemotes = setmetatable({}, { __mode = "k" })
 local function reportStorageError(message)
 	Storage.lastError = tostring(message)
-	if not Storage.errorReported and Utils and type(Utils.recordError) == "function" then Storage.errorReported = true; Utils.recordError("RemoteStorage", Storage.lastError) end
 end
 local function safeInstanceInfo(instance)
 	if typeof(instance) ~= "Instance" then return nil end

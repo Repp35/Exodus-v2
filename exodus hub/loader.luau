@@ -2,8 +2,8 @@
 --!optimize 2
 -- [[ loader ]]
 
-local function printRawError(moduleName, message)
-	local output = tostring(moduleName) .. ": " .. tostring(message)
+local function printRawError(moduleName, message, filePath)
+	local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message))
 	if type(debug) == "table" and type(debug.traceback) == "function" then
 		local ok, trace = pcall(debug.traceback, output, 2)
 		if ok and type(trace) == "string" then output = trace end
@@ -358,8 +358,8 @@ local function bindRuntime(loaded, log)
 		if not ok or result == false then
 			local message = result == false and detail or result
 			if message == nil then message = result end
-			if type(log.recordError) == "function" then log.recordError(name, tostring(message))
-			else printRawError(name, message) end
+			local entry = MODULE_BY_NAME[name]
+			printRawError(name, message, entry and entry.path or "loader.luau")
 			return nil
 		end
 		return detail or data
@@ -492,7 +492,9 @@ local function startSafely()
 	local ok, started, moduleName, startError = xpcall(Loader.start, function(errorValue) return errorValue end)
 	if not ok then startError = started; moduleName = "Loader"; started = false end
 	if started ~= true then
-		moduleName = moduleName or "Loader"; startError = startError or started; printRawError(moduleName, startError)
+		moduleName = moduleName or "Loader"; startError = startError or started
+		local entry = MODULE_BY_NAME[moduleName]
+		printRawError(moduleName, startError, entry and entry.path or "loader.luau")
 		Loader.lastError = startError
 		Loader.lastErrorModule = moduleName
 		Exodus.StartError = startError

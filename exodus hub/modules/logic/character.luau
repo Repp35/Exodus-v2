@@ -13,9 +13,7 @@ type UtilsModule = {
 	disconnectCharacterConnections: () -> (),
 	setManualSpamActive: (boolean) -> (),
 	setAutoSpamActive: (boolean) -> (),
-	warn: (string) -> (),
 	recordTransition: (string, string, string, string?) -> (),
-	recordError: (string, string) -> (),
 }
 
 type SpamModule = {
@@ -79,12 +77,6 @@ local function disconnectGlobalConnection(
 	if untrack then pcall(untrack, connection) end
 	pcall(connection.Disconnect, connection); return nil
 end
-local function recordError(message: string)
-	if Utils then
-		if type(Utils.warn) == "function" then pcall(Utils.warn, message) end
-		if type(Utils.recordError) == "function" then pcall(Utils.recordError, "Character", message) end
-	end
-end
 local function rollbackFailedBind(failedEntry: CharacterBind?)
 	if failedEntry then detachBind(failedEntry) end
 	detachBoundBinds()
@@ -98,7 +90,7 @@ local function bind(character: Model, currentGeneration: number)
 	local root = character:WaitForChild("HumanoidRootPart", 10)
 	if not isCharacterValid(character, currentGeneration) then return end
 	if not root or not root.Parent or not root:IsA("BasePart") then
-		recordError("HumanoidRootPart indisponível; personagem não foi vinculado"); rollbackFailedBind(nil)
+		rollbackFailedBind(nil)
 		if isGenerationCurrent(currentGeneration) then setPhase("invalid", "root_unavailable") end
 		return
 	end
@@ -111,7 +103,7 @@ local function bind(character: Model, currentGeneration: number)
 				entry.name or ("bind_" .. index),
 				tostring(result)
 			)
-			recordError(message); rollbackFailedBind(entry)
+			rollbackFailedBind(entry)
 			if isGenerationCurrent(currentGeneration) then setPhase("invalid", "bind_failed") end
 			return
 		end
@@ -121,7 +113,7 @@ local function bind(character: Model, currentGeneration: number)
 				entry.name or ("bind_" .. index),
 				tostring(result)
 			)
-			recordError(message); rollbackFailedBind(entry)
+			rollbackFailedBind(entry)
 			if isGenerationCurrent(currentGeneration) then setPhase("invalid", "bind_failed") end
 			return
 		end
@@ -129,7 +121,7 @@ local function bind(character: Model, currentGeneration: number)
 	end
 	if not isCharacterValid(character, currentGeneration) then detachBoundBinds(); return end
 	if successfullyBound ~= #characterBinds then
-		recordError(("Quantidade de binds inconsistente: %d/%d"):format(successfullyBound, #characterBinds)); rollbackFailedBind(nil)
+		rollbackFailedBind(nil)
 		if isGenerationCurrent(currentGeneration) then setPhase("invalid", "bind_count_mismatch") end
 		return
 	end
@@ -177,9 +169,7 @@ local function validateDependencies(deps: any): (boolean, string?)
 		"disconnectCharacterConnections",
 		"setManualSpamActive",
 		"setAutoSpamActive",
-		"warn",
 		"recordTransition",
-		"recordError",
 	}
 
 	if type(deps.Utils) ~= "table" then
@@ -223,7 +213,7 @@ function Character.setup(deps: any)
 		characterAddedConnection = disconnectGlobalConnection(characterAddedConnection); characterRemovingConnection = disconnectGlobalConnection(characterRemovingConnection)
 	end
 	Utils = deps.Utils :: UtilsModule; Spam = deps.Spam :: SpamModule; characterBinds = deps.characterBinds :: { CharacterBind }; local player = Utils.getLocalPlayer()
-	if not player then recordError("LocalPlayer indisponível"); setPhase("invalid", "player_unavailable"); return false, "Players.LocalPlayer indisponível" end
+	if not player then setPhase("invalid", "player_unavailable"); return false, "Players.LocalPlayer indisponível" end
 	setPhase("ready", "character_controller_ready")
 	characterAddedConnection = player.CharacterAdded:Connect(function(character) setupCharacter(character) end)
 	characterRemovingConnection = player.CharacterRemoving:Connect(function(character)

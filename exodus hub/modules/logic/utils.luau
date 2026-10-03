@@ -113,14 +113,6 @@ local function safeCall(callback, ...)
 	if type(callback) ~= "function" then return false, "callback is not a function" end
 	return pcall(callback, ...)
 end
-local function safeWarn(message)
-	if type(warn) == "function" then return pcall(warn, message) end
-	return false
-end
-local function safePrint(message)
-	if type(print) == "function" then return pcall(print, message) end
-	return false
-end
 local function getModuleStatuses()
 	local result = {}
 	for name, module in pairs(DiagnosticsModules) do
@@ -181,7 +173,7 @@ end
 local function updateNamespace()
 	if NamespaceUpdating then return end
 	NamespaceUpdating = true
-	local ok, err = pcall(function()
+	pcall(function()
 		local namespace
 		if type(_G.Exodus) == "table" then namespace = _G.Exodus
 		else namespace = {} end
@@ -190,7 +182,6 @@ local function updateNamespace()
 		namespace.Diagnostics = getDiagnosticsSnapshot(); _G.Exodus = namespace
 	end)
 	NamespaceUpdating = false
-	if not ok then safeWarn(("[Exodus][Namespace] %s"):format(tostring(err))) end
 end
 local function setLifecyclePhaseInternal(phase)
 	if type(phase) ~= "string" or phase == "" then return false end
@@ -208,35 +199,6 @@ local function recordTransitionInternal(source, fromState, toState, reason)
 
 	State.diagnostics.lastTransition = transition; State.diagnostics.lastTransitionAt = transition.at; appendLimited(State.diagnostics.transitions, transition, T.MAX_DIAGNOSTIC_ENTRIES)
 	updateNamespace()
-end
-local function recordErrorInternal(source, message, fatal)
-	source = tostring(source or "Unknown"); message = tostring(message or "Unknown error")
-	local errorData = {
-		source = source,
-		message = message,
-		fatal = fatal == true,
-		at = os.clock(),
-	}
-
-	local output = ("[Exodus][%s] %s"):format(source, message)
-	if type(debug) == "table" and type(debug.traceback) == "function" then
-		local ok, traceback = pcall(debug.traceback, output, 3)
-		if ok and type(traceback) == "string" then output = traceback end
-	end
-	errorData.traceback = output; State.diagnostics.lastError = errorData; appendLimited(State.diagnostics.errors, errorData, T.MAX_DIAGNOSTIC_ENTRIES); updateNamespace()
-	local key = source .. "\0" .. message; local now = os.clock(); local previous = ConsoleErrorAt[key]
-	if fatal ~= true and previous ~= nil and now - previous < T.CONSOLE_ERROR_COOLDOWN then return end
-	ConsoleErrorAt[key] = now; ConsoleErrorCount += 1
-	if ConsoleErrorCount > T.MAX_CONSOLE_ERROR_KEYS then
-		ConsoleErrorAt = {
-			[key] = now,
-		}
-
-		ConsoleErrorCount = 1
-	end
-	local warned = safeWarn(output)
-	if not warned then safePrint(output) end
-	if fatal == true then Utils.stop() end
 end
 local function ensureDataFolder()
 	if type(makefolder) ~= "function" or type(isfolder) ~= "function" then return false, "APIs de pasta do executor indisponíveis" end
@@ -294,7 +256,6 @@ end
 function Utils.recordTransition(source, fromState, toState, reason)
 	recordTransitionInternal(source, fromState, toState, reason)
 end
-function Utils.recordError(source, message, fatal) recordErrorInternal(source, message, fatal) end
 function Utils.isManualSpamActive() return State.manualSpamActive == true end
 function Utils.isAutoSpamActive() return State.autoSpamActive == true end
 function Utils.isSpamActive() return State.manualSpamActive == true or State.autoSpamActive == true end
@@ -338,12 +299,12 @@ function Utils.setConfig(config)
 	local reason
 	if ConfigModule and type(ConfigModule.normalizePatch) == "function" then
 		local ok, result, resultReason = pcall(ConfigModule.normalizePatch, config)
-		if not ok then Utils.recordError("Config", result, false); return false end
+		if not ok then return false end
 		normalized = result; reason = resultReason
 	else
 		normalized = copyMap(config)
 	end
-	if type(normalized) ~= "table" then Utils.recordError("Config", reason or "configuração inválida", false); return false end
+	if type(normalized) ~= "table" then return false end
 	for key, value in pairs(normalized) do
 		State.config[key] = value
 	end
@@ -376,13 +337,6 @@ function Utils.name() return M.SCRIPT_NAME end
 function Utils.version() return M.SCRIPT_VERSION end
 function Utils.apiVersion() return M.API_VERSION end
 function Utils.author() return M.SCRIPT_AUTHOR end
-function Utils.log(level, message)
-	local output = ("[%s] %s"):format(M.INTERNAL_NAME, tostring(message))
-	if level == "warn" then safeWarn(output)
-	else safePrint(output) end
-end
-function Utils.info(message) Utils.log("info", message) end
-function Utils.warn(message) Utils.log("warn", message) end
 _G.ExodusStop = Utils.stop
 Utils.__contract = {
 	requires = {},
