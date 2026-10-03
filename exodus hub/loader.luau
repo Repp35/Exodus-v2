@@ -25,6 +25,7 @@ local BRANCH = "main"
 local PROJECT_PATH = "exodus%20hub/"
 local LOCAL_ROOTS = { "Exodus-v2/exodus hub", "exodus hub", "Exodus Hub" }
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
+local CACHE_BUSTER = tostring(os.time())
 local MODULE_MANIFEST = {
 	{ name = "config", path = "modules/front/config.luau" },
 	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
@@ -177,7 +178,7 @@ end
 local function buildURLs(version)
 	local root = BASE_URL .. (version or ("refs/heads/" .. BRANCH)) .. "/" .. PROJECT_PATH; local urls = {}
 	for _, entry in ipairs(MODULE_MANIFEST) do
-		urls[entry.name] = root .. entry.path
+		urls[entry.name] = root .. entry.path .. "?exodus_cache=" .. CACHE_BUSTER
 	end
 	return urls
 end

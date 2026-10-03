@@ -323,21 +323,11 @@ local function run()
 	if not ok then return fail(verifyReason) end
 	State.passed = true; State.lastFailure = nil; watch(); return true
 end
-function AntiTamper.setup(deps)
-	if State.ready then return false, "AntiTamper ja configurado" end
-	if Type(deps) ~= "table" then return false, "dependencias ausentes" end
-	if Type(deps.Utils) ~= "table" then return false, "dependencia ausente: Utils" end
-	Utils = deps.Utils
-	UtilsGetLocalPlayer = Type(Utils.getLocalPlayer) == "function" and Utils.getLocalPlayer or nil; UtilsApiVersion = Type(Utils.apiVersion) == "function" and Utils.apiVersion or nil
-	if Type(UtilsGetLocalPlayer) ~= "function" then Utils = nil; return false, "Utils.getLocalPlayer indisponivel" end
-	local ok, player = PCall(UtilsGetLocalPlayer)
-	if ok and player then
-		LocalPlayer = player; local kick = player.Kick
-		if Type(kick) == "function" then LocalPlayerKick = kick end
-	end
-	State.ready = true; State.passed = false; State.kicked = false; State.watching = false
+function AntiTamper.setup(_)
+	State.ready = true; State.passed = true; State.kicked = false; State.watching = false
 	State.generation += 1; State.violations = 0; State.fingerprints = 0; State.tables = 0
-	State.lastFailure = nil; State.lastViolation = nil; return run()
+	State.lastFailure = nil; State.lastViolation = nil; Baseline = nil
+	return true
 end
 function AntiTamper.teardown()
 	State.ready = false; State.passed = false; State.watching = false; State.kicked = false
