@@ -23,6 +23,7 @@ local T = {
 	HITBOX_PROXIMITY = 12,
 	HITBOX_GAP = 0.40,
 	RESET_LOCK_BASE = 0.40,
+	MIN_SPECIAL_STATE_LOCK = 0.30,
 	MAX_RES_STACK = math.floor(32 / 0.225),
 }
 
@@ -239,6 +240,9 @@ local function samplePing(time)
 	if ok and isFiniteNumber(value) and value >= 0 then R.ping = value end
 end
 local function getRemoteParry(ball)
+	local time = clock()
+	if time < R.teleportLockUntil then return false end
+	if not isFiniteNumber(R.lastSpeed) or R.lastSpeed < T.MIN_BALL_SPEED then return false end
 	if not Remote or type(Remote.fireParry) ~= "function" then return false end
 	local ok, result = pcall(Remote.fireParry, 1)
 	if not ok or result == false then return false end
@@ -365,7 +369,7 @@ local function onHeartbeat(character, root, dt, generation)
 	local parryRadius, leadTime = computeParryRadius(speed, R.ping, resilienceBonus, T.DEFAULT_WINDOW_FACTOR); R.lastDistance = distance; R.lastSpeed = speed; R.lastRadius = parryRadius
 	R.lastLeadTime = leadTime; R.lastApproaching = approaching; R.targetId = tonumber(snapshot and snapshot.targetId) or -1; R.targetKnown = snapshot ~= nil and snapshot.targetId ~= nil
 	if not targeted then setPhase("waiting", "not_targeted"); return end
-	if speed < T.MIN_BALL_SPEED then setPhase("waiting", "ball_too_slow"); return end
+	if not isFiniteNumber(speed) or speed < T.MIN_BALL_SPEED then setPhase("waiting", "ball_speed_invalid"); return end
 	if distance > parryRadius then setPhase("waiting", "outside_radius"); return end
 	if R.armed then R.armed = false; setPhase("detecting", "parry_detected"); task.defer(fireAfterDetection, ball, generation) end
 end
@@ -457,7 +461,8 @@ function AutoParry.onBallSync(data)
 	if type(data) ~= "table" or not R.alive or not R.bound then return end
 	local time = clock()
 	if data.Teleported == true or data.Grace == true or data.OldGrace == true then
-		R.teleportLockUntil = math.max(R.teleportLockUntil, time + T.RESET_LOCK_BASE + R.ping * 0.5); resetParryLock(); R.passivePhase = "idle"; R.passiveBallAtValid = false
+		local lockDuration = math.max(T.RESET_LOCK_BASE, T.MIN_SPECIAL_STATE_LOCK) + math.max(isFiniteNumber(R.ping) and R.ping or 0, 0) * 0.5
+		R.teleportLockUntil = math.max(R.teleportLockUntil, time + lockDuration); resetParryLock(); R.passivePhase = "idle"; R.passiveBallAtValid = false
 		setPhase("waiting", "teleport_lock"); return
 	end
 	local targetId = -1
