@@ -519,6 +519,10 @@ local function getRemoteParry(ball)
 		return false
 	end
 
+	if not R.lastApproaching then
+		return false
+	end
+
 	if not Remote or type(Remote.fireParry) ~= "function" then
 		return false
 	end
@@ -575,6 +579,11 @@ local function fireAfterDetection(ball, generation)
 	end
 
 	if not R.targeted then
+		return false
+	end
+
+	if not R.lastApproaching then
+		R.armed = true
 		return false
 	end
 
@@ -829,6 +838,34 @@ local function isBallInParryWindow(time)
 		return false, false
 	end
 
+	local velocity
+
+	if isValidBall(ball) then
+		local ok, value = pcall(function()
+			return ball.AssemblyLinearVelocity
+		end)
+
+		if ok and isValidVector3(value) then
+			velocity = value
+		end
+	end
+
+	if not isValidVector3(velocity) then
+		velocity = R.velocity
+	end
+
+	local delta = root.Position - position
+
+	local approaching =
+		isValidVector3(velocity)
+		and velocity.Magnitude >= T.MIN_BALL_SPEED
+		and delta.Magnitude > 0
+		and velocity:Dot(delta) > 0
+
+	if not approaching then
+		return false, false
+	end
+
 	local bonus = getResilienceBonus(time)
 
 	local radius = computeParryRadius(
@@ -860,9 +897,6 @@ local function onHeartbeat(character, root, dt, generation)
 
 	samplePing(time)
 
-	-- Grace/Teleported:
-	-- bloqueia por no minimo 200ms.
-	-- Depois disso, so libera quando o estado estiver false.
 	if R.grace then
 		resetParryLock()
 		setPhase("waiting", "grace_lock")
@@ -920,7 +954,7 @@ local function onHeartbeat(character, root, dt, generation)
 	local speed = R.velocity.Magnitude
 
 	local approaching =
-		isValidVector3(R.velocity)
+		speed >= T.MIN_BALL_SPEED
 		and distance > 0
 		and R.velocity:Dot(delta) > 0
 
@@ -962,10 +996,14 @@ local function onHeartbeat(character, root, dt, generation)
 		return
 	end
 
-	if not isFiniteNumber(speed)
-		or speed < T.MIN_BALL_SPEED
-	then
+	if speed < T.MIN_BALL_SPEED then
 		setPhase("waiting", "ball_speed_invalid")
+		return
+	end
+
+	if not approaching then
+		R.armed = true
+		setPhase("waiting", "ball_not_approaching")
 		return
 	end
 
@@ -1216,6 +1254,12 @@ function AutoParry.fire()
 		return false
 	end
 
+	if not R.lastApproaching
+		or R.lastSpeed < T.MIN_BALL_SPEED
+	then
+		return false
+	end
+
 	local fired = getRemoteParry(R.lastBall)
 
 	if not fired then
@@ -1265,8 +1309,6 @@ function AutoParry.onBallSync(data)
 
 	local time = clock()
 
-	-- Teleported + Grace sao o mesmo estado.
-	-- OldGrace nao participa.
 	local graceState =
 		data.Teleported == true
 		or data.Grace == true
@@ -1291,9 +1333,6 @@ function AutoParry.onBallSync(data)
 		return
 	end
 
-	-- Recebeu estado sem Grace/Teleported.
-	-- O estado vira false, mas o lock minimo de 200ms
-	-- continua sendo respeitado pelo heartbeat.
 	R.grace = false
 
 	local targetId = -1
@@ -1526,6 +1565,7 @@ function AutoParry.getTiming(
 
 	local approaching =
 		isValidVector3(velocity)
+		and speed >= T.MIN_BALL_SPEED
 		and distance > 0
 		and velocity:Dot(delta) > 0
 		or false
