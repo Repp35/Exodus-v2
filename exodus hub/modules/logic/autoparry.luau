@@ -9,33 +9,40 @@ local Utils
 local T = {
 	VELOCITY_SMOOTHING_TAU = 0.05,
 	PING_SAMPLE_INTERVAL = 1,
+
 	BASE_RADIUS = 8.5,
 	BASE_WINDOW = 0.40,
 	DEFAULT_WINDOW_FACTOR = 0.50,
 	MIN_WINDOW_FACTOR = 0.0,
 	MAX_WINDOW_FACTOR = 1.5,
+
 	MIN_LEAD_TIME = 0.48,
 	MAX_LEAD_TIME = 0.84,
+
 	MIN_BALL_SPEED = 16,
+
 	RES_PER_PARRY = 0.225,
 	RES_CAP_STUDS = 32,
+
 	HITBOX_OWN_WINDOW = 0.50,
 	HITBOX_PROXIMITY = 12,
 	HITBOX_GAP = 0.40,
-	RESET_LOCK_BASE = 0.40,
-	MIN_SPECIAL_STATE_LOCK = 0.30,
-	MIN_GRACE_LOCK = 0.20,
+
+	-- antigo sistema de trava
+	TELEPORT_LOCK_BASE = 0.40,
+
 	MAX_RES_STACK = math.floor(32 / 0.225),
 }
 
-local HITBOX_PROXIMITY_SQ = T.HITBOX_PROXIMITY ^ 2
+local HITBOX_PROXIMITY_SQ =
+	T.HITBOX_PROXIMITY ^ 2
 
 -- state
 local R = {
 	phase = "detached",
+
 	generation = 0,
 	lifeGeneration = 0,
-	graceGeneration = 0,
 
 	alive = false,
 	bound = false,
@@ -73,8 +80,9 @@ local R = {
 	targetId = -1,
 	targetKnown = false,
 
-	grace = false,
-	graceLockUntil = 0,
+	-- antigo: somente Teleported controla a trava
+	teleported = false,
+	teleportLockUntil = 0,
 
 	passivePhase = "idle",
 	passiveBallAtValid = false,
@@ -92,8 +100,13 @@ local Resilience = {
 	lifeGeneration = 0,
 }
 
-local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
-local HitboxState = namespace.AutoParryHitbox
+local namespace =
+	type(_G.Exodus) == "table"
+	and _G.Exodus
+	or {}
+
+local HitboxState =
+	namespace.AutoParryHitbox
 
 if type(HitboxState) ~= "table" then
 	HitboxState = {
@@ -102,7 +115,8 @@ if type(HitboxState) ~= "table" then
 		handler = nil,
 	}
 
-	namespace.AutoParryHitbox = HitboxState
+	namespace.AutoParryHitbox =
+		HitboxState
 end
 
 _G.Exodus = namespace
@@ -134,7 +148,10 @@ local function distanceSquared(a, b)
 end
 
 local function getRootPart(character)
-	local root = character:FindFirstChild("HumanoidRootPart")
+	local root =
+		character:FindFirstChild(
+			"HumanoidRootPart"
+		)
 
 	if root and root:IsA("BasePart") then
 		return root
@@ -151,7 +168,10 @@ local function setPhase(nextPhase, reason)
 	local previous = R.phase
 	R.phase = nextPhase
 
-	if Utils and type(Utils.recordTransition) == "function" then
+	if Utils
+		and type(Utils.recordTransition)
+			== "function"
+	then
 		pcall(
 			Utils.recordTransition,
 			"AutoParry",
@@ -167,21 +187,36 @@ local function trackConnection(connection)
 		return
 	end
 
-	R.connections[#R.connections + 1] = connection
+	R.connections[#R.connections + 1] =
+		connection
 
-	if Utils and type(Utils.trackCharacter) == "function" then
-		pcall(Utils.trackCharacter, connection)
+	if Utils
+		and type(Utils.trackCharacter)
+			== "function"
+	then
+		pcall(
+			Utils.trackCharacter,
+			connection
+		)
 	end
 end
 
 local function disconnectConnections()
 	for i = #R.connections, 1, -1 do
-		local connection = R.connections[i]
+		local connection =
+			R.connections[i]
+
 		R.connections[i] = nil
 
 		if connection then
-			if Utils and type(Utils.untrackCharacter) == "function" then
-				pcall(Utils.untrackCharacter, connection)
+			if Utils
+				and type(Utils.untrackCharacter)
+					== "function"
+			then
+				pcall(
+					Utils.untrackCharacter,
+					connection
+				)
 			end
 
 			pcall(function()
@@ -241,8 +276,8 @@ local function resetTracking()
 	R.targetId = -1
 	R.targetKnown = false
 
-	R.grace = false
-	R.graceLockUntil = 0
+	R.teleported = false
+	R.teleportLockUntil = 0
 
 	R.passivePhase = "idle"
 	R.passiveBallAtValid = false
@@ -257,7 +292,8 @@ local function resetResilience()
 	Resilience.lastFireAt = 0
 	Resilience.lastHitboxAt = 0
 	Resilience.hitboxConfirmed = false
-	Resilience.lifeGeneration = R.lifeGeneration
+	Resilience.lifeGeneration =
+		R.lifeGeneration
 
 	R.resilienceBonus = 0
 	R.resilienceBonusAt = -1
@@ -283,22 +319,11 @@ local function invalidateLife()
 	resetResilience()
 end
 
-local function invalidateGraceState()
-	R.graceGeneration += 1
-
-	resetParryLock()
-	clearBallState()
-
-	R.lastFireAt = 0
-
-	R.passivePhase = "idle"
-	R.passiveBallAtValid = false
-end
-
 local function isResilienceUsable()
 	if not R.alive
 		or not R.bound
-		or Resilience.lifeGeneration ~= R.lifeGeneration
+		or Resilience.lifeGeneration
+			~= R.lifeGeneration
 	then
 		clearResilienceState()
 		return false
@@ -325,7 +350,8 @@ local function getResilienceBonus(time)
 	end
 
 	R.resilienceBonus = math.min(
-		Resilience.stack * T.RES_PER_PARRY,
+		Resilience.stack
+			* T.RES_PER_PARRY,
 		T.RES_CAP_STUDS
 	)
 
@@ -335,14 +361,28 @@ local function getResilienceBonus(time)
 end
 
 local function getResilienceStatus()
-	local usable = isResilienceUsable()
+	local usable =
+		isResilienceUsable()
 
 	return {
-		stack = usable and Resilience.stack or 0,
-		size = usable and getResilienceBonus(clock()) or 0,
-		perParry = T.RES_PER_PARRY,
-		cap = T.RES_CAP_STUDS,
-		maxStack = T.MAX_RES_STACK,
+		stack =
+			usable
+			and Resilience.stack
+			or 0,
+
+		size =
+			usable
+			and getResilienceBonus(clock())
+			or 0,
+
+		perParry =
+			T.RES_PER_PARRY,
+
+		cap =
+			T.RES_CAP_STUDS,
+
+		maxStack =
+			T.MAX_RES_STACK,
 	}
 end
 
@@ -351,7 +391,9 @@ local function addResilienceStack()
 		return false
 	end
 
-	if Resilience.stack >= T.MAX_RES_STACK then
+	if Resilience.stack
+		>= T.MAX_RES_STACK
+	then
 		return false
 	end
 
@@ -362,11 +404,15 @@ local function addResilienceStack()
 end
 
 local function getConfig()
-	if not Utils or type(Utils.getConfig) ~= "function" then
+	if not Utils
+		or type(Utils.getConfig)
+			~= "function"
+	then
 		return nil
 	end
 
-	local ok, config = pcall(Utils.getConfig)
+	local ok, config =
+		pcall(Utils.getConfig)
 
 	if ok and type(config) == "table" then
 		return config
@@ -376,7 +422,8 @@ local function getConfig()
 end
 
 local function isAutoParryEnabled()
-	local config = getConfig()
+	local config =
+		getConfig()
 
 	if not config then
 		return true
@@ -386,31 +433,41 @@ local function isAutoParryEnabled()
 end
 
 local function isSystemActive()
-	if not Utils or type(Utils.isActive) ~= "function" then
+	if not Utils
+		or type(Utils.isActive)
+			~= "function"
+	then
 		return true
 	end
 
-	local ok, active = pcall(Utils.isActive)
+	local ok, active =
+		pcall(Utils.isActive)
 
 	return ok and active == true
 end
 
 local function isSpamActive()
-	if not Utils or type(Utils.isSpamActive) ~= "function" then
+	if not Utils
+		or type(Utils.isSpamActive)
+			~= "function"
+	then
 		return false
 	end
 
-	local ok, active = pcall(Utils.isSpamActive)
+	local ok, active =
+		pcall(Utils.isSpamActive)
 
 	return ok and active == true
 end
 
 local function computeLeadTime(ping)
-	local validPing = isFiniteNumber(ping)
+	local validPing =
+		isFiniteNumber(ping)
 		and math.max(ping, 0)
 		or 0
 
-	local leadTime = T.BASE_WINDOW + validPing
+	local leadTime =
+		T.BASE_WINDOW + validPing
 
 	leadTime = math.clamp(
 		leadTime,
@@ -418,7 +475,9 @@ local function computeLeadTime(ping)
 		T.MAX_LEAD_TIME
 	)
 
-	return math.floor(leadTime * 100 + 0.5) / 100
+	return math.floor(
+		leadTime * 100 + 0.5
+	) / 100
 end
 
 local function computeParryRadius(
@@ -432,12 +491,15 @@ local function computeParryRadius(
 		and math.max(speed, 0)
 		or 0
 
-	local leadTime = computeLeadTime(ping)
+	local leadTime =
+		computeLeadTime(ping)
 
-	local factor = tonumber(windowFactor)
+	local factor =
+		tonumber(windowFactor)
 
 	if not isFiniteNumber(factor) then
-		factor = T.DEFAULT_WINDOW_FACTOR
+		factor =
+			T.DEFAULT_WINDOW_FACTOR
 	end
 
 	factor = math.clamp(
@@ -452,10 +514,13 @@ local function computeParryRadius(
 		or 0
 
 	local baseRadius =
-		T.BASE_RADIUS + validResilience
+		T.BASE_RADIUS
+		+ validResilience
 
 	local anticipation =
-		validSpeed * leadTime * factor
+		validSpeed
+		* leadTime
+		* factor
 
 	local noWindowRadius =
 		baseRadius
@@ -485,35 +550,45 @@ end
 
 local function readTargeted(snapshot)
 	if type(snapshot) == "table"
-		and type(snapshot.targeted) == "boolean"
+		and type(snapshot.targeted)
+			== "boolean"
 	then
 		return snapshot.targeted
 	end
 
 	if GameInfo
-		and type(GameInfo.getSyncData) == "function"
+		and type(GameInfo.getSyncData)
+			== "function"
 	then
 		local ok, syncData =
-			pcall(GameInfo.getSyncData)
+			pcall(
+				GameInfo.getSyncData
+			)
 
 		if ok
 			and type(syncData) == "table"
-			and type(syncData.Targeted) == "boolean"
+			and type(syncData.Targeted)
+				== "boolean"
 		then
 			return syncData.Targeted
 		end
 	end
 
 	if GameInfo
-		and type(GameInfo.getTargetId) == "function"
+		and type(GameInfo.getTargetId)
+			== "function"
 		and R.player
 	then
 		local ok, targetId =
-			pcall(GameInfo.getTargetId)
+			pcall(
+				GameInfo.getTargetId
+			)
 
 		if ok then
 			return tonumber(targetId)
-				== tonumber(R.player.UserId)
+				== tonumber(
+					R.player.UserId
+				)
 		end
 	end
 
@@ -524,7 +599,8 @@ local function readFrameState(time)
 	local snapshot
 
 	if GameInfo
-		and type(GameInfo.getSnapshot) == "function"
+		and type(GameInfo.getSnapshot)
+			== "function"
 	then
 		local ok, result =
 			pcall(
@@ -536,8 +612,11 @@ local function readFrameState(time)
 		if ok and type(result) == "table" then
 			local valid = true
 
-			if type(GameInfo.isSnapshotValid) == "function" then
-				local validOk, snapshotValid =
+			if type(
+				GameInfo.isSnapshotValid
+			) == "function" then
+				local validOk,
+					snapshotValid =
 					pcall(
 						GameInfo.isSnapshotValid,
 						result,
@@ -562,10 +641,13 @@ local function readFrameState(time)
 
 	if not isValidBall(ball)
 		and GameInfo
-		and type(GameInfo.getBall) == "function"
+		and type(GameInfo.getBall)
+			== "function"
 	then
 		local ok, result =
-			pcall(GameInfo.getBall)
+			pcall(
+				GameInfo.getBall
+			)
 
 		if ok then
 			ball = result
@@ -576,11 +658,16 @@ local function readFrameState(time)
 		return nil, false, snapshot
 	end
 
-	return ball, readTargeted(snapshot), snapshot
+	return
+		ball,
+		readTargeted(snapshot),
+		snapshot
 end
 
 local function samplePing(time)
-	if time - R.pingAt < T.PING_SAMPLE_INTERVAL then
+	if time - R.pingAt
+		< T.PING_SAMPLE_INTERVAL
+	then
 		return
 	end
 
@@ -605,25 +692,101 @@ local function samplePing(time)
 	end
 end
 
-local function isGraceLocked(time)
-	return R.grace
-		or time < R.graceLockUntil
+-- =========================================================
+-- ANTIGO SISTEMA DE TELEPORT LOCK
+-- =========================================================
+
+local function isTeleportLocked(time)
+	return R.teleported
+		or time < R.teleportLockUntil
+end
+
+local function getTeleportLockDuration()
+	local ping =
+		isFiniteNumber(R.ping)
+		and math.max(R.ping, 0)
+		or 0
+
+	return T.TELEPORT_LOCK_BASE
+		+ (ping * 0.5)
+end
+
+local function enterTeleportLock(time)
+	R.teleported = true
+
+	R.teleportLockUntil =
+		math.max(
+			R.teleportLockUntil,
+			time + getTeleportLockDuration()
+		)
+
+	resetParryLock()
+	clearBallState()
+
+	R.lastFireAt = 0
+
+	R.passivePhase = "idle"
+	R.passiveBallAtValid = false
+
+	setPhase(
+		"waiting",
+		"teleport_lock"
+	)
+end
+
+local function leaveTeleportLock(time)
+	local wasTeleported =
+		R.teleported
+
+	R.teleported = false
+
+	if wasTeleported then
+		-- Igual ao antigo:
+		-- o ciclo anterior não pode ser reutilizado.
+		resetParryLock()
+		clearBallState()
+
+		R.lastFireAt = 0
+
+		R.passivePhase = "idle"
+		R.passiveBallAtValid = false
+
+		setPhase(
+			"waiting",
+			"teleport_finished"
+		)
+	end
+
+	if time < R.teleportLockUntil then
+		resetParryLock()
+		clearBallState()
+
+		R.passivePhase = "idle"
+		R.passiveBallAtValid = false
+
+		setPhase(
+			"waiting",
+			"teleport_lock"
+		)
+
+		return false
+	end
+
+	return true
 end
 
 local function getRemoteParry(ball)
 	local time = clock()
 
-	-- Grace desliga completamente o AP.
-	if R.grace then
-		return false
-	end
-
-	if time < R.graceLockUntil then
+	-- trava exatamente pelo estado Teleported
+	-- e pelo lock mínimo do antigo.
+	if isTeleportLocked(time) then
 		return false
 	end
 
 	if not isFiniteNumber(R.lastSpeed)
-		or R.lastSpeed < T.MIN_BALL_SPEED
+		or R.lastSpeed
+			< T.MIN_BALL_SPEED
 	then
 		return false
 	end
@@ -633,13 +796,17 @@ local function getRemoteParry(ball)
 	end
 
 	if not Remote
-		or type(Remote.fireParry) ~= "function"
+		or type(Remote.fireParry)
+			~= "function"
 	then
 		return false
 	end
 
 	local ok, result =
-		pcall(Remote.fireParry, 1)
+		pcall(
+			Remote.fireParry,
+			1
+		)
 
 	if not ok or result == false then
 		return false
@@ -647,29 +814,39 @@ local function getRemoteParry(ball)
 
 	time = clock()
 
-	Resilience.hitboxConfirmed = false
+	Resilience.hitboxConfirmed =
+		false
 
 	local firedBall = ball
 
 	if not isValidBall(firedBall)
 		and GameInfo
-		and type(GameInfo.getBall) == "function"
+		and type(GameInfo.getBall)
+			== "function"
 	then
-		local ballOk, currentBall =
-			pcall(GameInfo.getBall)
+		local ballOk,
+			currentBall =
+			pcall(
+				GameInfo.getBall
+			)
 
 		if ballOk then
-			firedBall = currentBall
+			firedBall =
+				currentBall
 		end
 	end
 
 	if isValidBall(firedBall)
 		and R.alive
 		and R.bound
-		and Resilience.lifeGeneration == R.lifeGeneration
+		and Resilience.lifeGeneration
+			== R.lifeGeneration
 	then
-		Resilience.lastFireBall = firedBall
-		Resilience.lastFireAt = time
+		Resilience.lastFireBall =
+			firedBall
+
+		Resilience.lastFireAt =
+			time
 	else
 		Resilience.lastFireBall = nil
 		Resilience.lastFireAt = 0
@@ -680,22 +857,23 @@ end
 
 local function fireAfterDetection(
 	ball,
-	generation,
-	graceGeneration
+	generation
 )
 	if generation ~= R.generation then
 		return false
 	end
 
-	if graceGeneration ~= R.graceGeneration then
+	if not R.alive
+		or not R.bound
+	then
 		return false
 	end
 
-	if R.grace then
+	if R.teleported then
 		return false
 	end
 
-	if not R.alive or not R.bound then
+	if isTeleportLocked(clock()) then
 		return false
 	end
 
@@ -712,12 +890,13 @@ local function fireAfterDetection(
 		return false
 	end
 
-	if isGraceLocked(clock()) then
+	if isTeleportLocked(clock()) then
 		R.armed = true
 		return false
 	end
 
-	local fired = getRemoteParry(ball)
+	local fired =
+		getRemoteParry(ball)
 
 	if not fired then
 		R.armed = true
@@ -736,7 +915,9 @@ local function fireAfterDetection(
 end
 
 local function handleHitbox(instance)
-	if instance.Name ~= "HitboxGrow" then
+	if instance.Name
+		~= "HitboxGrow"
+	then
 		return
 	end
 
@@ -753,7 +934,8 @@ local function handleHitbox(instance)
 	end
 
 	if Utils
-		and type(Utils.isActive) == "function"
+		and type(Utils.isActive)
+			== "function"
 	then
 		local ok, active =
 			pcall(Utils.isActive)
@@ -790,8 +972,12 @@ local function handleHitbox(instance)
 	local ballPosition =
 		ball.Position
 
-	if not isValidVector3(hitboxPosition)
-		or not isValidVector3(ballPosition)
+	if not isValidVector3(
+		hitboxPosition
+	)
+		or not isValidVector3(
+			ballPosition
+		)
 	then
 		return
 	end
@@ -812,8 +998,11 @@ local function handleHitbox(instance)
 		return
 	end
 
-	Resilience.hitboxConfirmed = true
-	Resilience.lastHitboxAt = time
+	Resilience.hitboxConfirmed =
+		true
+
+	Resilience.lastHitboxAt =
+		time
 
 	addResilienceStack()
 end
@@ -827,7 +1016,8 @@ local function uninstallHitboxHook()
 	end
 
 	if Utils
-		and type(Utils.untrackGlobal) == "function"
+		and type(Utils.untrackGlobal)
+			== "function"
 	then
 		pcall(
 			Utils.untrackGlobal,
@@ -866,7 +1056,9 @@ local function installHitboxHook()
 				.DescendantAdded
 				:Connect(function(instance)
 					if HitboxState.handler then
-						HitboxState.handler(instance)
+						HitboxState.handler(
+							instance
+						)
 					end
 				end)
 		end)
@@ -882,7 +1074,8 @@ local function installHitboxHook()
 		workspaceService
 
 	if Utils
-		and type(Utils.trackGlobal) == "function"
+		and type(Utils.trackGlobal)
+			== "function"
 	then
 		pcall(
 			Utils.trackGlobal,
@@ -914,8 +1107,11 @@ local function updateVelocity(
 	end)
 
 	if ok
-		and isValidVector3(assemblyVelocity)
-		and assemblyVelocity.Magnitude > 0.1
+		and isValidVector3(
+			assemblyVelocity
+		)
+		and assemblyVelocity.Magnitude
+			> 0.1
 	then
 		R.velocity =
 			assemblyVelocity
@@ -934,7 +1130,8 @@ local function updateVelocity(
 
 			if elapsed > 0 then
 				local rawVelocity =
-					(position - previousPosition)
+					(position
+						- previousPosition)
 					/ elapsed
 
 				local frameDt =
@@ -953,7 +1150,8 @@ local function updateVelocity(
 					)
 
 				R.velocity +=
-					(rawVelocity - R.velocity)
+					(rawVelocity
+						- R.velocity)
 					* alpha
 			end
 		end
@@ -964,8 +1162,7 @@ local function updateVelocity(
 end
 
 local function isBallInParryWindow(time)
-	-- Durante Grace não existe bola para o AP.
-	if R.grace then
+	if isTeleportLocked(time) then
 		return false, false
 	end
 
@@ -1092,37 +1289,36 @@ local function onHeartbeat(
 	samplePing(time)
 
 	-- =========================================================
-	-- GRACE = AP 100% DESLIGADO
+	-- TELEPORTED = TRAVA EXATAMENTE COMO NO ANTIGO
 	-- =========================================================
 
-	if R.grace then
-		-- A bola é completamente descartada.
-		clearBallState()
-
-		-- Nenhum clique pode permanecer armado.
-		resetParryLock()
-
-		-- Qualquer task.defer anterior fica inválida.
-		-- O token é incrementado na entrada do Grace.
-		setPhase(
-			"waiting",
-			"grace_lock"
-		)
-
-		return
-	end
-
-	if time < R.graceLockUntil then
+	if R.teleported then
 		clearBallState()
 		resetParryLock()
 
 		setPhase(
 			"waiting",
-			"grace_minimum_lock"
+			"teleport_lock"
 		)
 
 		return
 	end
+
+	if time < R.teleportLockUntil then
+		clearBallState()
+		resetParryLock()
+
+		setPhase(
+			"waiting",
+			"teleport_lock"
+		)
+
+		return
+	end
+
+	-- =========================================================
+	-- CONFIG / SPAM / ACTIVE
+	-- =========================================================
 
 	if not isAutoParryEnabled() then
 		resetParryLock()
@@ -1130,6 +1326,18 @@ local function onHeartbeat(
 		setPhase(
 			"waiting",
 			"auto_parry_disabled"
+		)
+
+		return
+	end
+
+	-- antigo bloqueava completamente o AP enquanto Spam
+	if isSpamActive() then
+		resetParryLock()
+
+		setPhase(
+			"waiting",
+			"spam_active"
 		)
 
 		return
@@ -1190,9 +1398,6 @@ local function onHeartbeat(
 	local speed =
 		R.velocity.Magnitude
 
-	-- A bola só está vindo para nós se:
-	-- 1. velocidade >= 16
-	-- 2. vetor da velocidade aponta para nós
 	local approaching =
 		speed >= T.MIN_BALL_SPEED
 		and distance > 0
@@ -1278,19 +1483,13 @@ local function onHeartbeat(
 	if R.armed then
 		R.armed = false
 
-		setPhase(
-			"detecting",
-			"parry_detected"
-		)
-
-		local currentGraceGeneration =
-			R.graceGeneration
+		local currentGeneration =
+			R.generation
 
 		task.defer(
 			fireAfterDetection,
 			ball,
-			generation,
-			currentGraceGeneration
+			currentGeneration
 		)
 	end
 end
@@ -1314,7 +1513,8 @@ end
 
 function AutoParry.setup(deps)
 	if type(deps) ~= "table" then
-		return false, "dependencias invalidas"
+		return false,
+			"dependencias invalidas"
 	end
 
 	local remote = deps.Remote
@@ -1322,34 +1522,50 @@ function AutoParry.setup(deps)
 	local utils = deps.Utils
 
 	if type(remote) ~= "table"
-		or type(remote.fireParry) ~= "function"
+		or type(remote.fireParry)
+			~= "function"
 	then
 		return false,
 			"dependencia ausente: Remote.fireParry"
 	end
 
 	if type(gameInfo) ~= "table"
-		or type(gameInfo.getSnapshot) ~= "function"
-		or type(gameInfo.isSnapshotValid) ~= "function"
-		or type(gameInfo.getBall) ~= "function"
-		or type(gameInfo.getSyncData) ~= "function"
-		or type(gameInfo.getTargetId) ~= "function"
+		or type(gameInfo.getSnapshot)
+			~= "function"
+		or type(gameInfo.isSnapshotValid)
+			~= "function"
+		or type(gameInfo.getBall)
+			~= "function"
+		or type(gameInfo.getSyncData)
+			~= "function"
+		or type(gameInfo.getTargetId)
+			~= "function"
 	then
 		return false,
 			"dependencia ausente: GameInfo"
 	end
 
 	if type(utils) ~= "table"
-		or type(utils.getLocalPlayer) ~= "function"
-		or type(utils.getRunService) ~= "function"
-		or type(utils.getConfig) ~= "function"
-		or type(utils.isActive) ~= "function"
-		or type(utils.isSpamActive) ~= "function"
-		or type(utils.trackCharacter) ~= "function"
-		or type(utils.untrackCharacter) ~= "function"
-		or type(utils.getWorkspace) ~= "function"
-		or type(utils.trackGlobal) ~= "function"
-		or type(utils.untrackGlobal) ~= "function"
+		or type(utils.getLocalPlayer)
+			~= "function"
+		or type(utils.getRunService)
+			~= "function"
+		or type(utils.getConfig)
+			~= "function"
+		or type(utils.isActive)
+			~= "function"
+		or type(utils.isSpamActive)
+			~= "function"
+		or type(utils.trackCharacter)
+			~= "function"
+		or type(utils.untrackCharacter)
+			~= "function"
+		or type(utils.getWorkspace)
+			~= "function"
+		or type(utils.trackGlobal)
+			~= "function"
+		or type(utils.untrackGlobal)
+			~= "function"
 	then
 		return false,
 			"dependencia ausente: Utils"
@@ -1372,7 +1588,8 @@ function AutoParry.setup(deps)
 
 	R.player = player
 
-	local workspaceOk, workspaceService =
+	local workspaceOk,
+		workspaceService =
 		pcall(Utils.getWorkspace)
 
 	R.workspace =
@@ -1431,7 +1648,8 @@ function AutoParry.bindCharacter(character)
 			)
 
 		if ok
-			and typeof(result) == "Instance"
+			and typeof(result)
+				== "Instance"
 			and result:IsA("BasePart")
 		then
 			root = result
@@ -1490,16 +1708,19 @@ function AutoParry.bindCharacter(character)
 		"character_bound"
 	)
 
-	local heartbeatOk, heartbeatConnection =
+	local heartbeatOk,
+		heartbeatConnection =
 		pcall(function()
-			return signal:Connect(function(dt)
-				onHeartbeat(
-					character,
-					root,
-					dt,
-					generation
-				)
-			end)
+			return signal:Connect(
+				function(dt)
+					onHeartbeat(
+						character,
+						root,
+						dt,
+						generation
+					)
+				end
+			)
 		end)
 
 	if not heartbeatOk
@@ -1517,7 +1738,8 @@ function AutoParry.bindCharacter(character)
 		heartbeatConnection
 	)
 
-	local ancestryOk, ancestryConnection =
+	local ancestryOk,
+		ancestryConnection =
 		pcall(function()
 			return character.AncestryChanged:Connect(
 				function(_, parent)
@@ -1558,16 +1780,13 @@ function AutoParry.fire()
 		return false
 	end
 
-	if R.grace then
-		return false
-	end
-
-	if isGraceLocked(clock()) then
+	if isTeleportLocked(clock()) then
 		return false
 	end
 
 	if not R.lastApproaching
-		or R.lastSpeed < T.MIN_BALL_SPEED
+		or R.lastSpeed
+			< T.MIN_BALL_SPEED
 	then
 		return false
 	end
@@ -1626,86 +1845,33 @@ function AutoParry.onBallSync(data)
 	local time = clock()
 
 	-- =========================================================
-	-- GRACE / TELEPORTED = MESMO ESTADO
-	-- OLDGRACE NAO PARTICIPA
+	-- TELEPORTED = MESMA TRAVA DO ANTIGO
+	-- Grace não participa.
 	-- =========================================================
 
-	local graceState =
-		data.Teleported == true
-		or data.Grace == true
-
-	if graceState then
-		-- Invalida imediatamente qualquer detecção pendente.
-		R.graceGeneration += 1
-
-		R.grace = true
-
-		R.graceLockUntil =
-			math.max(
-				R.graceLockUntil,
-				time + T.MIN_GRACE_LOCK
-			)
-
-		-- AP fica completamente zerado.
-		resetParryLock()
-		clearBallState()
-
-		R.lastFireAt = 0
-
-		R.passivePhase = "idle"
-		R.passiveBallAtValid = false
-
-		setPhase(
-			"waiting",
-			"grace_lock"
-		)
-
-		return
+	if data.Teleported == true then
+		enterTeleportLock(time)
+		return true
 	end
 
 	-- =========================================================
-	-- SAIDA DO GRACE
+	-- SAÍDA DO TELEPORT LOCK
 	-- =========================================================
 
-	local wasGrace = R.grace
-
-	R.grace = false
-
-	if wasGrace then
-		-- NÃO reutiliza posição, velocidade ou bola do Grace.
-		-- O próximo frame começa uma nova amostra.
-		clearBallState()
-		resetParryLock()
-
-		R.passivePhase = "idle"
-		R.passiveBallAtValid = false
-
-		setPhase(
-			"waiting",
-			"grace_finished"
-		)
-	end
-
-	-- O lock mínimo de 200ms continua valendo.
-	if time < R.graceLockUntil then
-		clearBallState()
-		resetParryLock()
-
-		setPhase(
-			"waiting",
-			"grace_minimum_lock"
-		)
-
+	if not leaveTeleportLock(time) then
 		return true
 	end
 
 	local targetId = -1
 
 	if GameInfo
-		and type(GameInfo.getTargetId) == "function"
+		and type(GameInfo.getTargetId)
+			== "function"
 	then
 		local ok, value =
-			pcall(GameInfo.getTargetId)
+			pcall(
+				GameInfo.getTargetId
+			)
 
 		if ok then
 			targetId =
@@ -1715,7 +1881,9 @@ function AutoParry.onBallSync(data)
 
 	if targetId == -1 then
 		targetId =
-			tonumber(data.TargetPlayerID)
+			tonumber(
+				data.TargetPlayerID
+			)
 			or -1
 	end
 
@@ -1760,7 +1928,8 @@ function AutoParry.onBallSync(data)
 			end
 		else
 			R.passivePhase = "idle"
-			R.passiveBallAtValid = false
+			R.passiveBallAtValid =
+				false
 		end
 
 		return true
@@ -1771,7 +1940,8 @@ function AutoParry.onBallSync(data)
 
 	if not spamActive then
 		R.passivePhase = "idle"
-		R.passiveBallAtValid = false
+		R.passiveBallAtValid =
+			false
 
 		return true
 	end
@@ -1800,21 +1970,29 @@ function AutoParry.onBallSync(data)
 	end
 
 	R.passivePhase = "idle"
-	R.passiveBallAtValid = false
+	R.passiveBallAtValid =
+		false
 
 	return true
 end
 
 function AutoParry.getTargetStatus()
 	return {
-		armed = R.armed == true,
+		armed =
+			R.armed == true,
+
 		lastTargeted =
 			R.lastTargeted == true,
+
 		targeted =
 			R.targeted == true,
+
 		approaching =
 			R.lastApproaching == true,
-		targetId = R.targetId,
+
+		targetId =
+			R.targetId,
+
 		targetKnown =
 			R.targetKnown == true,
 	}
@@ -1828,8 +2006,10 @@ local function getRootPosition()
 	end
 
 	local player = R.player
+
 	local character =
-		player and player.Character
+		player
+		and player.Character
 
 	if not character then
 		return nil
@@ -1980,25 +2160,45 @@ function AutoParry.getTiming(
 	return {
 		distance = distance,
 		speed = speed,
-		parryRadius = parryRadius,
-		fullRadius = parryRadius,
-		pureRadius = T.BASE_RADIUS,
+
+		parryRadius =
+			parryRadius,
+
+		fullRadius =
+			parryRadius,
+
+		pureRadius =
+			T.BASE_RADIUS,
+
 		noWindowParryRadius =
 			noWindowRadius,
-		pingRadius = pingRadius,
+
+		pingRadius =
+			pingRadius,
+
 		resilienceBonus =
 			resilienceBonus,
-		leadTime = leadTime,
+
+		leadTime =
+			leadTime,
+
 		deflectWindow =
 			deflectWindow,
+
 		effectiveWindow =
 			effectiveWindow,
+
 		windowFactor =
 			requestedFactor,
+
 		distanceToParryRadius =
 			distanceToRadius,
+
 		tti = tti,
-		approaching = approaching,
+
+		approaching =
+			approaching,
+
 		targeted =
 			snapshot.targeted == true,
 	}
@@ -2072,7 +2272,8 @@ function AutoParry.getRadius(
 	end
 
 	local distanceToRadius =
-		R.lastDistance - fullRadius
+		R.lastDistance
+			- fullRadius
 
 	local tti =
 		speed > 0
@@ -2084,24 +2285,44 @@ function AutoParry.getRadius(
 
 	return {
 		mode = mode,
+
 		value = value,
-		pureRadius = T.BASE_RADIUS,
+
+		pureRadius =
+			T.BASE_RADIUS,
+
 		noWindowParryRadius =
 			noWindowRadius,
-		pingRadius = pingRadius,
+
+		pingRadius =
+			pingRadius,
+
 		resilience =
 			getResilienceStatus(),
-		fullRadius = fullRadius,
+
+		fullRadius =
+			fullRadius,
+
 		deflectWindow =
 			deflectWindow,
+
 		windowFactor =
 			requestedFactor,
+
 		effectiveWindow =
 			effectiveWindow,
-		leadTime = leadTime,
-		distance = R.lastDistance,
-		speed = speed,
-		tti = tti,
+
+		leadTime =
+			leadTime,
+
+		distance =
+			R.lastDistance,
+
+		speed =
+			speed,
+
+		tti =
+			tti,
 	}
 end
 
@@ -2123,7 +2344,8 @@ function AutoParry.getStatus()
 	local apiVersion
 
 	if Utils
-		and type(Utils.apiVersion) == "function"
+		and type(Utils.apiVersion)
+			== "function"
 	then
 		local ok, value =
 			pcall(Utils.apiVersion)
@@ -2157,79 +2379,125 @@ function AutoParry.getStatus()
 				T.DEFAULT_WINDOW_FACTOR,
 
 			windowFactorRange = {
-				min = T.MIN_WINDOW_FACTOR,
-				max = T.MAX_WINDOW_FACTOR,
+				min =
+					T.MIN_WINDOW_FACTOR,
+
+				max =
+					T.MAX_WINDOW_FACTOR,
 			},
 		},
 
 		lifecycle = {
-			phase = R.phase,
-			bound = R.bound == true,
-			alive = R.alive == true,
-			generation = R.generation,
+			phase =
+				R.phase,
+
+			bound =
+				R.bound == true,
+
+			alive =
+				R.alive == true,
+
+			generation =
+				R.generation,
+
 			lifeGeneration =
 				R.lifeGeneration,
-			graceGeneration =
-				R.graceGeneration,
 		},
 
-		radius = radius,
+		radius =
+			radius,
 
-		resilience = resilience,
+		resilience =
+			resilience,
 
 		timing = {
-			tti = radius.tti,
-			ti = radius.tti,
-			speed = R.lastSpeed,
-			distance = R.lastDistance,
+			tti =
+				radius.tti,
+
+			ti =
+				radius.tti,
+
+			speed =
+				R.lastSpeed,
+
+			distance =
+				R.lastDistance,
+
 			distanceToRadius =
 				R.lastDistance
 				- radius.fullRadius,
+
 			deflectWindow =
 				T.BASE_WINDOW,
+
 			effectiveWindow =
 				T.BASE_WINDOW
 				* T.DEFAULT_WINDOW_FACTOR,
-			leadTime = R.lastLeadTime,
+
+			leadTime =
+				R.lastLeadTime,
+
 			noWindowParryRadius =
 				radius.noWindowParryRadius,
+
 			pingRadius =
 				radius.pingRadius,
+
 			approaching =
 				R.lastApproaching == true,
 		},
 
 		ping = {
-			oneWay = R.ping * 0.5,
-			raw = R.ping,
+			oneWay =
+				R.ping * 0.5,
+
+			raw =
+				R.ping,
+
 			minimum = nil,
 		},
 
-		target = target,
+		target =
+			target,
 
 		cycle = {
-			fired = R.armed == false,
-			armed = R.armed == true,
-			lastFireAt = R.lastFireAt,
-			lastTTI = radius.tti,
+			fired =
+				R.armed == false,
+
+			armed =
+				R.armed == true,
+
+			lastFireAt =
+				R.lastFireAt,
+
+			lastTTI =
+				radius.tti,
 		},
 
 		config = {
-			baseRadius = T.BASE_RADIUS,
-			baseWindow = T.BASE_WINDOW,
+			baseRadius =
+				T.BASE_RADIUS,
+
+			baseWindow =
+				T.BASE_WINDOW,
+
 			defaultWindowFactor =
 				T.DEFAULT_WINDOW_FACTOR,
 
 			windowFactorRange = {
-				min = T.MIN_WINDOW_FACTOR,
-				max = T.MAX_WINDOW_FACTOR,
+				min =
+					T.MIN_WINDOW_FACTOR,
+
+				max =
+					T.MAX_WINDOW_FACTOR,
 			},
 
 			minBallSpeed =
 				T.MIN_BALL_SPEED,
 		},
 
-		timestamp = time,
+		timestamp =
+			time,
 	}
 end
 
