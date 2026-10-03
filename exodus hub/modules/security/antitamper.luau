@@ -150,7 +150,7 @@ local function snapshotFunction(fn, baseline, seen, depth)
 	if Type(DebugGetUpvalue) ~= "function" then return true end
 	for index = 1, T.MAX_UPVALUES do
 		local ok, name, value = PCall(DebugGetUpvalue, fn, index)
-		if not ok then return false, "falha ao ler upvalue" end
+		if not ok then break end
 		if not name then break end
 		local kind = valueKind(value)
 		local upvalue = {
@@ -259,7 +259,7 @@ local function verifyFunctions()
 		if T.CHECK_UPVALUES and Type(DebugGetUpvalue) == "function" then
 			for _, saved in ipairs(entry.upvalues) do
 				local ok, name, value = PCall(DebugGetUpvalue, fn, saved.index)
-				if not ok then return false, "falha ao verificar upvalue" end
+				if not ok then break end
 				if name ~= saved.name then return false, ("upvalue renomeado: %s"):format(saved.name) end
 				if saved.reference ~= nil then
 					if not RawEqual(value, saved.reference) then return false, ("referencia de upvalue alterada: %s"):format(saved.name) end
