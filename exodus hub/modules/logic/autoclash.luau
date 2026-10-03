@@ -476,9 +476,8 @@ end
 -- RALLY
 local function rallyCheck(data)
 	if not R.active or type(data) ~= "table" then return true end
-	local target
-	if type(GameInfo.getTargetId) == "function" then target = normalizeTarget(GameInfo.getTargetId()) end
-	if not target then target = normalizeTarget(data.TargetPlayerID) or normalizeTarget(data.HighlightTargetPlayerID) end
+	local target = type(GameInfo.getTargetId) == "function" and GameInfo.getTargetId()
+		or normalizeTarget(data.TargetPlayerID)
 	if not target or target == R.localUserId or target == R.clashPartnerId then return true end
 	local position = getDataPosition(data); local root = getRootPosition()
 	if not position or not root or R.parryRadius <= 0 then return true end
@@ -654,15 +653,7 @@ local function evaluateClash(t, snapshot)
 		return
 	end
 	if R.returnPending and t >= R.returnExpiresAt then clearReturnState(); R.lastGate = "return_expired"; return end
-	local activationReady
-	if R.returnPending then
-		activationReady = tryReturnActivate(snapshot, t)
-	else
-		activationReady = canReactivate(t) and shouldActivate(snapshot, t)
-	end
-	if activationReady then
-		local activationReason = getActivationReason(snapshot, t); clearReturnState(); setActive(true, "activated", snapshot, activationReason)
-	end
+	if tryReturnActivate(snapshot, t) then local activationReason = getActivationReason(snapshot, t); clearReturnState(); setActive(true, "activated", snapshot, activationReason) end
 end
 
 -- HUB
@@ -734,9 +725,8 @@ function AutoClash.onBallSync(data)
 		resetTargetState(); R.reactivateBlockedUntil = math.max(R.reactivateBlockedUntil, t + T.RESET_LOCK_BASE + pingCompensation())
 		R.lastGate = data.Teleported == true and "teleported" or "grace_reset"; return
 	end
-	local target
-	if type(GameInfo.getTargetId) == "function" then target = normalizeTarget(GameInfo.getTargetId()) end
-	if not target then target = normalizeTarget(data.TargetPlayerID) or normalizeTarget(data.HighlightTargetPlayerID) end
+	local target = type(GameInfo.getTargetId) == "function" and GameInfo.getTargetId()
+		or normalizeTarget(data.TargetPlayerID)
 	if not target then
 		if R.active then
 			if Deactivation.confirm(t, "invalid_target") then setActive(false, "invalid_target") end
@@ -908,9 +898,6 @@ function AutoClash.getStatus()
 		activationRadius = R.lastActivationRadius,
 		activationSpeed = R.lastActivationSpeed,
 		parryRadius = R.parryRadius,
-		lastSpeed = R.lastSpeed,
-		lastSyncAt = R.lastSyncAt,
-		returnPending = R.returnPending == true,
 		lastTarget = R.lastTarget,
 		clashPartnerId = R.clashPartnerId,
 		clashIntervalEma = R.clashIntervalEma,
