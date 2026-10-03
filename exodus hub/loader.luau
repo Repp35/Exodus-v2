@@ -26,6 +26,7 @@ local PROJECT_PATH = "exodus%20hub/"
 local LOCAL_ROOTS = { "Exodus-v2/exodus hub", "exodus hub", "Exodus Hub" }
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local CACHE_BUSTER = tostring(os.time())
+local HttpService = game:GetService("HttpService")
 local MODULE_MANIFEST = {
 	{ name = "config", path = "modules/front/config.luau" },
 	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
@@ -175,16 +176,29 @@ local function execute(name, chunk)
 end
 
 -- urls
-local function buildURLs(version)
-	local root = BASE_URL .. (version or ("refs/heads/" .. BRANCH)) .. "/" .. PROJECT_PATH; local urls = {}
+local function resolveLatestRevision()
+	local url = "https://api.github.com/repos/" .. REPOSITORY .. "/commits/" .. BRANCH .. "?exodus_cache=" .. CACHE_BUSTER
+	local body, requestError = request(url, {
+		["Accept"] = "application/vnd.github+json",
+		["User-Agent"] = "Exodus-Hub-Loader",
+	})
+	if not body then return nil, requestError or "SHA mais recente indisponível" end
+	local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
+	if not ok or type(document) ~= "table" or type(document.sha) ~= "string" or document.sha == "" then
+		return nil, "resposta do SHA mais recente inválida"
+	end
+	return document.sha
+end
+local function buildURLs(revision)
+	local root = BASE_URL .. revision .. "/" .. PROJECT_PATH; local urls = {}
 	for _, entry in ipairs(MODULE_MANIFEST) do
-		urls[entry.name] = root .. entry.path .. "?exodus_cache=" .. CACHE_BUSTER
+		urls[entry.name] = root .. entry.path
 	end
 	return urls
 end
 local function buildCDNURL(url)
 	local repository, version, path =
-		string.match(url, "^https://raw%.githubusercontent%.com/([^/]+/[^/]+)/refs/heads/([^/]+)/(.+)$")
+		string.match(url, "^https://raw%.githubusercontent%.com/([^/]+/[^/]+)/([^/]+)/(.+)$")
 	if not repository or not version or not path then return nil end
 	return "https://cdn.jsdelivr.net/gh/" .. repository .. "@" .. version .. "/" .. path
 end
@@ -419,7 +433,9 @@ end
 local function startInternal()
 	printStartup("Exodus: iniciando"); stopPreviousRuntime(); clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
 	if not playerReady then return false, "Loader", playerError end
-	local version = "refs/heads/" .. BRANCH; local urls = buildURLs(version); local loaded, moduleName, loadError = loadModules(urls)
+	local version, revisionError = resolveLatestRevision()
+	if not version then return false, "Loader", revisionError end
+	local urls = buildURLs(version); local loaded, moduleName, loadError = loadModules(urls)
 	if not loaded then return false, moduleName, loadError end
 	activeLoaded = loaded; local utils = loaded.utils; utils.start(); utils.setLifecyclePhase("loading")
 	Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot()
