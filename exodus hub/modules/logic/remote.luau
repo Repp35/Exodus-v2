@@ -1,3 +1,5 @@
+--!strict
+--!optimize 2
 -- [[ remote ]]
 
 -- state
@@ -307,6 +309,7 @@ local function locateBallSync()
 		replicatedStorage:FindFirstChild("BallSyncData"),
 		replicatedStorage:FindFirstChild("BallSyncData", true),
 	}
+
 	for _, candidate in ipairs(candidates) do
 		if candidate and candidate:IsA("RemoteEvent") then return candidate end
 	end

@@ -1,3 +1,5 @@
+--!strict
+--!optimize 2
 -- [[ uiconfig ]]
 
 local UIConfig = {}
@@ -11,11 +13,6 @@ UIConfig.panelToggles = {
 		kind = "toggle",
 		label = "Auto Clash",
 		key = "AutoClash",
-	},
-	{
-		kind = "toggle",
-		label = "Dynamic Parry",
-		key = "DynamicParry",
 	},
 	{
 		kind = "toggle",
@@ -39,9 +36,7 @@ UIConfig.__config = {
 	schema = {
 		AutoParry = "boolean",
 		AutoClash = "boolean",
-		DynamicParry = "boolean",
 		ClashBallVisible = "boolean",
-		DynamicParryReleaseDelay = "delay",
 		CPS = "rate",
 		CPF = "rate",
 		SpamRateMode = "rateMode",
@@ -54,8 +49,6 @@ UIConfig.__config = {
 		ClashBallY = "position",
 		MiniX = "position",
 		MiniY = "position",
-		DynamicParryX = "position",
-		DynamicParryY = "position",
 		PanelX = "position",
 		PanelY = "position",
 	},
@@ -63,9 +56,7 @@ UIConfig.__config = {
 	defaults = {
 		AutoParry = true,
 		AutoClash = true,
-		DynamicParry = false,
 		ClashBallVisible = false,
-		DynamicParryReleaseDelay = 0.2,
 		CPS = 23.5,
 		CPF = 0.3917,
 		SpamRateMode = "CPS",

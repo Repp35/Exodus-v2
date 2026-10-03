@@ -1,3 +1,5 @@
+--!strict
+--!optimize 2
 -- [[ autoclash ]]
 
 local AutoClash = {}
@@ -192,8 +194,7 @@ local function getSnapshotPosition(snapshot)
 	local position = snapshot and snapshot.position; return typeof(position) == "Vector3" and position or nil
 end
 local function isSnapshotTargeted(snapshot)
-	return snapshot ~= nil
-		and (snapshot.targeted == true or normalizeTarget(snapshot.targetId) == R.localUserId)
+	return snapshot ~= nil and (snapshot.targeted == true or normalizeTarget(snapshot.targetId) == R.localUserId)
 end
 local function getDataPosition(data)
 	local position = data and data.RealPosition; return typeof(position) == "Vector3" and position or nil
@@ -275,20 +276,22 @@ local function queryRadius(factor)
 	if radius and radius == radius and radius >= 0 and radius < math.huge then return radius end
 	return R.parryRadius
 end
+local function queryPureRadius()
+	local f = FN.getRadius
+	if not f then return 0 end
+	local status = f("geometry", 0, R.lastSpeed)
+	if type(status) ~= "table" then return 0 end
+	local radius = tonumber(status.noWindowParryRadius)
+	if radius and radius == radius and radius >= 0 and radius < math.huge then return radius end
+	return 0
+end
 local function refreshRadiusCache(t)
 	t = t or now()
-	if
-		R.radiusCacheAt > 0
-		and t - R.radiusCacheAt < 1 / 60
-		and math.abs(R.lastSpeed - R.radiusCacheSpeed) < 2
-	then
-		return
-	end
+	if R.radiusCacheAt > 0 and t - R.radiusCacheAt < 1 / 60 and math.abs(R.lastSpeed - R.radiusCacheSpeed) < 2 then return end
 	local base = queryRadius(1.0)
 	if base > 0 then R.parryRadius = base; R.radiusSafety = base end
 	if not R.active then R.radiusActivation = queryRadius(T.ACTIVATION_WINDOW_FACTOR) end
-	R.radiusCacheAt = t
-	R.radiusCacheSpeed = R.lastSpeed
+	R.radiusCacheAt = t; R.radiusCacheSpeed = R.lastSpeed
 end
 local function getActivationRadius(t)
 	if t < R.dashBonusUntil then
@@ -337,9 +340,10 @@ local function resetRuntime(reason)
 	R.generation += 1
 	if R.active then setActive(false, reason or "reset") end
 	disconnectList(R.connections, true); R.bound = false; R.boundRoot = nil; R.lastSpeed = 0
-	R.parryRadius = 0; R.radiusCacheAt = 0; R.radiusCacheSpeed = -1; R.radiusActivation = 0; R.radiusSafety = 0; R.lastSyncAt = 0
-	R.lastEvalAt = 0; R.reactivateBlockedUntil = 0; R.activationDeactLockedUntil = 0; resetTargetState()
-	resetDeactivationState(); R.lastGate = "detached"; setPhase("detached", reason or "reset")
+	R.parryRadius = 0; R.radiusCacheAt = 0; R.radiusCacheSpeed = -1; R.radiusActivation = 0
+	R.radiusSafety = 0; R.lastSyncAt = 0; R.lastEvalAt = 0; R.reactivateBlockedUntil = 0
+	R.activationDeactLockedUntil = 0; resetTargetState(); resetDeactivationState(); R.lastGate = "detached"
+	setPhase("detached", reason or "reset")
 end
 local function updateTtiEma(t, root, snapshot)
 	local position = getSnapshotPosition(snapshot); local ball = snapshot and snapshot.ball; local velocity = snapshot and snapshot.velocity
@@ -422,19 +426,19 @@ function Deactivation.confirm(t, reason)
 end
 function Deactivation.direction(t, snapshot, speed)
 	if isSnapshotTargeted(snapshot) then R.lastGate = "deact_direction_targeted"; return false end
-	local radius = AutoParry.getRadius("geometry", 0, speed); local parryRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil; local root = getRootPosition()
+	local radius = AutoParry.getRadius("geometry", 0, speed); local pureRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil; local root = getRootPosition()
 	local position = getSnapshotPosition(snapshot)
 	if
-		not parryRadius
-		or parryRadius ~= parryRadius
-		or parryRadius < 0
-		or parryRadius == math.huge
+		not pureRadius
+		or pureRadius ~= pureRadius
+		or pureRadius < 0
+		or pureRadius == math.huge
 		or not root
 		or not position
 	then
 		Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_unavailable"; return false
 	end
-	local directionDeactRadius = parryRadius * T.DIRECTION_DEACT_MARGIN_FACTOR
+	local directionDeactRadius = pureRadius * T.DIRECTION_DEACT_MARGIN_FACTOR
 	if distanceSquared(root, position) <= directionDeactRadius * directionDeactRadius then Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_protected"; return false end
 	if R.lastDirectionSwitchAt <= 0 then return false end
 	if R.lastSyncAt < R.lastDirectionSwitchAt then return false end
@@ -685,10 +689,10 @@ local function heartbeatStep(generation, character, root)
 	if R.returnExpiresAt > 0 and t >= R.returnExpiresAt then clearReturnState(); R.lastGate = "return_expired" end
 	local getSnapshot = FN.getSnapshot; local isSnapshotValid = FN.isSnapshotValid
 	if not getSnapshot or not isSnapshotValid then R.lastGate = "no_gameinfo"; return end
-		local snapshotCallOk, snapshot = pcall(getSnapshot, nil, t)
-		if not snapshotCallOk or type(snapshot) ~= "table" then R.lastGate = "snapshot_error"; return end
-		local validCallOk, snapshotValid = pcall(isSnapshotValid, snapshot, t)
-		if not validCallOk or snapshotValid ~= true then R.lastGate = "snapshot_invalid"; return end
+	local snapshotCallOk, snapshot = pcall(getSnapshot, nil, t)
+	if not snapshotCallOk or type(snapshot) ~= "table" then R.lastGate = "snapshot_error"; return end
+	local validCallOk, snapshotValid = pcall(isSnapshotValid, snapshot, t)
+	if not validCallOk or snapshotValid ~= true then R.lastGate = "snapshot_invalid"; return end
 	local target = normalizeTarget(snapshot.targetId)
 	if target then R.lastTarget = target end
 	evaluateClash(t, snapshot)
@@ -927,6 +931,7 @@ AutoClash.__contract = {
 
 	onBallSync = true,
 	bindCharacter = true,
+	minAutoParryVersion = 10,
 }
 
 return AutoClash

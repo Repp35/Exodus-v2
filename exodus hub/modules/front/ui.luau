@@ -1,3 +1,5 @@
+--!strict
+--!optimize 2
 -- [[ ui ]]
 
 -- services
@@ -8,7 +10,6 @@ local Controls = {}
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
-local Players = game:GetService("Players")
 local Camera = workspace.CurrentCamera
 local _wait = task.wait
 local _spawn = task.spawn
@@ -19,18 +20,7 @@ local UIState = {
 	panelOpen = false,
 	spamOn = false,
 	clashBallOn = false,
-	dynamicParryOn = false,
-	dynamicParryState = "idle",
 	btnIsDragging = function() return false end,
-	isDynamicParryDragging = function() return false end,
-	dynamicButtonDown = false,
-	dynamicButtonInput = nil,
-	dynamicButtonStart = nil,
-	dynamicButtonDragged = false,
-	dynamicHoldToken = 0,
-	dynamicHoldTriggered = false,
-	dynamicAnimToken = 0,
-	dynamicReleaseToken = 0,
 	panelTween = nil,
 	btnTween = nil,
 }
@@ -40,16 +30,6 @@ local screenGui
 local floatingButton
 local clashBall
 local miniGui
-local dynamicButton
-local dynamicButtonBaseSize
-local dynamicTargetPosition
-local earlyClickOverlay
-local earlyClickTween
-local earlyClickVisualToken = 0
-local mobileBlockButton
-local mobileBlockButtonOriginalVisible
-local mobileBlockButtonConnections = {}
-local showDynamicParry
 local configPanel
 local particleLayer
 local titleBar
@@ -146,56 +126,6 @@ local function untrackConn(c)
 end
 local function safeDisconnect(c)
 	if c then safe(function() c:Disconnect() end) end
-end
-local function isMobileDevice() return UIS.TouchEnabled and not UIS.KeyboardEnabled and not UIS.GamepadEnabled end
-local function findMobileBlockButton()
-	local player = Players.LocalPlayer; local playerGui = player and player:FindFirstChild("PlayerGui"); local interface = playerGui and playerGui:FindFirstChild("Interface")
-	local mobileUI = interface and interface:FindFirstChild("MobileUI"); local buttons = mobileUI and mobileUI:FindFirstChild("Buttons"); local jump = buttons and buttons:FindFirstChild("Jump")
-	local block = jump and jump:FindFirstChild("BLOCK"); local button = block and block:FindFirstChild("Button"); return button and button:IsA("GuiObject") and button or nil
-end
-local function disconnectMobileBlockButton()
-	for i = #mobileBlockButtonConnections, 1, -1 do
-		safeDisconnect(mobileBlockButtonConnections[i]); mobileBlockButtonConnections[i] = nil
-	end
-end
-local function restoreMobileBlockButton()
-	if mobileBlockButton and mobileBlockButton.Parent and mobileBlockButtonOriginalVisible ~= nil then mobileBlockButton.Visible = mobileBlockButtonOriginalVisible end
-	disconnectMobileBlockButton(); mobileBlockButton = nil; mobileBlockButtonOriginalVisible = nil
-end
-local function syncMobileParryReplacement()
-	if not isMobileDevice() then restoreMobileBlockButton(); return false end
-	local target = findMobileBlockButton()
-	if target ~= mobileBlockButton then
-		restoreMobileBlockButton(); mobileBlockButton = target
-		if target then
-			mobileBlockButtonOriginalVisible = target.Visible
-			local function updatePosition()
-				if
-					target ~= mobileBlockButton
-					or not dynamicButton
-					or not dynamicButton.Parent
-					or not target.Parent
-				then
-					return
-				end
-				local size = target.AbsoluteSize; local center = target.AbsolutePosition + size / 2; dynamicButton.AnchorPoint = Vector2.new(0.5, 0.5)
-				dynamicButtonBaseSize = UDim2.fromOffset(size.X, size.Y); dynamicButton.Size = UDim2.fromOffset(size.X, size.Y); dynamicButton.Position = UDim2.fromOffset(center.X, center.Y)
-			end
-			mobileBlockButtonConnections[#mobileBlockButtonConnections + 1] =
-				target:GetPropertyChangedSignal("AbsolutePosition"):Connect(updatePosition)
-			mobileBlockButtonConnections[#mobileBlockButtonConnections + 1] =
-				target:GetPropertyChangedSignal("AbsoluteSize"):Connect(updatePosition)
-		end
-	end
-	if not target then
-		if dynamicButton then dynamicButton.Visible = false end
-		return true
-	end
-	local size = target.AbsoluteSize; local center = target.AbsolutePosition + size / 2; dynamicButton.AnchorPoint = Vector2.new(0.5, 0.5); dynamicButtonBaseSize = UDim2.fromOffset(size.X, size.Y)
-	dynamicButton.Size = UDim2.fromOffset(size.X, size.Y); dynamicButton.Position = UDim2.fromOffset(center.X, center.Y)
-	if UIState.dynamicParryOn then target.Visible = false; dynamicButton.Visible = true
-	else target.Visible = mobileBlockButtonOriginalVisible; dynamicButton.Visible = false end
-	return true
 end
 local function disconnectUIConnections()
 	for i = #UIState.connections, 1, -1 do
@@ -343,77 +273,6 @@ setSpam = function(v)
 		task.delay(0.08, function() twPlay(spamBtn, 0.28, { Size = UDim2.new(1, -16, 0, 48) }, EASE_BACK, DIR_OUT) end)
 	end
 end
-local function paintDynamicParry(activeOverride)
-	if not dynamicButton or not dynamicButton.Parent then return end
-	local stateActive = UIState.dynamicParryState == "holding" or UIState.dynamicParryState == "pressed"; local active = activeOverride
-	if active == nil then active = UIState.dynamicButtonDown or stateActive end
-	dynamicButton.Text = active and "ON" or "OFF"; dynamicButton.TextSize = active and 18 or 16; local baseSize = dynamicButtonBaseSize or UDim2.fromOffset(CLASH_SIZE, CLASH_SIZE)
-	twPlay(dynamicButton, 0.28, {
-		BackgroundColor3 = active and C.green or C.red,
-	}, EASE_SINE, DIR_INOUT)
-	twPlay(dynamicButton, 0.08, {
-		Size = UDim2.new(baseSize.X.Scale, baseSize.X.Offset - 6, baseSize.Y.Scale, baseSize.Y.Offset - 6),
-	}, EASE_SINE, DIR_OUT)
-	task.delay(0.08, function()
-		if dynamicButton and dynamicButton.Parent then
-			twPlay(dynamicButton, 0.28, {
-				Size = baseSize,
-			}, EASE_BACK, DIR_OUT)
-		end
-	end)
-end
-local function clearEarlyClickVisual()
-	earlyClickVisualToken += 1; local token = earlyClickVisualToken; safeCancel(earlyClickTween); earlyClickTween = nil
-	if earlyClickOverlay and earlyClickOverlay.Parent then earlyClickOverlay.Size = UDim2.new(1, 0, 0, 0); earlyClickOverlay.Visible = false end
-end
-local function startEarlyClickVisual(duration)
-	if not earlyClickOverlay or not earlyClickOverlay.Parent then return end
-	earlyClickVisualToken += 1; local token = earlyClickVisualToken; safeCancel(earlyClickTween); earlyClickOverlay.Size = UDim2.new(1, 0, 1, 0)
-	earlyClickOverlay.BackgroundTransparency = 0.4; earlyClickOverlay.Visible = true
-	earlyClickTween = TweenService:Create(
-		earlyClickOverlay,
-		TweenInfo.new(math.max(0, duration or 0.2), Enum.EasingStyle.Linear),
-		{ Size = UDim2.new(1, 0, 0, 0) }
-	)
-	earlyClickTween:Play()
-	task.delay(math.max(0, duration or 0.2), function()
-		if token == earlyClickVisualToken then clearEarlyClickVisual() end
-	end)
-end
-local function setDynamicParry(v)
-	if not Controls.DynamicParry then return end
-	UIState.dynamicParryOn = v == true; setConfigValue("DynamicParry", UIState.dynamicParryOn); showDynamicParry(UIState.dynamicParryOn)
-	if not UIState.dynamicParryOn then
-		clearEarlyClickVisual(); UIState.dynamicButtonDown = false; UIState.dynamicButtonInput = nil; UIState.dynamicButtonStart = nil
-		UIState.dynamicButtonDragged = false; UIState.dynamicHoldToken += 1; UIState.dynamicHoldTriggered = false; UIState.dynamicAnimToken += 1
-		UIState.dynamicReleaseToken += 1
-		if type(Controls.DynamicParry.cancel) == "function" then Controls.DynamicParry.cancel()
-		elseif type(Controls.DynamicParry.release) == "function" then Controls.DynamicParry.release() end
-		paintDynamicParry(false)
-	else
-		paintDynamicParry(false)
-	end
-end
-showDynamicParry = function(v)
-	if not dynamicButton then return end
-	if isMobileDevice() then syncMobileParryReplacement(); return end
-	restoreMobileBlockButton(); dynamicButton.AnchorPoint = Vector2.new(0, 0); dynamicButtonBaseSize = UDim2.fromOffset(CLASH_SIZE, CLASH_SIZE); dynamicButton.Size = dynamicButtonBaseSize
-	if not dynamicTargetPosition then return end
-	local offscreen = UDim2.new(0, viewport().X + 30, 0, dynamicTargetPosition.Y.Offset)
-	if v then
-		dynamicButton.Visible = true; dynamicButton.Position = offscreen
-		twPlay(dynamicButton, 0.38, {
-			Position = dynamicTargetPosition,
-		}, EASE_OUT, DIR_OUT)
-	else
-		twPlay(dynamicButton, 0.28, {
-			Position = offscreen,
-		}, EASE_IN, DIR_IN)
-		task.delay(0.3, function()
-			if dynamicButton and not UIState.dynamicParryOn then dynamicButton.Visible = false end
-		end)
-	end
-end
 local PW, PH = 540, 380
 local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
 local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 52, 68, 118
@@ -436,26 +295,20 @@ local PARTICLE_COLORS = {
 
 -- cleanup
 local function cleanupUI()
-	safeCancel(UIState.panelTween); safeCancel(UIState.btnTween); restoreMobileBlockButton(); disconnectUIConnections()
-	UIState.connections = {}; UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false
-	UIState.dynamicParryOn = false; UIState.dynamicParryState = "idle"
+	safeCancel(UIState.panelTween); safeCancel(UIState.btnTween); disconnectUIConnections(); UIState.connections = {}
+	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false
 	if Utils then Utils.setManualSpamActive(false) end
-	if Controls.DynamicParry and type(Controls.DynamicParry.cancel) == "function" then Controls.DynamicParry.cancel()
-	elseif Controls.DynamicParry and type(Controls.DynamicParry.release) == "function" then Controls.DynamicParry.release() end
 	UIState.panelTween = nil; UIState.btnTween = nil
 	UIState.btnIsDragging = function() return false end
-	UIState.isDynamicParryDragging = function() return false end
-	UIState.dynamicButtonDown = false; UIState.dynamicButtonInput = nil; UIState.dynamicButtonStart = nil; UIState.dynamicButtonDragged = false
-	UIState.dynamicHoldToken = 0; UIState.dynamicHoldTriggered = false; UIState.dynamicAnimToken = 0; UIState.dynamicReleaseToken = 0
 	for i = #flowingTweens, 1, -1 do
 		safeCancel(flowingTweens[i]); flowingTweens[i] = nil
 	end
 	local current = screenGui
 	if current then pcall(function() current:Destroy() end) end
 	screenGui = nil; floatingButton = nil; clashBall = nil; miniGui = nil
-	dynamicButton = nil; dynamicTargetPosition = nil; configPanel = nil; particleLayer = nil
-	titleBar = nil; closeButton = nil; colLeft = nil; colRight = nil
-	killBtn = nil; autoClashTrack = nil; autoClashThumb = nil
+	configPanel = nil; particleLayer = nil; titleBar = nil; closeButton = nil
+	colLeft = nil; colRight = nil; killBtn = nil; autoClashTrack = nil
+	autoClashThumb = nil
 	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil end
 end
 
@@ -783,11 +636,6 @@ function ExodusUI.setup(deps)
 		or type(deps.Utils.isManualSpamActive) ~= "function"
 		or type(deps.Utils.setManualSpamActive) ~= "function"
 		or type(deps.Controls) ~= "table"
-		or type(deps.Controls.DynamicParry) ~= "table"
-		or type(deps.Controls.DynamicParry.press) ~= "function"
-		or type(deps.Controls.DynamicParry.release) ~= "function"
-		or type(deps.Controls.DynamicParry.cancel) ~= "function"
-		or type(deps.Controls.DynamicParry.setStateHandler) ~= "function"
 		or type(deps.Utils.stop) ~= "function"
 		or type(deps.Utils.name) ~= "function"
 		or type(deps.Utils.version) ~= "function"
@@ -796,32 +644,17 @@ function ExodusUI.setup(deps)
 		or type(deps.UIConfig.panelToggles) ~= "table"
 		or type(deps.UIConfig.panelComponents) ~= "table"
 	then
-		return false, "dependência ausente: Utils, Controls.DynamicParry ou UIConfig"
+		return false, "dependência ausente: Utils, Controls ou UIConfig"
 	end
 	Utils = deps.Utils; UIConfig = deps.UIConfig; Controls = type(deps.Controls) == "table" and deps.Controls or {}
-	if type(Controls.DynamicParry.setAutoClashDisabledHandler) == "function" then
-		Controls.DynamicParry.setAutoClashDisabledHandler(function()
-			UIState.clashBallOn = false; paintClashBall(); syncAutoClashToggle()
-		end)
-	end
-	Controls.DynamicParry.setStateHandler(function(state)
-		UIState.dynamicParryState = state; paintDynamicParry()
-	end)
-	if type(Controls.DynamicParry.setEarlyClickStateHandler) == "function" then
-		Controls.DynamicParry.setEarlyClickStateHandler(function(state, duration)
-			if state == "pending" then startEarlyClickVisual(duration)
-			elseif state == "accepted" then clearEarlyClickVisual()
-			else clearEarlyClickVisual() end
-		end)
-	end
 	if type(_G.ExodusUICleanup) == "function" then
 		pcall(_G.ExodusUICleanup)
 	else
 		local old = CoreGui:FindFirstChild("ExodusUISystem")
 		if old then old:Destroy() end
 	end
-	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.dynamicParryOn = Utils.getConfig().DynamicParry == true
-	UIState.dynamicParryState = "idle"; UIState.panelTween = nil; UIState.btnTween = nil; _G.ExodusUICleanup = cleanupUI
+	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.panelTween = nil
+	UIState.btnTween = nil; _G.ExodusUICleanup = cleanupUI
 	screenGui = inst("ScreenGui", {
 		Name = "ExodusUISystem",
 		ResetOnSpawn = false,
@@ -961,93 +794,6 @@ function ExodusUI.setup(deps)
 	makeDraggable(miniTitleBar, miniGui, function()
 		setConfigValue("MiniX", miniGui.Position.X.Offset); setConfigValue("MiniY", miniGui.Position.Y.Offset)
 	end)
-	local dynamicX = config.DynamicParryX or (viewport().X - CLASH_SIZE - 14); local dynamicY = config.DynamicParryY or (viewport().Y / 2 + MINI_H / 2 + 12)
-	dynamicTargetPosition = UDim2.new(0, dynamicX, 0, dynamicY)
-	dynamicButton = inst("TextButton", {
-		Name = "ExodusDynamicParry",
-		Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
-		Position = UDim2.new(0, viewport().X + 30, 0, dynamicY),
-		BackgroundColor3 = C.red,
-		Text = "OFF",
-		TextColor3 = Color3.new(1, 1, 1),
-		TextSize = 16,
-		Font = Enum.Font.GothamBold,
-		Active = true,
-		BorderSizePixel = 0,
-		ZIndex = 8,
-		Parent = screenGui,
-	})
-	corner(dynamicButton, 999); stroke(dynamicButton, Color3.new(0, 0, 0), 2); dynamicButtonBaseSize = UDim2.fromOffset(CLASH_SIZE, CLASH_SIZE)
-	earlyClickOverlay = inst("Frame", {
-		Name = "EarlyClickCooldownVisual",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 0, 1, 0),
-		Size = UDim2.new(1, 0, 0, 0),
-		BackgroundColor3 = Color3.new(0, 0, 0),
-		BackgroundTransparency = 0.4,
-		BorderSizePixel = 0,
-		Visible = false,
-		ZIndex = 9,
-		Parent = dynamicButton,
-	})
-	corner(earlyClickOverlay, 999); dynamicButton.Visible = false
-	local function releaseDynamicParry()
-		if not UIState.dynamicButtonDown then return end
-		local holdTriggered = UIState.dynamicHoldTriggered; UIState.dynamicButtonDown = false; UIState.dynamicButtonInput = nil; UIState.dynamicButtonStart = nil
-		UIState.dynamicHoldToken += 1; UIState.dynamicHoldTriggered = false
-		if holdTriggered then safe(Controls.DynamicParry.release); paintDynamicParry(false); return end
-		paintDynamicParry(false)
-	end
-	trackConn(dynamicButton.InputBegan:Connect(function(input)
-		if
-			input.UserInputType ~= Enum.UserInputType.MouseButton1
-			and input.UserInputType ~= Enum.UserInputType.Touch
-		then
-			return
-		end
-		if UIState.dynamicButtonDown or UIState.isDynamicParryDragging() then return end
-		UIState.dynamicButtonDown = true; UIState.dynamicButtonInput = input; UIState.dynamicButtonStart = input.Position; UIState.dynamicButtonDragged = false
-		UIState.dynamicHoldTriggered = false; UIState.dynamicHoldToken += 1; paintDynamicParry(true); local ok = safe(Controls.DynamicParry.press)
-		if ok then UIState.dynamicHoldTriggered = true end
-	end))
-	trackConn(dynamicButton.InputEnded:Connect(function(input)
-		if
-			input.UserInputType ~= Enum.UserInputType.MouseButton1
-			and input.UserInputType ~= Enum.UserInputType.Touch
-		then
-			return
-		end
-		releaseDynamicParry()
-	end))
-	trackConn(UIS.InputEnded:Connect(function(input)
-		if not UIState.dynamicButtonDown then return end
-		if
-			input.UserInputType ~= Enum.UserInputType.MouseButton1
-			and input.UserInputType ~= Enum.UserInputType.Touch
-		then
-			return
-		end
-		releaseDynamicParry()
-	end))
-	UIState.isDynamicParryDragging = makeDraggable(dynamicButton, dynamicButton, function()
-		dynamicTargetPosition = dynamicButton.Position; setConfigValue("DynamicParryX", dynamicButton.Position.X.Offset); setConfigValue("DynamicParryY", dynamicButton.Position.Y.Offset)
-	end, true)
-	local localPlayer = Players.LocalPlayer; local playerGui = localPlayer and localPlayer:FindFirstChild("PlayerGui")
-	if playerGui then
-		trackConn(playerGui.DescendantAdded:Connect(function()
-			if UIState.dynamicParryOn and isMobileDevice() then syncMobileParryReplacement() end
-		end))
-	end
-	trackConn(
-		UIS:GetPropertyChangedSignal("TouchEnabled"):Connect(function() showDynamicParry(UIState.dynamicParryOn) end)
-	)
-	trackConn(
-		UIS:GetPropertyChangedSignal("KeyboardEnabled"):Connect(function() showDynamicParry(UIState.dynamicParryOn) end)
-	)
-	trackConn(
-		UIS:GetPropertyChangedSignal("GamepadEnabled"):Connect(function() showDynamicParry(UIState.dynamicParryOn) end)
-	)
-	showDynamicParry(UIState.dynamicParryOn)
 	configPanel = inst("Frame", {
 		Name = "ExodusPanel",
 		Size = UDim2.new(0, PW, 0, PH),
@@ -1168,7 +914,6 @@ function ExodusUI.setup(deps)
 		AutoClash = function(value)
 			setClashBall(value, true); paintClashBall()
 		end,
-		DynamicParry = setDynamicParry,
 		ClashBallVisible = showClashBall,
 	}
 

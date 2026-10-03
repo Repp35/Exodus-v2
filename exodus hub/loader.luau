@@ -1,3 +1,5 @@
+--!strict
+--!optimize 2
 -- [[ loader ]]
 
 local function printRawError(moduleName, message)
@@ -31,7 +33,6 @@ local MODULE_MANIFEST = {
 	{ name = "gameinfo", path = "modules/logic/gameinfo.luau" },
 	{ name = "remote", path = "modules/logic/remote.luau" },
 	{ name = "autoparry", path = "modules/logic/autoparry.luau" },
-	{ name = "dynamicparry", path = "modules/logic/dynamicparry.luau" },
 	{ name = "dash", path = "modules/logic/dash.luau" },
 	{ name = "autoclash", path = "modules/logic/autoclash.luau" },
 	{ name = "spam", path = "modules/logic/spam.luau" },
@@ -146,7 +147,7 @@ local function clearRegistry()
 end
 local function stopPreviousRuntime()
 	if type(Modules.remote) == "table" and type(Modules.remote.stopMaintenance) == "function" then pcall(Modules.remote.stopMaintenance) end
-	for _, name in ipairs({ "character", "spam", "autoclash", "dash", "dynamicparry", "autoparry", "antitamper" }) do
+	for _, name in ipairs({ "character", "spam", "autoclash", "dash", "autoparry", "antitamper" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
 			if type(module.teardown) == "function" then pcall(module.teardown)
@@ -334,13 +335,9 @@ local function bindRuntime(loaded, log)
 		return nil, "contrato de runtime incompleto"
 	end
 	local remoteCallOk, parryRemote = pcall(remote.getRemote)
-	if not remoteCallOk or not parryRemote then
-		return nil, "Remote: remote de parry indisponível"
-	end
+	if not remoteCallOk or not parryRemote then return nil, "Remote: remote de parry indisponível" end
 	local initCallOk, initialized = pcall(remote.initParry)
-	if not initCallOk or initialized ~= true then
-		return nil, "Remote: inicialização do parry falhou"
-	end
+	if not initCallOk or initialized ~= true then return nil, "Remote: inicialização do parry falhou" end
 	local ballSyncSubscribers = {}
 	for _, name in ipairs(MODULE_ORDER) do
 		local module = loaded[name]
@@ -375,23 +372,14 @@ local function bindRuntime(loaded, log)
 	end
 	local function onBallSync(data) notifyBallSync(callSync("GameInfo", gameInfo.applySync, data)) end
 	local watcherCallOk, watcherReady = pcall(gameInfo.installBallWatcher, utils.trackGlobal)
-	if not watcherCallOk or watcherReady ~= true then
-		local reason = watcherCallOk and "observador da bola indisponível" or tostring(watcherReady)
-		return nil, "GameInfo: " .. reason
-	end
+	if not watcherCallOk or watcherReady ~= true then local reason = watcherCallOk and "observador da bola indisponível" or tostring(watcherReady); return nil, "GameInfo: " .. reason end
 	local syncCallOk, syncReady = pcall(remote.bindBallSync, onBallSync)
-	if not syncCallOk or syncReady ~= true then
-		local reason = syncCallOk and "BallSyncData indisponível" or tostring(syncReady)
-		return nil, "Remote: " .. reason
-	end
+	if not syncCallOk or syncReady ~= true then local reason = syncCallOk and "BallSyncData indisponível" or tostring(syncReady); return nil, "Remote: " .. reason end
 	local maintenanceOk, maintenanceReady = pcall(remote.startMaintenance, {
 		isActive = utils.isActive,
 		onBallSync = onBallSync,
 	})
-	if not maintenanceOk or maintenanceReady ~= true then
-		local message = maintenanceReady
-		return nil, "Remote: " .. tostring(message)
-	end
+	if not maintenanceOk or maintenanceReady ~= true then local message = maintenanceReady; return nil, "Remote: " .. tostring(message) end
 	return {
 		watcher = watcherCallOk and watcherReady == true,
 		ballSync = syncCallOk and syncReady == true,
@@ -460,10 +448,8 @@ local function startInternal()
 	Exodus.Runtime = runtime; _G.ExodusOnBurst = loaded.autoparry.fire
 	local uiReady, uiModule, uiError = loadInterface(loaded.ui, utils, {
 		onPanic = function()
-			loaded.autoparry.resetState(); loaded.dynamicparry.resetState(); utils.setManualSpamActive(false); utils.setAutoSpamActive(false)
-			utils.setConfig({ DynamicParry = false })
+			loaded.autoparry.resetState(); utils.setManualSpamActive(false); utils.setAutoSpamActive(false)
 		end,
-		DynamicParry = loaded.dynamicparry,
 	}, loaded.uiconfig)
 	if not uiReady then
 		utils.stop()

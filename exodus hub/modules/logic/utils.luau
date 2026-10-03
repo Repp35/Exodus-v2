@@ -1,7 +1,8 @@
+--!strict
+--!optimize 2
 -- [[ utils ]]
 
 local Utils = {}
-local ConfigModule
 
 -- services
 local PlayersService = game:GetService("Players")
@@ -11,7 +12,7 @@ local WorkspaceService = game:GetService("Workspace")
 
 -- metadata
 local M = {
-	SCRIPT_VERSION = "35.40",
+	SCRIPT_VERSION = "35.42",
 	API_VERSION = 1,
 	SCRIPT_NAME = "Exodus Hub",
 	INTERNAL_NAME = "Exodus",
@@ -23,19 +24,15 @@ local T = {
 	SPAM_RATE_MIN = 0,
 	SPAM_RATE_MAX = 5000000000,
 	MAX_DIAGNOSTIC_ENTRIES = 32,
+	MAX_CONSOLE_ERROR_KEYS = 128,
 	DATA_FOLDER = "Exodus Hub",
 	CONSOLE_ERROR_COOLDOWN = 2,
 }
 
--- bootstrap
-task.defer(function()
-	pcall(function() workspace:SetAttribute("CPS_LIMIT", 9999) end)
-end)
+-- dependencies
+local ConfigModule
 
 -- state
-local DiagnosticsModules = {}
-local ConsoleErrorAt = {}
-local ConsoleErrorCount = 0
 local State = {
 	active = false,
 	connections = {},
@@ -44,7 +41,6 @@ local State = {
 	moduleURLs = {},
 	manualSpamActive = false,
 	autoSpamActive = false,
-	dynamicSpamActive = false,
 	lifecycle = {
 		phase = "stopped",
 		generation = 0,
@@ -60,180 +56,118 @@ local State = {
 	},
 }
 
--- helpers
+local DiagnosticsModules = {}
+local ConsoleErrorAt = {}
+local ConsoleErrorCount = 0
+local NamespaceUpdating = false
+
+-- bootstrap
+task.defer(function()
+	pcall(function() WorkspaceService:SetAttribute("CPS_LIMIT", 9999) end)
+end)
+local function isConnection(value) return value ~= nil and type(value.Disconnect) == "function" end
+local function disconnect(connection)
+	if not isConnection(connection) then return false end
+	local ok = pcall(connection.Disconnect, connection); return ok
+end
 local function disconnectAll(list)
+	if type(list) ~= "table" then return end
 	for index = #list, 1, -1 do
-		local connection = list[index]; list[index] = nil
-		if connection and type(connection.Disconnect) == "function" then pcall(connection.Disconnect, connection) end
+		local connection = list[index]; list[index] = nil; disconnect(connection)
 	end
 end
 local function track(list, connection)
-	if connection and type(connection.Disconnect) == "function" then list[#list + 1] = connection end
-	return connection
+	if not isConnection(connection) then return connection end
+	list[#list + 1] = connection; return connection
 end
 local function untrack(list, connection)
+	if type(list) ~= "table" or connection == nil then return false end
 	for index = #list, 1, -1 do
 		if list[index] == connection then table.remove(list, index); return true end
 	end
 	return false
 end
-local function copyMap(source)
+local function copyValue(value, depth)
+	depth = depth or 0
+	if depth > 8 then return value end
+	if type(value) ~= "table" then return value end
 	local result = {}
-	if type(source) ~= "table" then return result end
-	for key, value in pairs(source) do
-		result[key] = value
+	for key, item in pairs(value) do
+		result[copyValue(key, depth + 1)] = copyValue(item, depth + 1)
 	end
 	return result
 end
+local function copyMap(source)
+	if type(source) ~= "table" then return {} end
+	return copyValue(source)
+end
 local function copyList(source)
-	local result = {}
-	if type(source) ~= "table" then return result end
-	for index, value in ipairs(source) do
-		if type(value) == "table" then result[index] = copyMap(value)
-		else result[index] = value end
-	end
-	return result
+	if type(source) ~= "table" then return {} end
+	return copyValue(source)
+end
+local function appendLimited(list, value, limit)
+	list[#list + 1] = value
+	if #list > limit then table.remove(list, 1) end
+end
+local function safeCall(callback, ...)
+	if type(callback) ~= "function" then return false, "callback is not a function" end
+	return pcall(callback, ...)
+end
+local function safeWarn(message)
+	if type(warn) == "function" then return pcall(warn, message) end
+	return false
+end
+local function safePrint(message)
+	if type(print) == "function" then return pcall(print, message) end
+	return false
 end
 local function getModuleStatuses()
 	local result = {}
 	for name, module in pairs(DiagnosticsModules) do
 		if type(module) == "table" and type(module.getStatus) == "function" then
 			local ok, status = pcall(module.getStatus)
-			if ok and type(status) == "table" then result[name] = status end
+			if ok and type(status) == "table" then
+				result[name] = copyMap(status)
+			elseif not ok then
+				result[name] = {
+					ok = false,
+					error = tostring(status),
+				}
+
+			end
 		end
 	end
 	return result
 end
-local function updateNamespace()
-	local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}; namespace.Name = M.SCRIPT_NAME; namespace.InternalName = M.INTERNAL_NAME; namespace.Version = M.SCRIPT_VERSION
-	namespace.ApiVersion = M.API_VERSION; namespace.Author = M.SCRIPT_AUTHOR; namespace.State = Utils.getStateSnapshot(); namespace.Config = Utils.getConfigSnapshot()
-	namespace.ModuleURLs = Utils.getModuleURLsSnapshot(); namespace.Diagnostics = Utils.getDiagnostics(); _G.Exodus = namespace
+local function getLifecycleSnapshot()
+	local snapshot = copyMap(State.lifecycle); snapshot.schema = M.API_VERSION; snapshot.generatedAt = os.clock(); return snapshot
 end
-local function setLifecyclePhase(phase)
-	if type(phase) ~= "string" or phase == "" then return false end
-	State.lifecycle.phase = phase; return true
-end
-local function recordTransition(source, fromState, toState, reason)
-	State.diagnostics.lastTransition = {
-		source = tostring(source),
-		from = tostring(fromState),
-		to = tostring(toState),
-		reason = tostring(reason or ""),
-	}
-
-	State.diagnostics.lastTransitionAt = os.clock(); table.insert(State.diagnostics.transitions, State.diagnostics.lastTransition)
-	if #State.diagnostics.transitions > T.MAX_DIAGNOSTIC_ENTRIES then table.remove(State.diagnostics.transitions, 1) end
-	updateNamespace()
-end
-local function recordError(source, message, fatal)
-	source = tostring(source); message = tostring(message)
-	State.diagnostics.lastError = {
-		source = source,
-		message = message,
-		fatal = fatal == true,
-		at = os.clock(),
-	}
-	table.insert(State.diagnostics.errors, State.diagnostics.lastError)
-	local output = ("[Exodus][%s] %s"):format(source, message)
-	if type(debug) == "table" and type(debug.traceback) == "function" then
-		local ok, trace = pcall(debug.traceback, output, 3)
-		if ok and type(trace) == "string" then output = trace end
-	end
-	State.diagnostics.lastError.traceback = output
-	updateNamespace()
-	local key = source .. "\0" .. message
-	local now = os.clock()
-	local previous = ConsoleErrorAt[key]
-	if fatal ~= true and previous and now - previous < T.CONSOLE_ERROR_COOLDOWN then return end
-	ConsoleErrorAt[key] = now
-	ConsoleErrorCount += 1
-	if ConsoleErrorCount > 128 then ConsoleErrorAt = {}; ConsoleErrorCount = 1 end
-	local warned = false
-	if type(warn) == "function" then warned = pcall(warn, output) end
-	if not warned and type(print) == "function" then pcall(print, output) end
-	if fatal == true then
-		State.active = false; setLifecyclePhase("error")
-		if type(Utils.stop) == "function" then Utils.stop() end
-	end
-end
-
--- filesystem
-local function ensureDataFolder()
-	if type(makefolder) ~= "function" or type(isfolder) ~= "function" then return false, "APIs de pasta do executor indisponíveis" end
-	local folderOk, folderExists = pcall(isfolder, T.DATA_FOLDER)
-	if not folderOk then return false, tostring(folderExists) end
-	if not folderExists then
-		local makeOk, makeError = pcall(makefolder, T.DATA_FOLDER)
-		if not makeOk then return false, tostring(makeError or ("falha ao criar " .. T.DATA_FOLDER)) end
-	end
-	return true, T.DATA_FOLDER
-end
-function Utils.ensureDataFolder() return ensureDataFolder() end
-
--- lifecycle
-function Utils.start()
-	local previousPhase = State.lifecycle.phase; State.lifecycle.generation = State.lifecycle.generation + 1; State.lifecycle.startedAt = os.clock(); State.lifecycle.stoppedAt = 0
-	State.active = true; setLifecyclePhase("starting"); recordTransition("Utils", previousPhase, "starting", "start")
-	if _G.ExodusOnBurst == nil then _G.ExodusOnBurst = function() end end
-	return Utils.getStateSnapshot()
-end
-function Utils.stop()
-	local previousPhase = State.lifecycle.phase; State.active = false; State.manualSpamActive = false; State.autoSpamActive = false
-	State.dynamicSpamActive = false; State.config = {}; State.moduleURLs = {}; DiagnosticsModules = {}
-	State.lifecycle.stoppedAt = os.clock(); setLifecyclePhase("stopped"); recordTransition("Utils", previousPhase, "stopped", "stop")
-	if type(_G.ExodusUICleanup) == "function" then pcall(_G.ExodusUICleanup) end
-	disconnectAll(State.characterConnections); disconnectAll(State.connections)
-	_G.ExodusOnBurst = function() end
-	if type(_G.Exodus) == "table" then
-		_G.Exodus.Started = false; _G.Exodus.UIReady = false; _G.Exodus.Runtime = nil; _G.Exodus.UI = nil
-		if type(_G.Exodus.RemoteHooks) == "table" then _G.Exodus.RemoteHooks.register = nil end
-		if type(_G.Exodus.AutoParryHitbox) == "table" then
-			local connection = _G.Exodus.AutoParryHitbox.connection
-			if connection then pcall(connection.Disconnect, connection) end
-			_G.Exodus.AutoParryHitbox.connection = nil; _G.Exodus.AutoParryHitbox.handler = nil
-		end
-	end
-	updateNamespace()
-end
-function Utils.isActive() return State.active == true end
-function Utils.getConfig() return copyMap(State.config) end
-function Utils.getConfigSnapshot() return copyMap(State.config) end
-function Utils.getModuleURLsSnapshot() return copyMap(State.moduleURLs) end
-function Utils.setDiagnosticsModules(modules)
-	if type(modules) ~= "table" then return false end
-	DiagnosticsModules = copyMap(modules); updateNamespace(); return true
-end
-function Utils.getDiagnostics()
+local function getDiagnosticsSnapshot()
 	return {
 		schema = M.API_VERSION,
 		generatedAt = os.clock(),
-		lastError = State.diagnostics.lastError and copyMap(State.diagnostics.lastError) or nil,
-		lastTransition = State.diagnostics.lastTransition and copyMap(State.diagnostics.lastTransition) or nil,
+		lastError = copyMap(State.diagnostics.lastError),
+		lastTransition = copyMap(State.diagnostics.lastTransition),
 		lastTransitionAt = State.diagnostics.lastTransitionAt,
 		errors = copyList(State.diagnostics.errors),
 		transitions = copyList(State.diagnostics.transitions),
-		lifecycle = Utils.getLifecycle(),
+		lifecycle = getLifecycleSnapshot(),
 		runtime = {
 			active = State.active,
 			manualSpamActive = State.manualSpamActive,
 			autoSpamActive = State.autoSpamActive,
-			dynamicSpamActive = State.dynamicSpamActive,
 		},
+
 		modules = getModuleStatuses(),
 	}
-
 end
-function Utils.getLifecycle()
-	local snapshot = copyMap(State.lifecycle); snapshot.schema = M.API_VERSION; snapshot.generatedAt = os.clock(); return snapshot
-end
-function Utils.getStateSnapshot()
+local function getStateSnapshotInternal()
 	return {
 		schema = M.API_VERSION,
 		generatedAt = os.clock(),
 		active = State.active,
 		manualSpamActive = State.manualSpamActive,
 		autoSpamActive = State.autoSpamActive,
-		dynamicSpamActive = State.dynamicSpamActive,
 		lifecycle = copyMap(State.lifecycle),
 		config = copyMap(State.config),
 		moduleURLs = copyMap(State.moduleURLs),
@@ -244,45 +178,149 @@ function Utils.getStateSnapshot()
 
 	}
 end
-function Utils.setLifecyclePhase(phase)
-	local previous = State.lifecycle.phase; local changed = setLifecyclePhase(phase)
-	if changed and previous ~= phase then recordTransition("Lifecycle", previous, phase, "phase_change") end
-	return changed
+local function updateNamespace()
+	if NamespaceUpdating then return end
+	NamespaceUpdating = true
+	local ok, err = pcall(function()
+		local namespace
+		if type(_G.Exodus) == "table" then namespace = _G.Exodus
+		else namespace = {} end
+		namespace.Name = M.SCRIPT_NAME; namespace.InternalName = M.INTERNAL_NAME; namespace.Version = M.SCRIPT_VERSION; namespace.ApiVersion = M.API_VERSION
+		namespace.Author = M.SCRIPT_AUTHOR; namespace.State = getStateSnapshotInternal(); namespace.Config = copyMap(State.config); namespace.ModuleURLs = copyMap(State.moduleURLs)
+		namespace.Diagnostics = getDiagnosticsSnapshot(); _G.Exodus = namespace
+	end)
+	NamespaceUpdating = false
+	if not ok then safeWarn(("[Exodus][Namespace] %s"):format(tostring(err))) end
 end
-function Utils.recordTransition(source, fromState, toState, reason) recordTransition(source, fromState, toState, reason) end
-function Utils.recordError(source, message, fatal) recordError(source, message, fatal) end
+local function setLifecyclePhaseInternal(phase)
+	if type(phase) ~= "string" or phase == "" then return false end
+	if State.lifecycle.phase == phase then return true end
+	State.lifecycle.phase = phase; return true
+end
+local function recordTransitionInternal(source, fromState, toState, reason)
+	local transition = {
+		source = tostring(source or "Unknown"),
+		from = tostring(fromState or ""),
+		to = tostring(toState or ""),
+		reason = tostring(reason or ""),
+		at = os.clock(),
+	}
+
+	State.diagnostics.lastTransition = transition; State.diagnostics.lastTransitionAt = transition.at; appendLimited(State.diagnostics.transitions, transition, T.MAX_DIAGNOSTIC_ENTRIES)
+	updateNamespace()
+end
+local function recordErrorInternal(source, message, fatal)
+	source = tostring(source or "Unknown"); message = tostring(message or "Unknown error")
+	local errorData = {
+		source = source,
+		message = message,
+		fatal = fatal == true,
+		at = os.clock(),
+	}
+
+	local output = ("[Exodus][%s] %s"):format(source, message)
+	if type(debug) == "table" and type(debug.traceback) == "function" then
+		local ok, traceback = pcall(debug.traceback, output, 3)
+		if ok and type(traceback) == "string" then output = traceback end
+	end
+	errorData.traceback = output; State.diagnostics.lastError = errorData; appendLimited(State.diagnostics.errors, errorData, T.MAX_DIAGNOSTIC_ENTRIES); updateNamespace()
+	local key = source .. "\0" .. message; local now = os.clock(); local previous = ConsoleErrorAt[key]
+	if fatal ~= true and previous ~= nil and now - previous < T.CONSOLE_ERROR_COOLDOWN then return end
+	ConsoleErrorAt[key] = now; ConsoleErrorCount += 1
+	if ConsoleErrorCount > T.MAX_CONSOLE_ERROR_KEYS then
+		ConsoleErrorAt = {
+			[key] = now,
+		}
+
+		ConsoleErrorCount = 1
+	end
+	local warned = safeWarn(output)
+	if not warned then safePrint(output) end
+	if fatal == true then Utils.stop() end
+end
+local function ensureDataFolder()
+	if type(makefolder) ~= "function" or type(isfolder) ~= "function" then return false, "APIs de pasta do executor indisponíveis" end
+	local ok, exists = pcall(isfolder, T.DATA_FOLDER)
+	if not ok then return false, tostring(exists) end
+	if exists then return true, T.DATA_FOLDER end
+	local created, err = pcall(makefolder, T.DATA_FOLDER)
+	if not created then return false, tostring(err or ("falha ao criar " .. T.DATA_FOLDER)) end
+	return true, T.DATA_FOLDER
+end
+function Utils.ensureDataFolder() return ensureDataFolder() end
+function Utils.start()
+	local previousPhase = State.lifecycle.phase; State.lifecycle.generation += 1; State.lifecycle.startedAt = os.clock(); State.lifecycle.stoppedAt = 0
+	State.active = true; setLifecyclePhaseInternal("starting"); recordTransitionInternal("Utils", previousPhase, "starting", "start")
+	if _G.ExodusOnBurst == nil then _G.ExodusOnBurst = function() end end
+	updateNamespace(); return Utils.getStateSnapshot()
+end
+function Utils.stop()
+	local previousPhase = State.lifecycle.phase; State.active = false; State.manualSpamActive = false; State.autoSpamActive = false
+	State.lifecycle.stoppedAt = os.clock()
+	_G.ExodusOnBurst = function() end
+	if type(_G.ExodusUICleanup) == "function" then safeCall(_G.ExodusUICleanup) end
+
+	-- Connections
+	disconnectAll(State.characterConnections); disconnectAll(State.connections); State.config = {}; State.moduleURLs = {}
+	DiagnosticsModules = {}
+	if type(_G.Exodus) == "table" then
+		_G.Exodus.Started = false; _G.Exodus.UIReady = false; _G.Exodus.Runtime = nil; _G.Exodus.UI = nil
+		if type(_G.Exodus.RemoteHooks) == "table" then _G.Exodus.RemoteHooks.register = nil end
+		if type(_G.Exodus.AutoParryHitbox) == "table" then
+			local hitbox = _G.Exodus.AutoParryHitbox
+			if hitbox.connection then disconnect(hitbox.connection) end
+			hitbox.connection = nil; hitbox.handler = nil
+		end
+	end
+	setLifecyclePhaseInternal("stopped"); recordTransitionInternal("Utils", previousPhase, "stopped", "stop"); updateNamespace(); return true
+end
+function Utils.isActive() return State.active == true end
+function Utils.getStateSnapshot() return getStateSnapshotInternal() end
+function Utils.getConfig() return copyMap(State.config) end
+function Utils.getConfigSnapshot() return copyMap(State.config) end
+function Utils.getModuleURLsSnapshot() return copyMap(State.moduleURLs) end
+function Utils.getLifecycle() return getLifecycleSnapshot() end
+function Utils.getDiagnostics() return getDiagnosticsSnapshot() end
+function Utils.setDiagnosticsModules(modules)
+	if type(modules) ~= "table" then return false end
+	DiagnosticsModules = copyMap(modules); updateNamespace(); return true
+end
+function Utils.setLifecyclePhase(phase)
+	if type(phase) ~= "string" or phase == "" then return false end
+	local previous = State.lifecycle.phase
+	if previous == phase then return true end
+	setLifecyclePhaseInternal(phase); recordTransitionInternal("Lifecycle", previous, phase, "phase_change"); return true
+end
+function Utils.recordTransition(source, fromState, toState, reason)
+	recordTransitionInternal(source, fromState, toState, reason)
+end
+function Utils.recordError(source, message, fatal) recordErrorInternal(source, message, fatal) end
 function Utils.isManualSpamActive() return State.manualSpamActive == true end
 function Utils.isAutoSpamActive() return State.autoSpamActive == true end
-function Utils.isSpamActive()
-	return State.manualSpamActive == true or State.autoSpamActive == true or State.dynamicSpamActive == true
-end
-function Utils.isDynamicSpamActive() return State.dynamicSpamActive == true end
+function Utils.isSpamActive() return State.manualSpamActive == true or State.autoSpamActive == true end
 function Utils.setAutoSpamActive(value)
 	local nextValue = value == true
-	if State.autoSpamActive == nextValue then return end
+	if State.autoSpamActive == nextValue then return false end
 	local previous = State.autoSpamActive; State.autoSpamActive = nextValue
-	recordTransition(
+	recordTransitionInternal(
 		"AutoClash",
 		previous and "active" or "inactive",
 		nextValue and "active" or "inactive",
 		"automatic_toggle"
 	)
+	return true
 end
 function Utils.setManualSpamActive(value)
 	local nextValue = value == true
-	if State.manualSpamActive == nextValue then return end
-	local previous = State.manualSpamActive; State.manualSpamActive = nextValue; recordTransition("Spam", previous and "active" or "inactive", nextValue and "active" or "inactive", "manual_toggle")
-end
-function Utils.setDynamicSpamActive(value)
-	local nextValue = value == true
-	if State.dynamicSpamActive == nextValue then return end
-	local previous = State.dynamicSpamActive; State.dynamicSpamActive = nextValue
-	recordTransition(
-		"DynamicParry",
+	if State.manualSpamActive == nextValue then return false end
+	local previous = State.manualSpamActive; State.manualSpamActive = nextValue
+	recordTransitionInternal(
+		"Spam",
 		previous and "active" or "inactive",
 		nextValue and "active" or "inactive",
-		"dynamic_spam_toggle"
+		"manual_toggle"
 	)
+	return true
 end
 function Utils.isFiniteNumber(value)
 	return type(value) == "number" and value == value and value < math.huge and value > -math.huge
@@ -296,20 +334,24 @@ function Utils.normalizeSpamRate(value, fallback)
 end
 function Utils.setConfig(config)
 	if type(config) ~= "table" then return false end
-	local normalized, reason
-	if ConfigModule and type(ConfigModule.normalizePatch) == "function" then normalized, reason = ConfigModule.normalizePatch(config)
-	else normalized = copyMap(config) end
-	if type(normalized) ~= "table" then
-		if type(Utils.recordError) == "function" then Utils.recordError("Config", reason or "configuração inválida") end
-		return false
+	local normalized
+	local reason
+	if ConfigModule and type(ConfigModule.normalizePatch) == "function" then
+		local ok, result, resultReason = pcall(ConfigModule.normalizePatch, config)
+		if not ok then Utils.recordError("Config", result, false); return false end
+		normalized = result; reason = resultReason
+	else
+		normalized = copyMap(config)
 	end
+	if type(normalized) ~= "table" then Utils.recordError("Config", reason or "configuração inválida", false); return false end
 	for key, value in pairs(normalized) do
 		State.config[key] = value
 	end
 	updateNamespace(); return true
 end
 function Utils.setConfigModule(module)
-	if type(module) ~= "table" or type(module.normalizePatch) ~= "function" or type(module.validate) ~= "function" then return false end
+	if type(module) ~= "table" then return false end
+	if type(module.normalizePatch) ~= "function" or type(module.validate) ~= "function" then return false end
 	ConfigModule = module; return true
 end
 function Utils.setModuleURLs(urls)
@@ -335,13 +377,15 @@ function Utils.version() return M.SCRIPT_VERSION end
 function Utils.apiVersion() return M.API_VERSION end
 function Utils.author() return M.SCRIPT_AUTHOR end
 function Utils.log(level, message)
-	local text = ("[%s] %s"):format(M.INTERNAL_NAME, tostring(message))
-	if level == "warn" then warn(text)
-	else print(text) end
+	local output = ("[%s] %s"):format(M.INTERNAL_NAME, tostring(message))
+	if level == "warn" then safeWarn(output)
+	else safePrint(output) end
 end
 function Utils.info(message) Utils.log("info", message) end
 function Utils.warn(message) Utils.log("warn", message) end
 _G.ExodusStop = Utils.stop
-Utils.__contract = { requires = {} }
+Utils.__contract = {
+	requires = {},
+}
 
 return Utils

@@ -1,3 +1,5 @@
+--!strict
+--!optimize 2
 -- [[ config ]]
 
 local Config = {}
