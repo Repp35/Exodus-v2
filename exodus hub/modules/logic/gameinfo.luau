@@ -184,7 +184,7 @@ function GameInfo.getSnapshot(lastTarget, time, frameTime) return getSnapshot(la
 function GameInfo.getSyncData() return getDecodedSyncData() end
 function GameInfo.getTargetId() return resolveTargetId(getDecodedSyncData()) end
 function GameInfo.isSnapshotValid(snapshot) return type(snapshot) == "table" end
-function GameInfo.applySync(_) end
+function GameInfo.applySync(data) return type(data) == "table" and data or nil end
 function GameInfo.installBallWatcher(trackConnection) return installBallWatcher(trackConnection) end
 function GameInfo.getDeflectCD() return getDeflectCooldown() end
 function GameInfo.getStatus()
