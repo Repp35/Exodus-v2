@@ -16,7 +16,7 @@ local M = {
 	API_VERSION = 1,
 	SCRIPT_NAME = "Exodus Hub",
 	INTERNAL_NAME = "Exodus",
-	SCRIPT_AUTHOR = "ppzudo",
+	SCRIPT_AUTHOR = "delta",
 }
 
 -- tuning
