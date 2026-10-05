@@ -44,6 +44,9 @@ local R = {
 	generation = 0,
 	lifeGeneration = 0,
 
+	-- invalida task.defer pendente quando o estado da bola muda
+	fireToken = 0,
+
 	alive = false,
 	bound = false,
 
@@ -231,6 +234,10 @@ local function resetParryLock()
 	R.lastTargeted = false
 end
 
+local function invalidateFireToken()
+	R.fireToken += 1
+end
+
 local function clearBallState()
 	R.targeted = false
 
@@ -247,9 +254,13 @@ local function clearBallState()
 
 	R.targetId = -1
 	R.targetKnown = false
+
+	invalidateFireToken()
 end
 
 local function resetTracking()
+	invalidateFireToken()
+
 	R.armed = true
 	R.lastTargeted = false
 	R.targeted = false
@@ -784,6 +795,20 @@ local function getRemoteParry(ball)
 		return false
 	end
 
+	-- barreira final: bola precisa continuar sendo
+	-- a mesma instância que originou o fire.
+	if not isValidBall(ball) then
+		return false
+	end
+
+	if R.lastBall ~= ball then
+		return false
+	end
+
+	if not R.lastApproaching then
+		return false
+	end
+
 	if not isFiniteNumber(R.lastSpeed)
 		or R.lastSpeed
 			< T.MIN_BALL_SPEED
@@ -791,7 +816,17 @@ local function getRemoteParry(ball)
 		return false
 	end
 
-	if not R.lastApproaching then
+	-- confirmação final da velocidade ao vivo
+	local ok, liveVelocity =
+		pcall(function()
+			return ball.AssemblyLinearVelocity
+		end)
+
+	if ok
+		and isValidVector3(liveVelocity)
+		and liveVelocity.Magnitude
+			< T.MIN_BALL_SPEED
+	then
 		return false
 	end
 
@@ -802,13 +837,13 @@ local function getRemoteParry(ball)
 		return false
 	end
 
-	local ok, result =
+	local fireOk, result =
 		pcall(
 			Remote.fireParry,
 			1
 		)
 
-	if not ok or result == false then
+	if not fireOk or result == false then
 		return false
 	end
 
@@ -857,8 +892,18 @@ end
 
 local function fireAfterDetection(
 	ball,
-	generation
+	generation,
+	token
 )
+	-- Camada 1:
+	-- invalida imediatamente qualquer defer stale.
+	if token ~= R.fireToken then
+		R.armed = true
+		return false
+	end
+
+	-- Camada 2:
+	-- lifecycle / geração do personagem.
 	if generation ~= R.generation then
 		return false
 	end
@@ -869,31 +914,157 @@ local function fireAfterDetection(
 		return false
 	end
 
-	if R.teleported then
+	local time = clock()
+
+	-- Camada 3:
+	-- teleport lock.
+	if R.teleported
+		or time < R.teleportLockUntil
+	then
+		R.armed = true
 		return false
 	end
 
-	if isTeleportLocked(clock()) then
+	-- Revalidações de configuração/estado global.
+	if not isAutoParryEnabled()
+		or isSpamActive()
+		or not isSystemActive()
+	then
+		R.armed = true
+		return false
+	end
+
+	-- Camada 4:
+	-- a bola precisa existir e ainda ser
+	-- exatamente a bola detectada.
+	local currentBall,
+		targeted,
+		snapshot =
+		readFrameState(time)
+
+	if not isValidBall(currentBall)
+		or currentBall ~= ball
+	then
+		R.armed = true
+		return false
+	end
+
+	if R.lastBall == nil then
+		R.armed = true
 		return false
 	end
 
 	if R.lastBall ~= ball then
-		return false
-	end
-
-	if not R.targeted then
-		return false
-	end
-
-	if not R.lastApproaching then
 		R.armed = true
 		return false
 	end
 
-	if isTeleportLocked(clock()) then
+	if not targeted then
 		R.armed = true
 		return false
 	end
+
+	local root = R.root
+
+	if not root
+		or not root.Parent
+	then
+		return false
+	end
+
+	local position =
+		snapshot
+		and snapshot.position
+		or nil
+
+	if not isValidVector3(position) then
+		local ok, value =
+			pcall(function()
+				return ball.Position
+			end)
+
+		if not ok
+			or not isValidVector3(value)
+		then
+			R.armed = true
+			return false
+		end
+
+		position = value
+	end
+
+	-- Camada 5:
+	-- velocidade ao vivo.
+	local liveVelocity
+
+	local velocityOk,
+		velocityValue =
+		pcall(function()
+			return ball.AssemblyLinearVelocity
+		end)
+
+	if velocityOk
+		and isValidVector3(velocityValue)
+	then
+		liveVelocity = velocityValue
+	else
+		liveVelocity = R.velocity
+	end
+
+	if not isValidVector3(liveVelocity) then
+		R.armed = true
+		return false
+	end
+
+	local liveSpeed =
+		liveVelocity.Magnitude
+
+	if liveSpeed
+		< T.MIN_BALL_SPEED
+	then
+		R.armed = true
+		return false
+	end
+
+	-- approaching com dados atuais
+	local delta =
+		root.Position - position
+
+	local distance =
+		delta.Magnitude
+
+	local approaching =
+		distance > 0
+		and liveVelocity:Dot(delta) > 0
+
+	if not approaching then
+		R.armed = true
+		return false
+	end
+
+	-- Recalcula o raio com os dados atuais
+	local resilienceBonus =
+		getResilienceBonus(time)
+
+	local radius =
+		computeParryRadius(
+			liveSpeed,
+			R.ping,
+			resilienceBonus,
+			T.DEFAULT_WINDOW_FACTOR
+		)
+
+	if distance > radius then
+		R.armed = true
+		return false
+	end
+
+	-- Atualiza o estado usado pela última barreira.
+	R.lastDistance = distance
+	R.lastSpeed = liveSpeed
+	R.lastRadius = radius
+	R.lastApproaching = true
+	R.targeted = true
 
 	local fired =
 		getRemoteParry(ball)
@@ -1092,11 +1263,19 @@ local function updateVelocity(
 	time,
 	dt
 )
+	-- Se a instância da bola mudou,
+	-- qualquer defer criado para a anterior
+	-- fica inválido imediatamente.
 	if R.lastBall ~= ball then
+		invalidateFireToken()
+
 		R.lastBall = ball
 		R.lastPosition = nil
 		R.lastPositionAt = nil
 		R.velocity = Vector3.zero
+
+		R.lastSpeed = 0
+		R.lastApproaching = false
 	end
 
 	local assemblyVelocity
@@ -1486,10 +1665,17 @@ local function onHeartbeat(
 		local currentGeneration =
 			R.generation
 
+		local currentToken =
+			R.fireToken
+
+		local currentBall =
+			ball
+
 		task.defer(
 			fireAfterDetection,
-			ball,
-			currentGeneration
+			currentBall,
+			currentGeneration,
+			currentToken
 		)
 	end
 end
@@ -1885,6 +2071,15 @@ function AutoParry.onBallSync(data)
 				data.TargetPlayerID
 			)
 			or -1
+	end
+
+	-- Se o servidor indicar ausência de target
+	-- depois de existir um target anterior,
+	-- trata como reset defensivo da bola.
+	if targetId == -1
+		and R.lastTarget ~= -1
+	then
+		clearBallState()
 	end
 
 	R.targetId = targetId
