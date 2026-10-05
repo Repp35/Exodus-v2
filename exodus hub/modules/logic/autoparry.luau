@@ -435,7 +435,9 @@ local function onHeartbeat(character, root, dt, generation)
 	if isSpamActive() then resetParryLock(); setPhase("waiting", "spam_active"); return end
 	if not isSystemActive() then resetParryLock(); setPhase("waiting", "system_inactive"); return end
 	local ball, targeted, snapshot = readFrameState(time)
-	if not isValidBall(ball) then resetParryLock(); clearBallState(); setPhase("waiting", "ball_unavailable"); return end
+	if not isValidBall(ball) or not targeted then
+		resetParryLock(); clearBallState(); setPhase("waiting", "ball_or_target_invalid"); return
+	end
 	local positionOk, position = pcall(function() return ball.Position end)
 	if not positionOk or not isValidVector3(position) then resetParryLock(); return end
 	updateVelocity(ball, position, time, dt)
@@ -443,12 +445,10 @@ local function onHeartbeat(character, root, dt, generation)
 	if not rootPositionOk or not isValidVector3(rootPosition) then resetParryLock(); return end
 	local delta = rootPosition - position; local distance = delta.Magnitude; local speed = R.velocity.Magnitude
 	local approaching = speed >= T.MIN_BALL_SPEED and distance > 0 and R.velocity:Dot(delta) > 0
-	if not targeted then R.armed = true
-	elseif not R.lastTargeted then R.armed = true end
+	if not R.lastTargeted then R.armed = true end
 	R.lastTargeted = targeted; R.targeted = targeted; local resilienceBonus = getResilienceBonus(time)
 	local parryRadius, leadTime = computeParryRadius(speed, R.ping, resilienceBonus, T.DEFAULT_WINDOW_FACTOR); R.lastDistance = distance; R.lastSpeed = speed; R.lastRadius = parryRadius
 	R.lastLeadTime = leadTime; R.lastApproaching = approaching; R.targetId = tonumber(snapshot and snapshot.targetId) or -1; R.targetKnown = snapshot ~= nil and snapshot.targetId ~= nil
-	if not targeted then setPhase("waiting", "not_targeted"); return end
 	if speed < T.MIN_BALL_SPEED then R.armed = true; setPhase("waiting", "ball_speed_invalid"); return end
 	if not approaching then R.armed = true; setPhase("waiting", "ball_not_approaching"); return end
 	if distance > parryRadius then setPhase("waiting", "outside_radius"); return end
