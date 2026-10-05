@@ -301,7 +301,9 @@ local function fireAfterDetection(ball, generation, token)
 	if R.lastBall == nil or R.lastBall ~= ball then R.armed = true; return false end
 	if not R.targeted then R.armed = true; return false end
 	local root = R.root
-	if not root or not root.Parent then return false end
+	if not root or not root.Parent then R.armed = true; return false end
+	local rootPositionOk, rootPosition = pcall(function() return root.Position end)
+	if not rootPositionOk or not isValidVector3(rootPosition) then R.armed = true; return false end
 	local liveVelocity
 	local velocityOk, velocityValue = pcall(function() return ball.AssemblyLinearVelocity end)
 	if velocityOk and isValidVector3(velocityValue) then liveVelocity = velocityValue
@@ -311,7 +313,7 @@ local function fireAfterDetection(ball, generation, token)
 	if liveSpeed < T.MIN_BALL_SPEED then R.armed = true; return false end
 	local ok, position = pcall(function() return ball.Position end)
 	if not ok or not isValidVector3(position) then R.armed = true; return false end
-	local delta = root.Position - position; local distance = delta.Magnitude; local approaching = distance > 0 and liveVelocity:Dot(delta) > 0
+	local delta = rootPosition - position; local distance = delta.Magnitude; local approaching = distance > 0 and liveVelocity:Dot(delta) > 0
 	if not approaching then R.armed = true; return false end
 	local resilienceBonus = getResilienceBonus(time); local radius = computeParryRadius(liveSpeed, R.ping, resilienceBonus, T.DEFAULT_WINDOW_FACTOR)
 	if distance > radius then R.armed = true; return false end
@@ -365,7 +367,7 @@ end
 local function updateVelocity(ball, position, time, dt)
 	if R.lastBall ~= ball then
 		invalidateFireToken(); R.lastBall = ball; R.lastPosition = nil; R.lastPositionAt = nil
-		R.velocity = Vector3.zero; R.lastSpeed = 0; R.lastApproaching = false
+		R.velocity = Vector3.zero; R.lastSpeed = 0; R.lastApproaching = false; R.armed = true; R.lastTargeted = false
 	end
 	local assemblyVelocity
 	local ok = pcall(function() assemblyVelocity = ball.AssemblyLinearVelocity end)
@@ -389,6 +391,8 @@ local function isBallInParryWindow(time)
 	if not isValidBall(ball) then return false, false end
 	local root = R.root
 	if not root or not root.Parent then return false, false end
+	local rootPositionOk, rootPosition = pcall(function() return root.Position end)
+	if not rootPositionOk or not isValidVector3(rootPosition) then return false, false end
 	local position = snapshot and snapshot.position or nil
 	if not isValidVector3(position) then
 		local ok, value = pcall(function() return ball.Position end)
@@ -405,12 +409,12 @@ local function isBallInParryWindow(time)
 	local ok, value = pcall(function() return ball.AssemblyLinearVelocity end)
 	if ok and isValidVector3(value) then velocity = value
 	else velocity = R.velocity end
-	local delta = root.Position - position; local approaching = isValidVector3(velocity)
+	local delta = rootPosition - position; local approaching = isValidVector3(velocity)
 		and velocity.Magnitude >= T.MIN_BALL_SPEED
 		and delta.Magnitude > 0
 		and velocity:Dot(delta) > 0
 	if not approaching then return false, false end
-	local bonus = getResilienceBonus(time); local radius = computeParryRadius(speed, R.ping, bonus, 1); local distance = (root.Position - position).Magnitude; return distance <= radius, true
+	local bonus = getResilienceBonus(time); local radius = computeParryRadius(speed, R.ping, bonus, 1); local distance = delta.Magnitude; return distance <= radius, true
 end
 local function onHeartbeat(character, root, dt, generation)
 	if generation ~= R.generation or not R.alive or not R.bound then return end
@@ -423,10 +427,11 @@ local function onHeartbeat(character, root, dt, generation)
 	if not isSystemActive() then resetParryLock(); setPhase("waiting", "system_inactive"); return end
 	local ball, targeted, snapshot = readFrameState(time)
 	if not isValidBall(ball) then resetParryLock(); clearBallState(); setPhase("waiting", "ball_unavailable"); return end
-	local position = ball.Position
-	if not isValidVector3(position) then return end
-	updateVelocity(ball, position, time, dt); local rootPosition = root.Position
-	if not isValidVector3(rootPosition) then return end
+	local positionOk, position = pcall(function() return ball.Position end)
+	if not positionOk or not isValidVector3(position) then resetParryLock(); return end
+	updateVelocity(ball, position, time, dt)
+	local rootPositionOk, rootPosition = pcall(function() return root.Position end)
+	if not rootPositionOk or not isValidVector3(rootPosition) then resetParryLock(); return end
 	local delta = rootPosition - position; local distance = delta.Magnitude; local speed = R.velocity.Magnitude
 	local approaching = speed >= T.MIN_BALL_SPEED and distance > 0 and R.velocity:Dot(delta) > 0
 	if not targeted then R.armed = true
@@ -589,7 +594,7 @@ function AutoParry.getTiming(snapshot, time, rootPosition, windowFactor)
 	if not isValidVector3(position) or not isValidVector3(rootPosition) then return nil end
 	local velocity
 	local speed
-	if isValidBall(ball) and R.lastBall == ball then velocity = R.velocity; speed = R.lastSpeed end
+	if isValidBall(ball) and R.lastBall == ball and R.velocity.Magnitude > 0.1 then velocity = R.velocity; speed = R.lastSpeed end
 	if not isValidVector3(velocity) then velocity = snapshot.velocity end
 	if not isValidVector3(velocity) and isValidBall(ball) then
 		local ok, value = pcall(function() return ball.AssemblyLinearVelocity end)
