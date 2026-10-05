@@ -1,5 +1,3 @@
---!strict
---!optimize 2
 -- [[ read_current_values ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

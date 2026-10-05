@@ -1,5 +1,3 @@
---!strict
---!optimize 2
 -- [[ remote ]]
 
 -- state
@@ -32,9 +30,7 @@ local Storage = {
 }
 
 local CapturedRemotes = setmetatable({}, { __mode = "k" })
-local function reportStorageError(message)
-	Storage.lastError = tostring(message)
-end
+local function reportStorageError(message) Storage.lastError = tostring(message) end
 local function safeInstanceInfo(instance)
 	if typeof(instance) ~= "Instance" then return nil end
 	local info = {}

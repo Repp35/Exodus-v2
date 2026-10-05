@@ -1,5 +1,3 @@
---!strict
---!optimize 2
 -- [[ antitamper ]]
 
 -- Helpers
@@ -83,6 +81,7 @@ local function getEnvironment()
 end
 
 -- Run
+
 -- API
 local function fail(reason)
 	State.passed = false; State.lastFailure = reason; return false, reason
@@ -326,15 +325,13 @@ end
 function AntiTamper.setup(_)
 	State.ready = true; State.passed = true; State.kicked = false; State.watching = false
 	State.generation += 1; State.violations = 0; State.fingerprints = 0; State.tables = 0
-	State.lastFailure = nil; State.lastViolation = nil; Baseline = nil
-	return true
+	State.lastFailure = nil; State.lastViolation = nil; Baseline = nil; return true
 end
 function AntiTamper.teardown()
 	State.ready = false; State.passed = false; State.watching = false; State.kicked = false
 	State.generation += 1; State.violations = 0; State.fingerprints = 0; State.tables = 0
 	State.lastFailure = nil; State.lastViolation = nil; Baseline = nil; LocalPlayer = nil
-	LocalPlayerKick = nil; UtilsGetLocalPlayer = nil; UtilsApiVersion = nil
-	Utils = nil
+	LocalPlayerKick = nil; UtilsGetLocalPlayer = nil; UtilsApiVersion = nil; Utils = nil
 end
 function AntiTamper.isPassed() return State.ready == true and State.passed == true and State.kicked == false end
 function AntiTamper.getStatus()

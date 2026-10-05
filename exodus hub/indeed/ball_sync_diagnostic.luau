@@ -1,5 +1,3 @@
---!strict
---!optimize 2
 -- [[ ball_sync_diagnostic ]]
 
 -- Configuration

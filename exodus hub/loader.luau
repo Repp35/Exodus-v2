@@ -1,5 +1,3 @@
---!strict
---!optimize 2
 -- [[ loader ]]
 
 local function printRawError(moduleName, message, filePath)
@@ -177,16 +175,19 @@ end
 
 -- urls
 local function resolveLatestRevision()
-	local url = "https://api.github.com/repos/" .. REPOSITORY .. "/commits/" .. BRANCH .. "?exodus_cache=" .. CACHE_BUSTER
+	local url = "https://api.github.com/repos/"
+		.. REPOSITORY
+		.. "/commits/"
+		.. BRANCH
+		.. "?exodus_cache="
+		.. CACHE_BUSTER
 	local body, requestError = request(url, {
 		["Accept"] = "application/vnd.github+json",
 		["User-Agent"] = "Exodus-Hub-Loader",
 	})
 	if not body then return nil, requestError or "SHA mais recente indisponível" end
 	local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
-	if not ok or type(document) ~= "table" or type(document.sha) ~= "string" or document.sha == "" then
-		return nil, "resposta do SHA mais recente inválida"
-	end
+	if not ok or type(document) ~= "table" or type(document.sha) ~= "string" or document.sha == "" then return nil, "resposta do SHA mais recente inválida" end
 	return document.sha
 end
 local function buildURLs(revision)
@@ -373,9 +374,7 @@ local function bindRuntime(loaded, log)
 		if not ok or result == false then
 			local message = result == false and detail or result
 			if message == nil then message = result end
-			local entry = MODULE_BY_NAME[name]
-			printRawError(name, message, entry and entry.path or "loader.luau")
-			return nil
+			local entry = MODULE_BY_NAME[name]; printRawError(name, message, entry and entry.path or "loader.luau"); return nil
 		end
 		return detail or data
 	end
@@ -509,9 +508,7 @@ local function startSafely()
 	local ok, started, moduleName, startError = xpcall(Loader.start, function(errorValue) return errorValue end)
 	if not ok then startError = started; moduleName = "Loader"; started = false end
 	if started ~= true then
-		moduleName = moduleName or "Loader"; startError = startError or started
-		local entry = MODULE_BY_NAME[moduleName]
-		printRawError(moduleName, startError, entry and entry.path or "loader.luau")
+		moduleName = moduleName or "Loader"; startError = startError or started; local entry = MODULE_BY_NAME[moduleName]; printRawError(moduleName, startError, entry and entry.path or "loader.luau")
 		Loader.lastError = startError
 		Loader.lastErrorModule = moduleName
 		Exodus.StartError = startError

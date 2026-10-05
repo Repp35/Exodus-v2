@@ -1,5 +1,3 @@
---!strict
---!optimize 2
 -- [[ gameinfo ]]
 
 local GameInfo = {}
