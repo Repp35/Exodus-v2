@@ -254,6 +254,17 @@ end
 function Utils.recordTransition(source, fromState, toState, reason)
 	recordTransitionInternal(source, fromState, toState, reason)
 end
+function Utils.recordError(source, message)
+	local entry = {
+		source = tostring(source or "Unknown"),
+		message = tostring(message or ""),
+		at = os.clock(),
+	}
+	State.diagnostics.lastError = entry
+	appendLimited(State.diagnostics.errors, entry, T.MAX_DIAGNOSTIC_ENTRIES)
+	updateNamespace()
+	return true
+end
 function Utils.isManualSpamActive() return State.manualSpamActive == true end
 function Utils.isAutoSpamActive() return State.autoSpamActive == true end
 function Utils.isSpamActive() return State.manualSpamActive == true or State.autoSpamActive == true end

@@ -322,10 +322,23 @@ local function run()
 	if not ok then return fail(verifyReason) end
 	State.passed = true; State.lastFailure = nil; watch(); return true
 end
-function AntiTamper.setup(_)
-	State.ready = true; State.passed = true; State.kicked = false; State.watching = false
+function AntiTamper.setup(deps)
+	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
+	if type(deps.Utils.getLocalPlayer) ~= "function" or type(deps.Utils.apiVersion) ~= "function" then
+		return false, "dependência ausente: Utils.getLocalPlayer/apiVersion"
+	end
+	Utils = deps.Utils; UtilsGetLocalPlayer = Utils.getLocalPlayer; UtilsApiVersion = Utils.apiVersion
+	local playerOk, player = PCall(UtilsGetLocalPlayer)
+	if not playerOk or not player then return false, "Players.LocalPlayer indisponível" end
+	local kickOk, kickMethod = PCall(function() return player.Kick end)
+	if not kickOk or Type(kickMethod) ~= "function" then return false, "LocalPlayer.Kick indisponível" end
+	LocalPlayer = player; LocalPlayerKick = kickMethod
+	State.ready = true; State.passed = false; State.kicked = false; State.watching = false
 	State.generation += 1; State.violations = 0; State.fingerprints = 0; State.tables = 0
-	State.lastFailure = nil; State.lastViolation = nil; Baseline = nil; return true
+	State.lastFailure = nil; State.lastViolation = nil; Baseline = nil
+	local ok, reason = run()
+	if not ok then State.ready = false end
+	return ok, reason
 end
 function AntiTamper.teardown()
 	State.ready = false; State.passed = false; State.watching = false; State.kicked = false
