@@ -406,12 +406,12 @@ end
 local function loadInterface(interface, utils, controls, uiConfig)
 	if type(interface) ~= "table" then return false, "UI", "módulo não carregado" end
 	if type(interface.setup) ~= "function" then return false, "UI", "setup ausente" end
-	local ok, setupResult, setupError = pcall(interface.setup, {
+	local ok, setupError = pcall(interface.setup, {
 		Utils = utils,
 		Controls = controls,
 		UIConfig = uiConfig,
 	})
-	if not ok or setupResult ~= true then return false, "UI", ok and setupError or setupResult end
+	if not ok or setupError ~= true then return false, "UI", setupError end
 	return true
 end
 
