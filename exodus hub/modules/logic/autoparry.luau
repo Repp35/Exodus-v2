@@ -214,10 +214,17 @@ local function computeParryRadius(speed, ping, resilienceBonus, windowFactor)
 	return fullRadius, leadTime, noWindowRadius, pingRadius, T.BASE_WINDOW, effectiveWindow, factor
 end
 local function readTargeted(snapshot)
-	if type(snapshot) == "table" and type(snapshot.targeted) == "boolean" then return snapshot.targeted end
+	if type(snapshot) == "table" then
+		if snapshot.targeted == true then return true end
+		if tonumber(snapshot.targetId) and R.player and tonumber(snapshot.targetId) == tonumber(R.player.UserId) then return true end
+	end
 	if GameInfo and type(GameInfo.getSyncData) == "function" then
 		local ok, syncData = pcall(GameInfo.getSyncData)
-		if ok and type(syncData) == "table" and type(syncData.Targeted) == "boolean" then return syncData.Targeted end
+		if ok and type(syncData) == "table" then
+			if syncData.Targeted == true then return true end
+			if R.player and tonumber(syncData.TargetPlayerID) == tonumber(R.player.UserId) then return true end
+			if R.player and tonumber(syncData.HighlightTargetPlayerID) == tonumber(R.player.UserId) then return true end
+		end
 	end
 	if GameInfo and type(GameInfo.getTargetId) == "function" and R.player then
 		local ok, targetId = pcall(GameInfo.getTargetId)
@@ -242,6 +249,14 @@ local function readFrameState(time)
 	end
 	if not isValidBall(ball) then return nil, false, snapshot end
 	return ball, readTargeted(snapshot), snapshot
+end
+local function getCurrentVelocity(ball)
+	local ok, value = pcall(function() return ball.AssemblyLinearVelocity end)
+	if ok and isValidVector3(value) then
+		if value.Magnitude > 0.1 or not isValidVector3(R.velocity) or R.velocity.Magnitude <= 0.1 then return value end
+	end
+	if isValidVector3(R.velocity) then return R.velocity end
+	return ok and value or nil
 end
 local function samplePing(time)
 	if time - R.pingAt < T.PING_SAMPLE_INTERVAL then return end
@@ -277,8 +292,8 @@ local function getRemoteParry(ball)
 	if R.lastBall ~= ball then return false end
 	if not R.lastApproaching then return false end
 	if not isFiniteNumber(R.lastSpeed) or R.lastSpeed < T.MIN_BALL_SPEED then return false end
-	local ok, liveVelocity = pcall(function() return ball.AssemblyLinearVelocity end)
-	if ok and isValidVector3(liveVelocity) and liveVelocity.Magnitude < T.MIN_BALL_SPEED then return false end
+	local liveVelocity = getCurrentVelocity(ball)
+	if not isValidVector3(liveVelocity) or liveVelocity.Magnitude < T.MIN_BALL_SPEED then return false end
 	if not Remote or type(Remote.fireParry) ~= "function" then return false end
 	local fireOk, result = pcall(Remote.fireParry, 1)
 	if not fireOk or result == false then return false end
@@ -304,10 +319,7 @@ local function fireAfterDetection(ball, generation, token)
 	if not root or not root.Parent then R.armed = true; return false end
 	local rootPositionOk, rootPosition = pcall(function() return root.Position end)
 	if not rootPositionOk or not isValidVector3(rootPosition) then R.armed = true; return false end
-	local liveVelocity
-	local velocityOk, velocityValue = pcall(function() return ball.AssemblyLinearVelocity end)
-	if velocityOk and isValidVector3(velocityValue) then liveVelocity = velocityValue
-	else liveVelocity = R.velocity end
+	local liveVelocity = getCurrentVelocity(ball)
 	if not isValidVector3(liveVelocity) then R.armed = true; return false end
 	local liveSpeed = liveVelocity.Magnitude
 	if liveSpeed < T.MIN_BALL_SPEED then R.armed = true; return false end
@@ -405,10 +417,7 @@ local function isBallInParryWindow(time)
 		if ok and isValidVector3(velocity) then speed = velocity.Magnitude end
 	end
 	if not isFiniteNumber(speed) or speed < T.MIN_BALL_SPEED then return false, false end
-	local velocity
-	local ok, value = pcall(function() return ball.AssemblyLinearVelocity end)
-	if ok and isValidVector3(value) then velocity = value
-	else velocity = R.velocity end
+	local velocity = getCurrentVelocity(ball)
 	local delta = rootPosition - position; local approaching = isValidVector3(velocity)
 		and velocity.Magnitude >= T.MIN_BALL_SPEED
 		and delta.Magnitude > 0
@@ -594,7 +603,10 @@ function AutoParry.getTiming(snapshot, time, rootPosition, windowFactor)
 	if not isValidVector3(position) or not isValidVector3(rootPosition) then return nil end
 	local velocity
 	local speed
-	if isValidBall(ball) and R.lastBall == ball and R.velocity.Magnitude > 0.1 then velocity = R.velocity; speed = R.lastSpeed end
+	if isValidBall(ball) and R.lastBall == ball then
+		local currentVelocity = getCurrentVelocity(ball)
+		if isValidVector3(currentVelocity) and currentVelocity.Magnitude > 0.1 then velocity = currentVelocity; speed = currentVelocity.Magnitude end
+	end
 	if not isValidVector3(velocity) then velocity = snapshot.velocity end
 	if not isValidVector3(velocity) and isValidBall(ball) then
 		local ok, value = pcall(function() return ball.AssemblyLinearVelocity end)
