@@ -384,7 +384,16 @@ local function bindRuntime(loaded, log)
 			callSync(sub.name, sub.handler, decodedData)
 		end
 	end
-	local function onBallSync(data) notifyBallSync(callSync("GameInfo", gameInfo.applySync, data)) end
+	local function onBallSync(data)
+		-- Não encaminhar payloads rejeitados pelo adaptador GameInfo.
+		local ok, decodedData, detail = pcall(gameInfo.applySync, data)
+		if not ok or type(decodedData) ~= "table" then
+			local entry = MODULE_BY_NAME.GameInfo
+			printRawError("GameInfo", ok and (detail or "payload BallSync inválido") or decodedData, entry and entry.path or "loader.luau")
+			return
+		end
+		notifyBallSync(decodedData)
+	end
 	local watcherCallOk, watcherReady = pcall(gameInfo.installBallWatcher, utils.trackGlobal)
 	if not watcherCallOk or watcherReady ~= true then local reason = watcherCallOk and "observador da bola indisponível" or tostring(watcherReady); return nil, "GameInfo: " .. reason end
 	local syncCallOk, syncReady = pcall(remote.bindBallSync, onBallSync)

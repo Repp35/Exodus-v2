@@ -14,6 +14,7 @@ local Players
 local Workspace
 local cachedBall
 local ballReplicatorModule
+local lastSyncData
 local deflectAbility
 
 -- helpers
@@ -28,7 +29,8 @@ local function getBall()
 	cachedBall = findGameBall(); return cachedBall
 end
 local function getBallReplicator()
-	if ballReplicatorModule and ballReplicatorModule.Parent ~= nil then return ballReplicatorModule end
+	-- BallReplicator retorna uma tabela; não use Parent para validar o cache.
+	if ballReplicatorModule then return ballReplicatorModule end
 	ballReplicatorModule = nil; local replicatedStorage = Utils.getReplicatedStorage()
 	if not replicatedStorage then return nil end
 	local ts = replicatedStorage:FindFirstChild("TS")
@@ -49,9 +51,11 @@ local function getBallReplicator()
 	return ballReplicatorModule
 end
 local function getDecodedSyncData()
-	local provider = getBallReplicator()
-	if not provider then return nil end
-	local data = provider.syncData
+	local data = lastSyncData
+	if type(data) ~= "table" then
+		local provider = getBallReplicator()
+		data = provider and provider.syncData or nil
+	end
 	if type(data) ~= "table" then return nil end
 	return data
 end
@@ -67,7 +71,10 @@ end
 local function resolveTargetId(data)
 	if type(data) ~= "table" then return -1 end
 	local attributeOk, attributeValue = pcall(function() return Workspace:GetAttribute("GameBallTarget") end)
-	if attributeOk and attributeValue ~= nil then return normalizeTargetId(attributeValue) or -1 end
+	if attributeOk and attributeValue ~= nil then
+		local attributeTarget = normalizeTargetId(attributeValue)
+		if attributeTarget then return attributeTarget end
+	end
 	return normalizeTargetId(data.TargetPlayerID) or normalizeTargetId(data.HighlightTargetPlayerID) or -1
 end
 local function isLocalTargeted(data)
@@ -76,7 +83,10 @@ local function isLocalTargeted(data)
 	if not localPlayer then return false end
 	local localUserId = tonumber(localPlayer.UserId)
 	local attributeOk, attributeValue = pcall(function() return Workspace:GetAttribute("GameBallTarget") end)
-	if attributeOk and attributeValue ~= nil then return normalizeTargetId(attributeValue) == localUserId end
+	if attributeOk and attributeValue ~= nil then
+		local attributeTarget = normalizeTargetId(attributeValue)
+		if attributeTarget then return attributeTarget == localUserId end
+	end
 	return normalizeTargetId(data.TargetPlayerID) == localUserId
 		or normalizeTargetId(data.HighlightTargetPlayerID) == localUserId
 end
@@ -175,14 +185,18 @@ function GameInfo.setup(deps)
 	Utils = deps.Utils; Players = Utils.getPlayers(); Workspace = Utils.getWorkspace()
 	if not Players then return false, "dependência ausente: Players" end
 	if not Workspace then return false, "dependência ausente: Workspace" end
-	cachedBall = nil; ballReplicatorModule = nil; deflectAbility = nil; return true
+	cachedBall = nil; ballReplicatorModule = nil; lastSyncData = nil; deflectAbility = nil; return true
 end
 function GameInfo.getBall() return getBall() end
 function GameInfo.getSnapshot(lastTarget, time, frameTime) return getSnapshot(lastTarget, time, frameTime) end
 function GameInfo.getSyncData() return getDecodedSyncData() end
 function GameInfo.getTargetId() return resolveTargetId(getDecodedSyncData()) end
 function GameInfo.isSnapshotValid(snapshot) return type(snapshot) == "table" end
-function GameInfo.applySync(data) return type(data) == "table" and data or nil end
+function GameInfo.applySync(data)
+	if type(data) ~= "table" then return nil end
+	lastSyncData = data
+	return data
+end
 function GameInfo.installBallWatcher(trackConnection) return installBallWatcher(trackConnection) end
 function GameInfo.getDeflectCD() return getDeflectCooldown() end
 function GameInfo.getStatus()
@@ -201,7 +215,6 @@ GameInfo.__contract = {
 		Utils = "utils",
 	},
 
-	ballSync = true,
 }
 
 return GameInfo
