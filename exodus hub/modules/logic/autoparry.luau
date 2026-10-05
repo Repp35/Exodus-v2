@@ -298,19 +298,10 @@ local function fireAfterDetection(ball, generation, token)
 	local time = clock()
 	if R.teleported or time < R.teleportLockUntil then R.armed = true; return false end
 	if not isAutoParryEnabled() or isSpamActive() or not isSystemActive() then R.armed = true; return false end
-	local currentBall, targeted, snapshot = readFrameState(time)
-	if not isValidBall(currentBall) or currentBall ~= ball then R.armed = true; return false end
-	if R.lastBall == nil then R.armed = true; return false end
-	if R.lastBall ~= ball then R.armed = true; return false end
-	if not targeted then R.armed = true; return false end
+	if R.lastBall == nil or R.lastBall ~= ball then R.armed = true; return false end
+	if not R.targeted then R.armed = true; return false end
 	local root = R.root
 	if not root or not root.Parent then return false end
-	local position = snapshot and snapshot.position or nil
-	if not isValidVector3(position) then
-		local ok, value = pcall(function() return ball.Position end)
-		if not ok or not isValidVector3(value) then R.armed = true; return false end
-		position = value
-	end
 	local liveVelocity
 	local velocityOk, velocityValue = pcall(function() return ball.AssemblyLinearVelocity end)
 	if velocityOk and isValidVector3(velocityValue) then liveVelocity = velocityValue
@@ -318,6 +309,8 @@ local function fireAfterDetection(ball, generation, token)
 	if not isValidVector3(liveVelocity) then R.armed = true; return false end
 	local liveSpeed = liveVelocity.Magnitude
 	if liveSpeed < T.MIN_BALL_SPEED then R.armed = true; return false end
+	local ok, position = pcall(function() return ball.Position end)
+	if not ok or not isValidVector3(position) then R.armed = true; return false end
 	local delta = root.Position - position; local distance = delta.Magnitude; local approaching = distance > 0 and liveVelocity:Dot(delta) > 0
 	if not approaching then R.armed = true; return false end
 	local resilienceBonus = getResilienceBonus(time); local radius = computeParryRadius(liveSpeed, R.ping, resilienceBonus, T.DEFAULT_WINDOW_FACTOR)
