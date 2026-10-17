@@ -62,7 +62,6 @@ UIConfig.__config = {
 		SpamKeybind = Enum.KeyCode.F,
 		SpamMode = "Toggle",
 	},
-
 }
 UIConfig.__contract = {
 	requires = {},
