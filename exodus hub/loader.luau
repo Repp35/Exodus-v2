@@ -384,12 +384,30 @@ local function bindRuntime(loaded, log)
 			callSync(sub.name, sub.handler, decodedData)
 		end
 	end
-	local function onBallSync(data)
+	local function onBallSync(...)
+		-- O RemoteEvent pode enviar a tabela como argumento extra ou como string JSON:
+		-- procura o primeiro argumento utilizável antes de desistir.
+		local argCount = select("#", ...)
+		local data
+		for index = 1, argCount do
+			local value = select(index, ...)
+			if type(value) == "table" then data = value; break end
+		end
+		if data == nil and type((...)) == "string" then
+			local decodedOk, decoded = pcall(function() return game:GetService("HttpService"):JSONDecode((...)) end)
+			if decodedOk and type(decoded) == "table" then data = decoded end
+		end
 		-- Não encaminhar payloads rejeitados pelo adaptador GameInfo.
 		local ok, decodedData, detail = pcall(gameInfo.applySync, data)
 		if not ok or type(decodedData) ~= "table" then
 			local entry = MODULE_BY_NAME.GameInfo
-			printRawError("GameInfo", ok and (detail or "payload BallSync inválido") or decodedData, entry and entry.path or "loader.luau")
+			local received = argCount > 0 and type((...)) or "nil"
+			local message = ok and (detail or ("payload BallSync inválido (recebido: %s, argumentos: %d)"):format(received, argCount)) or decodedData
+			printRawError("GameInfo", message, entry and entry.path or "loader.luau")
+				-- Grava o erro na pasta workspace do executor (writefile salva lá).
+				if type(writefile) == "function" then
+					pcall(writefile, "BallSyncErro.txt", "[loader.luau] GameInfo: " .. tostring(message) .. "\n")
+				end
 			return
 		end
 		notifyBallSync(decodedData)
