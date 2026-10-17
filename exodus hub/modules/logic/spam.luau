@@ -131,11 +131,15 @@ local function checkParryRadiusGuard()
 	return false
 end
 local function requestParry()
-	local ok, result = pcall(Remote.fireParry, 1); local timestamp = getNow(); Scheduler.lastRequestAt = timestamp
-	if ok and result ~= false then Scheduler.lastError = nil; return true end
-	local errorMessage
-	if not ok then errorMessage = tostring(result)
-	else errorMessage = "Remote.fireParry retornou false" end
+	local timestamp = getNow(); Scheduler.lastRequestAt = timestamp
+	-- Simula Mouse Button 1 via VirtualInputManager em vez de chamar o remote de parry.
+	local vim = game:GetService("VirtualInputManager")
+	local ok, err = pcall(function()
+		vim:SendMouseButtonEvent(0, 0, 0, true,  game, 1) -- press
+		vim:SendMouseButtonEvent(0, 0, 0, false, game, 1) -- release
+	end)
+	if ok then Scheduler.lastError = nil; return true end
+	local errorMessage = tostring(err)
 	Scheduler.lastError = errorMessage
 	if timestamp - Scheduler.lastErrorAt >= 1 then
 		Scheduler.lastErrorAt = timestamp
