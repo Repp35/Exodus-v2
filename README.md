@@ -1,3 +1,3 @@
 Lá vem o Skiddie
 
-«Esse hub não funciona depois da atualização, não perca tempo.»
+«Esse hub não funciona após a atualização, não perca tempo.»
