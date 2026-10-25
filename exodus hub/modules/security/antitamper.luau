@@ -1,5 +1,6 @@
 -- [[ antitamper ]]
 -- obs: não sei fazer anti tamper 🤧
+
 -- Helpers
 local AntiTamper = {}
 local PCall = pcall
