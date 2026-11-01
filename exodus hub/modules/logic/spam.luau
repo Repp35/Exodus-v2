@@ -1,4 +1,3 @@
-
 -- [[ spam ]]
 
 local Spam = {}
