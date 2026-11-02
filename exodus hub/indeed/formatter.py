@@ -1,170 +1,409 @@
-# [[ formatter ppzudo ]]
+#!/usr/bin/env python3
+"""Format Lua and Luau files with the project's StyLua preferences."""
 
 from __future__ import annotations
 
+import argparse
+import errno
+import fnmatch
+import os
+import platform
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from typing import Iterable, Sequence
 
 
+FORMATTER_PATH = Path(__file__).resolve()
+HUB_ROOT = next(
+    (parent for parent in FORMATTER_PATH.parents if (parent / "stylua.toml").is_file()),
+    FORMATTER_PATH.parent,
+)
+DEFAULT_CONFIG = FORMATTER_PATH.parent / "stylua.toml"
+LUA_SUFFIXES = {".lua", ".luau"}
+SKIP_DIRS = {
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "target",
+}
 TITLE_RE = re.compile(r"^--\s*\[\[.*?\]\]\s*$")
+UNINITIALIZED_LOCAL_RE = re.compile(
+    r"^local\s+([A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*)\s*$"
+)
 PLAIN_SECTION_RE = re.compile(r"^--\s*(\S+)\s*$")
 BRACKET_SECTION_RE = re.compile(r"^--\s*\[\s*(\S+)\s*\]\s*$")
 DECORATED_SECTION_RE = re.compile(r"^--\s*=+\s*(\S+)\s*=+\s*--\s*$")
-SECTION_PATTERNS = (
-    DECORATED_SECTION_RE,
-    BRACKET_SECTION_RE,
-    PLAIN_SECTION_RE,
-)
+SECTION_PATTERNS = (DECORATED_SECTION_RE, BRACKET_SECTION_RE, PLAIN_SECTION_RE)
 SECTION_PART_RE = re.compile(r"[/-]")
+# Shared section labels are canonicalized across modules. Unlisted section
+# names remain valid and are kept as module-specific headings.
+STANDARD_SECTION_ALIASES = {
+    "tunning": "tuning",
+    "helper": "helpers",
+    "utility": "helpers",
+    "utilities": "helpers",
+    "states": "state",
+    "dependency": "dependencies",
+    "service": "services",
+    "configuration": "config",
+    "configurations": "config",
+    "init": "setup",
+    "initialization": "setup",
+    "run-time": "runtime",
+    "life-cycle": "lifecycle",
+    "clean-up": "cleanup",
+}
+BLOCK_WORD_RE = re.compile(
+    r"\b(?:if|then|elseif|else|end|for|while|repeat|until|function|do)\b"
+)
+ASSIGNMENT_RE = re.compile(
+    r"^(?:local\s+)?[A-Za-z_][A-Za-z0-9_]*(?:(?:\s*\.\s*|\s*:\s*)[A-Za-z_][A-Za-z0-9_]*|\s*\[[^\]\n]+\])*"
+    r"(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*\s*(?:[+\-*/%^]?=)\s*\S"
+)
+CALL_RE = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|:)[A-Za-z_][A-Za-z0-9_]*|\s*\[[^\]\n]+\])*\s*\("
+)
+CONTINUATION_START_RE = re.compile(r"^(?:and|or|not)\b|^[+*/%^~=<>.,]")
+RETURN_RE = re.compile(r"^(?:return|break|continue)(?:\s|$)")
+IF_HEADER_RE = re.compile(r"^if\b.*\bthen\s*$")
+ELSEIF_HEADER_RE = re.compile(r"^elseif\b.*\bthen\s*$")
 LOCAL_TABLE_RE = re.compile(r"^\s*(?:local\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*\{")
-LONG_COMMENT_RE = re.compile(r"--\[(=*)\[.*?\]\1\]", re.DOTALL)
+DIRECTIVE_RE = re.compile(r"^--![A-Za-z][A-Za-z0-9_-]*(?:\s+\d+)?\s*$")
 
 
-def normalize(value: str) -> str:
-    return re.sub(r"\s+", " ", value.strip())
+class FormatterError(Exception):
+    """An actionable formatter input or execution error."""
+
+
+def normalized_title(file_name: str) -> str:
+    return Path(file_name).stem.lower().strip() or "arquivo"
 
 
 def valid_section(value: str) -> bool:
-    value = normalize(value)
     if not value or len(value) > 36 or " " in value:
         return False
     if value.endswith((".", ",", ":", ";", "!", "?")):
         return False
-
     parts = SECTION_PART_RE.split(value)
     return bool(parts) and all(
-        part
-        and part[0].isalpha()
-        and all(char.isalnum() for char in part[1:])
+        part and part[0].isalpha() and all(char.isalnum() for char in part[1:])
         for part in parts
     )
 
 
-def section_from_comment(line: str) -> str | None:
-    stripped = line.strip()
+def section_from_comment(comment: str) -> str | None:
+    stripped = comment.strip()
     if TITLE_RE.fullmatch(stripped):
         return None
-
     for pattern in SECTION_PATTERNS:
         match = pattern.fullmatch(stripped)
-        if match:
-            value = normalize(match.group(1))
-            if valid_section(value):
-                return f"-- {value}"
-            return None
-
+        if match and valid_section(match.group(1)):
+            return f"-- {match.group(1)}"
     return None
 
 
-def strip_inline_comment(line: str) -> str:
-    result = []
-    quote = None
-    escaped = False
+def section_name_from_comment(comment: str) -> str | None:
+    stripped = comment.strip()
+    if TITLE_RE.fullmatch(stripped):
+        return None
+    for pattern in SECTION_PATTERNS:
+        match = pattern.fullmatch(stripped)
+        if match and valid_section(match.group(1)):
+            return match.group(1)
+    return None
+
+
+def canonical_section_name(name: str) -> str:
+    normalized = name.strip().casefold()
+    return STANDARD_SECTION_ALIASES.get(normalized, normalized)
+
+
+def configuration_section_is_tuning(lines: Sequence[str], index: int) -> bool:
+    """Treat configuration headings as tuning when they introduce constants."""
+    for table_index in range(index + 1, len(lines)):
+        line = lines[table_index]
+        if section_from_comment(line):
+            return False
+
+        stripped = line.strip()
+        if not stripped or stripped.startswith("--"):
+            continue
+
+        table_match = re.match(
+            r"^local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\{",
+            stripped,
+        )
+        if not table_match:
+            return False
+
+        table_name = table_match.group(1)
+        if table_name == "T":
+            return True
+
+        constant_keys = 0
+        field_count = 0
+        for field_line in lines[table_index + 1 : table_index + 40]:
+            if not field_line[:1].isspace() and field_line.strip() == "}":
+                break
+            field_match = re.match(r"^\s+([A-Za-z_][A-Za-z0-9_]*)\s*=", field_line)
+            if field_match:
+                field_count += 1
+                constant_keys += field_match.group(1).isupper()
+                if field_count >= 5:
+                    break
+        return field_count >= 2 and constant_keys >= 2
+
+    return False
+
+
+def normalize_section_case(
+    source: str,
+    exceptions: Sequence[str] = (),
+) -> str:
+    """Lowercase section headings while keeping the file title untouched."""
+    exception_names = {name.casefold() for name in exceptions}
+    lines = source.splitlines()
+    normalized_lines = []
+
+    for index, line in enumerate(lines):
+        name = section_name_from_comment(line)
+        base_name = canonical_section_name(name) if name else ""
+        canonical_name = base_name
+        if name and base_name in {"config", "configuration"} and configuration_section_is_tuning(lines, index):
+            canonical_name = "tuning"
+        if (
+            not name
+            or name.casefold() in exception_names
+            or base_name in exception_names
+            or canonical_name in exception_names
+        ):
+            normalized_lines.append(line)
+            continue
+
+        stripped = line.strip()
+        for pattern in SECTION_PATTERNS:
+            match = pattern.fullmatch(stripped)
+            if match:
+                indentation = line[: len(line) - len(line.lstrip())]
+                normalized = (
+                    stripped[: match.start(1)]
+                    + canonical_name
+                    + stripped[match.end(1) :]
+                )
+                normalized_lines.append(indentation + normalized)
+                break
+        else:
+            normalized_lines.append(line)
+
+    return finish_source(normalized_lines)
+
+
+def long_bracket_open(source: str, index: int) -> tuple[int, str] | None:
+    if index >= len(source) or source[index] != "[":
+        return None
+    cursor = index + 1
+    while cursor < len(source) and source[cursor] == "=":
+        cursor += 1
+    if cursor >= len(source) or source[cursor] != "[":
+        return None
+    equals = source[index + 1 : cursor]
+    return cursor + 1, "]" + equals + "]"
+
+
+def quoted_string_end(source: str, start: int, quote: str) -> int:
+    cursor = start + 1
+    while cursor < len(source):
+        if source[cursor] == "\\":
+            cursor += 2
+        elif source[cursor] == quote:
+            return cursor + 1
+        else:
+            cursor += 1
+    return len(source)
+
+
+def strip_unwanted_comments(source: str, preserve_sections: bool = True) -> str:
+    """Remove non-section comments without treating comment-like strings as comments."""
+    output: list[str] = []
     index = 0
+    line_start = 0
+    line_has_code = False
 
-    while index < len(line):
-        char = line[index]
+    while index < len(source):
+        char = source[index]
 
-        if quote:
-            result.append(char)
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == quote:
-                quote = None
+        if char == "\n":
+            output.append(char)
             index += 1
+            line_start = index
+            line_has_code = False
             continue
 
-        if char in {'"', "'"}:
-            quote = char
-            result.append(char)
-            index += 1
+        if char in {'"', "'", "`"}:
+            end = quoted_string_end(source, index, char)
+            literal = source[index:end]
+            output.append(literal)
+            if "\n" in literal:
+                line_start = source.rfind("\n", index, end) + 1
+                line_has_code = bool(literal.rsplit("\n", 1)[-1].strip())
+            else:
+                line_has_code = True
+            index = end
             continue
 
-        if char == "-" and index + 1 < len(line) and line[index + 1] == "-":
-            break
+        if char == "[":
+            opening = long_bracket_open(source, index)
+            if opening:
+                content_start, closing = opening
+                close_at = source.find(closing, content_start)
+                end = len(source) if close_at < 0 else close_at + len(closing)
+                literal = source[index:end]
+                output.append(literal)
+                if "\n" in literal:
+                    line_start = source.rfind("\n", index, end) + 1
+                    line_has_code = bool(literal.rsplit("\n", 1)[-1].strip())
+                else:
+                    line_has_code = True
+                index = end
+                continue
 
-        result.append(char)
+        if source.startswith("--", index):
+            opening = long_bracket_open(source, index + 2)
+            if opening:
+                content_start, closing = opening
+                close_at = source.find(closing, content_start)
+                if close_at < 0:
+                    # Leave malformed comments for StyLua to diagnose.
+                    output.append(source[index:])
+                    break
+                end = close_at + len(closing)
+                comment = source[index:end]
+                output.append(" ")
+                output.extend("\n" for value in comment if value == "\n")
+                if "\n" in comment:
+                    line_start = source.rfind("\n", index, end) + 1
+                    line_has_code = False
+                index = end
+                continue
+
+            end = source.find("\n", index)
+            if end < 0:
+                end = len(source)
+            comment = source[index:end]
+            prefix = source[line_start:index]
+            if not line_has_code:
+                if TITLE_RE.fullmatch(comment.strip()) or DIRECTIVE_RE.fullmatch(comment.strip()):
+                    kept = comment.strip()
+                else:
+                    kept = section_from_comment(comment) if preserve_sections else None
+                line_output_start = len(output)
+                while line_output_start and output[line_output_start - 1] != "\n":
+                    line_output_start -= 1
+                del output[line_output_start:]
+                if kept:
+                    indent = prefix[: len(prefix) - len(prefix.lstrip(" \t"))]
+                    output.append(indent + kept)
+                elif end < len(source) and source[end] == "\n":
+                    index = end + 1
+                    line_start = index
+                    line_has_code = False
+                    continue
+            else:
+                while output and output[-1] in " \t":
+                    output.pop()
+            index = end
+            continue
+
+        output.append(char)
+        if not char.isspace():
+            line_has_code = True
         index += 1
 
-    return "".join(result).rstrip()
+    return "".join(output)
 
 
-def strip_long_comments(source: str) -> str:
-    def blank(match: re.Match[str]) -> str:
-        return "".join("\n" if char == "\n" else " " for char in match.group(0))
+def add_section_spacing(source: str) -> str:
+    lines = source.splitlines()
+    result: list[str] = []
+    for line in lines:
+        if section_from_comment(line) and result:
+            while result and not result[-1].strip():
+                result.pop()
+            if result:
+                result.append("")
+        result.append(line.rstrip())
+    return finish_source(result)
 
-    return LONG_COMMENT_RE.sub(blank, source)
+
+def finish_source(lines: Sequence[str]) -> str:
+    content = "\n".join(lines).rstrip()
+    return content + "\n" if content else ""
 
 
-def collect_lines(source: str) -> list[str]:
-    result = []
+def remove_empty_lines(source: str) -> str:
+    lines: list[str] = []
+    for line in source.splitlines():
+        if line.strip():
+            lines.append(line.rstrip())
+        elif lines and TITLE_RE.fullmatch(lines[-1].strip()):
+            # Keep the visual separation after the file title.
+            lines.append("")
+    return finish_source(lines)
 
-    for line in strip_long_comments(source).splitlines():
-        stripped = line.strip()
 
-        if stripped.startswith("--"):
-            section = section_from_comment(line)
-            if section:
-                result.append(line[: len(line) - len(line.lstrip())] + section)
+def add_initial_dependency_spacing(source: str) -> str:
+    """Separate the first group of uninitialized module dependencies."""
+    lines = source.splitlines()
+    index = 0
+    while index < len(lines):
+        if section_from_comment(lines[index]):
+            break
+
+        match = UNINITIALIZED_LOCAL_RE.fullmatch(lines[index].strip())
+        if not match:
+            index += 1
             continue
 
-        line = strip_inline_comment(line)
-        if line.strip():
-            result.append(line.rstrip())
+        start = index
+        dependency_count = len(match.group(1).split(","))
+        end = index + 1
+        while end < len(lines) and not section_from_comment(lines[end]):
+            next_match = UNINITIALIZED_LOCAL_RE.fullmatch(lines[end].strip())
+            if not next_match:
+                break
+            dependency_count += len(next_match.group(1).split(","))
+            end += 1
 
-    return result
+        if dependency_count > 1 and start > 0 and lines[start - 1].strip():
+            lines.insert(start, "")
+        break
+
+    return finish_source(lines)
 
 
 def brace_delta(line: str) -> int:
-    delta = 0
-    quote = None
-    escaped = False
-    index = 0
-
-    while index < len(line):
-        char = line[index]
-
-        if quote:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == quote:
-                quote = None
-            index += 1
-            continue
-
-        if char in {'"', "'"}:
-            quote = char
-        elif char == "-" and index + 1 < len(line) and line[index + 1] == "-":
-            break
-        elif char == "{":
-            delta += 1
-        elif char == "}":
-            delta -= 1
-
-        index += 1
-
-    return delta
+    code = mask_literals(line)
+    comment_at = code.find("--")
+    if comment_at >= 0:
+        code = code[:comment_at]
+    return code.count("{") - code.count("}")
 
 
-def is_section(line: str) -> bool:
-    stripped = line.strip()
-    return stripped.startswith("-- ") and not stripped.startswith("-- [[")
-
-
-def add_table_spacing(lines: list[str]) -> list[str]:
-    result = []
+def add_table_spacing(source: str) -> str:
+    lines = source.splitlines()
+    result: list[str] = []
     depth = 0
-    table_depth = None
+    table_depth: int | None = None
 
     for index, line in enumerate(lines):
-        starts_table = table_depth is None and LOCAL_TABLE_RE.match(line)
+        starts_table = table_depth is None and LOCAL_TABLE_RE.match(mask_literals(line))
         if starts_table:
             table_depth = depth
 
@@ -172,281 +411,274 @@ def add_table_spacing(lines: list[str]) -> list[str]:
         result.append(line.rstrip())
         depth += brace_delta(line)
 
-        if table_depth is not None and before > table_depth and depth <= table_depth:
+        if table_depth is not None and depth <= table_depth and (before > table_depth or starts_table):
+            add_gap = before > table_depth
             table_depth = None
             next_index = index + 1
             while next_index < len(lines) and not lines[next_index].strip():
                 next_index += 1
-            if next_index >= len(lines) or not is_section(lines[next_index]):
-                if result[-1] != "":
-                    result.append("")
-
-    return result
-
-
-def add_section_spacing(lines: list[str]) -> list[str]:
-    result = []
-    depth = 0
-    table_depth = None
-    table_has_section = False
-
-    for line in lines:
-        if table_depth is None and LOCAL_TABLE_RE.match(line):
-            table_depth = depth
-            table_has_section = False
-
-        if is_section(line):
-            inside_table = table_depth is not None and depth > table_depth
-            if inside_table:
-                if table_has_section and result and result[-1] != "":
-                    result.append("")
-                table_has_section = True
-            elif result and result[-1] != "":
+            if add_gap and (next_index >= len(lines) or not section_from_comment(lines[next_index])):
                 result.append("")
 
-        result.append(line)
-        depth += brace_delta(line)
-
-        if table_depth is not None and depth <= table_depth:
-            table_depth = None
-            table_has_section = False
-
-    return result
+    return finish_source(result)
 
 
-def collapse_empty_lines(lines: list[str]) -> list[str]:
-    result = []
-
-    for line in lines:
-        if line == "" and result and result[-1] == "":
-            continue
-        result.append(line)
-
-    return result
-
-
-def add_final_return_spacing(lines: list[str]) -> None:
+def add_final_return_spacing(source: str) -> str:
+    lines = source.splitlines()
     for index in range(len(lines) - 1, -1, -1):
-        if re.match(r"^return(?:\s|$)", lines[index].strip()):
-            if index and lines[index - 1] != "":
+        if not line_indent(lines[index]) and re.match(r"^return(?:\s|$)", lines[index].strip()):
+            if index and lines[index - 1].strip():
                 lines.insert(index, "")
-            return
+            break
+    return finish_source(lines)
 
 
-def normalized_title(file_name: str) -> str:
-    return Path(file_name).stem.lower().strip() or "arquivo"
+def add_title(
+    source: str,
+    file_name: str,
+    custom_title: str | None = None,
+) -> str:
+    """Keep source comments and ensure the familiar title is at the top."""
+    title_text = custom_title if custom_title is not None else normalized_title(file_name)
+    title = f"-- [[ {title_text} ]]"
+    lines = source.splitlines()
+    directive_count = 0
+    while directive_count < len(lines) and DIRECTIVE_RE.fullmatch(lines[directive_count].strip()):
+        directive_count += 1
+
+    # Update an existing title in the leading comment block, keeping all other
+    # comments in place. A title deeper in the code is left alone.
+    for index in range(directive_count, len(lines)):
+        line = lines[index]
+        stripped = line.strip()
+        if TITLE_RE.fullmatch(stripped):
+            lines[index] = title
+            if index + 1 < len(lines) and lines[index + 1].strip():
+                lines.insert(index + 1, "")
+            return "\n".join(lines).rstrip() + "\n"
+        if stripped and not stripped.startswith("--"):
+            break
+
+    while directive_count < len(lines) and not lines[directive_count].strip():
+        directive_count += 1
+    prefix = lines[:directive_count]
+    remainder = lines[directive_count:]
+    body = [title, ""]
+    body.extend(remainder)
+    return "\n".join((*prefix, *body)).rstrip() + "\n"
 
 
-def format_source(source: str, file_name: str) -> str:
-    lines = collect_lines(source)
-    lines = add_section_spacing(lines)
-    lines = add_table_spacing(lines)
-    lines = collapse_empty_lines(lines)
-    title = f"-- [[ {normalized_title(file_name)} ]]"
-    result = [title, ""] + lines
-    add_final_return_spacing(result)
-    return "\n".join(result).rstrip() + "\n"
+def apply_directives(source: str, requested: Sequence[str]) -> str:
+    lines = source.splitlines()
+    existing = []
+    body = []
+    for line in lines:
+        if DIRECTIVE_RE.fullmatch(line.strip()):
+            directive = line.strip()
+            if directive not in existing:
+                existing.append(directive)
+        else:
+            body.append(line)
+
+    requested_modes = {"strict", "nonstrict", "nocheck"}.intersection(requested)
+    if requested_modes:
+        existing = [
+            directive
+            for directive in existing
+            if directive.removeprefix("--!") not in {"strict", "nonstrict", "nocheck"}
+        ]
+
+    for directive in requested:
+        normalized = directive if directive.startswith("--!") else f"--!{directive}"
+        if normalized not in existing:
+            existing.append(normalized)
+
+    return finish_source([*existing, *body])
 
 
-def find_stylua() -> str:
-    local_stylua = Path(__file__).with_name("stylua")
-    if local_stylua.is_file():
-        local_stylua.chmod(local_stylua.stat().st_mode | 0o111)
-        return str(local_stylua)
-
-    stylua = shutil.which("stylua")
-    if not stylua:
-        raise RuntimeError("StyLua não encontrado. Instale o StyLua e tente novamente.")
-    return stylua
-
-
-def run_stylua(path: Path) -> None:
-    subprocess.run(
-        [
-            find_stylua(),
-            "--syntax",
-            "Luau",
-            "--collapse-simple-statement",
-            "Always",
-            "--column-width",
-            "120",
-            "--indent-type",
-            "Tabs",
-            "--indent-width",
-            "4",
-            str(path),
-        ],
-        check=True,
-    )
+def parse_section_specs(values: Sequence[str]) -> list[tuple[str, str]]:
+    sections = []
+    for value in values:
+        name, separator, marker = value.partition("=")
+        name = name.strip()
+        marker = marker.strip()
+        if not separator or not valid_section(name) or not marker or "\n" in marker:
+            raise FormatterError(
+                f"Seção inválida: {value!r}. Use NOME=TRECHO_DE_CÓDIGO."
+            )
+        sections.append((name, marker))
+    return sections
 
 
-MAX_COMPACT_LINE = 200
-MAX_COMPACT_STATEMENTS = 4
-BLOCK_WORD_RE = re.compile(r"\b(?:if|then|elseif|else|end|for|while|repeat|until|function|do)\b")
-IF_HEADER_RE = re.compile(r"^if\b.*\bthen\s*$")
-ELSEIF_HEADER_RE = re.compile(r"^elseif\b.*\bthen\s*$")
-ASSIGNMENT_RE = re.compile(
-    r"^(?:local\s+)?[A-Za-z_][A-Za-z0-9_]*(?:(?:\s*\.\s*|\s*:\s*)[A-Za-z_][A-Za-z0-9_]*|\s*\[[^\]\n]+\])*"
-    r"(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*\s*(?:[+\-*/%^]?=)\s*\S"
-)
-CALL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|:)[A-Za-z_][A-Za-z0-9_]*|\s*\[[^\]\n]+\])*\s*\(")
-RETURN_RE = re.compile(r"^(?:return|break|continue)(?:\s|$)")
-CONTINUATION_START_RE = re.compile(r"^(?:and|or|not)\b|^[+*/%^~=<>.,]")
+def parse_section_edits(values: Sequence[str]) -> list[tuple[str, str]]:
+    edits = []
+    for value in values:
+        old_name, separator, new_name = value.partition("=")
+        old_name = old_name.strip()
+        new_name = new_name.strip()
+        if not separator or not valid_section(old_name) or not valid_section(new_name):
+            raise FormatterError(
+                f"Edição de seção inválida: {value!r}. Use NOME_ATUAL=NOVO_NOME."
+            )
+        edits.append((old_name, new_name))
+    return edits
+
+
+def edit_sections(
+    source: str,
+    edits: Sequence[tuple[str, str]],
+    removals: Sequence[str],
+    file_path: Path,
+) -> str:
+    lines = source.splitlines()
+
+    for old_name, new_name in edits:
+        found = False
+        for index, line in enumerate(lines):
+            current_name = section_name_from_comment(line)
+            if current_name and canonical_section_name(current_name) == canonical_section_name(old_name):
+                lines[index] = f"{line_indent(line)}-- {new_name}"
+                found = True
+        if not found:
+            raise FormatterError(
+                f"Seção {old_name!r} não encontrada em {file_path}."
+            )
+
+    for name in removals:
+        found = False
+        remaining = []
+        for line in lines:
+            current_name = section_name_from_comment(line)
+            if current_name and canonical_section_name(current_name) == canonical_section_name(name):
+                found = True
+                continue
+            remaining.append(line)
+        if not found:
+            raise FormatterError(f"Seção {name!r} não encontrada em {file_path}.")
+        lines = remaining
+
+    return finish_source(lines)
+
+
+def insert_sections(
+    source: str,
+    sections: Sequence[tuple[str, str]],
+    file_path: Path,
+) -> str:
+    lines = source.splitlines()
+    insertions: dict[int, list[str]] = {}
+
+    for name, marker in sections:
+        anchor = next(
+            (
+                index
+                for index, line in enumerate(lines)
+                if marker in line and not line.lstrip().startswith("--")
+            ),
+            None,
+        )
+        if anchor is None:
+            raise FormatterError(
+                f"Âncora da seção {name!r} não encontrada em {file_path}: {marker!r}"
+            )
+        previous = section_name_from_comment(lines[anchor - 1]) if anchor > 0 else None
+        if previous and canonical_section_name(previous) == canonical_section_name(name):
+            continue
+        insertions.setdefault(anchor, []).append(f"-- {name}")
+
+    output = []
+    for index, line in enumerate(lines):
+        output.extend(insertions.get(index, ()))
+        output.append(line)
+    return finish_source(output)
+
+
+def integer_stylua_setting(config: Path, key: str, fallback: int) -> int:
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=\s*(\d+)\s*(?:#.*)?$")
+    for line in config.read_text(encoding="utf-8").splitlines():
+        if line.lstrip().startswith("["):
+            break
+        match = pattern.match(line)
+        if match:
+            return int(match.group(1))
+    return fallback
+
+
+def string_stylua_setting(config: Path, key: str, fallback: str) -> str:
+    pattern = re.compile(rf'^\s*{re.escape(key)}\s*=\s*"([^"]+)"\s*(?:#.*)?$')
+    for line in config.read_text(encoding="utf-8").splitlines():
+        if line.lstrip().startswith("["):
+            break
+        match = pattern.match(line)
+        if match:
+            return match.group(1)
+    return fallback
 
 
 def mask_literals(line: str) -> str:
+    """Hide string contents before checking a candidate for safe compaction."""
     chars = list(line)
     index = 0
-
     while index < len(line):
-        if line[index] in {'"', "'"}:
-            quote = line[index]
-            end = index + 1
-            while end < len(line):
-                if line[end] == "\\":
-                    end += 2
-                    continue
-                if line[end] == quote:
-                    end += 1
-                    break
-                end += 1
-            for offset in range(index, min(end, len(line))):
-                chars[offset] = " "
-            chars[index] = "x"
-            index = end
-            continue
-
-        if line[index] == "[":
-            opening = re.match(r"\[(=*)\[", line[index:])
+        end = index
+        if line[index] in {'"', "'", "`"}:
+            end = quoted_string_end(line, index, line[index])
+        elif line[index] == "[":
+            opening = long_bracket_open(line, index)
             if opening:
-                closing = "]" + opening.group(1) + "]"
-                content_start = index + opening.end()
+                content_start, closing = opening
                 close_at = line.find(closing, content_start)
                 end = len(line) if close_at < 0 else close_at + len(closing)
-                for offset in range(index, end):
-                    chars[offset] = " "
-                chars[index] = "x"
-                index = end
-                continue
 
-        index += 1
-
+        if end > index:
+            for position in range(index, end):
+                chars[position] = " "
+            chars[index] = "x"
+            index = end
+        else:
+            index += 1
     return "".join(chars)
 
 
-def simple_statement(line: str) -> bool:
-    code = mask_literals(line).strip()
-    if not code or ";" in code or BLOCK_WORD_RE.search(code) or CONTINUATION_START_RE.search(code):
-        return False
-    if not (ASSIGNMENT_RE.match(code) or CALL_RE.match(code) or RETURN_RE.match(code)):
-        return False
-    if code.endswith(("=", ",", ".", "+", "-", "*", "/", "..", "and", "or", "not")):
-        return False
-
-    stack = []
+def delimiters_balanced(code: str) -> bool:
+    stack: list[str] = []
     pairs = {")": "(", "]": "[", "}": "{"}
     for char in code:
         if char in "([{":
             stack.append(char)
-        elif char in ")]}":
-            if not stack or stack.pop() != pairs[char]:
-                return False
+        elif char in ")]}" and (not stack or stack.pop() != pairs[char]):
+            return False
     return not stack
+
+
+def simple_statement(line: str, allow_terminal: bool = False) -> bool:
+    code = mask_literals(line).strip()
+    if not code or ";" in code or "--" in code:
+        return False
+    if BLOCK_WORD_RE.search(code) or CONTINUATION_START_RE.search(code):
+        return False
+    if RETURN_RE.match(code):
+        return allow_terminal and delimiters_balanced(code)
+    if not (ASSIGNMENT_RE.match(code) or CALL_RE.match(code)):
+        return False
+    if code.endswith(("=", ",", ".", "+", "-", "*", "/", "..", "and", "or", "not")):
+        return False
+    return delimiters_balanced(code)
 
 
 def line_indent(line: str) -> str:
     return line[: len(line) - len(line.lstrip(" \t"))]
 
 
-def compact_if_at(lines: list[str], start: int) -> list[str] | None:
-    opening = lines[start]
-    indent = line_indent(opening)
-    if not IF_HEADER_RE.fullmatch(mask_literals(opening).strip()):
-        return None
-
-    branches = [(opening.strip(), [])]
-    current = branches[-1][1]
-    saw_else = False
-    end_index = None
-
-    for index in range(start + 1, len(lines)):
-        line = lines[index]
-        stripped = mask_literals(line).strip()
-        current_indent = line_indent(line)
-
-        if not stripped:
-            continue
-
-        if current_indent == indent:
-            if stripped == "end":
-                end_index = index
-                break
-            if stripped == "else" or ELSEIF_HEADER_RE.fullmatch(stripped):
-                if saw_else or (stripped == "else" and index == start + 1):
-                    return None
-                if stripped == "else":
-                    saw_else = True
-                branches.append((line.strip(), []))
-                current = branches[-1][1]
-                continue
-            return None
-
-        current.append(line)
-
-    if end_index is None or len(branches) < 1:
-        return None
-
-    body_indent = indent + "\t"
-    compact_branches = []
-    for header, body in branches:
-        if not body or len(body) > MAX_COMPACT_STATEMENTS:
-            return None
-        if any(line_indent(item) != body_indent or not simple_statement(item) for item in body):
-            return None
-        statements = "; ".join(item.strip() for item in body)
-        compact_branches.append((header, statements))
-
-    output = []
-    for index, (header, statements) in enumerate(compact_branches):
-        line = indent + header + " " + statements
-        if index == len(compact_branches) - 1:
-            line += " end"
-        if len(line.expandtabs(4)) > MAX_COMPACT_LINE:
-            return None
-        output.append(line)
-
-    return output
-
-
-def compact_simple_if_blocks(source: str) -> str:
+def compact_statement_runs(
+    source: str,
+    max_width: int,
+    max_statements: int,
+    tab_width: int,
+) -> str:
+    """Join adjacent, simple assignments/calls without crossing block syntax."""
     lines = source.splitlines()
-    while True:
-        candidates = [
-            (len(line_indent(line).expandtabs(4)), index)
-            for index, line in enumerate(lines)
-            if IF_HEADER_RE.fullmatch(mask_literals(line).strip())
-        ]
-        changed = False
-        for _, start in sorted(candidates, reverse=True):
-            replacement = compact_if_at(lines, start)
-            if replacement is not None:
-                index = start + 1
-                while index < len(lines):
-                    stripped = mask_literals(lines[index]).strip()
-                    if line_indent(lines[index]) == line_indent(lines[start]) and stripped == "end":
-                        break
-                    index += 1
-                lines[start : index + 1] = replacement
-                changed = True
-                break
-        if not changed:
-            break
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def compact_statement_runs(source: str) -> str:
-    lines = source.splitlines()
-    result = []
+    result: list[str] = []
     index = 0
 
     while index < len(lines):
@@ -459,15 +691,20 @@ def compact_statement_runs(source: str) -> str:
 
         run = [line.strip()]
         cursor = index + 1
-        while cursor < len(lines) and len(run) < MAX_COMPACT_STATEMENTS:
+        while cursor < len(lines) and len(run) < max_statements:
             candidate = lines[cursor]
-            if line_indent(candidate) != indent or not simple_statement(candidate):
+            if line_indent(candidate) != indent:
                 break
-            proposed = indent + "; ".join(run + [candidate.strip()])
-            if len(proposed.expandtabs(4)) > MAX_COMPACT_LINE:
+            candidate_code = mask_literals(candidate).strip()
+            terminal = bool(RETURN_RE.match(candidate_code))
+            if not simple_statement(candidate, allow_terminal=terminal):                break
+            proposed = indent + "; ".join((*run, candidate.strip()))
+            if len(proposed.expandtabs(tab_width)) > max_width:
                 break
             run.append(candidate.strip())
             cursor += 1
+            if terminal:
+                break
 
         if len(run) > 1:
             result.append(indent + "; ".join(run))
@@ -476,53 +713,640 @@ def compact_statement_runs(source: str) -> str:
             result.append(line)
             index += 1
 
-    return "\n".join(result).rstrip() + "\n"
+    return finish_source(result)
 
 
-def compact_blocks(source: str) -> str:
-    return compact_statement_runs(compact_simple_if_blocks(source))
+def compact_if_at(
+    lines: Sequence[str],
+    start: int,
+    max_width: int,
+    max_statements: int,
+    tab_width: int,
+    indent_unit: str,
+) -> tuple[int, list[str]] | None:
+    opening = lines[start]
+    indent = line_indent(opening)
+    opening_code = mask_literals(opening).strip()
+    if "--" in opening_code or not IF_HEADER_RE.fullmatch(opening_code):
+        return None
+
+    branches: list[tuple[str, list[str]]] = [(opening.strip(), [])]
+    current = branches[-1][1]
+    saw_else = False
+    end_index: int | None = None
+
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        stripped = mask_literals(line).strip()
+        current_indent = line_indent(line)
+        if not stripped:
+            continue
+
+        if current_indent == indent:
+            if stripped == "end":
+                end_index = index
+                break
+            if stripped == "else" or ELSEIF_HEADER_RE.fullmatch(stripped):
+                if "--" in stripped or saw_else:
+                    return None
+                if stripped == "else":
+                    saw_else = True
+                branches.append((line.strip(), []))
+                current = branches[-1][1]
+                continue
+            return None
+
+        current.append(line)
+
+    if end_index is None:
+        return None
+
+    compact_branches = []
+    inline_branches = []
+    for header, body in branches:
+        if not body or len(body) > max_statements:
+            return None
+        expected_indent = indent + indent_unit
+        if any(line_indent(item) != expected_indent for item in body):
+            return None
+        if any(not simple_statement(item, allow_terminal=True) for item in body):
+            return None
+        if any(RETURN_RE.match(mask_literals(item).strip()) for item in body[:-1]):
+            return None
+
+        statements = "; ".join(item.strip() for item in body)
+        compact_line = indent + header + " " + statements
+        if len(compact_line.expandtabs(tab_width)) > max_width:
+            return None
+        compact_branches.append(compact_line)
+        inline_branches.append(header + " " + statements)
+
+    inline_line = indent + " ".join(inline_branches) + " end"
+    if len(inline_line.expandtabs(tab_width)) <= max_width:
+        return end_index, [inline_line]
+
+    compact_branches[-1] += " end"
+    return end_index, compact_branches
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
-        print(f"Uso: python {Path(sys.argv[0]).name} <script.luau>")
-        return 1
+def compact_simple_if_blocks(
+    source: str,
+    max_width: int,
+    max_statements: int,
+    tab_width: int,
+    indent_type: str,
+) -> str:
+    lines = source.splitlines()
+    indent_unit = "\t" if indent_type == "Tabs" else " " * tab_width
 
-    input_path = Path(sys.argv[1])
-    if not input_path.is_file():
-        print(f"Arquivo não encontrado: {input_path}")
-        return 1
-    if input_path.suffix.lower() not in {".lua", ".luau"}:
-        print("Erro: o arquivo precisa ser .lua ou .luau.")
-        return 1
+    while True:
+        candidates = [
+            (len(line_indent(line).expandtabs(tab_width)), index)
+            for index, line in enumerate(lines)
+            if IF_HEADER_RE.fullmatch(mask_literals(line).strip())
+        ]
+        changed = False
+        for _, start in sorted(candidates, reverse=True):
+            compacted = compact_if_at(
+                lines,
+                start,
+                max_width,
+                max_statements,
+                tab_width,
+                indent_unit,
+            )
+            if compacted is not None:
+                end_index, replacement = compacted
+                lines[start : end_index + 1] = replacement
+                changed = True
+                break
+        if not changed:
+            break
 
-    output_path = input_path.with_name(f"{input_path.stem}_formatted{input_path.suffix}")
+    return finish_source(lines)
+
+
+def find_stylua() -> str:
+    machine = platform.machine().lower()
+    machine = {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
+    system = {
+        "Linux": "linux",
+        "Darwin": "macos",
+        "Windows": "windows",
+    }.get(platform.system())
+
+    if system:
+        suffix = ".exe" if system == "windows" else ""
+        for filename in (f"stylua-{system}-{machine}{suffix}", f"stylua{suffix}"):
+            bundled = FORMATTER_PATH.with_name(filename)
+            if bundled.is_file() and os.access(bundled, os.X_OK):
+                return str(bundled)
+
+    installed = shutil.which("stylua")
+    if installed:
+        return installed
+
+    raise FormatterError(
+        "StyLua não encontrado. Use o executável desta pasta ou instale o StyLua no PATH."
+    )
+
+
+def is_excluded(path: Path, root: Path, patterns: Sequence[str]) -> bool:
+    relative = path.relative_to(root)
+    if any(part in SKIP_DIRS for part in relative.parts[:-1]):
+        return True
+    if path.stem.endswith("_formatted"):
+        return True
+
+    relative_name = relative.as_posix()
+    return any(
+        fnmatch.fnmatchcase(relative_name, pattern)
+        or fnmatch.fnmatchcase(path.name, pattern)
+        for pattern in patterns
+    )
+
+
+def walk_directory(root: Path, patterns: Sequence[str]) -> Iterable[Path]:
+    for current, directory_names, file_names in os.walk(root):
+        directory_names[:] = sorted(
+            name for name in directory_names if name not in SKIP_DIRS
+        )
+        folder = Path(current)
+        for file_name in sorted(file_names):
+            path = folder / file_name
+            if path.suffix.lower() in LUA_SUFFIXES and not is_excluded(
+                path, root, patterns
+            ):
+                yield path
+
+
+def collect_files(paths: Sequence[Path], patterns: Sequence[str]) -> list[Path]:
+    requested = list(paths) or [HUB_ROOT]
+    files: dict[Path, Path] = {}
+
+    for requested_path in requested:
+        path = requested_path.expanduser()
+        if not path.exists():
+            raise FormatterError(f"Caminho não encontrado: {path}")
+
+        if path.is_dir():
+            root = path.resolve()
+            for candidate in walk_directory(root, patterns):
+                resolved = candidate.resolve()
+                files.setdefault(resolved, resolved)
+            continue
+
+        if not path.is_file():
+            raise FormatterError(f"Não é um arquivo ou pasta: {path}")
+        if path.suffix.lower() not in LUA_SUFFIXES:
+            raise FormatterError(f"O arquivo precisa ser .lua ou .luau: {path}")
+
+        resolved = path.resolve()
+        files.setdefault(resolved, resolved)
+
+    if not files:
+        raise FormatterError("Nenhum arquivo .lua ou .luau encontrado.")
+    return sorted(files.values(), key=lambda item: str(item).casefold())
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Formata arquivos Lua/Luau em lote usando o StyLua e as preferências "
+            "definidas em stylua.toml. Sem caminhos, processa a pasta do hub."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        type=Path,
+        help="arquivos .lua/.luau ou pastas; pastas são percorridas recursivamente",
+    )
+
+    output = parser.add_mutually_exclusive_group()
+    output.add_argument(
+        "--in-place",
+        action="store_true",
+        help="substitui os arquivos de entrada depois de formatar todo o lote",
+    )
+    output.add_argument(
+        "--check",
+        action="store_true",
+        help="apenas informa quais arquivos seriam alterados; retorna código 1 se houver",
+    )
+
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG,
+        help="arquivo de preferências TOML do StyLua",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PADRAO",
+        help="ignora nomes ou caminhos que correspondam ao padrão; pode ser repetido",
+    )
+    parser.add_argument(
+        "--comments",
+        choices=("clean", "preserve"),
+        default="clean",
+        help="remove comentários comuns ou preserva os comentários; o título ainda é tratado à parte",
+    )
+    parser.add_argument(
+        "--title",
+        help="texto do título no comentário inicial; por padrão usa o nome do arquivo",
+    )
+    parser.add_argument(
+        "--directive",
+        action="append",
+        choices=("strict", "nonstrict", "nocheck", "native"),
+        default=[],
+        help="preserva ou adiciona uma diretiva Luau --! no início; pode repetir",
+    )
+    parser.add_argument(
+        "--no-title",
+        action="store_true",
+        help="não adiciona/normaliza o comentário de título",
+    )
+    parser.add_argument(
+        "--section",
+        action="append",
+        default=[],
+        metavar="NOME=TRECHO",
+        help="insere uma seção antes da primeira linha de código que contenha o trecho; pode repetir",
+    )
+    parser.add_argument(
+        "--section-case-exception",
+        action="append",
+        default=[],
+        metavar="NOME",
+        help="preserva a capitalização desta seção em vez de converter para minúsculas; pode repetir",
+    )
+    parser.add_argument(
+        "--edit-section",
+        action="append",
+        default=[],
+        metavar="ATUAL=NOVO",
+        help="renomeia uma seção existente sem mudar sua posição; pode repetir",
+    )
+    parser.add_argument(
+        "--remove-section",
+        action="append",
+        default=[],
+        metavar="NOME",
+        help="remove uma seção existente; pode repetir",
+    )
+    parser.add_argument("--column-width", type=int, help="substitui a largura configurada")
+    parser.add_argument(
+        "--indent-type", choices=("Tabs", "Spaces"), help="substitui o tipo de indentação"
+    )
+    parser.add_argument("--indent-width", type=int, help="substitui a largura de indentação")
+    parser.add_argument(
+        "--quote-style",
+        choices=("AutoPreferDouble", "AutoPreferSingle", "ForceDouble", "ForceSingle"),
+        help="substitui a preferência de aspas",
+    )
+    parser.add_argument(
+        "--collapse-simple-statement",
+        choices=("Never", "FunctionOnly", "ConditionalOnly", "Always"),
+        help="substitui a preferência de compactação de blocos simples",
+    )
+    parser.add_argument(
+        "--compact-width",
+        type=int,
+        default=200,
+        help="largura máxima para compactação de instruções e blocos simples (padrão: 200)",
+    )
+    parser.add_argument(
+        "--max-statements",
+        type=int,
+        default=4,
+        help="máximo de instruções simples por linha compactada",
+    )
+    parser.add_argument(
+        "--no-compact-runs",
+        action="store_true",
+        help="desativa a compactação customizada de instruções e blocos simples",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        help="quantidade de arquivos formatados em paralelo (padrão: até 8)",
+    )
+    parser.add_argument(
+        "--verify",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="pede ao StyLua para conferir se a formatação preservou a AST",
+    )
+    parser.add_argument("--verbose", action="store_true", help="mostra detalhes da execução")
+    return parser
+
+
+def make_stylua_command(
+    executable: str,
+    config: Path,
+    staged_files: Sequence[Path],
+    args: argparse.Namespace,
+) -> list[str]:
+    thread_count = args.threads
+    if thread_count is None:
+        thread_count = min(8, max(1, os.cpu_count() or 3), len(staged_files))
+    if thread_count < 1:
+        raise FormatterError("--threads precisa ser pelo menos 1.")
+
+    command = [
+        executable,
+        "--config-path",
+        str(config),
+        "--syntax",
+        "Luau",
+        "--num-threads",
+        str(thread_count),
+    ]
+    if args.verify:
+        command.append("--verify")
+
+    for flag, value in (
+        ("--column-width", args.column_width),
+        ("--indent-type", args.indent_type),
+        ("--indent-width", args.indent_width),
+        ("--quote-style", args.quote_style),
+        ("--collapse-simple-statement", args.collapse_simple_statement),
+    ):
+        if value is not None:
+            command.extend((flag, str(value)))
+
+    command.extend(str(path) for path in staged_files)
+    return command
+
+
+def run_stylua(
+    command: Sequence[str],
+    stage_root: Path,
+    staged_to_source: dict[Path, Path],
+) -> None:
+    file_arguments = [str(path) for path in staged_to_source]
+    fixed_arguments = list(command[: -len(file_arguments)])
+    argument_limit = 24 * 1024 if platform.system() == "Windows" else 128 * 1024
+    if platform.system() != "Windows":
+        try:
+            argument_limit = min(argument_limit, int(os.sysconf("SC_ARG_MAX")) // 2)
+        except (AttributeError, OSError, ValueError):
+            pass
+
+    batches: list[list[str]] = []
+    current_batch: list[str] = []
+    current_size = sum(len(os.fsencode(value)) + 1 for value in fixed_arguments)
+    for path in file_arguments:
+        path_size = len(os.fsencode(path)) + 1
+        if current_batch and current_size + path_size > argument_limit:
+            batches.append(current_batch)
+            current_batch = []
+            current_size = sum(len(os.fsencode(value)) + 1 for value in fixed_arguments)
+        current_batch.append(path)
+        current_size += path_size
+    if current_batch:
+        batches.append(current_batch)
 
     try:
-        source = input_path.read_text(encoding="utf-8")
-        output_path.write_text(
-            format_source(source, input_path.name),
-            encoding="utf-8",
-            newline="\n",
-        )
-        run_stylua(output_path)
-        formatted = output_path.read_text(encoding="utf-8")
-        formatted = format_source(formatted, input_path.name)
-        formatted = compact_blocks(formatted)
-        output_path.write_text(
-            formatted,
-            encoding="utf-8",
-            newline="\n",
-        )
-    except UnicodeDecodeError:
-        print("Erro: o arquivo não está em UTF-8.")
-        return 1
-    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
-        print(f"Erro: {error}")
-        return 1
+        for batch in batches:
+            result = subprocess.run(
+                [*fixed_arguments, *batch],
+                cwd=stage_root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            if result.returncode == 0:
+                continue
 
-    print(f"Formatado: {output_path}")
+            message = (
+                result.stderr.strip()
+                or result.stdout.strip()
+                or "falha sem mensagem do StyLua"
+            )
+            for staged, source in staged_to_source.items():
+                message = message.replace(str(staged), str(source))
+                message = message.replace(staged.name, str(source))
+            raise FormatterError(f"StyLua falhou:\n{message}")
+    except OSError as error:
+        if error.errno == errno.E2BIG:
+            raise FormatterError(
+                "O lote excedeu o limite de argumentos do sistema; reduza a quantidade de arquivos."
+            ) from error
+        raise
+
+
+def output_path_for(source: Path, in_place: bool) -> Path:
+    if in_place:
+        return source
+    return source.with_name(f"{source.stem}_formatted{source.suffix}")
+
+
+def write_atomically(destination: Path, content: str, mode: int) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.chmod(temporary_path, mode)
+        os.replace(temporary_path, destination)
+    finally:
+        if temporary_path and temporary_path.exists():
+            temporary_path.unlink()
+
+
+def format_files(args: argparse.Namespace) -> int:
+    sources = collect_files(args.paths, args.exclude)
+    sections = parse_section_specs(args.section)
+    section_case_exceptions = [name.strip() for name in args.section_case_exception]
+    if any(not valid_section(name) for name in section_case_exceptions):
+        raise FormatterError("--section-case-exception aceita apenas nomes de seção válidos.")
+    section_edits = parse_section_edits(args.edit_section)
+    section_removals = [name.strip() for name in args.remove_section]
+    if any(not valid_section(name) for name in section_removals):
+        raise FormatterError("--remove-section aceita apenas um nome de seção válido.")
+    if sections and (section_edits or section_removals):
+        raise FormatterError("Use --section para criar seções ou --edit-section/--remove-section para editar as existentes.")
+    directive_modes = {"strict", "nonstrict", "nocheck"}.intersection(args.directive)
+    if len(directive_modes) > 1:
+        raise FormatterError("Escolha apenas uma diretiva entre strict, nonstrict e nocheck.")
+    if args.title is not None:
+        args.title = args.title.strip()
+        if not args.title or any(char in args.title for char in "\r\n") or "]]" in args.title:
+            raise FormatterError("--title precisa ser um título de uma linha, sem ']]'.")
+        if args.no_title:
+            raise FormatterError("Use --title ou --no-title, não os dois.")
+    if not args.in_place:
+        source_set = set(sources)
+        for source_path in sources:
+            destination = output_path_for(source_path, in_place=False)
+            if destination in source_set and destination != source_path:
+                raise FormatterError(
+                    f"A saída de {source_path} sobrescreveria um arquivo selecionado: {destination}"
+                )
+    config = args.config.expanduser().resolve()
+    if not config.is_file():
+        raise FormatterError(f"Configuração do StyLua não encontrada: {config}")
+    if args.column_width is not None and args.column_width < 1:
+        raise FormatterError("--column-width precisa ser maior que zero.")
+    if args.indent_width is not None and args.indent_width < 1:
+        raise FormatterError("--indent-width precisa ser maior que zero.")
+    if args.compact_width is not None and args.compact_width < 1:
+        raise FormatterError("--compact-width precisa ser maior que zero.")
+    if args.max_statements < 1:
+        raise FormatterError("--max-statements precisa ser maior que zero.")
+
+    executable = find_stylua()
+    staged_to_source: dict[Path, Path] = {}
+
+    with tempfile.TemporaryDirectory(prefix="exodus-format-") as temporary_directory:
+        stage_root = Path(temporary_directory)
+        staged_files = []
+
+        for index, source_path in enumerate(sources, start=1):
+            try:
+                source = source_path.read_text(encoding="utf-8-sig")
+            except UnicodeDecodeError as error:
+                raise FormatterError(f"Arquivo não está em UTF-8: {source_path} ({error})") from error
+
+            prepared = source
+            if args.comments == "clean":
+                prepared = strip_unwanted_comments(
+                    prepared,
+                    preserve_sections=True,
+                )
+                prepared = remove_empty_lines(prepared)
+            if section_edits or section_removals:
+                prepared = edit_sections(
+                    prepared,
+                    section_edits,
+                    section_removals,
+                    source_path,
+                )
+            if sections:
+                prepared = insert_sections(prepared, sections, source_path)
+            prepared = normalize_section_case(prepared, section_case_exceptions)
+            prepared = add_section_spacing(prepared)
+            if args.comments == "clean":
+                prepared = add_table_spacing(prepared)
+            prepared = add_final_return_spacing(prepared)
+            prepared = apply_directives(prepared, args.directive)
+            if not args.no_title:
+                prepared = add_title(prepared, source_path.name, args.title)
+            prepared = add_initial_dependency_spacing(prepared)
+            staged_path = stage_root / f"{index:05d}_{source_path.name}"
+            staged_path.write_text(prepared, encoding="utf-8", newline="\n")
+            staged_files.append(staged_path)
+            staged_to_source[staged_path] = source_path
+
+        command = make_stylua_command(executable, config, staged_files, args)
+        if args.verbose:
+            thread_count = command[command.index("--num-threads") + 1]
+            print(f"StyLua: {len(sources)} arquivo(s), {thread_count} thread(s)")
+        run_stylua(command, stage_root, staged_to_source)
+
+        configured_indent = integer_stylua_setting(config, "indent_width", 4)
+        compact_width = args.compact_width
+        tab_width = args.indent_width or configured_indent
+        configured_indent_type = args.indent_type or string_stylua_setting(config, "indent_type", "Tabs")
+
+        def formatted_content(staged_path: Path, source_path: Path) -> str:
+            formatted = staged_path.read_text(encoding="utf-8")
+            if args.comments == "clean":
+                formatted = strip_unwanted_comments(formatted)
+                formatted = remove_empty_lines(formatted)
+                formatted = normalize_section_case(
+                    formatted,
+                    section_case_exceptions,
+                )
+                formatted = add_section_spacing(formatted)
+                formatted = add_table_spacing(formatted)
+                formatted = add_final_return_spacing(formatted)
+                formatted = apply_directives(formatted, args.directive)
+                if not args.no_title:
+                    formatted = add_title(formatted, source_path.name, args.title)
+            else:
+                formatted = normalize_section_case(
+                    formatted,
+                    section_case_exceptions,
+                )
+            formatted = add_initial_dependency_spacing(formatted)
+            if not args.no_compact_runs:
+                formatted = compact_simple_if_blocks(
+                    formatted,
+                    max_width=compact_width,
+                    max_statements=args.max_statements,
+                    tab_width=tab_width,
+                    indent_type=configured_indent_type,
+                )
+                formatted = compact_statement_runs(
+                    formatted,
+                    max_width=compact_width,
+                    max_statements=args.max_statements,
+                    tab_width=tab_width,
+                )
+            return formatted
+
+        if args.check:
+            changed = []
+            for staged_path, source_path in staged_to_source.items():
+                formatted = formatted_content(staged_path, source_path)
+                try:
+                    original = source_path.read_text(encoding="utf-8-sig")
+                except UnicodeDecodeError as error:
+                    raise FormatterError(
+                        f"Arquivo não está em UTF-8: {source_path} ({error})"
+                    ) from error
+                if formatted != original:
+                    changed.append(source_path)
+                    print(f"Precisa formatar: {source_path}")
+            if not changed:
+                print(f"Formatado: {len(sources)} arquivo(s); nenhuma alteração necessária.")
+            return 1 if changed else 0
+
+        for staged_path, source_path in staged_to_source.items():
+            destination = output_path_for(source_path, args.in_place)
+            permissions = source_path.stat().st_mode & 0o777
+            write_atomically(
+                destination,
+                formatted_content(staged_path, source_path),
+                permissions,
+            )
+            if args.verbose:
+                print(f"Formatado: {destination}")
+
+    if not args.verbose:
+        mode = "no lugar" if args.in_place else "em cópias"
+        print(f"Formatados {len(sources)} arquivo(s) {mode}.")
     return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        return format_files(args)
+    except (FormatterError, OSError, subprocess.SubprocessError) as error:
+        print(f"Erro: {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
