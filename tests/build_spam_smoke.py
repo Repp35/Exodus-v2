@@ -1,4 +1,4 @@
-"""Generate a Luau test for CPS/CPF cadence and input-service reuse."""
+"""Generate a Luau test for CPS/CPF cadence through the current deflect interface."""
 from pathlib import Path
 import sys
 
@@ -8,16 +8,9 @@ source = (root / "exodus hub/modules/logic/spam.luau").read_text()
 quoted = "[========[" + source + "]========]"
 script = r'''
 local frame
-local presses, releases, lookups = 0, 0, 0
+local presses = 0
 local now, enabled = 0, true
 local config = {SpamRateMode = "CPS", CPS = 23.5, CPF = 10}
-local input = {SendMouseButtonEvent = function(self, x, y, button, down)
-    if down then presses += 1 else releases += 1 end
-end}
-game = {GetService = function(self, name)
-    if name == "VirtualInputManager" then lookups += 1; return input end
-    error(name)
-end}
 local signal = {Connect = function(self, callback)
     frame = callback
     return {Disconnect = function() end}
@@ -37,7 +30,7 @@ local utils = {
 }
 local spam = assert(loadstring(SOURCE))()
 assert(spam.setup({
-    Remote = {fireParry = function() end}, Utils = utils,
+    Remote = {fireParry = function() presses += 1; return true end, usesGameDeflect = function() return true end}, Utils = utils,
     GameInfo = {getDeflectCD = function() return 0 end},
     AutoParry = {getStatus = function() return {} end, getRadius = function() return {} end},
     AutoClash = {getTargetSwitch = function() return nil end, getDashData = function() return {} end},
@@ -46,8 +39,7 @@ local function advance(dt, frames)
     for _ = 1, frames do now += dt; frame(dt) end
 end
 advance(1/60, 120)
-assert(presses == 47 and releases == 47, "CPS 23.5 / 120 frames: " .. presses)
-assert(lookups == 1, "VirtualInputManager lookup repeated: " .. lookups)
+assert(presses == 47, "CPS 23.5 / 120 frames: " .. presses)
 config.CPS = 7500
 local before = presses
 advance(1/60, 1)
@@ -62,7 +54,7 @@ assert(presses - before == 600, "CPF compensation at 30 FPS: " .. (presses-befor
 enabled = false
 before = presses
 advance(1/60, 10)
-assert(presses == before and presses == releases)
+assert(presses == before)
 spam.teardown()
 print("Spam CPS/CPF cadence: PASS")
 '''

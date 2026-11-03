@@ -33,6 +33,7 @@ UIConfig.panelComponents = {
 UIConfig.__config = {
 	schema = {
 		AutoParry = "boolean",
+		AutoParryWindowFactor = "rate",
 		AutoClash = "boolean",
 		ClashBallVisible = "boolean",
 		CPS = "rate",
@@ -53,10 +54,11 @@ UIConfig.__config = {
 
 	defaults = {
 		AutoParry = true,
+		AutoParryWindowFactor = 0.5,
 		AutoClash = true,
 		ClashBallVisible = false,
-		CPS = 23.5,
-		CPF = 0.3917,
+		CPS = 25,
+		CPF = 0.42,
 		SpamRateMode = "CPS",
 		Keybind = Enum.KeyCode.F9,
 		SpamKeybind = Enum.KeyCode.F,
@@ -64,6 +66,7 @@ UIConfig.__config = {
 	},
 }
 UIConfig.__contract = {
+	provides = {},
 	requires = {},
 }
 
