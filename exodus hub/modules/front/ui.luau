@@ -134,17 +134,13 @@ local function isKey(input, keyCode) return input and keyCode and input.KeyCode 
 local function bindInput()
 	trackConn(UIS.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
-		local config = Utils.getConfig() or {}; local panicKey = config.Keybind; local spamKey = config.SpamKeybind; local mode = config.SpamMode == "Hold" and "Hold" or "Toggle"
+		local config = Utils.getConfig() or {}; local panicKey = config.Keybind; local spamKey = config.SpamKeybind
 		if isKey(input, panicKey) then
 			setSpam(false)
 			if type(Controls.onPanic) == "function" then safe(Controls.onPanic) end
 		elseif isKey(input, spamKey) then
-			if mode == "Hold" then setSpam(true) else setSpam(not UIState.spamOn) end
+			setSpam(not UIState.spamOn)
 		end
-	end))
-	trackConn(UIS.InputEnded:Connect(function(input)
-		local config = Utils.getConfig() or {}
-		if config.SpamMode == "Hold" and isKey(input, config.SpamKeybind) then setSpam(false) end
 	end))
 end
 
@@ -587,20 +583,12 @@ local function createKeybindSelector(yPos, parent)
 	return nextCardY(yPos, CARD_H)
 end
 local function createSpamCard(yPos, parent)
-	local f = cardFrame(yPos, SPAM_CARD_H, parent); cardLabel("Manual Spam", f); local halfW = math.floor((COL_W - 32) / 2)
-	local visBtn = makeBtn("Mini UI: Oculto", 8, 24, COL_W - 16, 30, f, C.btnDark); visBtn.TextSize = 11
+	local f = cardFrame(yPos, SPAM_CARD_H, parent); cardLabel("Manual Spam", f); local visBtn = makeBtn("Mini UI: Oculto", 8, 24, COL_W - 16, 30, f, C.btnDark); visBtn.TextSize = 11
 	trackConn(visBtn.Activated:Connect(function() showMini(miniGui.Position.X.Offset > viewport().X - 50, visBtn) end))
-	local config = Utils.getConfig(); local kbBtn = makeBtn(config.SpamKeybind and config.SpamKeybind.Name or "X", 8, 64, halfW, 32, f, C.btnBlue)
+	local config = Utils.getConfig(); local kbBtn = makeBtn(config.SpamKeybind and config.SpamKeybind.Name or "X", 8, 64, COL_W - 16, 32, f, C.btnBlue)
 	bindKeyCapture(kbBtn, function(keyCode)
 		setConfigValue("SpamKeybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_BACK)
 	end)
-	local function modeColor(mode) return mode == "Hold" and C.hold or C.toggleOn end
-	local modeBtn = makeBtn(config.SpamMode or "Toggle", 8 + halfW + 14, 64, halfW, 32, f, modeColor(config.SpamMode))
-	trackConn(modeBtn.Activated:Connect(function()
-		local currentConfig = Utils.getConfig(); local nextMode = currentConfig.SpamMode == "Toggle" and "Hold" or "Toggle"; setConfigValue("SpamMode", nextMode); currentConfig.SpamMode = nextMode
-		modeBtn.Text = currentConfig.SpamMode; twPlay(modeBtn, 0.18, { BackgroundColor3 = modeColor(currentConfig.SpamMode) }, EASE_BACK)
-		if currentConfig.SpamMode == "Toggle" and Utils.isManualSpamActive() then setSpam(false) end
-	end))
 	return nextCardY(yPos, SPAM_CARD_H)
 end
 local function togglePanel()
@@ -1001,20 +989,17 @@ function ExodusUI.setup(deps)
 	end
 	for index, mode in ipairs(spinModes) do
 		local crate = mode[2]
-		local button = inst(
-			"TextButton",
-			{
-				Size = UDim2.new(1, 0, 0, 42),
-				Position = UDim2.new(0, 0, 0, CARD_H + 8 + (index - 1) * 48),
-				BackgroundColor3 = C.btnDark,
-				Text = mode[1] .. ": OFF",
-				TextColor3 = C.text,
-				TextSize = 13,
-				Font = Enum.Font.GothamBold,
-				ZIndex = 7,
-				Parent = utilities,
-			}
-		)
+		local button = inst("TextButton", {
+			Size = UDim2.new(1, 0, 0, 42),
+			Position = UDim2.new(0, 0, 0, CARD_H + 8 + (index - 1) * 48),
+			BackgroundColor3 = C.btnDark,
+			Text = mode[1] .. ": OFF",
+			TextColor3 = C.text,
+			TextSize = 13,
+			Font = Enum.Font.GothamBold,
+			ZIndex = 7,
+			Parent = utilities,
+		})
 		corner(button, 8); spinButtons[crate] = button
 		trackConn(button.Activated:Connect(function()
 			spinGeneration += 1; spinActive = spinActive == crate and nil or crate; paintSpin()

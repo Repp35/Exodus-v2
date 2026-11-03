@@ -12,7 +12,6 @@ export type ConfigSnapshot = {
 	SpamRateMode: SpamRateMode?,
 	Keybind: Enum.KeyCode?,
 	SpamKeybind: Enum.KeyCode?,
-	SpamMode: string?,
 	[string]: any,
 }
 

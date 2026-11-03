@@ -43,7 +43,6 @@ UIConfig.__config = {
 		SpamRateMode = "rateMode",
 		Keybind = "keyCode",
 		SpamKeybind = "keyCode",
-		SpamMode = "spamMode",
 		BtnX = "position",
 		BtnY = "position",
 		ClashBallX = "position",
@@ -62,11 +61,10 @@ UIConfig.__config = {
 		AutoClashDeactivationMs = 130,
 		ClashBallVisible = false,
 		CPS = 24,
-		CPF = 0.39,
+		CPF = 0.36,
 		SpamRateMode = "CPF",
 		Keybind = Enum.KeyCode.F9,
 		SpamKeybind = Enum.KeyCode.F,
-		SpamMode = "Toggle",
 	},
 }
 UIConfig.__contract = {

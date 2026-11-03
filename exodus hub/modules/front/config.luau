@@ -11,7 +11,6 @@ local SupportedKinds = {
 	position = true,
 	keyCode = true,
 	rateMode = true,
-	spamMode = true,
 }
 local function isFiniteNumber(value) return type(value) == "number" and value == value and value < math.huge and value > -math.huge end
 local function validKeyCode(value) return typeof(value) == "EnumItem" and value.EnumType == Enum.KeyCode end
@@ -23,7 +22,6 @@ local function validateValue(key, kind, value: any)
 	if kind == "position" and (not isFiniteNumber(value) or value < -10000 or value > 10000) then return false, "posição inválida: " .. key end
 	if kind == "keyCode" and not validKeyCode(value) then return false, "keybind inválido: " .. key end
 	if kind == "rateMode" and value ~= "CPS" and value ~= "CPF" then return false, "SpamRateMode inválido" end
-	if kind == "spamMode" and value ~= "Toggle" and value ~= "Hold" then return false, "SpamMode inválido" end
 	return true
 end
 local function copy(source)
