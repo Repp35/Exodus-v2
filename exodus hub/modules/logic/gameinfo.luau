@@ -31,6 +31,7 @@ export type BallSync = {
 	OldGrace: boolean?,
 	TargetPlayerID: number?,
 	HighlightTargetPlayerID: number?,
+	PossessorId: number?,
 	RealPosition: Vector3?,
 	Speed: number?,
 }
@@ -258,6 +259,7 @@ function GameInfo.decodeBallPacket(packet): BallSync?
 		OldGrace = decoded.oldGrace,
 		TargetPlayerID = decoded.targetId,
 		HighlightTargetPlayerID = decoded.highlightId,
+		PossessorId = decoded.possessed and decoded.possessorId or 0,
 		RealPosition = decoded.position,
 		Speed = decoded.speed,
 	}
@@ -297,6 +299,12 @@ end
 function GameInfo.getHaunterRemote()
 	local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local remotes = ts and ts:FindFirstChild("GeneratedNetworkRemotes")
 	local remote = remotes and remotes:FindFirstChild("RE_" .. tostring(9.150098456648103e76))
+	if remote and remote:IsA("RemoteEvent") then return remote end
+	return nil
+end
+function GameInfo.getManifestRemote()
+	local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local remotes = ts and ts:FindFirstChild("GeneratedNetworkRemotes")
+	local remote = remotes and remotes:FindFirstChild("RE_" .. tostring(9.318024238496386e76))
 	if remote and remote:IsA("RemoteEvent") then return remote end
 	return nil
 end

@@ -34,7 +34,9 @@ mt.__sub = function(a,b) return setmetatable({X=a.X-b.X,Y=a.Y-b.Y,Z=a.Z-b.Z},mt)
 mt.__mul = function(a,b) return setmetatable({X=a.X*b,Y=a.Y*b,Z=a.Z*b},mt) end
 mt.__div = function(a,b) return a*(1/b) end
 local function vec(x,y,z) return setmetatable({X=x,Y=y or 0,Z=z or 0}, mt) end
-typeof = function(x) if getmetatable(x) == mt then return 'Vector3' end return type(x) end
+local cframeMeta = {}
+local function cframe(position) return setmetatable({Position=position}, cframeMeta) end
+typeof = function(x) if getmetatable(x) == mt then return 'Vector3' elseif getmetatable(x) == cframeMeta then return 'CFrame' end return type(x) end
 local parent = {}
 local ownRoot = {Parent=parent, Position=vec(0), AssemblyLinearVelocity=vec(0)}
 local opponentRoot = {Parent=parent, Position=vec(40), AssemblyLinearVelocity=vec(0)}
@@ -47,7 +49,19 @@ local ownCharacter, opponentCharacter = char(ownRoot), char(opponentRoot)
 local player = {UserId=myId, Parent=parent, Character=ownCharacter}
 local opponent = {UserId=enemyId, Parent=parent, Character=opponentCharacter}
 local third = {UserId=thirdId, Parent=parent, Character=char({Parent=parent,Position=vec(90),AssemblyLinearVelocity=vec(0)})}
-local players = {GetPlayerByUserId=function(_,id) if id==enemyId then return opponent elseif id==thirdId then return third end end}
+local function addAttributes(p)
+    p.dark = false
+    p.GetAttribute = function(self, name) if name == 'DarkSealed' then return self.dark end end
+    p.GetAttributeChangedSignal = function(self) return signal(function(fn) self.darkCallback=fn end) end
+    p.setDark = function(self, value) self.dark=value; if self.darkCallback then self.darkCallback() end end
+end
+addAttributes(player); addAttributes(opponent); addAttributes(third)
+local players = {
+    GetPlayerByUserId=function(_,id) if id==enemyId then return opponent elseif id==thirdId then return third end end,
+    GetPlayers=function() return {player,opponent,third} end,
+    PlayerAdded=signal(function() end), PlayerRemoving=signal(function() end),
+}
+local manifestCallback
 local ball = {Parent=parent, AssemblyLinearVelocity=vec(100)}
 local snapshot = {ball=ball, position=vec(-20), velocity=vec(100), speed=100, syncSpeed=100, targetId=myId, targeted=true, teleported=false}
 local seq
@@ -59,6 +73,7 @@ local info = {
     getLocalPing=function() return ping end,
     getSyncSequence=function() return seq end,
     getSyncData=function() return nil end,
+    getManifestRemote=function() return {OnClientEvent=signal(function(fn) manifestCallback=fn end)} end,
 }
 local utils = {
     now=function() return now end, apiVersion=function() return 1 end,
@@ -108,10 +123,29 @@ local function fresh()
     seq=nil; snapshot.syncSequence=nil; snapshot.teleported=false; snapshotFailure=false; validationFailure=false
     snapshot.speed=100; snapshot.syncSpeed=100; snapshot.velocity=vec(100); snapshot.position=vec(-20)
     ball.Parent=parent; opponentRoot.Position=vec(40); opponentRoot.AssemblyLinearVelocity=vec(0)
+    opponent.dark=false; third.dark=false
     nextSeq=1; now=1
     assert(clash.bindCharacter(ownCharacter))
 end
 -- A full return enters clash; spam receives control through the shared Utils state.
+local function startClash()
+    fresh(); event(myId,0,10); step(.01); event(enemyId,.01,10.01); event(myId,.1,10.11)
+    expect(clash.isActive() and autoSpam, 'setup for pull tests')
+end
+startClash(); third:setDark(true)
+expect(not clash.isActive() and not autoSpam, 'distant Dark Seal must stop clash immediately')
+startClash(); opponentRoot.Position=vec(5); opponent:setDark(true)
+expect(clash.isActive() and autoSpam, 'nearby Dark Seal must not stop clash')
+startClash(); manifestCallback(cframe(vec(90)), cframe(vec(-20)))
+expect(not clash.isActive() and not autoSpam, 'distant Manifest must stop clash immediately')
+startClash(); manifestCallback(cframe(vec(5)), cframe(vec(-20)))
+expect(clash.isActive() and autoSpam, 'nearby Manifest must not stop clash')
+startClash(); seq=nextSeq; nextSeq+=1
+clash.onBallSync({Sequence=seq,TargetPlayerID=myId,PossessorId=thirdId,Speed=100})
+expect(not clash.isActive() and not autoSpam, 'distant possession must stop clash immediately')
+startClash(); opponentRoot.Position=vec(5); seq=nextSeq; nextSeq+=1
+clash.onBallSync({Sequence=seq,TargetPlayerID=myId,PossessorId=enemyId,Speed=100})
+expect(clash.isActive() and autoSpam, 'nearby possession must not stop clash')
 fresh(); event(myId,0,10); step(.01); event(enemyId,.01,10.01); event(myId,.1,10.11)
 expect(clash.isActive() and autoSpam, 'valid return must start clash on the event when its snapshot is ready')
 local before=presses

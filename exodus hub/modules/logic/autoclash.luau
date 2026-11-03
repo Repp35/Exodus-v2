@@ -128,6 +128,7 @@ local R = {
 	lastDashEvent = nil,
 	lastDashData = nil,
 	connections = {},
+	darkConnections = {},
 }
 
 local FN = {
@@ -332,10 +333,22 @@ local function setActive(active, reason, snapshot, activationReason)
 	if Utils.setAutoSpamActive then Utils.setAutoSpamActive(active) end
 	setPhase(active and "active" or "idle", reason)
 end
+local function stopForOutsidePull(position, reason)
+	if not R.active or typeof(position) ~= "Vector3" or R.parryRadius <= 0 then return false end
+	local root = getRootPosition()
+	if not root or distanceSquared(root, position) <= R.parryRadius * R.parryRadius then return false end
+	setActive(false, reason); clearReturnState(); R.lastGate = reason
+	return true
+end
 local function resetRuntime(reason)
 	R.generation += 1
 	if R.active then setActive(false, reason or "reset") end
-	disconnectList(R.connections, true); R.bound = false; R.boundRoot = nil; R.lastSpeed = 0
+	disconnectList(R.connections, true)
+	for player, connection in pairs(R.darkConnections) do
+		if Utils and Utils.untrackCharacter then Utils.untrackCharacter(connection) end
+		connection:Disconnect(); R.darkConnections[player] = nil
+	end
+	R.bound = false; R.boundRoot = nil; R.lastSpeed = 0
 	R.parryRadius = 0; R.radiusCacheAt = 0; R.radiusCacheSpeed = -1; R.radiusActivation = 0
 	R.radiusSafety = 0; R.lastSyncAt = 0; R.lastSequence = nil; R.lastTargetSource = nil
 	R.teleported = false; R.activationDeactLockedUntil = 0; resetTargetState(); resetDeactivationState()
@@ -657,6 +670,38 @@ local function bindCharacter(character)
 	local heartbeat = R.runService.Heartbeat:Connect(function() heartbeatStep(generation, character, root) end)
 	addConnection(R.connections, heartbeat)
 	if Utils.trackCharacter then Utils.trackCharacter(heartbeat) end
+	local function watchDarkSeal(player)
+		if player.UserId == R.localUserId or R.darkConnections[player] then return end
+		local connection = player:GetAttributeChangedSignal("DarkSealed"):Connect(function()
+			if generation ~= R.generation or not R.bound or not R.active or player:GetAttribute("DarkSealed") ~= true then return end
+			local targetRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+			if targetRoot and targetRoot.Parent then stopForOutsidePull(targetRoot.Position, "dark_seal_pull") end
+		end)
+		R.darkConnections[player] = connection
+		if Utils.trackCharacter then Utils.trackCharacter(connection) end
+	end
+	if R.players and type(R.players.GetPlayers) == "function" then
+		for _, player in ipairs(R.players:GetPlayers()) do watchDarkSeal(player) end
+		local added = R.players.PlayerAdded:Connect(watchDarkSeal)
+		local removing = R.players.PlayerRemoving:Connect(function(player)
+			local connection = R.darkConnections[player]
+			if connection then
+				if Utils.untrackCharacter then Utils.untrackCharacter(connection) end
+				connection:Disconnect(); R.darkConnections[player] = nil
+			end
+		end)
+		addConnection(R.connections, added); addConnection(R.connections, removing)
+		if Utils.trackCharacter then Utils.trackCharacter(added); Utils.trackCharacter(removing) end
+	end
+	local manifest = type(GameInfo.getManifestRemote) == "function" and GameInfo.getManifestRemote()
+	if manifest then
+		local connection = manifest.OnClientEvent:Connect(function(caster)
+			if generation ~= R.generation or not R.bound or typeof(caster) ~= "CFrame" then return end
+			stopForOutsidePull(caster.Position, "manifest_pull")
+		end)
+		addConnection(R.connections, connection)
+		if Utils.trackCharacter then Utils.trackCharacter(connection) end
+	end
 	local haunter = type(GameInfo.getHaunterRemote) == "function" and GameInfo.getHaunterRemote()
 	if haunter then
 		local connection = haunter.OnClientEvent:Connect(function(_, destination)
@@ -703,6 +748,12 @@ function AutoClash.onBallSync(data)
 		resetTargetState(); R.lastGate = "teleported"; return true
 	end
 	R.teleported = false
+	local possessorId = normalizeTarget(data.PossessorId)
+	if R.active and possessorId and possessorId ~= R.localUserId and R.players then
+		local possessor = R.players:GetPlayerByUserId(possessorId)
+		local targetRoot = possessor and possessor.Character and possessor.Character:FindFirstChild("HumanoidRootPart")
+		if targetRoot and targetRoot.Parent and stopForOutsidePull(targetRoot.Position, "possession_pull") then return true end
+	end
 
 	local target = normalizeTarget(data.TargetPlayerID) or normalizeTarget(data.HighlightTargetPlayerID); local hasExplicitTarget = data.TargetPlayerID ~= nil or data.HighlightTargetPlayerID ~= nil
 	if not target and not hasExplicitTarget and type(GameInfo.getTargetId) == "function" then target = normalizeTarget(GameInfo.getTargetId()) end
