@@ -20,14 +20,15 @@ local function module()\n'''
 post='''
 end
 local t=module(); local R=t.state
-local fires=0; local target=42; local snapshotSeq
+local fires=0; local target=42; local snapshotSeq; local spamOn=false; local startSpamOnRootRead=false
 local ball={instance=true,Parent={},Position=vec(-10),AssemblyLinearVelocity=vec(0),IsA=function() return true end}
 local player={UserId=42, GetNetworkPing=function() return 0 end,GetAttribute=function() return 8.5 end}
 local char={Parent={}}; local root={Parent={},Position=vec(0)}
 local sync={TargetPlayerID=42,Speed=100,Teleported=false}
-local info={getBallSpeedLimits=function() return 16,600 end,getDeflectRange=function() return 8.5 end,getLocalPing=function() return 0 end,getBallPosition=function(b) return b.Position end,getBallVelocity=function(b) return b.AssemblyLinearVelocity end,getRootPosition=function(r) return r.Position end,getSyncData=function() return sync end,getSnapshot=function() return {ball=ball,targeted=target==42,targetId=target,position=ball.Position,syncSequence=snapshotSeq} end,isSnapshotValid=function() return true end,getBall=function() return ball end,getTargetId=function() return target end}
-local utils={getConfig=function() return {AutoParry=true} end,isActive=function() return true end,isSpamActive=function() return false end}
-t.setDeps({fireParry=function() fires+=1; return true end},info,utils)
+local info={getBallSpeedLimits=function() return 16,600 end,getDeflectRange=function() return 8.5 end,getLocalPing=function() return 0 end,getBallPosition=function(b) return b.Position end,getBallVelocity=function(b) return b.AssemblyLinearVelocity end,getRootPosition=function(r) if startSpamOnRootRead then spamOn=true end return r.Position end,getSyncData=function() return sync end,getSnapshot=function() return {ball=ball,targeted=target==42,targetId=target,position=ball.Position,syncSequence=snapshotSeq} end,isSnapshotValid=function() return true end,getBall=function() return ball end,getTargetId=function() return target end}
+local utils={getConfig=function() return {AutoParry=true} end,isActive=function() return true end,isSpamActive=function() return spamOn end}
+local reenter=false
+t.setDeps({fireParry=function() fires+=1; if reenter then reenter=false; t.heartbeat(char,root,0.01,1) end; return true end},info,utils)
 R.player=player; R.root=root; R.character=char; R.bound=true; R.alive=true; R.generation=1
 local function frame(x) currentTime+=0.01; ball.Position=vec(x); t.heartbeat(char,root,0.01,1) end
 frame(-10); frame(-9)
@@ -55,10 +56,23 @@ assert(fires==4,"stationary ball on target change must not reuse old velocity")
 frame(-4); assert(fires==5,"motion after a stationary target change must fire")
 snapshotSeq=9; t.event({Sequence=10,TargetPlayerID=7}); frame(-3)
 assert(fires==5,"a stale snapshot must not fire after the authoritative target changed")
+assert(R.firedForTarget and R.targetAwaySeen,"target leaving alone must not unlock the fired parry")
+snapshotSeq=10; frame(-2.9)
+assert(fires==5 and R.firedForTarget,"conflicting target at the same sequence must not unlock")
+snapshotSeq=nil; frame(-2.8)
+assert(fires==5 and R.firedForTarget,"unsequenced stale snapshot must not unlock")
 t.event({Sequence=11,TargetPlayerID=42}); snapshotSeq=11; frame(-2)
 assert(fires==6,"quick target cycle must rearm on the reliable packets")
 t.event({Sequence=10,TargetPlayerID=7}); frame(-1.9)
 assert(fires==6 and R.firedForTarget,"old packets must not rearm a new target")
+snapshotSeq=20; frame(-1.8); t.event({Sequence=19,TargetPlayerID=7}); frame(-1.7)
+assert(fires==6 and R.firedForTarget,"older event after a newer snapshot must not rearm")
+target=7; sync.TargetPlayerID=7; snapshotSeq=21; frame(-2.7); frame(-1.7)
+target=42; sync.TargetPlayerID=42; snapshotSeq=22; reenter=true; frame(-1)
+assert(fires==7,"a reentrant callback during Deflect must not send twice")
+target=7; sync.TargetPlayerID=7; snapshotSeq=23; frame(-2); frame(-1)
+target=42; sync.TargetPlayerID=42; snapshotSeq=24; startSpamOnRootRead=true; frame(-0.5)
+assert(fires==7,"AP must not fire if spam takes over during calculation")
 print("AP same-frame dispatch and target cycles: PASS")
 '''
 output.write_text(pre+source+post)
