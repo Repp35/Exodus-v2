@@ -443,7 +443,7 @@ local function createParryTimingCard(yPos, parent)
 		Position = UDim2.new(1, -74, 0.5, -15),
 		BackgroundColor3 = C.inputBg,
 		BackgroundTransparency = 0.1,
-		Text = tostring(math.clamp(initial, 0, 1.5) * 100),
+		Text = tostring(math.clamp(initial, 0, 1) * 100),
 		ClearTextOnFocus = false,
 		TextColor3 = C.text,
 		TextSize = 13,
@@ -455,7 +455,29 @@ local function createParryTimingCard(yPos, parent)
 	trackConn(input.FocusLost:Connect(function()
 		local value = tonumber(input.Text)
 		if not value or value ~= value or value == math.huge or value == -math.huge then value = (tonumber(Utils.getConfig().AutoParryWindowFactor) or 0.5) * 100 end
-		value = math.clamp(value, 0, 150); setConfigValue("AutoParryWindowFactor", value / 100); input.Text = tostring(value)
+		value = math.clamp(value, 0, 100); setConfigValue("AutoParryWindowFactor", value / 100); input.Text = tostring(value)
+	end))
+	return nextCardY(yPos, CARD_H)
+end
+local function createClashTimingCard(label, key, fallback, yPos, parent)
+	local f = cardFrame(yPos, CARD_H, parent); cardLabel(label, f)
+	local input = inst("TextBox", {
+		Size = UDim2.new(0, 62, 0, 30),
+		Position = UDim2.new(1, -74, 0.5, -15),
+		BackgroundColor3 = C.inputBg,
+		Text = tostring(Utils.getConfigValue(key) or fallback),
+		ClearTextOnFocus = false,
+		TextColor3 = C.text,
+		TextSize = 13,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = f,
+	})
+	corner(input, 8); stroke(input, C.border, 1)
+	trackConn(input.FocusLost:Connect(function()
+		local value = tonumber(input.Text)
+		if not value or value ~= value or value == math.huge or value == -math.huge then value = tonumber(Utils.getConfigValue(key)) or fallback end
+		value = math.clamp(value, 0, 5000); setConfigValue(key, value); input.Text = tostring(value)
 	end))
 	return nextCardY(yPos, CARD_H)
 end
@@ -893,7 +915,7 @@ function ExodusUI.setup(deps)
 	for _, definition in ipairs(UIConfig.panelToggles) do
 		if definition.kind == "toggle" then yL = createToggleCard(definition.label, definition.key, yL, colLeft, toggleCallbacks[definition.key]) end
 	end
-	yL = createParryTimingCard(yL, colLeft); local yR = 4
+	local yR = 4
 	local components = {
 		rate_selector = createRateSelector,
 		keybind_selector = createKeybindSelector,
@@ -904,6 +926,73 @@ function ExodusUI.setup(deps)
 		local createComponent = components[definition.kind]
 		if createComponent then yR = createComponent(yR, colRight) end
 	end
+	local settingsLeft = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 6,
+		Parent = configPanel,
+	})
+	local settingsRight = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, PAD + COL_W + GAP, 0, TITLE_H + PAD),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 6,
+		Parent = configPanel,
+	})
+	local utilities = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 6,
+		Parent = configPanel,
+	})
+	createParryTimingCard(4, settingsLeft); local clashY = createClashTimingCard("Ativação AC (ms)", "AutoClashActivationMs", 180, 4, settingsRight)
+	createClashTimingCard("Desativação AC (ms)", "AutoClashDeactivationMs", 130, clashY, settingsRight)
+	local antiConnection
+	local antiButton = inst("TextButton", {
+		Size = UDim2.new(1, 0, 0, CARD_H),
+		BackgroundColor3 = C.btnDark,
+		Text = "Anti AFK: OFF",
+		TextColor3 = C.text,
+		TextSize = 13,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = utilities,
+	})
+	corner(antiButton, 8)
+	trackConn(antiButton.Activated:Connect(function()
+		if antiConnection then antiConnection:Disconnect(); antiConnection = nil; antiButton.Text = "Anti AFK: OFF"; return end
+		local player = Utils.getLocalPlayer(); local ok, virtualUser = pcall(game.GetService, game, "VirtualUser")
+		if not player or not ok or not virtualUser then Utils.recordError("AntiAFK", "VirtualUser ou jogador indisponível"); return end
+		antiConnection = trackConn(player.Idled:Connect(function()
+			local inputOk, err = pcall(function()
+				virtualUser:CaptureController(); virtualUser:ClickButton2(Vector2.new(0, 0))
+			end)
+			if not inputOk then Utils.recordError("AntiAFK", tostring(err)) end
+		end))
+		antiButton.Text = "Anti AFK: ON"
+	end))
+	local page = 1
+	local nav = inst("TextButton", {
+		Size = UDim2.new(0, 130, 0, 26),
+		Position = UDim2.new(0, PAD, 1, -PAD - 26),
+		BackgroundColor3 = C.btnDark,
+		Text = "Configurações →",
+		TextColor3 = C.text,
+		TextSize = 11,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = configPanel,
+	})
+	corner(nav, 6)
+	trackConn(nav.Activated:Connect(function()
+		page = page % 3 + 1; colLeft.Visible = page == 1; colRight.Visible = page == 1; settingsLeft.Visible = page == 2
+		settingsRight.Visible = page == 2; utilities.Visible = page == 3; nav.Text = page == 1 and "Configurações →" or (page == 2 and "Utilidades →" or "Principal →")
+	end))
 	if config.ClashBallVisible then clashBall.Position = UDim2.new(0, clashX, 0, clashY) end
 	setSpam(Utils.isManualSpamActive()); return true
 end

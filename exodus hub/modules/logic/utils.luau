@@ -40,6 +40,9 @@ local T = {
 
 -- dependencies
 local ConfigModule
+local persistenceReady = false
+local saveQueued = false
+local HttpService = game:GetService("HttpService")
 
 -- state
 local State = {
@@ -303,6 +306,22 @@ function Utils.normalizeSpamRate(value, fallback)
 	if not Utils.isFiniteNumber(rate) then rate = T.SPAM_RATE_MIN end
 	return math.max(rate, T.SPAM_RATE_MIN)
 end
+local function queueConfigSave()
+	if not persistenceReady or saveQueued or type(writefile) ~= "function" then return end
+	saveQueued = true
+	task.delay(0.25, function()
+		saveQueued = false; local ok, folder = ensureDataFolder()
+		if not ok then Utils.recordError("Config", folder); return end
+		local data = {}
+		for key, value in pairs(State.config) do
+			if typeof(value) == "EnumItem" and value.EnumType == Enum.KeyCode then data[key] = { keyCode = value.Name } else data[key] = value end
+		end
+		local encoded, body = pcall(HttpService.JSONEncode, HttpService, data)
+		if not encoded then Utils.recordError("Config", tostring(body)); return end
+		local written, err = pcall(writefile, folder .. "/config.json", body)
+		if not written then Utils.recordError("Config", tostring(err)) end
+	end)
+end
 function Utils.setConfig(config)
 	if type(config) ~= "table" then return false end
 	local normalized
@@ -318,7 +337,28 @@ function Utils.setConfig(config)
 	for key, value in pairs(normalized) do
 		State.config[key] = value
 	end
-	updateNamespace(); return true
+	updateNamespace(); queueConfigSave(); return true
+end
+function Utils.loadConfig()
+	if type(isfile) == "function" and type(readfile) == "function" then
+		local ok, folder = ensureDataFolder()
+		if ok then
+			local path = folder .. "/config.json"; local existsOk, exists = pcall(isfile, path)
+			if existsOk and exists then
+				local readOk, body = pcall(readfile, path); local decodeOk, data = false, nil
+				if readOk then decodeOk, data = pcall(HttpService.JSONDecode, HttpService, body) end
+				if decodeOk and type(data) == "table" then
+					for key, value in pairs(data) do
+						if type(value) == "table" and type(value.keyCode) == "string" then value = Enum.KeyCode[value.keyCode] end
+						if value ~= nil then Utils.setConfig({ [key] = value }) end
+					end
+				else
+					Utils.recordError("Config", tostring(readOk and data or body))
+				end
+			end
+		end
+	end
+	persistenceReady = true; return true
 end
 function Utils.setConfigModule(module)
 	if type(module) ~= "table" then return false end

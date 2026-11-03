@@ -230,7 +230,9 @@ local function getPingOneWay()
 end
 local function pingCompensation() return getPingOneWay() * T.PING_FACTOR end
 local function getReturnWindow(speed)
-	local base = lerpBySpeed(speed, T.RETURN_WIN_LO, T.RETURN_WIN_LO * T.RETURN_WIN_MIN_FACTOR, T.RETURN_SPD_LO, T.RETURN_SPD_HI); return math.max(base + pingCompensation(), 2 / 60)
+	local configured = Utils and type(Utils.getConfigValue) == "function" and tonumber(Utils.getConfigValue("AutoClashActivationMs"))
+	local low = configured and math.clamp(configured, 0, 5000) / 1000 or T.RETURN_WIN_LO; local base = lerpBySpeed(speed, low, low * T.RETURN_WIN_MIN_FACTOR, T.RETURN_SPD_LO, T.RETURN_SPD_HI)
+	return math.max(base + pingCompensation(), 2 / 60)
 end
 local function beginReturnWindow(t, fromTarget, serverTime)
 	local window = getReturnWindow(R.lastSpeed)
@@ -282,7 +284,7 @@ end
 local function queryRadius(factor)
 	local f = FN.getRadius
 	if not f then return R.parryRadius end
-	local status = f("geometry", factor, R.lastSpeed)
+	local status = f("geometry", math.min(factor, 1), R.lastSpeed)
 	if type(status) ~= "table" then return R.parryRadius end
 	local radius = tonumber(status.fullRadius)
 	if radius and radius == radius and radius >= 0 and radius < math.huge then return radius end
@@ -420,7 +422,8 @@ function Deactivation.direction(t, snapshot, speed)
 	if distanceSquared(root, position) <= directionDeactRadius * directionDeactRadius then Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_protected"; return false end
 	if R.lastDirectionSwitchAt <= 0 then return false end
 	if R.lastSyncAt < R.lastDirectionSwitchAt then return false end
-	local ping = pingCompensation(); local base = T.DEACT_DIRECTION_MAX_LO + ping
+	local configured = Utils and type(Utils.getConfigValue) == "function" and tonumber(Utils.getConfigValue("AutoClashDeactivationMs")); local ping = pingCompensation()
+	local base = (configured and math.clamp(configured, 0, 5000) / 1000 or T.DEACT_DIRECTION_MAX_LO) + ping
 	local baseMax = math.max(
 		lerpBySpeed(speed, base, base * T.DEACT_DIRECTION_MAX_MIN_FACTOR, T.DEACT_DIRECTION_SPD_LO, T.DEACT_DIRECTION_SPD_HI),
 		T.MIN_EVAL_INTERVAL * 1.5
@@ -658,6 +661,20 @@ local function bindCharacter(character)
 	local heartbeat = R.runService.Heartbeat:Connect(function() heartbeatStep(generation, character, root) end)
 	addConnection(R.connections, heartbeat)
 	if Utils.trackCharacter then Utils.trackCharacter(heartbeat) end
+	local haunter = type(GameInfo.getHaunterRemote) == "function" and GameInfo.getHaunterRemote()
+	if haunter then
+		local connection = haunter.OnClientEvent:Connect(function(_, destination)
+			if generation ~= R.generation or not R.bound or R.active or not checkHubState() or typeof(destination) ~= "CFrame" then return end
+			local ownPosition = getRootPosition()
+			if not ownPosition or distanceSquared(ownPosition, destination.Position) > 10 * 10 then return end
+			local snapshot = readValidatedSnapshot(now())
+			if not snapshot or snapshot.teleported or not isSnapshotTargeted(snapshot) then return end
+			updateParryState(now(), snapshot); R.lastTarget = R.localUserId; R.wasMeTarget = true; clearReturnState()
+			setActive(true, "haunter", snapshot, "haunter")
+		end)
+		addConnection(R.connections, connection)
+		if Utils.trackCharacter then Utils.trackCharacter(connection) end
+	end
 	local ancestry = character.AncestryChanged:Connect(function(_, parent)
 		if parent then return end
 		resetRuntime("character_removed"); R.lastGate = "character_removed"

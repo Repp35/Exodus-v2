@@ -254,6 +254,12 @@ function GameInfo.decodeBallPacket(packet): BallSync?
 	}
 end
 function GameInfo.getTargetId() return resolveTargetId(getDecodedSyncData()) end
+function GameInfo.getHaunterRemote()
+	local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local remotes = ts and ts:FindFirstChild("GeneratedNetworkRemotes")
+	local remote = remotes and remotes:FindFirstChild("RE_" .. tostring(9.150098456648103e76))
+	if remote and remote:IsA("RemoteEvent") then return remote end
+	return nil
+end
 function GameInfo.getClashContext()
 	local player = Players and Players.LocalPlayer
 	if not player or not Workspace then return nil end

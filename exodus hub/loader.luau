@@ -598,6 +598,7 @@ local function startInternal()
 	if not configCallOk or configValid ~= true then utils.stop(); return false, "Config", configCallOk and configReason or configValid end
 	utils.setLifecyclePhase("configuring")
 	if not utils.setConfig(defaults) then utils.stop(); return false, "Utils", "setConfig rejeitou a configuração inicial" end
+	if type(utils.loadConfig) == "function" then utils.loadConfig() end
 	if not utils.setModuleURLs(urls) then utils.stop(); return false, "Utils", "setModuleURLs rejeitou as URLs dos módulos" end
 	Exodus.Config = utils.getConfigSnapshot(); Exodus.ModuleURLs = utils.getModuleURLsSnapshot(); utils.setLifecyclePhase("initializing")
 	local modulesReady, failedModule, modulesError = initializeModules(loaded)

@@ -31,7 +31,7 @@ local T = {
 	BASE_WINDOW = 0.40,
 	DEFAULT_WINDOW_FACTOR = 0.50,
 	MIN_WINDOW_FACTOR = 0.0,
-	MAX_WINDOW_FACTOR = 1.5,
+	MAX_WINDOW_FACTOR = 1.0,
 	MIN_LEAD_TIME = 0.48,
 	MAX_LEAD_TIME = 0.84,
 	MIN_BALL_SPEED = 6,
@@ -242,8 +242,8 @@ local function isTeleportLocked() return R.teleported end
 local function enterTeleportLock(_, sequence)
 	if type(sequence) == "number" then R.teleportSequence = sequence end
 	if R.teleported then return end
-	R.teleported = true; resetParryLock(); clearBallState(); R.lastFireAt = 0
-	setPhase("waiting", "teleport_lock")
+	R.teleported = true; R.firedForTarget = false; R.lastTarget = -1; resetParryLock()
+	clearBallState(); R.lastFireAt = 0; setPhase("waiting", "teleport_lock")
 end
 local function leaveTeleportLock(time)
 	if R.teleported and R.teleportSequence ~= nil then
@@ -321,7 +321,7 @@ local function onHeartbeat(character, root, dt, generation)
 	end
 	if R.teleported then clearBallState(); resetParryLock(); setPhase("waiting", "teleport_lock"); return end
 	if not isAutoParryEnabled() then resetParryLock(); setPhase("waiting", "auto_parry_disabled"); return end
-	if isSpamActive() then resetParryLock(); setPhase("waiting", "spam_active"); return end
+	if isSpamActive() then resetParryLock(); clearBallState(); setPhase("waiting", "spam_active"); return end
 	if not isSystemActive() then resetParryLock(); setPhase("waiting", "system_inactive"); return end
 	local ball, targeted, snapshot = readFrameState(time)
 	if not isValidBall(ball) or not targeted then
