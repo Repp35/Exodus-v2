@@ -34,7 +34,6 @@ local T = {
 	MAX_WINDOW_FACTOR = 1.0,
 	MIN_LEAD_TIME = 0.48,
 	MAX_LEAD_TIME = 0.84,
-	MIN_BALL_SPEED = 6,
 	SPEED_TOLERANCE_FACTOR = 2.5,
 	SPEED_TOLERANCE_EXTRA = 30,
 	RES_PER_PARRY = 0.225,
@@ -87,7 +86,16 @@ local function isPlausibleVelocity(velocity, syncData)
 	if not isValidVector3(velocity) or not isFiniteNumber(velocity.Magnitude) then return false end
 	local expected = type(syncData) == "table" and syncData.Speed or nil
 	if isFiniteNumber(expected) and expected > 0 then return velocity.Magnitude <= expected * T.SPEED_TOLERANCE_FACTOR + T.SPEED_TOLERANCE_EXTRA end
+	local _, maximum
+	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then _, maximum = GameInfo.getBallSpeedLimits() end
+	if isFiniteNumber(maximum) then return velocity.Magnitude <= maximum * T.SPEED_TOLERANCE_FACTOR + T.SPEED_TOLERANCE_EXTRA end
 	return true
+end
+local function minimumBallSpeed()
+	local minimum
+	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum = GameInfo.getBallSpeedLimits() end
+	if not isFiniteNumber(minimum) and GameInfo and type(GameInfo.getSyncData) == "function" then local data = GameInfo.getSyncData(); minimum = type(data) == "table" and tonumber(data.Speed) or nil end
+	return isFiniteNumber(minimum) and minimum * 0.375 or math.huge
 end
 local function isValidBall(ball) return typeof(ball) == "Instance" and ball.Parent ~= nil and ball:IsA("BasePart") end
 local function getRootPart(character)
@@ -260,10 +268,10 @@ local function getRemoteParry(ball)
 	if not isValidBall(ball) then return false end
 	if R.lastBall ~= ball then return false end
 	if not R.lastApproaching then return false end
-	if not isFiniteNumber(R.lastSpeed) or R.lastSpeed < T.MIN_BALL_SPEED then return false end
+	if not isFiniteNumber(R.lastSpeed) or R.lastSpeed < minimumBallSpeed() then return false end
 	local liveVelocity = getCurrentVelocity(ball); local syncData = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
 	if type(syncData) == "table" and syncData.Teleported == true then return false end
-	if not isPlausibleVelocity(liveVelocity, syncData) or liveVelocity.Magnitude < T.MIN_BALL_SPEED then return false end
+	if not isPlausibleVelocity(liveVelocity, syncData) or liveVelocity.Magnitude < minimumBallSpeed() then return false end
 	if not Remote or type(Remote.fireParry) ~= "function" then return false end
 	local fireOk, result, detail = pcall(Remote.fireParry, 1)
 	if not fireOk or result == false then
@@ -335,12 +343,12 @@ local function onHeartbeat(character, root, dt, generation)
 	local rootPositionOk, rootPosition = pcall(function() return GameInfo.getRootPosition(root) end)
 	if not rootPositionOk or not isValidVector3(rootPosition) then resetParryLock(); return end
 	local delta = rootPosition - position; local distance = delta.Magnitude; local speed = R.velocity.Magnitude
-	local approaching = speed >= T.MIN_BALL_SPEED and distance > 0 and R.velocity:Dot(delta) > 0
+	local approaching = speed >= minimumBallSpeed() and distance > 0 and R.velocity:Dot(delta) > 0
 	if not R.lastTargeted then R.armed = true end
 	R.lastTargeted = targeted; R.targeted = targeted; local resilienceBonus = getResilienceBonus(time)
 	local parryRadius, leadTime = computeParryRadius(speed, R.ping, resilienceBonus, getWindowFactor()); R.lastDistance = distance; R.lastSpeed = speed; R.lastLeadTime = leadTime
 	R.lastApproaching = approaching; R.targetId = tonumber(snapshot and snapshot.targetId) or -1; R.targetKnown = snapshot ~= nil and snapshot.targetId ~= nil
-	if speed < T.MIN_BALL_SPEED then R.armed = true; setPhase("waiting", "ball_speed_invalid"); return end
+	if speed < minimumBallSpeed() then R.armed = true; setPhase("waiting", "ball_speed_invalid"); return end
 	if not approaching then R.armed = true; setPhase("waiting", "ball_not_approaching"); return end
 	if distance > parryRadius then setPhase("waiting", "outside_radius"); return end
 	if R.firedForTarget then setPhase("waiting", "target_already_parried"); return end
@@ -426,7 +434,7 @@ function AutoParry.fire()
 	if not R.alive or not R.bound then return false end
 	if R.firedForTarget then return false end
 	if isTeleportLocked() then return false end
-	if not R.lastApproaching or R.lastSpeed < T.MIN_BALL_SPEED then return false end
+	if not R.lastApproaching or R.lastSpeed < minimumBallSpeed() then return false end
 	local fired = getRemoteParry(R.lastBall)
 	if not fired then return false end
 	R.armed = false; R.firedForTarget = true; R.lastFireAt = clock(); setPhase("fired", "manual_parry")
@@ -499,7 +507,7 @@ function AutoParry.getTiming(snapshot, time, rootPosition, windowFactor)
 	local parryRadius, leadTime, noWindowRadius, pingRadius, deflectWindow, effectiveWindow, requestedFactor =
 		computeParryRadius(speed, R.ping, resilienceBonus, windowFactor)
 	local distanceToRadius = distance - parryRadius; local tti = speed > 0 and math.max(distanceToRadius, 0) / speed or math.huge
-	local approaching = isValidVector3(velocity) and speed >= T.MIN_BALL_SPEED and distance > 0 and velocity:Dot(delta) > 0 or false
+	local approaching = isValidVector3(velocity) and speed >= minimumBallSpeed() and distance > 0 and velocity:Dot(delta) > 0 or false
 	return {
 		distance = distance,
 		speed = speed,
@@ -632,7 +640,7 @@ function AutoParry.getStatus()
 				min = T.MIN_WINDOW_FACTOR,
 				max = T.MAX_WINDOW_FACTOR,
 			},
-			minBallSpeed = T.MIN_BALL_SPEED,
+			minBallSpeed = minimumBallSpeed(),
 		},
 
 		timestamp = time,

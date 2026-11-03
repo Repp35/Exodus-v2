@@ -19,8 +19,6 @@ local T = {
 	-- activation
 	RETURN_WIN_LO = 0.18,
 	RETURN_WIN_MIN_FACTOR = 0.10,
-	RETURN_SPD_LO = 60,
-	RETURN_SPD_HI = 600,
 	PING_FACTOR = 0.3,
 	ACTIVATION_WINDOW_FACTOR = 0.8,
 	ACTIVATION_MIN_DOT = 0.3,
@@ -46,8 +44,6 @@ local T = {
 	DEACT_DIRECTION_MAX_LO = 0.13,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DIRECTION_DEACT_MARGIN_FACTOR = 1.10,
-	DEACT_DIRECTION_SPD_LO = 60,
-	DEACT_DIRECTION_SPD_HI = 600,
 	DEACT_CONFIRM_HOLD = 0.050,
 	DEACT_CONFIRM_FRAMES = 2,
 	DEACT_CONFIRM_MAX_GAP = 0.10,
@@ -231,7 +227,9 @@ end
 local function pingCompensation() return getPingOneWay() * T.PING_FACTOR end
 local function getReturnWindow(speed)
 	local configured = Utils and type(Utils.getConfigValue) == "function" and tonumber(Utils.getConfigValue("AutoClashActivationMs"))
-	local low = configured and math.clamp(configured, 0, 5000) / 1000 or T.RETURN_WIN_LO; local base = lerpBySpeed(speed, low, low * T.RETURN_WIN_MIN_FACTOR, T.RETURN_SPD_LO, T.RETURN_SPD_HI)
+	local minimum, maximum
+	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum, maximum = GameInfo.getBallSpeedLimits() end
+	local low = configured and math.clamp(configured, 0, 5000) / 1000 or T.RETURN_WIN_LO; local base = lerpBySpeed(speed, low, low * T.RETURN_WIN_MIN_FACTOR, minimum or speed, maximum or speed)
 	return math.max(base + pingCompensation(), 2 / 60)
 end
 local function beginReturnWindow(t, fromTarget, serverTime)
@@ -423,12 +421,10 @@ function Deactivation.direction(t, snapshot, speed)
 	if R.lastDirectionSwitchAt <= 0 then return false end
 	if R.lastSyncAt < R.lastDirectionSwitchAt then return false end
 	local configured = Utils and type(Utils.getConfigValue) == "function" and tonumber(Utils.getConfigValue("AutoClashDeactivationMs")); local ping = pingCompensation()
+	local minimum, maximum
+	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum, maximum = GameInfo.getBallSpeedLimits() end
 	local base = (configured and math.clamp(configured, 0, 5000) / 1000 or T.DEACT_DIRECTION_MAX_LO) + ping
-	local baseMax = math.max(
-		lerpBySpeed(speed, base, base * T.DEACT_DIRECTION_MAX_MIN_FACTOR, T.DEACT_DIRECTION_SPD_LO, T.DEACT_DIRECTION_SPD_HI),
-		T.MIN_EVAL_INTERVAL * 1.5
-	)
-	local directionMax = baseMax
+	local baseMax = math.max(lerpBySpeed(speed, base, base * T.DEACT_DIRECTION_MAX_MIN_FACTOR, minimum or speed, maximum or speed), T.MIN_EVAL_INTERVAL * 1.5); local directionMax = baseMax
 	if R.clashIntervalEma and R.clashIntervalEmaSamples >= T.CLASH_INTERVAL_EMA_MIN_SAMPLES then directionMax = math.max(R.clashIntervalEma * T.CLASH_INTERVAL_DIRECTION_FACTOR, baseMax) end
 	if t - R.lastDirectionSwitchAt <= directionMax then return false end
 	local ball = snapshot.ball; local velocity = snapshot.velocity

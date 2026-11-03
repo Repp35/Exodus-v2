@@ -25,7 +25,7 @@ local ball={instance=true,Parent={},Position=vec(-10),AssemblyLinearVelocity=vec
 local player={UserId=42, GetNetworkPing=function() return 0 end,GetAttribute=function() return 8.5 end}
 local char={Parent={}}; local root={Parent={},Position=vec(0)}
 local sync={TargetPlayerID=42,Speed=100,Teleported=false}
-local info={getDeflectRange=function() return 8.5 end,getLocalPing=function() return 0 end,getBallPosition=function(b) return b.Position end,getBallVelocity=function(b) return b.AssemblyLinearVelocity end,getRootPosition=function(r) return r.Position end,getSyncData=function() return sync end,getSnapshot=function() return {ball=ball,targeted=target==42,targetId=target,position=ball.Position} end,isSnapshotValid=function() return true end,getBall=function() return ball end,getTargetId=function() return target end}
+local info={getBallSpeedLimits=function() return 16,600 end,getDeflectRange=function() return 8.5 end,getLocalPing=function() return 0 end,getBallPosition=function(b) return b.Position end,getBallVelocity=function(b) return b.AssemblyLinearVelocity end,getRootPosition=function(r) return r.Position end,getSyncData=function() return sync end,getSnapshot=function() return {ball=ball,targeted=target==42,targetId=target,position=ball.Position} end,isSnapshotValid=function() return true end,getBall=function() return ball end,getTargetId=function() return target end}
 local utils={getConfig=function() return {AutoParry=true} end,isActive=function() return true end,isSpamActive=function() return false end}
 t.setDeps({fireParry=function() fires+=1; return true end},info,utils)
 R.player=player; R.root=root; R.character=char; R.bound=true; R.alive=true; R.generation=1

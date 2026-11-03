@@ -46,6 +46,7 @@ local Players
 local Workspace
 local cachedBall
 local ballReplicatorModule
+local gameBallModule
 local lastSyncData
 local clientAbilitiesModule
 local clientAbilities
@@ -215,8 +216,8 @@ function GameInfo.setup(deps)
 	Utils = deps.Utils; Players = Utils.getPlayers(); Workspace = Utils.getWorkspace()
 	if not Players then return false, "dependência ausente: Players" end
 	if not Workspace then return false, "dependência ausente: Workspace" end
-	cachedBall = nil; ballReplicatorModule = nil; lastSyncData = nil; clientAbilitiesModule = nil
-	clientAbilities = nil; sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil; return true
+	cachedBall = nil; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil
+	clientAbilitiesModule = nil; clientAbilities = nil; sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil; return true
 end
 function GameInfo.getBall() return getBall() end
 function GameInfo.getBallPosition(ball) return ball.Position end
@@ -254,6 +255,34 @@ function GameInfo.decodeBallPacket(packet): BallSync?
 	}
 end
 function GameInfo.getTargetId() return resolveTargetId(getDecodedSyncData()) end
+function GameInfo.getBallSpeedLimits()
+	if not gameBallModule then
+		local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local gameplay = ts and ts:FindFirstChild("Gameplay")
+		local module = gameplay and gameplay:FindFirstChild("GameBall")
+		if not module or not module:IsA("ModuleScript") then reportModuleError("GameBall", "módulo de velocidade indisponível"); return nil end
+		local ok, result = pcall(require, module)
+		if not ok then reportModuleError("GameBall", result); return nil end
+		gameBallModule = type(result) == "table" and result.GameBall or nil
+	end
+	local ball = gameBallModule
+	if type(ball) ~= "table" or type(ball.GetBaseSpeed) ~= "function" or type(ball.GetMaxSpeed) ~= "function" then
+		reportModuleError("GameBall", "API de velocidade indisponível"); gameBallModule = nil; return nil
+	end
+	local ok, minimum, maximum = pcall(function() return ball:GetBaseSpeed(), ball:GetMaxSpeed() end)
+	if
+		not ok
+		or type(minimum) ~= "number"
+		or type(maximum) ~= "number"
+		or minimum ~= minimum
+		or maximum ~= maximum
+		or minimum <= 0
+		or maximum <= minimum
+		or maximum == math.huge
+	then
+		reportModuleError("GameBall", ok and "limites de velocidade inválidos" or minimum); return nil
+	end
+	return minimum, maximum
+end
 function GameInfo.getHaunterRemote()
 	local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local remotes = ts and ts:FindFirstChild("GeneratedNetworkRemotes")
 	local remote = remotes and remotes:FindFirstChild("RE_" .. tostring(9.150098456648103e76))
@@ -317,6 +346,7 @@ GameInfo.__contract = {
 		"getLocalPing",
 		"getDeflectRange",
 		"getDeflectAbility",
+		"getBallSpeedLimits",
 		"getDeflectCD",
 		"getSnapshot",
 		"getSnapshotAt",
