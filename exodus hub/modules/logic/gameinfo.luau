@@ -47,6 +47,7 @@ local Workspace
 local cachedBall
 local ballReplicatorModule
 local gameBallModule
+local speedLimitMin, speedLimitMax = 16, 600
 local lastSyncData
 local clientAbilitiesModule
 local clientAbilities
@@ -259,14 +260,14 @@ function GameInfo.getBallSpeedLimits()
 	if not gameBallModule then
 		local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local gameplay = ts and ts:FindFirstChild("Gameplay")
 		local module = gameplay and gameplay:FindFirstChild("GameBall")
-		if not module or not module:IsA("ModuleScript") then reportModuleError("GameBall", "módulo de velocidade indisponível"); return nil end
+		if not module or not module:IsA("ModuleScript") then reportModuleError("GameBall", "módulo de velocidade indisponível; usando últimos limites conhecidos"); return speedLimitMin, speedLimitMax end
 		local ok, result = pcall(require, module)
-		if not ok then reportModuleError("GameBall", result); return nil end
+		if not ok then reportModuleError("GameBall", result); return speedLimitMin, speedLimitMax end
 		gameBallModule = type(result) == "table" and result.GameBall or nil
 	end
 	local ball = gameBallModule
 	if type(ball) ~= "table" or type(ball.GetBaseSpeed) ~= "function" or type(ball.GetMaxSpeed) ~= "function" then
-		reportModuleError("GameBall", "API de velocidade indisponível"); gameBallModule = nil; return nil
+		reportModuleError("GameBall", "API de velocidade indisponível"); gameBallModule = nil; return speedLimitMin, speedLimitMax
 	end
 	local ok, minimum, maximum = pcall(function() return ball:GetBaseSpeed(), ball:GetMaxSpeed() end)
 	if
@@ -279,9 +280,9 @@ function GameInfo.getBallSpeedLimits()
 		or maximum <= minimum
 		or maximum == math.huge
 	then
-		reportModuleError("GameBall", ok and "limites de velocidade inválidos" or minimum); return nil
+		reportModuleError("GameBall", ok and "limites de velocidade inválidos" or minimum); return speedLimitMin, speedLimitMax
 	end
-	return minimum, maximum
+	speedLimitMin, speedLimitMax = minimum, maximum; return minimum, maximum
 end
 function GameInfo.getHaunterRemote()
 	local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local remotes = ts and ts:FindFirstChild("GeneratedNetworkRemotes")
