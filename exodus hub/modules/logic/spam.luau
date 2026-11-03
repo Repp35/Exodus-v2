@@ -4,8 +4,11 @@ local Spam = {}
 
 local Utils, Remote
 local connection
+local spamObserver
 local generation = 0
 local workerGeneration = 0
+local cpfWorkerRunning = false
+local cpfWorkerRate
 local active = false
 local phase = 0
 local lastMode, lastRate
@@ -66,7 +69,8 @@ local function tick(dt)
 	end
 end
 local function startCpfWorker()
-	workerGeneration += 1; local worker = workerGeneration
+	if cpfWorkerRunning then return end
+	cpfWorkerRunning = true; workerGeneration += 1; local worker = workerGeneration
 	local due, previousRate
 	task.spawn(function()
 		while worker == workerGeneration do
@@ -86,9 +90,23 @@ local function startCpfWorker()
 				due, previousRate = nil, nil
 				if mode == "CPF" then setActive(false, "spam_disabled") end
 			end
-			task.wait()
+			if due then task.wait(math.max(0, due - now())) else task.wait() end
 		end
+		if worker == workerGeneration then cpfWorkerRunning = false end
 	end)
+end
+local function syncCpfWorker()
+	if not Utils then return end
+	local mode, rate
+	if type(Utils.getConfigValue) == "function" then mode = Utils.getConfigValue("SpamRateMode"); rate = tonumber(Utils.getConfigValue("CPF"))
+	else local config = Utils.getConfig(); mode = config.SpamRateMode; rate = tonumber(config.CPF) end
+	if mode == "CPF" and rate and rate == rate and rate > 0 and rate < math.huge and Utils.isActive() and Utils.isSpamActive() then
+		if cpfWorkerRunning and cpfWorkerRate ~= rate then workerGeneration += 1; cpfWorkerRunning = false end
+		cpfWorkerRate = rate; startCpfWorker()
+	else
+		if cpfWorkerRunning then workerGeneration += 1; cpfWorkerRunning = false end
+		if mode == "CPF" and (not Utils.isActive() or not Utils.isSpamActive()) then setActive(false, "spam_disabled") end
+	end
 end
 
 function Spam.setup(deps)
@@ -109,7 +127,14 @@ function Spam.setup(deps)
 	if not signal then return false, "RunService indisponível" end
 	connection = signal:Connect(tick)
 	if type(Utils.trackGlobal) == "function" then Utils.trackGlobal(connection) end
-	startCpfWorker(); return true
+	if type(Utils.observeSpam) == "function" then
+		spamObserver = Utils.observeSpam(syncCpfWorker)
+		if type(Utils.trackGlobal) == "function" then Utils.trackGlobal(spamObserver) end
+		syncCpfWorker()
+	else
+		startCpfWorker()
+	end
+	return true
 end
 
 function Spam.resetState()
@@ -119,7 +144,11 @@ function Spam.resetState()
 end
 
 function Spam.teardown()
-	workerGeneration += 1
+	workerGeneration += 1; cpfWorkerRunning = false; cpfWorkerRate = nil
+	if spamObserver then
+		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(spamObserver) end
+		spamObserver:Disconnect(); spamObserver = nil
+	end
 	if connection then
 		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(connection) end
 		connection:Disconnect(); connection = nil

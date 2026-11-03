@@ -620,8 +620,6 @@ local function heartbeatStep(generation, character, root)
 	if generation ~= R.generation or not character.Parent or not root.Parent then return end
 	local t = now()
 	if not checkHubState() then return end
-	if Dash and type(Dash.tick) == "function" then Dash.tick(t) end
-	processPendingDash(t)
 	if not R.returnPending and R.returnExpiresAt > 0 and t >= R.returnExpiresAt then clearReturnState(); R.lastGate = "return_expired" end
 	local snapshot, snapshotError = readValidatedSnapshot(t)
 	if not snapshot then
@@ -629,6 +627,8 @@ local function heartbeatStep(generation, character, root)
 		R.lastGate = snapshotError
 		return
 	end
+	if Dash and type(Dash.tick) == "function" then Dash.tick(t) end
+	processPendingDash(t)
 	-- A snapshot can recover target transitions if the event listener was late.
 	-- Avoid replacing a newer event with a stale, unsequenced snapshot.
 	if snapshot.teleported == true then

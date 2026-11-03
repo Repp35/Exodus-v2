@@ -11,9 +11,9 @@ local frame
 local presses = 0
 local now, enabled = 0, true
 local scheduled = {}
-local worker
+local worker, spawnCount = nil, 0
 task = {delay=function(delay, fn, ...) local args=table.pack(...); scheduled[#scheduled+1] = {delay, function() fn(table.unpack(args, 1, args.n)) end} end,
- spawn=function(fn) worker=coroutine.create(fn); local ok,err=coroutine.resume(worker); assert(ok,err) end,
+ spawn=function(fn) spawnCount+=1; worker=coroutine.create(fn); local ok,err=coroutine.resume(worker); assert(ok,err) end,
  wait=function() coroutine.yield() end}
 local config = {SpamRateMode = "CPS", CPS = 23.5, CPF = 10}
 local signal = {Connect = function(self, callback)
@@ -81,6 +81,18 @@ enabled = false
 before = presses
 advance(1/60, 10)
 assert(presses == before)
+spam.teardown()
+local observer
+utils.observeSpam=function(fn) observer=fn; return {Disconnect=function() observer=nil end} end
+enabled=false; config.SpamRateMode="CPF"; config.CPF=0.36
+local oldSpawnCount=spawnCount
+assert(spam.setup({Remote={fireParry=function() presses+=1; return true end},Utils=utils}))
+assert(spawnCount==oldSpawnCount, "CPF worker should not run while spam is off")
+enabled=true; observer()
+assert(spawnCount==oldSpawnCount+1, "CPF worker should start on activation")
+enabled=false; observer()
+local ok,err=coroutine.resume(worker); assert(ok,err)
+assert(coroutine.status(worker)=="dead", "CPF worker should stop when spam turns off")
 spam.teardown()
 print("Spam CPS/CPF cadence: PASS")
 '''

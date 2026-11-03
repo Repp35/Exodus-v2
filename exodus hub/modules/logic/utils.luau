@@ -68,6 +68,18 @@ local State = {
 }
 
 local DiagnosticsModules = {}
+local SpamObservers = {}
+local function notifySpamObservers()
+	for observer in pairs(SpamObservers) do
+		local ok, err = pcall(observer)
+		if not ok then warn("[Spam] " .. tostring(err)) end
+	end
+end
+function Utils.observeSpam(observer)
+	if type(observer) ~= "function" then return nil end
+	SpamObservers[observer] = true
+	return { Disconnect = function() SpamObservers[observer] = nil end }
+end
 local NamespaceUpdating = false
 local TransitionRefreshPending = false
 
@@ -231,7 +243,7 @@ function Utils.start()
 end
 function Utils.stop()
 	local previousPhase = State.lifecycle.phase; State.active = false; State.manualSpamActive = false; State.autoSpamActive = false
-	State.lifecycle.stoppedAt = os.clock()
+	notifySpamObservers(); State.lifecycle.stoppedAt = os.clock()
 	_G.ExodusOnBurst = function() end
 	local antiTamper = DiagnosticsModules.antitamper
 	if type(antiTamper) == "table" and type(antiTamper.teardown) == "function" then
@@ -288,13 +300,13 @@ function Utils.isSpamActive() return State.manualSpamActive == true or State.aut
 function Utils.setAutoSpamActive(value)
 	local nextValue = value == true
 	if State.autoSpamActive == nextValue then return false end
-	local previous = State.autoSpamActive; State.autoSpamActive = nextValue
+	local previous = State.autoSpamActive; State.autoSpamActive = nextValue; notifySpamObservers()
 	recordTransitionInternal("AutoClash", previous and "active" or "inactive", nextValue and "active" or "inactive", "automatic_toggle"); return true
 end
 function Utils.setManualSpamActive(value)
 	local nextValue = value == true
 	if State.manualSpamActive == nextValue then return false end
-	local previous = State.manualSpamActive; State.manualSpamActive = nextValue
+	local previous = State.manualSpamActive; State.manualSpamActive = nextValue; notifySpamObservers()
 	recordTransitionInternal("Spam", previous and "active" or "inactive", nextValue and "active" or "inactive", "manual_toggle"); return true
 end
 function Utils.isFiniteNumber(value) return type(value) == "number" and value == value and value < math.huge and value > -math.huge end
@@ -336,6 +348,7 @@ function Utils.setConfig(config)
 	for key, value in pairs(normalized) do
 		State.config[key] = value
 	end
+	if normalized.SpamRateMode ~= nil or normalized.CPF ~= nil then notifySpamObservers() end
 	updateNamespace(); queueConfigSave(); return true
 end
 function Utils.loadConfig()

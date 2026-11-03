@@ -45,9 +45,13 @@ local Utils
 local Players
 local Workspace
 local cachedBall
+local ballWatcherReady = false
+local ballSearchComplete = false
+local nextBallSearch = 0
 local ballReplicatorModule
 local gameBallModule
 local speedLimitMin, speedLimitMax = 16, 600
+local nextSpeedRead = 0
 local lastSyncData
 local clientAbilitiesModule
 local clientAbilities
@@ -70,7 +74,8 @@ local function findGameBall()
 end
 local function getBall()
 	if cachedBall and cachedBall.Parent then return cachedBall end
-	cachedBall = findGameBall(); return cachedBall
+	if ballWatcherReady and ballSearchComplete and os.clock() < nextBallSearch then return nil end
+	cachedBall = findGameBall(); ballSearchComplete = true; nextBallSearch = os.clock() + 0.5; return cachedBall
 end
 local function getBallReplicator()
 	-- BallReplicator retorna uma tabela; não use Parent para validar o cache.
@@ -194,13 +199,14 @@ local function getSnapshot(_, time, frameTime): BallSnapshot?
 end
 local function installBallWatcher(trackConnection)
 	if type(trackConnection) ~= "function" then return false, "trackConnection invalido" end
-	trackConnection(Workspace.ChildAdded:Connect(function(child)
+	trackConnection((Workspace.DescendantAdded or Workspace.ChildAdded):Connect(function(child)
 		if child.Name == "GameBall" and child:IsA("BasePart") then cachedBall = child end
 	end))
-	trackConnection(Workspace.ChildRemoved:Connect(function(child)
-		if cachedBall == child then cachedBall = nil end
+	trackConnection((Workspace.DescendantRemoving or Workspace.ChildRemoved):Connect(function(child)
+		if cachedBall == child then cachedBall = nil; ballSearchComplete = false end
 	end))
-	cachedBall = findGameBall(); return true
+	cachedBall = findGameBall(); ballSearchComplete = true; ballWatcherReady = true; nextBallSearch = os.clock() + 0.5
+	return true
 end
 function GameInfo.setup(deps)
 	if
@@ -217,7 +223,8 @@ function GameInfo.setup(deps)
 	Utils = deps.Utils; Players = Utils.getPlayers(); Workspace = Utils.getWorkspace()
 	if not Players then return false, "dependência ausente: Players" end
 	if not Workspace then return false, "dependência ausente: Workspace" end
-	cachedBall = nil; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil
+	cachedBall = nil; ballWatcherReady = false; ballSearchComplete = false; nextBallSearch = 0
+	nextSpeedRead = 0; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil
 	clientAbilitiesModule = nil; clientAbilities = nil; sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil; return true
 end
 function GameInfo.getBall() return getBall() end
@@ -257,6 +264,9 @@ function GameInfo.decodeBallPacket(packet): BallSync?
 end
 function GameInfo.getTargetId() return resolveTargetId(getDecodedSyncData()) end
 function GameInfo.getBallSpeedLimits()
+	local time = os.clock()
+	if time < nextSpeedRead then return speedLimitMin, speedLimitMax end
+	nextSpeedRead = time + 0.5
 	if not gameBallModule then
 		local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local gameplay = ts and ts:FindFirstChild("Gameplay")
 		local module = gameplay and gameplay:FindFirstChild("GameBall")

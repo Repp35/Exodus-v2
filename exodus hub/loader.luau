@@ -66,7 +66,7 @@ local SINGLE_RESULT_API = {
 		getLocalPing = true,
 	},
 }
-local TWO_RESULT_API = { remote = { fireParry = true } }
+local TWO_RESULT_API = { remote = { fireParry = true }, gameinfo = { getBallSpeedLimits = true } }
 local function withTrace(err)
 	local message = tostring(err)
 	if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(message, 2) end
