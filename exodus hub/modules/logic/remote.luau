@@ -269,12 +269,12 @@ function Remote.setup(deps)
 	if type(deps) ~= "table" or not deps.Utils or type(deps.GameInfo) ~= "table" or type(deps.GameInfo.getDeflectAbility) ~= "function" then
 		return false, "dependência ausente: Utils ou GameInfo.getDeflectAbility"
 	end
-	Utils = deps.Utils; GameInfo = deps.GameInfo; captureEnabled = deps.captureDiagnostics == true; remoteState = "phantomballz"
+	Utils = deps.Utils; GameInfo = deps.GameInfo; captureEnabled = deps.captureDiagnostics == true; remoteState = "deflect_only"
 	table.clear(loggedParryMethods); return true
 end
 
 -- parry
-function Remote.fireParry(flag)
+function Remote.fireParry(_flag)
 	local ability = getDeflectAbility()
 	if ability then
 		local previousPress = ability.LastPressClock
@@ -287,36 +287,18 @@ function Remote.fireParry(flag)
 		if ability.LastPressClock ~= previousPress and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
 		return true
 	end
-	local touchTap = getTouchTap()
-	if touchTap then
-		local ok, err = pcall(function() touchTap:Fire() end)
-		if not ok then remoteState = "touch_tap_error"; return false, err end
-		remoteState = "touch_tap"; parryRemoteSource = "ReplicatedStorage.TouchTap"; logParryMethod("touch_tap", "TouchTap acionado; envio ao servidor não confirmado"); return true
-	end
-	local remote = resolvePhantomBallzRemote()
-	if not remote then remoteState = "unavailable"; return false end
-	local ok, err = pcall(function() remote:FireServer(payloadFor(flag)) end)
-	if not ok then parryRemote = nil; parryInitialized = false; remoteState = "lost" end
-	if ok then remoteState = "direct_fallback"; logParryMethod("direct_fallback", "primeiro envio: RemoteEvent direto (" .. tostring(parryRemoteSource or "origem desconhecida") .. ")") end
-	return ok, err
+	remoteState = "unavailable"; parryInitialized = false; parryRemoteSource = nil; return false, "Deflect indisponível"
 end
 function Remote.initParry()
-	parryInitialized = getDeflectAbility() ~= nil or getTouchTap() ~= nil or resolvePhantomBallzRemote() ~= nil; return parryInitialized
+	parryInitialized = getDeflectAbility() ~= nil; return parryInitialized
 end
-function Remote.usesGameDeflect() return getDeflectAbility() ~= nil or getTouchTap() ~= nil end
-function Remote.getRemote()
-	local ability = getDeflectAbility()
-	if ability then return ability end
-	local touchTap = getTouchTap()
-	if touchTap then return touchTap end
-	if not isAlive(parryRemote) then parryRemote = nil; parryInitialized = false end
-	return resolvePhantomBallzRemote()
-end
+function Remote.usesGameDeflect() return getDeflectAbility() ~= nil end
+function Remote.getRemote() return getDeflectAbility() end
 function Remote.getStatus()
 	return {
 		schema = Utils.apiVersion(),
 		state = remoteState,
-		method = getDeflectAbility() and "Deflect" or (getTouchTap() and "TouchTap" or (isAlive(parryRemote) and "direct_fallback" or "unavailable")),
+		method = getDeflectAbility() and "Deflect" or "unavailable",
 		initialized = parryInitialized == true,
 		source = parryRemoteSource,
 		hasBallSync = ballSyncConnection ~= nil and ballSyncConnection.Connected == true and ballSyncRemote ~= nil,
@@ -372,8 +354,7 @@ function Remote.startMaintenance(options)
 			if not activeOk or active ~= true then break end
 			local remoteOk, remote = pcall(Remote.getRemote)
 			if not remoteOk then remote = nil end
-			if remote and remote ~= getDeflectAbility() and remote ~= getTouchTap() and not isAlive(remote) then parryRemote = nil; parryInitialized = false; remote = nil end
-			if remote then pcall(Remote.initParry) end
+			if remote then pcall(Remote.initParry) else parryInitialized = false end
 			if type(onBallSync) == "function" then pcall(Remote.bindBallSync, onBallSync) end
 			task.wait(remote and 3 or 1)
 		end
@@ -391,7 +372,7 @@ Remote.__contract = {
 	provides = { "setup", "getRemote", "initParry", "fireParry", "bindBallSync", "startMaintenance", "stopMaintenance" },
 	requires = { Utils = "utils", GameInfo = "gameinfo" },
 	ballSync = true,
-	remoteResolution = "PhantomBallz",
+	remoteResolution = "Deflect",
 }
 
 return Remote

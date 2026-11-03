@@ -1,4 +1,4 @@
-"""Generate a Luau test for the game's deflect path and direct fallback."""
+"""Generate a Luau test for the game's deflect-only parry path."""
 from pathlib import Path
 import sys
 root = Path(sys.argv[1])
@@ -25,13 +25,13 @@ assert(remote.fireParry(1) and deflectCount == 1 and touchCount == 0, "must call
 abilities.Abilities[1] = {Deflect = function() deflectCount += 10 end}
 assert(remote.fireParry(1) and deflectCount == 11, "must use replacement ability")
 abilities.Abilities[1] = nil
-assert(remote.fireParry(1) and touchCount == 1, "missing ability should use TouchTap")
-touch = nil
+assert(not remote.fireParry(1) and touchCount == 0, "missing ability must not use TouchTap")
+assert(not remote.initParry() and not remote.usesGameDeflect() and remote.getRemote() == nil, "missing ability must not expose another method")
 local sent
 local fallback = {instance=true, Parent={}, IsA=function(_,kind) return kind == "RemoteEvent" end, FireServer=function(_,payload) sent=payload end}
 assert(remote.setParryRemote(fallback))
-assert(remote.fireParry(1) and buffer.len(sent) == 25, "direct fallback must send 25-byte buffer")
-assert(buffer.readu8(sent, 0)==1 and buffer.readf32(sent, 1)==1 and buffer.readf32(sent, 21)==6, "fallback payload fields")
-print("Deflect, ability replacement, TouchTap, and fallback: PASS")
+assert(not remote.fireParry(1) and not sent and touchCount == 0, "captured remote must not be sent directly")
+assert(remote.getStatus().method == "unavailable", "status must not report a disabled fallback")
+print("Deflect only and disabled fallbacks: PASS")
 '''
 output.write_text(pre + source + post)
