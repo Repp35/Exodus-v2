@@ -48,12 +48,10 @@ local function tick(dt)
 	local clicks = 0
 	if rate > 0 then
 		if mode == "CPF" then
-			-- Preserve fractional CPF while compensating below 60 FPS.
-			phase += rate * math.max(1, 60 * dt)
+			if rate >= 1 then clicks = math.max(1, math.floor(rate * 60 * dt + 0.5)) else phase += rate * math.max(1, 60 * dt); clicks = math.floor(phase + 1e-9); phase -= clicks end
 		else
-			phase += rate * dt
+			phase += rate * dt; clicks = math.floor(phase + 1e-9); phase -= clicks
 		end
-		clicks = math.floor(phase + 1e-9); phase -= clicks
 	end
 	status.cpfFps = mode == "CPF" and 1 / dt or 0; status.cpfClicks = mode == "CPF" and clicks or 0; local currentGeneration = generation
 	for _ = 1, clicks do
