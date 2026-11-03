@@ -953,6 +953,7 @@ function ExodusUI.setup(deps)
 	createParryTimingCard(4, settingsLeft); local clashY = createClashTimingCard("Ativação AC (ms)", "AutoClashActivationMs", 180, 4, settingsRight)
 	createClashTimingCard("Desativação AC (ms)", "AutoClashDeactivationMs", 130, clashY, settingsRight)
 	local antiConnection
+	local antiGeneration = 0
 	local antiButton = inst("TextButton", {
 		Size = UDim2.new(1, 0, 0, CARD_H),
 		BackgroundColor3 = C.btnDark,
@@ -965,17 +966,79 @@ function ExodusUI.setup(deps)
 	})
 	corner(antiButton, 8)
 	trackConn(antiButton.Activated:Connect(function()
-		if antiConnection then antiConnection:Disconnect(); antiConnection = nil; antiButton.Text = "Anti AFK: OFF"; return end
+		if antiConnection then
+			antiGeneration += 1; antiConnection:Disconnect(); antiConnection = nil; antiButton.Text = "Anti AFK: OFF"
+			return
+		end
 		local player = Utils.getLocalPlayer(); local ok, virtualUser = pcall(game.GetService, game, "VirtualUser")
-		if not player or not ok or not virtualUser then Utils.recordError("AntiAFK", "VirtualUser ou jogador indisponível"); return end
-		antiConnection = trackConn(player.Idled:Connect(function()
+		if not player then Utils.recordError("AntiAFK", "Jogador indisponível"); return end
+		local function pulse()
 			local inputOk, err = pcall(function()
+				if not ok or not virtualUser then error("VirtualUser indisponível") end
 				virtualUser:CaptureController(); virtualUser:ClickButton2(Vector2.new(0, 0))
 			end)
-			if not inputOk then Utils.recordError("AntiAFK", tostring(err)) end
-		end))
+			if not inputOk then
+				local fallback, fallbackErr = pcall(function()
+					local vim = game:GetService("VirtualInputManager"); vim:SendMouseButtonEvent(0, 0, 1, true, game, 0); vim:SendMouseButtonEvent(0, 0, 1, false, game, 0)
+				end)
+				if not fallback then Utils.recordError("AntiAFK", tostring(err) .. " | " .. tostring(fallbackErr)) end
+			end
+		end
+		antiConnection = trackConn(player.Idled:Connect(pulse)); antiGeneration += 1; local generation = antiGeneration
+		task.spawn(function()
+			while generation == antiGeneration and screenGui and screenGui.Parent and Utils.isActive() do
+				task.wait(20)
+				if generation == antiGeneration and screenGui and screenGui.Parent and Utils.isActive() then pulse() end
+			end
+		end)
 		antiButton.Text = "Anti AFK: ON"
 	end))
+	local spinActive, spinGeneration, spinButtons = nil, 0, {}; local spinModes = { { "Espada", "SwordCrate" }, { "Emote", "EmoteCrate" }, { "Explosão", "FinisherCrate" } }
+	local function paintSpin()
+		for _, mode in ipairs(spinModes) do
+			spinButtons[mode[2]].Text = mode[1] .. (spinActive == mode[2] and ": ON" or ": OFF")
+		end
+	end
+	for index, mode in ipairs(spinModes) do
+		local crate = mode[2]
+		local button = inst(
+			"TextButton",
+			{
+				Size = UDim2.new(1, 0, 0, 42),
+				Position = UDim2.new(0, 0, 0, CARD_H + 8 + (index - 1) * 48),
+				BackgroundColor3 = C.btnDark,
+				Text = mode[1] .. ": OFF",
+				TextColor3 = C.text,
+				TextSize = 13,
+				Font = Enum.Font.GothamBold,
+				ZIndex = 7,
+				Parent = utilities,
+			}
+		)
+		corner(button, 8); spinButtons[crate] = button
+		trackConn(button.Activated:Connect(function()
+			spinGeneration += 1; spinActive = spinActive == crate and nil or crate; paintSpin()
+			if not spinActive then return end
+			local generation = spinGeneration
+			task.spawn(function()
+				local ok, network = pcall(
+					function()
+						return require(game:GetService("ReplicatedStorage"):WaitForChild("TS"):WaitForChild("Network"):WaitForChild("Network")).Network.new()
+					end
+				)
+				if generation ~= spinGeneration or spinActive ~= crate then return end
+				if not ok then spinActive = nil; paintSpin(); Utils.recordError("AutoSpin", tostring(network)); return end
+				while generation == spinGeneration and spinActive == crate and screenGui and screenGui.Parent and Utils.isActive() do
+					local checked, owned = pcall(network.CSendFunction, network, 4.702176977990345e76, crate)
+					if generation ~= spinGeneration or spinActive ~= crate then break end
+					if not checked then spinActive = nil; paintSpin(); Utils.recordError("AutoSpin", tostring(owned)); break end
+					local sent, err = pcall(network.CSendEvent, network, owned == true and 1.796923298985336e75 or 1.0038569313364564e77, crate)
+					if not sent then spinActive = nil; paintSpin(); Utils.recordError("AutoSpin", tostring(err)); break end
+					task.wait(0.3)
+				end
+			end)
+		end))
+	end
 	local page = 1
 	local nav = inst("TextButton", {
 		Size = UDim2.new(0, 130, 0, 26),
