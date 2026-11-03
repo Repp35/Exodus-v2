@@ -270,11 +270,11 @@ end
 -- parry
 function Remote.fireParry(_flag)
 	local ok, err = pcall(function()
-		virtualInput = virtualInput or game:GetService("VirtualInputManager"); virtualInput:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-		virtualInput:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+		virtualInput = virtualInput or game:GetService("VirtualInputManager"); virtualInput:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+		virtualInput:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 	end)
 	if not ok then remoteState = "key_error"; return false, err end
-	remoteState = "key_f"; parryRemoteSource = "VirtualInputManager: F"; logParryMethod("key_f", "primeira tecla enviada: F"); return true
+	remoteState = "key_e"; parryRemoteSource = "VirtualInputManager: E"; logParryMethod("key_e", "primeira tecla enviada: E"); return true
 end
 function Remote.initParry()
 	parryInitialized = getDeflectAbility() ~= nil or getTouchTap() ~= nil or resolvePhantomBallzRemote() ~= nil; return parryInitialized
@@ -292,7 +292,7 @@ function Remote.getStatus()
 	return {
 		schema = Utils.apiVersion(),
 		state = remoteState,
-		method = "F",
+		method = "E",
 		initialized = parryInitialized == true,
 		source = parryRemoteSource,
 		hasBallSync = ballSyncConnection ~= nil and ballSyncConnection.Connected == true and ballSyncRemote ~= nil,
