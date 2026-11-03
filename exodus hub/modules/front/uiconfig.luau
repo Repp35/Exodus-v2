@@ -61,7 +61,7 @@ UIConfig.__config = {
 		CPF = 0.42,
 		SpamRateMode = "CPS",
 		Keybind = Enum.KeyCode.F9,
-		SpamKeybind = Enum.KeyCode.G,
+		SpamKeybind = Enum.KeyCode.F,
 		SpamMode = "Toggle",
 	},
 }
