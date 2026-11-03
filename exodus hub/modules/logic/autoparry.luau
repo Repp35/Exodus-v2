@@ -28,12 +28,12 @@ local T = {
 	VELOCITY_SMOOTHING_TAU = 0.05,
 	PING_SAMPLE_INTERVAL = 1,
 	BASE_RADIUS = 8.5,
-	BASE_WINDOW = 0.40,
+	BASE_WINDOW = 0.85,
+	MIN_DEFLECT_WINDOW = 0.20,
 	DEFAULT_WINDOW_FACTOR = 0.50,
 	MIN_WINDOW_FACTOR = 0.0,
 	MAX_WINDOW_FACTOR = 1.0,
-	MIN_LEAD_TIME = 0.48,
-	MAX_LEAD_TIME = 0.84,
+	MIN_LEAD_TIME = 0.20,
 	SPEED_TOLERANCE_FACTOR = 2.5,
 	SPEED_TOLERANCE_EXTRA = 30,
 	RES_PER_PARRY = 0.225,
@@ -186,21 +186,24 @@ local function isSpamActive()
 	if not Utils or type(Utils.isSpamActive) ~= "function" then return false end
 	local ok, active = pcall(Utils.isSpamActive); return ok and active == true
 end
-local function computeLeadTime(ping)
-	local validPing = isFiniteNumber(ping) and math.max(ping, 0) or 0; local leadTime = T.BASE_WINDOW + validPing; leadTime = math.clamp(leadTime, T.MIN_LEAD_TIME, T.MAX_LEAD_TIME)
-	return math.floor(leadTime * 100 + 0.5) / 100
+local function computeDeflectWindow(speed)
+	local minimum, maximum
+	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum, maximum = GameInfo.getBallSpeedLimits() end
+	if not isFiniteNumber(minimum) or not isFiniteNumber(maximum) or maximum <= minimum then minimum, maximum = 16, 600 end
+	local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); return T.BASE_WINDOW + (T.MIN_DEFLECT_WINDOW - T.BASE_WINDOW) * fraction
 end
 local function computeParryRadius(speed, ping, resilienceBonus, windowFactor)
-	local validSpeed = isFiniteNumber(speed) and math.max(speed, 0) or 0; local leadTime = computeLeadTime(ping); local factor = tonumber(windowFactor)
+	local validSpeed = isFiniteNumber(speed) and math.max(speed, 0) or 0; local deflectWindow = computeDeflectWindow(validSpeed); local validPing = isFiniteNumber(ping) and math.max(ping, 0) or 0
+	local leadTime = deflectWindow + validPing; local factor = tonumber(windowFactor)
 	if not isFiniteNumber(factor) then factor = getWindowFactor() end
 	factor = math.clamp(factor, T.MIN_WINDOW_FACTOR, T.MAX_WINDOW_FACTOR); local validResilience = isFiniteNumber(resilienceBonus) and math.max(resilienceBonus, 0) or 0
 	local baseRadius = T.BASE_RADIUS + validResilience
 	local anticipation = validSpeed * leadTime * factor
 	local noWindowRadius = baseRadius
-	local pingRadius = validSpeed * math.max(leadTime - T.BASE_WINDOW, 0) * factor
+	local pingRadius = validSpeed * validPing * factor
 	local fullRadius = baseRadius + anticipation
 	local effectiveWindow = leadTime * factor
-	return fullRadius, leadTime, noWindowRadius, pingRadius, T.BASE_WINDOW, effectiveWindow, factor
+	return fullRadius, leadTime, noWindowRadius, pingRadius, deflectWindow, effectiveWindow, factor
 end
 local function readTargeted(snapshot)
 	if type(snapshot) == "table" then
@@ -610,7 +613,7 @@ function AutoParry.getStatus()
 			speed = R.lastSpeed,
 			distance = R.lastDistance,
 			distanceToRadius = R.lastDistance - radius.fullRadius,
-			deflectWindow = T.BASE_WINDOW,
+			deflectWindow = radius.deflectWindow,
 			effectiveWindow = radius.effectiveWindow,
 			leadTime = R.lastLeadTime,
 			noWindowParryRadius = radius.noWindowParryRadius,
