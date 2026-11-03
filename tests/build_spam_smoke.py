@@ -11,7 +11,10 @@ local frame
 local presses = 0
 local now, enabled = 0, true
 local scheduled = {}
-task = {delay=function(delay, fn, ...) local args=table.pack(...); scheduled[#scheduled+1] = {delay, function() fn(table.unpack(args, 1, args.n)) end} end}
+local worker
+task = {delay=function(delay, fn, ...) local args=table.pack(...); scheduled[#scheduled+1] = {delay, function() fn(table.unpack(args, 1, args.n)) end} end,
+ spawn=function(fn) worker=coroutine.create(fn); local ok,err=coroutine.resume(worker); assert(ok,err) end,
+ wait=function() coroutine.yield() end}
 local config = {SpamRateMode = "CPS", CPS = 23.5, CPF = 10}
 local signal = {Connect = function(self, callback)
     frame = callback
@@ -39,7 +42,7 @@ assert(spam.setup({
 }))
 local function advance(dt, frames)
     for _ = 1, frames do
-        now += dt; frame(dt)
+        now += dt; frame(dt); local ok,err=coroutine.resume(worker); assert(ok,err)
         table.sort(scheduled, function(a,b) return a[1] < b[1] end)
         for _, item in ipairs(scheduled) do item[2]() end
         table.clear(scheduled)
@@ -51,28 +54,20 @@ config.CPS = 7500
 local before = presses
 advance(1/60, 1)
 assert(presses - before == 125, "high CPS capped: " .. (presses-before))
-config.SpamRateMode = "CPF"
-before = presses
-advance(1/60, 120)
-assert(presses - before == 1200, "CPF 10 at 60 FPS: " .. (presses-before))
-before = presses
-advance(1/30, 30)
-assert(presses - before == 600, "CPF compensation at 30 FPS: " .. (presses-before))
-config.CPF=1.2
+config.SpamRateMode = "CPF"; config.CPF = 0.36
+local ok,err=coroutine.resume(worker); assert(ok,err)
 before=presses
-advance(1/60, 60)
-assert(presses-before==72, "fractional CPF above 1 must keep its average: " .. (presses-before))
+for _=1,10000 do now+=0.001; ok,err=coroutine.resume(worker); assert(ok,err) end
+assert(presses-before>=215 and presses-before<=216, "CPF timer must run without RenderStepped: " .. (presses-before))
+before=presses; now+=1; ok,err=coroutine.resume(worker); assert(ok,err)
+assert(presses-before==1, "stalled timer must not burst")
+ok,err=coroutine.resume(worker); assert(ok,err)
+assert(presses-before==1, "stalled timer must not queue backlog")
 config.SpamRateMode = "CPS"; config.CPS = 0.25
 for _, fps in ipairs({30, 60, 120}) do
     before = presses
     advance(1/fps, 4*fps)
     assert(presses - before == 1, "fractional CPS at " .. fps .. " FPS: " .. (presses-before))
-end
-config.SpamRateMode = "CPF"; config.CPF = 0.42
-for _, fps in ipairs({30, 60}) do
-    before = presses
-    advance(1/fps, 5*fps)
-    assert(presses - before == 126, "fractional CPF at " .. fps .. " FPS: " .. (presses-before))
 end
 config.SpamRateMode = "CPS"; config.CPS = 120
 before = presses; frame(1/30)

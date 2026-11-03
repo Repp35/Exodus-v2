@@ -5,6 +5,7 @@ local Spam = {}
 local Utils, Remote
 local connection
 local generation = 0
+local workerGeneration = 0
 local active = false
 local phase = 0
 local lastMode, lastRate
@@ -15,7 +16,7 @@ local status = {
 	lastErrorAt = -math.huge,
 	cpfFps = 0,
 	cpfClicks = 0,
-	cpfCompensation = true,
+	cpfCompensation = false,
 }
 
 local function now() return Utils and Utils.now() or os.clock() end
@@ -42,19 +43,18 @@ end
 
 local function tick(dt)
 	if type(dt) ~= "number" or dt ~= dt or dt <= 0 or dt == math.huge then return end
+	local selectedMode = type(Utils.getConfigValue) == "function" and Utils.getConfigValue("SpamRateMode") or Utils.getConfig().SpamRateMode
+	if selectedMode == "CPF" then return end
 	if not Utils.isActive() or not Utils.isSpamActive() then setActive(false, "spam_disabled"); return end
 	if not active then setActive(true, "spam_active") end
-	local mode, rate
-	if type(Utils.getConfigValue) == "function" then mode = Utils.getConfigValue("SpamRateMode") == "CPF" and "CPF" or "CPS"; rate = tonumber(Utils.getConfigValue(mode)) or 0
-	else local config = Utils.getConfig(); mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"; rate = tonumber(config[mode]) or 0 end
+	local rate
+	if type(Utils.getConfigValue) == "function" then rate = tonumber(Utils.getConfigValue("CPS")) or 0 else rate = tonumber(Utils.getConfig().CPS) or 0 end
 	if rate ~= rate or rate == math.huge or rate < 0 then rate = 0 end
-	if mode ~= lastMode or rate ~= lastRate then generation += 1; phase = 0; lastMode, lastRate = mode, rate end
+	if lastMode ~= "CPS" or rate ~= lastRate then generation += 1; phase = 0; lastMode, lastRate = "CPS", rate end
 	local clicks = 0
-	if rate > 0 then
-		if mode == "CPF" then phase += rate * math.max(1, 60 * dt) else phase += rate * dt end
-		clicks = math.floor(phase + 1e-9); phase -= clicks
-	end
-	status.cpfFps = mode == "CPF" and 1 / dt or 0; status.cpfClicks = mode == "CPF" and clicks or 0; local currentGeneration = generation
+	if rate > 0 then phase += rate * dt; clicks = math.floor(phase + 1e-9); phase -= clicks end
+	status.cpfFps, status.cpfClicks = 0, 0
+	local currentGeneration = generation
 	if clicks > 0 then
 		requestParry()
 		if clicks > 1 and currentGeneration == generation and Utils and Remote and Utils.isActive() and Utils.isSpamActive() then
@@ -64,6 +64,31 @@ local function tick(dt)
 			end
 		end
 	end
+end
+local function startCpfWorker()
+	workerGeneration += 1; local worker = workerGeneration
+	local due, previousRate
+	task.spawn(function()
+		while worker == workerGeneration do
+			local mode, rate
+			if type(Utils.getConfigValue) == "function" then mode = Utils.getConfigValue("SpamRateMode"); rate = tonumber(Utils.getConfigValue("CPF"))
+			else local config = Utils.getConfig(); mode = config.SpamRateMode; rate = tonumber(config.CPF) end
+			if mode == "CPF" and Utils.isActive() and Utils.isSpamActive() and rate and rate == rate and rate > 0 and rate < math.huge then
+				if not active then setActive(true, "spam_active") end
+				if lastMode ~= "CPF" or lastRate ~= rate then generation += 1; phase = 0; lastMode, lastRate = "CPF", rate; due, previousRate = nil, nil end
+				local time = now(); local interval = 1 / (rate * 60)
+				if previousRate ~= rate or due == nil then due = time + interval; previousRate = rate end
+				if time >= due then
+					requestParry(); due += interval
+					if due <= time then due = time + interval end
+				end
+			else
+				due, previousRate = nil, nil
+				if mode == "CPF" then setActive(false, "spam_disabled") end
+			end
+			task.wait()
+		end
+	end)
 end
 
 function Spam.setup(deps)
@@ -84,7 +109,7 @@ function Spam.setup(deps)
 	if not signal then return false, "RunService indisponível" end
 	connection = signal:Connect(tick)
 	if type(Utils.trackGlobal) == "function" then Utils.trackGlobal(connection) end
-	return true
+	startCpfWorker(); return true
 end
 
 function Spam.resetState()
@@ -94,6 +119,7 @@ function Spam.resetState()
 end
 
 function Spam.teardown()
+	workerGeneration += 1
 	if connection then
 		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(connection) end
 		connection:Disconnect(); connection = nil
@@ -109,7 +135,7 @@ function Spam.getStatus()
 		lastError = status.lastError,
 		cpfFps = status.cpfFps,
 		cpfClicks = status.cpfClicks,
-		cpfCompensation = true,
+		cpfCompensation = false,
 	}
 end
 
