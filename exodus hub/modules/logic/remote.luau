@@ -274,7 +274,7 @@ function Remote.setup(deps)
 end
 
 -- parry
-function Remote.fireParry(flag)
+local function fireParryRemote(flag)
 	local ability = getDeflectAbility()
 	if ability then
 		local previousPress = ability.LastPressClock
@@ -300,10 +300,30 @@ function Remote.fireParry(flag)
 	if ok then remoteState = "direct_fallback"; logParryMethod("direct_fallback", "primeiro envio: RemoteEvent direto (" .. tostring(parryRemoteSource or "origem desconhecida") .. ")") end
 	return ok, err
 end
+function Remote.fireParry(_flag)
+	local environment = type(getgenv) == "function" and getgenv() or _G
+	if type(environment) ~= "table" then environment = _G end
+	local click = environment.mouse1click or mouse1click; local press = environment.mouse1press or mouse1press; local release = environment.mouse1release or mouse1release
+	local ok, err
+	if type(click) == "function" then
+		ok, err = pcall(click)
+	elseif type(press) == "function" and type(release) == "function" then
+		ok, err = pcall(function()
+			press(); release()
+		end)
+	else
+		ok, err = pcall(function()
+			local input = game:GetService("UserInputService"); local virtualInput = game:GetService("VirtualInputManager"); local position = input:GetMouseLocation()
+			virtualInput:SendMouseButtonEvent(position.X, position.Y, 0, true, game, 0); virtualInput:SendMouseButtonEvent(position.X, position.Y, 0, false, game, 0)
+		end)
+	end
+	if not ok then remoteState = "mouse_error"; return false, err end
+	remoteState = "mouse_button_1"; parryRemoteSource = "MouseButton1"; logParryMethod("mouse_button_1", "primeiro clique: MouseButton1"); return true
+end
 function Remote.initParry()
 	parryInitialized = getDeflectAbility() ~= nil or getTouchTap() ~= nil or resolvePhantomBallzRemote() ~= nil; return parryInitialized
 end
-function Remote.usesGameDeflect() return getDeflectAbility() ~= nil or getTouchTap() ~= nil end
+function Remote.usesGameDeflect() return false end
 function Remote.getRemote()
 	local ability = getDeflectAbility()
 	if ability then return ability end
@@ -316,7 +336,7 @@ function Remote.getStatus()
 	return {
 		schema = Utils.apiVersion(),
 		state = remoteState,
-		method = getDeflectAbility() and "Deflect" or (getTouchTap() and "TouchTap" or (isAlive(parryRemote) and "direct_fallback" or "unavailable")),
+		method = "MouseButton1",
 		initialized = parryInitialized == true,
 		source = parryRemoteSource,
 		hasBallSync = ballSyncConnection ~= nil and ballSyncConnection.Connected == true and ballSyncRemote ~= nil,
