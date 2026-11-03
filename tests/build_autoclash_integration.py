@@ -27,6 +27,7 @@ local mt = {}
 mt.__index = function(v, key)
     if key == 'Magnitude' then return math.sqrt(v.X*v.X+v.Y*v.Y+v.Z*v.Z) end
     if key == 'Dot' then return function(a,b) return a.X*b.X+a.Y*b.Y+a.Z*b.Z end end
+    error(tostring(key) .. ' is not a valid member of Vector3')
 end
 mt.__add = function(a,b) return setmetatable({X=a.X+b.X,Y=a.Y+b.Y,Z=a.Z+b.Z},mt) end
 mt.__sub = function(a,b) return setmetatable({X=a.X-b.X,Y=a.Y-b.Y,Z=a.Z-b.Z},mt) end

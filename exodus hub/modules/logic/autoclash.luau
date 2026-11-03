@@ -546,9 +546,9 @@ function OwnDash.shouldDeactivate(t)
 	local detectedAt = finiteNumber(event.detectedAt, 0)
 	if not R.ownDashEscapePending or R.ownDashEscapeDetectedAt ~= detectedAt then
 		R.ownDashEscapePending = true; R.ownDashEscapeDetectedAt = detectedAt; R.ownDashEscapeConfirmFrames = 0; R.ownDashEscapeFartherStreak = 0
-		R.ownDashEscapeLastDist = getHorizontalDistance(ownRoot.Position, opponentRoot.Position); R.ownDashEscapeLastAt = t; R.lastGate = "own_dash_escape_detected"; return false
+		R.ownDashEscapeLastDist = getHorizontalDistance(ownRoot, opponentRoot.Position); R.ownDashEscapeLastAt = t; R.lastGate = "own_dash_escape_detected"; return false
 	end
-	local currentDistance = getHorizontalDistance(ownRoot.Position, opponentRoot.Position); local previousDistance = R.ownDashEscapeLastDist
+	local currentDistance = getHorizontalDistance(ownRoot, opponentRoot.Position); local previousDistance = R.ownDashEscapeLastDist
 	if not previousDistance then R.ownDashEscapeLastDist = currentDistance; R.ownDashEscapeLastAt = t; R.lastGate = "own_dash_escape_first"; return false end
 	local sampleDt = t - R.ownDashEscapeLastAt
 	if sampleDt <= 0 or sampleDt > T.DEACT_CONFIRM_MAX_GAP then
