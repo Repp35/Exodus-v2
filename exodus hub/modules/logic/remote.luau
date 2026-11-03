@@ -11,6 +11,7 @@ local parryInitialized = false
 local maintenanceGeneration = 0
 local parryRemoteSource
 local remoteState = "uninitialized"
+local virtualUser
 local captureEnabled = false
 local loggedParryMethods = {}
 local HttpService = game:GetService("HttpService")
@@ -301,24 +302,12 @@ local function fireParryRemote(flag)
 	return ok, err
 end
 function Remote.fireParry(_flag)
-	local environment = type(getgenv) == "function" and getgenv() or _G
-	if type(environment) ~= "table" then environment = _G end
-	local click = environment.mouse1click or mouse1click; local press = environment.mouse1press or mouse1press; local release = environment.mouse1release or mouse1release
-	local ok, err
-	if type(click) == "function" then
-		ok, err = pcall(click)
-	elseif type(press) == "function" and type(release) == "function" then
-		ok, err = pcall(function()
-			press(); release()
-		end)
-	else
-		ok, err = pcall(function()
-			local input = game:GetService("UserInputService"); local virtualInput = game:GetService("VirtualInputManager"); local position = input:GetMouseLocation()
-			virtualInput:SendMouseButtonEvent(position.X, position.Y, 0, true, game, 0); virtualInput:SendMouseButtonEvent(position.X, position.Y, 0, false, game, 0)
-		end)
-	end
+	local ok, err = pcall(function()
+		virtualUser = virtualUser or game:GetService("VirtualUser"); local camera = game:GetService("Workspace").CurrentCamera; local position = game:GetService("UserInputService"):GetMouseLocation()
+		virtualUser:CaptureController(); virtualUser:ClickButton1(position, camera and camera.CFrame or CFrame.identity)
+	end)
 	if not ok then remoteState = "mouse_error"; return false, err end
-	remoteState = "mouse_button_1"; parryRemoteSource = "MouseButton1"; logParryMethod("mouse_button_1", "primeiro clique: MouseButton1"); return true
+	remoteState = "mouse_button_1"; parryRemoteSource = "VirtualUser.ClickButton1"; logParryMethod("virtual_user", "primeiro clique: VirtualUser.ClickButton1"); return true
 end
 function Remote.initParry()
 	parryInitialized = getDeflectAbility() ~= nil or getTouchTap() ~= nil or resolvePhantomBallzRemote() ~= nil; return parryInitialized
@@ -336,7 +325,7 @@ function Remote.getStatus()
 	return {
 		schema = Utils.apiVersion(),
 		state = remoteState,
-		method = "MouseButton1",
+		method = "VirtualUser.ClickButton1",
 		initialized = parryInitialized == true,
 		source = parryRemoteSource,
 		hasBallSync = ballSyncConnection ~= nil and ballSyncConnection.Connected == true and ballSyncRemote ~= nil,
