@@ -33,7 +33,7 @@ local remote={getRemote=function() return {} end,initParry=function() return tru
 local utils={trackGlobal=function() end,isActive=function() return true end}
 local events,parryEvents={},{}
 local clash={__contract={onBallSync=true},onBallSync=function(data) table.insert(events,{seq=data.Sequence,target=data.TargetPlayerID,tele=data.Teleported}) end}
-local parry={__contract={onBallSync=true},onBallSync=function(data) table.insert(parryEvents,{seq=data.TeleportSequence,tele=data.Teleported}) end}
+local parry={__contract={onBallSync=true},onBallSync=function(data) table.insert(parryEvents,{seq=data.Sequence or data.TeleportSequence,tele=data.Teleported,target=data.TargetPlayerID}) end}
 local function packet(seq,target,tele)
     local b=buffer.create(92);buffer.writeu8(b,0,tele and 1 or 0);buffer.writeu16(b,1,seq);buffer.writef64(b,55,target);return b
 end
@@ -44,14 +44,15 @@ assert(result.ballSync and receiver)
 -- Three transitions arriving before the deferred refresh must each be delivered.
 receiver(packet(11,42,false)); receiver(packet(12,7,false)); receiver(packet(13,42,false))
 assert(#events==3 and events[1].seq==11 and events[2].seq==12 and events[3].seq==13, 'target events coalesced')
+assert(#parryEvents==3 and parryEvents[1].target==42 and parryEvents[2].target==7 and parryEvents[3].target==42, 'parry target transitions coalesced')
 serverSequence=13;providerData={TargetPlayerID=42,Teleported=false};flush()
 assert(#events==4 and events[4].target==42, 'deferred provider state missing')
 -- A stale teleport must not tell either subscriber to reset.
-receiver(packet(12,7,true)); assert(#parryEvents==1 and parryEvents[1].tele==false, 'stale teleport was delivered')
+receiver(packet(12,7,true)); assert(#parryEvents==4 and parryEvents[4].tele==false, 'stale teleport was delivered')
 serverSequence=14;providerData={TargetPlayerID=42,Teleported=true};receiver(packet(14,42,true))
-assert(#parryEvents==2 and parryEvents[2].tele and parryEvents[2].seq==14, 'fresh teleport missing')
+assert(#parryEvents==5 and parryEvents[5].tele and parryEvents[5].seq==14, 'fresh teleport missing')
 flush()
-assert(#parryEvents==3 and parryEvents[3].tele, 'post-teleport refresh missing')
+assert(#parryEvents==6 and parryEvents[6].tele, 'post-teleport refresh missing')
 print('Loader BallSync delivery scenarios: PASS')
 '''
 out.write_text(pre+source+post,encoding='utf-8')

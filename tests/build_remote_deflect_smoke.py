@@ -6,7 +6,7 @@ output = Path(sys.argv[2])
 source = (root / 'exodus hub/modules/logic/remote.luau').read_text()
 pre = r'''
 local deflectCount, touchCount = 0, 0
-local abilities = {Abilities = {[1] = {Deflect = function() deflectCount += 1 end}}}
+local abilities = {Abilities = {[1] = {Deflect = function(self) deflectCount += 1; self.LastPressClock=(self.LastPressClock or 0)+1 end}}}
 local module = {IsA = function(_, kind) return kind == "ModuleScript" end}
 local touch = {IsA = function(_, kind) return kind == "BindableEvent" end, Fire = function() touchCount += 1 end}
 local ts = {FindFirstChild = function(_, name) if name == "ClientAbilities" then return module end end}
@@ -22,8 +22,10 @@ end
 local remote = moduleSource()
 assert(remote.setup({Utils={getReplicatedStorage=function() return storage end,apiVersion=function() return 1 end},GameInfo={getDeflectAbility=function() return abilities.Abilities[1] end}}))
 assert(remote.fireParry(1) and deflectCount == 1 and touchCount == 0, "must call active Deflect")
-abilities.Abilities[1] = {Deflect = function() deflectCount += 10 end}
+abilities.Abilities[1] = {Deflect = function(self) deflectCount += 10; self.LastPressClock=(self.LastPressClock or 0)+1 end}
 assert(remote.fireParry(1) and deflectCount == 11, "must use replacement ability")
+abilities.Abilities[1].Deflect=function() end
+assert(not remote.fireParry(1), "ignored local Deflect must not be reported as sent")
 abilities.Abilities[1] = nil
 assert(not remote.fireParry(1) and touchCount == 0, "missing ability must not use TouchTap")
 assert(not remote.initParry() and not remote.usesGameDeflect() and remote.getRemote() == nil, "missing ability must not expose another method")

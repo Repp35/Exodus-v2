@@ -472,7 +472,7 @@ local function bindRuntime(loaded, log)
 							lastClashPacketSequence = sequence
 							if not packet.Teleported then
 								for _, sub in ipairs(ballSyncSubscribers) do
-									if sub.name == "autoclash" then callSync(sub.name, sub.handler, packet) end
+									if sub.name == "autoclash" or sub.name == "autoparry" then callSync(sub.name, sub.handler, packet) end
 								end
 							end
 						end

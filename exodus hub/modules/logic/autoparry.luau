@@ -28,7 +28,7 @@ local T = {
 	VELOCITY_SMOOTHING_TAU = 0.05,
 	PING_SAMPLE_INTERVAL = 1,
 	BASE_RADIUS = 8.5,
-	BASE_WINDOW = 0.85,
+	BASE_WINDOW = 0.79,
 	MIN_DEFLECT_WINDOW = 0.20,
 	DEFAULT_WINDOW_FACTOR = 0.50,
 	MIN_WINDOW_FACTOR = 0.0,
@@ -70,6 +70,7 @@ local R = {
 	lastFireAt = 0,
 	lastApproaching = false,
 	lastTarget = -1,
+	lastSyncSequence = nil,
 	targetId = -1,
 	targetKnown = false,
 	teleported = false,
@@ -135,8 +136,8 @@ local function resetTracking()
 	R.lastBall = nil; R.lastPosition = nil; R.lastPositionAt = nil; R.lastMovingAt = nil
 	R.velocity = Vector3.zero; R.ping = 0; R.pingAt = 0; R.lastDistance = 0
 	R.lastSpeed = 0; R.lastLeadTime = T.MIN_LEAD_TIME; R.lastFireAt = 0; R.lastApproaching = false
-	R.lastTarget = -1; R.targetId = -1; R.targetKnown = false; R.teleported = false
-	R.teleportSequence = nil; R.resilienceBonus = 0; R.resilienceBonusAt = -1
+	R.lastTarget = -1; R.lastSyncSequence = nil; R.targetId = -1; R.targetKnown = false
+	R.teleported = false; R.teleportSequence = nil; R.resilienceBonus = 0; R.resilienceBonusAt = -1
 end
 local function invalidateLife()
 	R.lifeGeneration += 1; R.alive = false; R.bound = false; resetParryLock()
@@ -284,7 +285,7 @@ local function getRemoteParry(ball)
 	end
 	return true
 end
-local function updateVelocity(ball, position, time, dt, syncData)
+local function updateVelocity(ball, position, time, dt, syncData, requireMovement)
 	if R.lastBall ~= ball then
 		R.lastBall = ball; R.lastPosition = nil; R.lastPositionAt = nil; R.lastMovingAt = nil
 		R.velocity = Vector3.zero; R.lastSpeed = 0; R.lastApproaching = false; R.armed = true
@@ -311,10 +312,15 @@ local function updateVelocity(ball, position, time, dt, syncData)
 					return false
 				end
 				if rawVelocity.Magnitude < 0.1 then
-					if R.lastMovingAt and time - R.lastMovingAt >= T.STATIONARY_TIMEOUT then R.velocity = Vector3.zero end
+					if requireMovement or (R.lastMovingAt and time - R.lastMovingAt >= T.STATIONARY_TIMEOUT) then R.velocity = Vector3.zero end
 				else
-					R.lastMovingAt = time; local frameDt = isFiniteNumber(dt) and math.max(dt, 1 / 240) or 1 / 60; local alpha = frameDt / (T.VELOCITY_SMOOTHING_TAU + frameDt)
-					R.velocity += (rawVelocity - R.velocity) * alpha
+					R.lastMovingAt = time
+					if R.velocity.Magnitude < 0.1 or R.velocity:Dot(rawVelocity) <= 0 then
+						R.velocity = rawVelocity
+					else
+						local frameDt = isFiniteNumber(dt) and math.max(dt, 1 / 240) or 1 / 60; local alpha = frameDt / (T.VELOCITY_SMOOTHING_TAU + frameDt)
+						R.velocity += (rawVelocity - R.velocity) * alpha
+					end
 				end
 			end
 		end
@@ -335,14 +341,21 @@ local function onHeartbeat(character, root, dt, generation)
 	if isSpamActive() then resetParryLock(); clearBallState(); setPhase("waiting", "spam_active"); return end
 	if not isSystemActive() then resetParryLock(); setPhase("waiting", "system_inactive"); return end
 	local ball, targeted, snapshot = readFrameState(time)
-	if not isValidBall(ball) or not targeted then
+	if snapshot and type(snapshot.syncSequence) == "number" and R.lastSyncSequence ~= nil then
+		local delta = (snapshot.syncSequence - R.lastSyncSequence) % 65536
+		if delta > 32768 then setPhase("waiting", "snapshot_older_than_target"); return end
+	end
+	if not isValidBall(ball) then resetParryLock(); clearBallState(); setPhase("waiting", "ball_or_target_invalid"); return end
+	if not targeted then
 		local targetId = snapshot and tonumber(snapshot.targetId)
 		if targetId and targetId > 0 and R.player and targetId ~= R.player.UserId then R.firedForTarget = false end
-		resetParryLock(); clearBallState(); setPhase("waiting", "ball_or_target_invalid"); return
+		resetParryLock(); R.targeted = false; R.lastApproaching = false; local positionOk, position = pcall(GameInfo.getBallPosition, ball)
+		if not positionOk or not isValidVector3(position) or not updateVelocity(ball, position, time, dt, syncData) then clearBallState() end
+		setPhase("waiting", "ball_or_target_invalid"); return
 	end
 	local positionOk, position = pcall(function() return GameInfo.getBallPosition(ball) end)
 	if not positionOk or not isValidVector3(position) then resetParryLock(); return end
-	if not updateVelocity(ball, position, time, dt, syncData) then resetParryLock(); setPhase("waiting", "ball_speed_outlier"); return end
+	if not updateVelocity(ball, position, time, dt, syncData, not R.lastTargeted) then resetParryLock(); setPhase("waiting", "ball_speed_outlier"); return end
 	local rootPositionOk, rootPosition = pcall(function() return GameInfo.getRootPosition(root) end)
 	if not rootPositionOk or not isValidVector3(rootPosition) then resetParryLock(); return end
 	local delta = rootPosition - position; local distance = delta.Magnitude; local speed = R.velocity.Magnitude
@@ -451,15 +464,31 @@ function AutoParry.teardown()
 end
 function AutoParry.onBallSync(data)
 	if type(data) ~= "table" or not R.alive or not R.bound then return end
+	local sequence = data.Sequence or data.TeleportSequence
+	if
+		sequence == nil
+		and GameInfo
+		and type(GameInfo.getSyncSequence) == "function"
+		and type(GameInfo.getSyncData) == "function"
+		and data == GameInfo.getSyncData()
+	then
+		sequence = GameInfo.getSyncSequence()
+	end
+	if type(sequence) == "number" and sequence == sequence and sequence >= 0 and sequence < 65536 and sequence % 1 == 0 then
+		if R.lastSyncSequence ~= nil then
+			local delta = (sequence - R.lastSyncSequence) % 65536
+			if delta == 0 or delta > 32768 then return true end
+		end
+		R.lastSyncSequence = sequence
+	end
 	local time = clock()
 	if data.Teleported == true then enterTeleportLock(time, data.TeleportSequence); return true end
 	if not leaveTeleportLock(time) then return true end
-	local targetId = -1
-	if GameInfo and type(GameInfo.getTargetId) == "function" then
+	local targetId = data.TargetPlayerID ~= nil and (tonumber(data.TargetPlayerID) or -1) or -1
+	if data.TargetPlayerID == nil and GameInfo and type(GameInfo.getTargetId) == "function" then
 		local ok, value = pcall(GameInfo.getTargetId)
 		if ok then targetId = tonumber(value) or -1 end
 	end
-	if targetId == -1 then targetId = tonumber(data.TargetPlayerID) or -1 end
 	if targetId > 0 and R.player and targetId ~= R.player.UserId then R.firedForTarget = false; resetParryLock() end
 	if targetId == -1 and R.lastTarget ~= -1 then clearBallState() end
 	R.targetId = targetId; R.targetKnown = true; R.lastTarget = targetId; return true
