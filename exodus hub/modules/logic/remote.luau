@@ -12,6 +12,7 @@ local maintenanceGeneration = 0
 local parryRemoteSource
 local remoteState = "uninitialized"
 local captureEnabled = false
+local loggedParryMethods = {}
 local HttpService = game:GetService("HttpService")
 local T = {
 	STORAGE_SCHEMA = 1,
@@ -245,6 +246,11 @@ end
 
 local function getDeflectAbility() return GameInfo and GameInfo.getDeflectAbility() or nil end
 
+local function logParryMethod(method, message)
+	if loggedParryMethods[method] then return end
+	loggedParryMethods[method] = true; print("[Exodus Remote] " .. message)
+end
+
 local function payloadFor(flag)
 	local payload = buffer.create(25); buffer.writeu8(payload, 0, flag == 0 and 0 or 1); local camera = game:GetService("Workspace").CurrentCamera
 	local cf = camera and camera.CFrame or CFrame.identity
@@ -264,31 +270,34 @@ function Remote.setup(deps)
 		return false, "dependência ausente: Utils ou GameInfo.getDeflectAbility"
 	end
 	Utils = deps.Utils; GameInfo = deps.GameInfo; captureEnabled = deps.captureDiagnostics == true; remoteState = "phantomballz"
-	return true
+	table.clear(loggedParryMethods); return true
 end
 
 -- parry
 function Remote.fireParry(flag)
 	local ability = getDeflectAbility()
 	if ability then
+		local previousPress = ability.LastPressClock
 		local ok, err = xpcall(ability.Deflect, function(message)
 			if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(tostring(message), 2) end
 			return tostring(message)
 		end, ability)
 		if not ok then remoteState = "deflect_error"; return false, err end
-		remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"; return true
+		remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
+		if ability.LastPressClock ~= previousPress and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
+		return true
 	end
 	local touchTap = getTouchTap()
 	if touchTap then
 		local ok, err = pcall(function() touchTap:Fire() end)
 		if not ok then remoteState = "touch_tap_error"; return false, err end
-		remoteState = "touch_tap"; parryRemoteSource = "ReplicatedStorage.TouchTap"; return true
+		remoteState = "touch_tap"; parryRemoteSource = "ReplicatedStorage.TouchTap"; logParryMethod("touch_tap", "TouchTap acionado; envio ao servidor não confirmado"); return true
 	end
 	local remote = resolvePhantomBallzRemote()
 	if not remote then remoteState = "unavailable"; return false end
 	local ok, err = pcall(function() remote:FireServer(payloadFor(flag)) end)
 	if not ok then parryRemote = nil; parryInitialized = false; remoteState = "lost" end
-	if ok then remoteState = "direct_fallback" end
+	if ok then remoteState = "direct_fallback"; logParryMethod("direct_fallback", "primeiro envio: RemoteEvent direto (" .. tostring(parryRemoteSource or "origem desconhecida") .. ")") end
 	return ok, err
 end
 function Remote.initParry()
