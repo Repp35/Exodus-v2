@@ -36,11 +36,14 @@ local function requestParry()
 		if type(Utils.recordError) == "function" then Utils.recordError("Spam", message) end
 	end
 end
+local function sendScheduled(expectedGeneration)
+	if expectedGeneration == generation and Utils and Remote and Utils.isActive() and Utils.isSpamActive() then requestParry() end
+end
 
 local function tick(dt)
 	if type(dt) ~= "number" or dt ~= dt or dt <= 0 or dt == math.huge then return end
 	if not Utils.isActive() or not Utils.isSpamActive() then setActive(false, "spam_disabled"); return end
-	setActive(true, "spam_active")
+	if not active then setActive(true, "spam_active") end
 	local mode, rate
 	if type(Utils.getConfigValue) == "function" then mode = Utils.getConfigValue("SpamRateMode") == "CPF" and "CPF" or "CPS"; rate = tonumber(Utils.getConfigValue(mode)) or 0
 	else local config = Utils.getConfig(); mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"; rate = tonumber(config[mode]) or 0 end
@@ -52,14 +55,13 @@ local function tick(dt)
 		clicks = math.floor(phase + 1e-9); phase -= clicks
 	end
 	status.cpfFps = mode == "CPF" and 1 / dt or 0; status.cpfClicks = mode == "CPF" and clicks or 0; local currentGeneration = generation
-	for index = 1, clicks do
-		if currentGeneration ~= generation or not Utils.isActive() or not Utils.isSpamActive() then break end
-		if index == 1 then
-			requestParry()
-		else
-			task.delay(dt * (index - 1) / clicks, function()
-				if currentGeneration == generation and Utils and Remote and Utils.isActive() and Utils.isSpamActive() then requestParry() end
-			end)
+	if clicks > 0 then
+		requestParry()
+		if clicks > 1 and currentGeneration == generation and Utils and Remote and Utils.isActive() and Utils.isSpamActive() then
+			local spacing = dt / clicks
+			for index = 2, clicks do
+				task.delay(spacing * (index - 1), sendScheduled, currentGeneration)
+			end
 		end
 	end
 end

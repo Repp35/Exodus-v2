@@ -250,6 +250,10 @@ local function logParryMethod(method, message)
 	if loggedParryMethods[method] then return end
 	loggedParryMethods[method] = true; print("[Exodus Remote] " .. message)
 end
+local function deflectTrace(message)
+	if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(tostring(message), 2) end
+	return tostring(message)
+end
 
 local function payloadFor(flag)
 	local payload = buffer.create(25); buffer.writeu8(payload, 0, flag == 0 and 0 or 1); local camera = game:GetService("Workspace").CurrentCamera
@@ -277,14 +281,10 @@ end
 function Remote.fireParry(_flag)
 	local ability = getDeflectAbility()
 	if ability then
-		local previousPress = ability.LastPressClock
-		local ok, err = xpcall(ability.Deflect, function(message)
-			if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(tostring(message), 2) end
-			return tostring(message)
-		end, ability)
+		local previousPress = ability.LastPressClock; local ok, err = xpcall(ability.Deflect, deflectTrace, ability)
 		if not ok then remoteState = "deflect_error"; return false, err end
 		remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
-		if ability.LastPressClock ~= previousPress and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
+		if not loggedParryMethods.deflect and ability.LastPressClock ~= previousPress and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
 		return true
 	end
 	remoteState = "unavailable"; parryInitialized = false; parryRemoteSource = nil; return false, "Deflect indisponível"

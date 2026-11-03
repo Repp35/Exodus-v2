@@ -11,7 +11,7 @@ local frame
 local presses = 0
 local now, enabled = 0, true
 local scheduled = {}
-task = {delay=function(delay, fn) scheduled[#scheduled+1] = {delay, fn} end}
+task = {delay=function(delay, fn, ...) local args=table.pack(...); scheduled[#scheduled+1] = {delay, function() fn(table.unpack(args, 1, args.n)) end} end}
 local config = {SpamRateMode = "CPS", CPS = 23.5, CPF = 10}
 local signal = {Connect = function(self, callback)
     frame = callback
