@@ -176,14 +176,14 @@ local pending=clash.getDashData(); expect(pending and not pending.dangerous, 'ap
 opponentRoot.Position=vec(30); step(.02)
 pending=clash.getDashData(); expect(pending and pending.dangerous, 'approaching dash was not confirmed')
 expect(clash.getStatus().returnWindow>initialWindow, 'dash must extend the outbound return window')
--- The 200 ms setting is the low-speed return window, not a fixed cap at every speed.
+-- The 150 ms setting is the low-speed return window, not a fixed cap at every speed.
 fresh(); snapshot.speed=60; snapshot.syncSpeed=60; snapshot.velocity=vec(60); snapshot.position=vec(-10)
 event(myId,0,110); step(.01); event(enemyId,.01,110.01)
-expect(math.abs(clash.getStatus().returnWindow-.20)<1e-8, 'low-speed return window changed')
-event(myId,.02,110.209); step(.001); expect(clash.isActive(), 'return within 200 ms was rejected')
+expect(math.abs(clash.getStatus().returnWindow-.15)<1e-8, 'low-speed return window changed')
+event(myId,.02,110.159); step(.001); expect(clash.isActive(), 'return within 150 ms was rejected')
 fresh(); snapshot.speed=60; snapshot.syncSpeed=60; snapshot.velocity=vec(60); snapshot.position=vec(-10)
-event(myId,0,120); step(.01); event(enemyId,.01,120.01); event(myId,.02,120.211); step(.001)
-expect(not clash.isActive(), 'return outside 200 ms was accepted')
+event(myId,0,120); step(.01); event(enemyId,.01,120.01); event(myId,.02,120.161); step(.001)
+expect(not clash.isActive(), 'return outside 150 ms was accepted')
 -- Snapshot sequences recover missed events without overwriting newer events.
 fresh(); snapshot.syncSequence=10; setTarget(myId); step(.01)
 snapshot.syncSequence=11; setTarget(enemyId); step(.02)
