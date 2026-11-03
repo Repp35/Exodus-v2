@@ -10,6 +10,8 @@ script = r'''
 local frame
 local presses = 0
 local now, enabled = 0, true
+local scheduled = {}
+task = {delay=function(delay, fn) scheduled[#scheduled+1] = {delay, fn} end}
 local config = {SpamRateMode = "CPS", CPS = 23.5, CPF = 10}
 local signal = {Connect = function(self, callback)
     frame = callback
@@ -36,7 +38,12 @@ assert(spam.setup({
     AutoClash = {getTargetSwitch = function() return nil end, getDashData = function() return {} end},
 }))
 local function advance(dt, frames)
-    for _ = 1, frames do now += dt; frame(dt) end
+    for _ = 1, frames do
+        now += dt; frame(dt)
+        table.sort(scheduled, function(a,b) return a[1] < b[1] end)
+        for _, item in ipairs(scheduled) do item[2]() end
+        table.clear(scheduled)
+    end
 end
 advance(1/60, 120)
 assert(presses == 47, "CPS 23.5 / 120 frames: " .. presses)
@@ -51,6 +58,10 @@ assert(presses - before == 1200, "CPF 10 at 60 FPS: " .. (presses-before))
 before = presses
 advance(1/30, 30)
 assert(presses - before == 600, "CPF compensation at 30 FPS: " .. (presses-before))
+config.CPF=1.2
+before=presses
+advance(1/60, 60)
+assert(presses-before==72, "fractional CPF above 1 must keep its average: " .. (presses-before))
 config.SpamRateMode = "CPS"; config.CPS = 0.25
 for _, fps in ipairs({30, 60, 120}) do
     before = presses
@@ -63,6 +74,14 @@ for _, fps in ipairs({30, 60}) do
     advance(1/fps, 5*fps)
     assert(presses - before == 126, "fractional CPF at " .. fps .. " FPS: " .. (presses-before))
 end
+config.SpamRateMode = "CPS"; config.CPS = 120
+before = presses; frame(1/30)
+assert(presses-before == 1 and #scheduled == 3, "multiple clicks must be distributed")
+assert(scheduled[1][1] > 0 and scheduled[1][1] < scheduled[2][1] and scheduled[2][1] < scheduled[3][1] and scheduled[3][1] < 1/30, "scheduled offsets must be ordered within frame duration")
+spam.resetState()
+for _, item in ipairs(scheduled) do item[2]() end
+table.clear(scheduled)
+assert(presses-before == 1, "reset must cancel delayed clicks")
 enabled = false
 before = presses
 advance(1/60, 10)

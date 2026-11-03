@@ -22,7 +22,8 @@ local function now() return Utils and Utils.now() or os.clock() end
 
 local function setActive(value, reason)
 	if active == value then return end
-	active = value; phase = 0; lastMode, lastRate = nil, nil; status.phase = value and "running" or "stopped"
+	generation += 1; active = value; phase = 0; lastMode, lastRate = nil, nil
+	status.phase = value and "running" or "stopped"
 	if Utils and type(Utils.recordTransition) == "function" then Utils.recordTransition("Spam", value and "stopped" or "running", status.phase, reason) end
 end
 
@@ -44,19 +45,22 @@ local function tick(dt)
 	if type(Utils.getConfigValue) == "function" then mode = Utils.getConfigValue("SpamRateMode") == "CPF" and "CPF" or "CPS"; rate = tonumber(Utils.getConfigValue(mode)) or 0
 	else local config = Utils.getConfig(); mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"; rate = tonumber(config[mode]) or 0 end
 	if rate ~= rate or rate == math.huge or rate < 0 then rate = 0 end
-	if mode ~= lastMode or rate ~= lastRate then phase = 0; lastMode, lastRate = mode, rate end
+	if mode ~= lastMode or rate ~= lastRate then generation += 1; phase = 0; lastMode, lastRate = mode, rate end
 	local clicks = 0
 	if rate > 0 then
-		if mode == "CPF" then
-			if rate >= 1 then clicks = math.max(1, math.floor(rate * 60 * dt + 0.5)) else phase += rate * math.max(1, 60 * dt); clicks = math.floor(phase + 1e-9); phase -= clicks end
-		else
-			phase += rate * dt; clicks = math.floor(phase + 1e-9); phase -= clicks
-		end
+		if mode == "CPF" then phase += rate * math.max(1, 60 * dt) else phase += rate * dt end
+		clicks = math.floor(phase + 1e-9); phase -= clicks
 	end
 	status.cpfFps = mode == "CPF" and 1 / dt or 0; status.cpfClicks = mode == "CPF" and clicks or 0; local currentGeneration = generation
-	for _ = 1, clicks do
+	for index = 1, clicks do
 		if currentGeneration ~= generation or not Utils.isActive() or not Utils.isSpamActive() then break end
-		requestParry()
+		if index == 1 then
+			requestParry()
+		else
+			task.delay(dt * (index - 1) / clicks, function()
+				if currentGeneration == generation and Utils and Remote and Utils.isActive() and Utils.isSpamActive() then requestParry() end
+			end)
+		end
 	end
 end
 
