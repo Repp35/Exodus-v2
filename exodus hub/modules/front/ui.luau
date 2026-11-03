@@ -482,8 +482,8 @@ local function createClashTimingCard(label, key, fallback, yPos, parent)
 	return nextCardY(yPos, CARD_H)
 end
 local function createRateSelector(yPos, parent)
-	local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig(); config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.3917)
-	config.SpamRateMode = config.SpamRateMode == "CPF" and "CPF" or "CPS"
+	local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig(); config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.36)
+	config.SpamRateMode = (config.SpamRateMode == "CPF" or config.SpamRateMode == "Auto") and config.SpamRateMode or "CPS"
 	Utils.setConfig({
 		CPS = config.CPS,
 		CPF = config.CPF,
@@ -491,7 +491,7 @@ local function createRateSelector(yPos, parent)
 	})
 	cardLabel("Taxa do Spam", f); local currentMode = config.SpamRateMode
 	local modeTrack = inst("Frame", {
-		Size = UDim2.new(0, 116, 0, 28),
+		Size = UDim2.new(0, 147, 0, 28),
 		Position = UDim2.new(0, 12, 0, 32),
 		BackgroundColor3 = C.inputBg,
 		BackgroundTransparency = 0.05,
@@ -501,18 +501,18 @@ local function createRateSelector(yPos, parent)
 	})
 	corner(modeTrack, 999); stroke(modeTrack, C.border, 1)
 	local modeThumb = inst("Frame", {
-		Size = UDim2.new(0, 54, 0, 24),
-		Position = currentMode == "CPS" and UDim2.new(0, 2, 0.5, -12) or UDim2.new(0, 60, 0.5, -12),
+		Size = UDim2.new(0, 45, 0, 24),
+		Position = UDim2.new(0, currentMode == "CPS" and 2 or (currentMode == "CPF" and 51 or 100), 0.5, -12),
 		BackgroundColor3 = currentMode == "CPS" and C.accent or C.accentPink,
 		BorderSizePixel = 0,
 		ZIndex = 8,
 		Parent = modeTrack,
 	})
 	corner(modeThumb, 999); stroke(modeThumb, C.text, 1); local modeButtons = {}
-	for index, mode in ipairs({ "CPS", "CPF" }) do
+	for index, mode in ipairs({ "CPS", "CPF", "Auto" }) do
 		local button = inst("TextButton", {
-			Size = UDim2.new(0, 58, 1, 0),
-			Position = UDim2.new(0, (index - 1) * 58, 0, 0),
+			Size = UDim2.new(0, 49, 1, 0),
+			Position = UDim2.new(0, (index - 1) * 49, 0, 0),
 			BackgroundTransparency = 1,
 			Text = mode,
 			TextColor3 = mode == currentMode and C.text or C.subtext,
@@ -529,7 +529,8 @@ local function createRateSelector(yPos, parent)
 		Position = UDim2.new(1, -74, 0, 31),
 		BackgroundColor3 = C.inputBg,
 		BackgroundTransparency = 0.1,
-		Text = tostring(config[currentMode]),
+		Text = currentMode == "Auto" and "25 CPS" or tostring(config[currentMode]),
+		TextEditable = currentMode ~= "Auto",
 		PlaceholderText = "Taxa",
 		ClearTextOnFocus = false,
 		TextColor3 = C.text,
@@ -540,7 +541,7 @@ local function createRateSelector(yPos, parent)
 	})
 	corner(inputBox, 8); local inputStroke = stroke(inputBox, C.border, 1)
 	local function paintRateMode(animated)
-		local isCPS = currentMode == "CPS"; local targetPosition = isCPS and UDim2.new(0, 2, 0.5, -12) or UDim2.new(0, 60, 0.5, -12); local duration = animated and 0.32 or 0
+		local isCPS = currentMode == "CPS"; local targetPosition = UDim2.new(0, isCPS and 2 or (currentMode == "CPF" and 51 or 100), 0.5, -12); local duration = animated and 0.32 or 0
 		twPlay(modeThumb, duration, {
 			Position = targetPosition,
 			BackgroundColor3 = isCPS and C.accent or C.accentPink,
@@ -552,15 +553,16 @@ local function createRateSelector(yPos, parent)
 		end
 	end
 	local function selectRateMode(mode)
-		if mode ~= "CPS" and mode ~= "CPF" or currentMode == mode then return end
-		currentMode = mode; config.SpamRateMode = mode; inputBox.Text = tostring(config[mode]); setConfigValue("SpamRateMode", mode)
-		paintRateMode(true)
+		if mode ~= "CPS" and mode ~= "CPF" and mode ~= "Auto" or currentMode == mode then return end
+		currentMode = mode; config.SpamRateMode = mode; inputBox.TextEditable = mode ~= "Auto"; inputBox.Text = mode == "Auto" and "25 CPS" or tostring(config[mode])
+		setConfigValue("SpamRateMode", mode); paintRateMode(true)
 	end
 	for mode, button in pairs(modeButtons) do
 		trackConn(button.Activated:Connect(function() selectRateMode(mode) end))
 	end
 	trackConn(inputBox.Focused:Connect(function() twPlay(inputStroke, 0.15, { Color = C.accent }) end))
 	trackConn(inputBox.FocusLost:Connect(function()
+		if currentMode == "Auto" then return end
 		twPlay(inputStroke, 0.15, { Color = C.border }); local value = tonumber(inputBox.Text); local key = currentMode; local fallback = config[key]
 		local normalized = Utils.normalizeSpamRate(value, fallback); setConfigValue(key, normalized); inputBox.Text = tostring(normalized)
 	end))
@@ -1001,20 +1003,17 @@ function ExodusUI.setup(deps)
 	end
 	for index, mode in ipairs(spinModes) do
 		local crate = mode[2]
-		local button = inst(
-			"TextButton",
-			{
-				Size = UDim2.new(1, 0, 0, 42),
-				Position = UDim2.new(0, 0, 0, CARD_H + 8 + (index - 1) * 48),
-				BackgroundColor3 = C.btnDark,
-				Text = mode[1] .. ": OFF",
-				TextColor3 = C.text,
-				TextSize = 13,
-				Font = Enum.Font.GothamBold,
-				ZIndex = 7,
-				Parent = utilities,
-			}
-		)
+		local button = inst("TextButton", {
+			Size = UDim2.new(1, 0, 0, 42),
+			Position = UDim2.new(0, 0, 0, CARD_H + 8 + (index - 1) * 48),
+			BackgroundColor3 = C.btnDark,
+			Text = mode[1] .. ": OFF",
+			TextColor3 = C.text,
+			TextSize = 13,
+			Font = Enum.Font.GothamBold,
+			ZIndex = 7,
+			Parent = utilities,
+		})
 		corner(button, 8); spinButtons[crate] = button
 		trackConn(button.Activated:Connect(function()
 			spinGeneration += 1; spinActive = spinActive == crate and nil or crate; paintSpin()

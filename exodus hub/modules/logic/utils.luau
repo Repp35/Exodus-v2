@@ -1,7 +1,7 @@
 -- [[ utils ]]
 
 local Utils = {}
-export type SpamRateMode = "CPS" | "CPF"
+export type SpamRateMode = "CPS" | "CPF" | "Auto"
 export type ConfigSnapshot = {
 	AutoParry: boolean?,
 	AutoParryWindowFactor: number?,
