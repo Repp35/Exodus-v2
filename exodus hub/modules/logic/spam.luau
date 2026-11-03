@@ -45,28 +45,14 @@ local function tick(dt)
 	if not Utils.isActive() or not Utils.isSpamActive() then setActive(false, "spam_disabled"); return end
 	if not active then setActive(true, "spam_active") end
 	local mode, rate
-	if type(Utils.getConfigValue) == "function" then
-		mode = Utils.getConfigValue("SpamRateMode"); mode = (mode == "CPF" or mode == "Auto") and mode or "CPS"; rate = mode == "Auto" and 25 or tonumber(Utils.getConfigValue(mode)) or 0
-	else
-		local config = Utils.getConfig(); mode = (config.SpamRateMode == "CPF" or config.SpamRateMode == "Auto") and config.SpamRateMode or "CPS"
-		rate = mode == "Auto" and 25 or tonumber(config[mode]) or 0
-	end
+	if type(Utils.getConfigValue) == "function" then mode = Utils.getConfigValue("SpamRateMode") == "CPF" and "CPF" or "CPS"; rate = tonumber(Utils.getConfigValue(mode)) or 0
+	else local config = Utils.getConfig(); mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"; rate = tonumber(config[mode]) or 0 end
 	if rate ~= rate or rate == math.huge or rate < 0 then rate = 0 end
 	if mode ~= lastMode or rate ~= lastRate then generation += 1; phase = 0; lastMode, lastRate = mode, rate end
 	local clicks = 0
 	if rate > 0 then
 		if mode == "CPF" then phase += rate * math.max(1, 60 * dt) else phase += rate * dt end
-		clicks = math.floor(phase + 1e-9)
-		if mode == "Auto" then
-			if clicks > 0 then
-				local ready, lastPress = true, nil
-				if type(Remote.getAutoParryState) == "function" then ready, lastPress = Remote.getAutoParryState()
-				elseif type(Remote.getLastDeflectPress) == "function" then lastPress = Remote.getLastDeflectPress() end
-				if not ready or (type(lastPress) == "number" and now() - lastPress < 0.0301) then clicks = 0; phase = 1 else phase = math.max(0, phase - clicks); clicks = 1 end
-			end
-		else
-			phase -= clicks
-		end
+		clicks = math.floor(phase + 1e-9); phase -= clicks
 	end
 	status.cpfFps = mode == "CPF" and 1 / dt or 0; status.cpfClicks = mode == "CPF" and clicks or 0; local currentGeneration = generation
 	if clicks > 0 then

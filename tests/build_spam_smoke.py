@@ -10,8 +10,6 @@ script = r'''
 local frame
 local presses = 0
 local now, enabled = 0, true
-local lastDeflect
-local autoReady = true
 local scheduled = {}
 task = {delay=function(delay, fn, ...) local args=table.pack(...); scheduled[#scheduled+1] = {delay, function() fn(table.unpack(args, 1, args.n)) end} end}
 local config = {SpamRateMode = "CPS", CPS = 23.5, CPF = 10}
@@ -34,7 +32,7 @@ local utils = {
 }
 local spam = assert(loadstring(SOURCE))()
 assert(spam.setup({
-    Remote = {fireParry = function() presses += 1; lastDeflect=now; return true end, getAutoParryState=function() return autoReady,lastDeflect end, usesGameDeflect = function() return true end}, Utils = utils,
+    Remote = {fireParry = function() presses += 1; return true end, usesGameDeflect = function() return true end}, Utils = utils,
     GameInfo = {getDeflectCD = function() return 0 end},
     AutoParry = {getStatus = function() return {} end, getRadius = function() return {} end},
     AutoClash = {getTargetSwitch = function() return nil end, getDashData = function() return {} end},
@@ -84,20 +82,6 @@ spam.resetState()
 for _, item in ipairs(scheduled) do item[2]() end
 table.clear(scheduled)
 assert(presses-before == 1, "reset must cancel delayed clicks")
-config.SpamRateMode = "Auto"
-for _, fps in ipairs({30,60,120}) do
-    spam.resetState(); lastDeflect=nil; before=presses
-    advance(1/fps, fps*4)
-    assert(presses-before==100, "Auto cadence at " .. fps .. " FPS: " .. (presses-before))
-end
-spam.resetState(); lastDeflect=nil; before=presses; now+=0.2; frame(0.2)
-assert(presses-before==1 and #scheduled==0, "Auto must not burst after a stalled frame")
-lastDeflect=now; now+=0.02; frame(0.02)
-assert(presses-before==1, "Auto must respect a recent Deflect press")
-autoReady=false; now+=0.1; frame(0.1)
-assert(presses-before==1, "Auto must not send when Deflect is blocked")
-autoReady=true; now+=0.04; frame(0.04)
-assert(presses-before==2, "Auto must resume after Deflect becomes available")
 enabled = false
 before = presses
 advance(1/60, 10)

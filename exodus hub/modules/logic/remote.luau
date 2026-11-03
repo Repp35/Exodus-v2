@@ -293,23 +293,6 @@ function Remote.initParry()
 	parryInitialized = getDeflectAbility() ~= nil; return parryInitialized
 end
 function Remote.usesGameDeflect() return getDeflectAbility() ~= nil end
-function Remote.getLastDeflectPress()
-	local ability = getDeflectAbility(); local value = ability and ability.LastPressClock
-	if type(value) == "number" and value == value and value >= 0 and value < math.huge then return value end
-	return nil
-end
-function Remote.getAutoParryState()
-	local ability = getDeflectAbility()
-	if not ability then return false, nil, "Deflect indisponível" end
-	if type(ability.IsOwnerAlive) == "function" and not ability:IsOwnerAlive() then return false, nil, "jogador não está vivo" end
-	local input = game:GetService("UserInputService")
-	if input and type(input.GetFocusedTextBox) == "function" and input:GetFocusedTextBox() then return false, nil, "campo de texto em foco" end
-	local chat = game:GetService("TextChatService"); local chatInput = chat and type(chat.FindFirstChild) == "function" and chat:FindFirstChild("ChatInputBarConfiguration")
-	if chatInput and chatInput.IsFocused then return false, nil, "chat em foco" end
-	local workspaceService = Utils.getWorkspace and Utils.getWorkspace(); local limit = workspaceService and workspaceService:GetAttribute("CPS_LIMIT")
-	if type(limit) == "number" and limit == limit and type(ability.ClickInstances) == "table" and #ability.ClickInstances >= limit then return false, nil, "limite de cliques do jogo" end
-	return true, Remote.getLastDeflectPress()
-end
 function Remote.getRemote() return getDeflectAbility() end
 function Remote.getStatus()
 	return {

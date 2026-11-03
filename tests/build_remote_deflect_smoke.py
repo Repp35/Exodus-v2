@@ -14,32 +14,16 @@ local storage = {FindFirstChild = function(_, name) if name == "TS" then return 
 local function require(item) assert(item == module); return abilities end
 local function typeof(value) if type(value) == "table" and value.instance then return "Instance" end return type(value) end
 local CFrame = {identity = {Position = {X=1,Y=2,Z=3}, LookVector = {X=4,Y=5,Z=6}}}
-local focused, chatFocused, alive, clickLimit = false, false, true, 2
-local game = {GetService = function(_, name)
- if name == "Workspace" then return {CurrentCamera = nil} end
- if name == "UserInputService" then return {GetFocusedTextBox=function() return focused and {} or nil end} end
- if name == "TextChatService" then return {FindFirstChild=function() return {IsFocused=chatFocused} end} end
- return {}
-end}
+local game = {GetService = function(_, name) if name == "Workspace" then return {CurrentCamera = nil} end return {} end}
 local function moduleSource()
 '''
 post = r'''
 end
 local remote = moduleSource()
-assert(remote.setup({Utils={getReplicatedStorage=function() return storage end,getWorkspace=function() return {GetAttribute=function() return clickLimit end} end,apiVersion=function() return 1 end},GameInfo={getDeflectAbility=function() return abilities.Abilities[1] end}}))
+assert(remote.setup({Utils={getReplicatedStorage=function() return storage end,apiVersion=function() return 1 end},GameInfo={getDeflectAbility=function() return abilities.Abilities[1] end}}))
 assert(remote.fireParry(1) and deflectCount == 1 and touchCount == 0, "must call active Deflect")
 abilities.Abilities[1] = {Deflect = function() deflectCount += 10 end}
 assert(remote.fireParry(1) and deflectCount == 11, "must use replacement ability")
-abilities.Abilities[1].IsOwnerAlive=function() return alive end
-abilities.Abilities[1].ClickInstances={1,2}
-assert(not remote.getAutoParryState(), "Auto must not send a fake deflect after CPS_LIMIT")
-abilities.Abilities[1].ClickInstances={}; focused=true
-assert(not remote.getAutoParryState(), "Auto must pause for text focus")
-focused=false; chatFocused=true
-assert(not remote.getAutoParryState(), "Auto must pause for chat focus")
-chatFocused=false; alive=false
-assert(not remote.getAutoParryState(), "Auto must pause when player is dead")
-alive=true; assert(remote.getAutoParryState(), "Auto should resume when local conditions allow it")
 abilities.Abilities[1] = nil
 assert(not remote.fireParry(1) and touchCount == 0, "missing ability must not use TouchTap")
 assert(not remote.initParry() and not remote.usesGameDeflect() and remote.getRemote() == nil, "missing ability must not expose another method")
