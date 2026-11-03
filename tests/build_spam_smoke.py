@@ -51,6 +51,18 @@ assert(presses - before == 1200, "CPF 10 at 60 FPS: " .. (presses-before))
 before = presses
 advance(1/30, 30)
 assert(presses - before == 600, "CPF compensation at 30 FPS: " .. (presses-before))
+config.SpamRateMode = "CPS"; config.CPS = 0.25
+for _, fps in ipairs({30, 60, 120}) do
+    before = presses
+    advance(1/fps, 4*fps)
+    assert(presses - before == 1, "fractional CPS at " .. fps .. " FPS: " .. (presses-before))
+end
+config.SpamRateMode = "CPF"; config.CPF = 0.42
+for _, fps in ipairs({30, 60}) do
+    before = presses
+    advance(1/fps, 5*fps)
+    assert(presses - before == 126, "fractional CPF at " .. fps .. " FPS: " .. (presses-before))
+end
 enabled = false
 before = presses
 advance(1/60, 10)

@@ -19,10 +19,12 @@ export type BallSnapshot = {
 	grace: boolean,
 	oldGrace: boolean,
 	syncAt: number,
+	syncSequence: number?,
 }
 
 export type BallSync = {
 	Sequence: number?,
+	ServerTime: number?,
 	TeleportSequence: number?,
 	Teleported: boolean?,
 	Grace: boolean?,
@@ -166,7 +168,7 @@ local function getSnapshot(_, time, frameTime): BallSnapshot?
 	if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = sampledVelocity or Vector3.zero end
 	local speed = 0
 	if typeof(velocity) == "Vector3" then speed = velocity.Magnitude end
-	local targetId = resolveTargetId(syncData); local localPlayer = Players and Players.LocalPlayer; local teleported, grace, oldGrace = false, false, false
+	local targetId = resolveTargetId(syncData); local localPlayer = Players and Players.LocalPlayer; local teleported, grace, oldGrace = false, false, false; local provider = getBallReplicator()
 	if syncData then teleported = syncData.Teleported == true; grace = syncData.Grace == true; oldGrace = syncData.OldGrace == true end
 	return {
 		schema = T.SNAPSHOT_SCHEMA,
@@ -185,6 +187,7 @@ local function getSnapshot(_, time, frameTime): BallSnapshot?
 		grace = grace,
 		oldGrace = oldGrace,
 		syncAt = time,
+		syncSequence = provider and provider.hasState == true and provider.lastSeq or nil,
 	}
 end
 local function installBallWatcher(trackConnection)
@@ -239,6 +242,7 @@ function GameInfo.decodeBallPacket(packet): BallSync?
 	if type(decoded) ~= "table" then return nil end
 	return {
 		Sequence = decoded.seq,
+		ServerTime = decoded.serverTime,
 		TeleportSequence = decoded.seq,
 		Teleported = decoded.teleported,
 		Grace = decoded.grace,

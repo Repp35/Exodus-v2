@@ -2,16 +2,26 @@
 # UI and Enum-backed configuration are stubbed; gameplay is not exercised.
 from pathlib import Path
 import json,sys
-root=Path(sys.argv[1]); out=Path(sys.argv[2]); local_mode = len(sys.argv) > 3 and sys.argv[3] == "local"
+root=Path(sys.argv[1]); out=Path(sys.argv[2]); mode = sys.argv[3] if len(sys.argv) > 3 else ""
+local_mode = mode == "local"
 files={str(p.relative_to(root/'exodus hub')):p.read_text() for p in (root/'exodus hub/modules').rglob('*.luau')}
 files['loader.luau']=(root/'exodus hub/loader.luau').read_text()
-files["modules/front/ui.luau"]="return {setup=function() return true end}"
-files["modules/front/config.luau"]="return {register=function() return true end, defaults=function() return {} end, validate=function() return true end, normalizePatch=function(p) return p end}"
+files["modules/front/ui.luau"]="return {setup=function() return true end, __contract={provides={\"setup\"},requires={}}}"
+files["modules/front/config.luau"]="return {register=function() return true end, defaults=function() return {} end, validate=function() return true end, normalizePatch=function(p) return p end, __contract={provides={\"register\",\"defaults\",\"validate\",\"normalizePatch\"},requires={}}}"
+if mode == "missing_api":
+    path = "modules/logic/dash.luau"
+    assert "return Dash\n" in files[path]
+    files[path] = files[path].replace("return Dash\n", "Dash.tick = nil\nreturn Dash\n")
+elif mode == "incompatible_api":
+    path = "modules/logic/autoparry.luau"
+    assert "\n\tversion = 10,\n}" in files[path]
+    files[path] = files[path].replace("\n\tversion = 10,\n}", "\n\tversion = 9,\n}")
 def quote(s): return '[========['+s+']========]'
 pre='''_G = {}
 local queue = {}
 task = {spawn = function(fn, ...) local args={...}; queue[#queue+1]=function() fn(table.unpack(args)) end end,
  defer = function(fn, ...) local args={...}; queue[#queue+1]=function() fn(table.unpack(args)) end end,
+ delay = function(_, fn, ...) local args={...}; queue[#queue+1]=function() fn(table.unpack(args)) end end,
  wait = function() if #queue > 0 then local fn=table.remove(queue,1); fn() end; return 0.016 end}
 warn = function(...) print("WARN",...) end
 Vector3 = {zero={X=0,Y=0,Z=0,Magnitude=0}}
@@ -56,4 +66,10 @@ print("Loader smoke test: PASS")
 '''
 if local_mode:
     pre=pre.replace("local ok, result = pcall", 'isfile=function(path) return sources[string.gsub(path, "^exodus hub/", "")] ~= nil end\nreadfile=function(path) return assert(sources[string.gsub(path, "^exodus hub/", "")]) end\ngetgenv=function() return {} end\n'+"local ok, result = pcall")
+elif mode in ("missing_api", "incompatible_api"):
+    expected_module, expected_error = ("dash", "dash.tick") if mode == "missing_api" else ("autoclash", "API incompatível")
+    success = 'assert(ok and type(result)=="table" and _G.Exodus and _G.Exodus.Started == true, tostring(_G.Exodus and _G.Exodus.StartError))'
+    failure = f'assert(ok and _G.Exodus and _G.Exodus.Started == false and _G.Exodus.StartErrorModule == "{expected_module}" and string.find(tostring(_G.Exodus.StartError), "{expected_error}", 1, true), tostring(_G.Exodus and _G.Exodus.StartError))'
+    assert success in pre
+    pre = pre.replace(success, failure)
 out.write_text(pre)
