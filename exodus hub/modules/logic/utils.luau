@@ -256,11 +256,6 @@ function Utils.stop()
     state.lifecycle.stoppedAt = os.clock()
     _G.ExodusOnBurst = function() end
 
-    local antitamper = diagnosticsModules.antitamper
-    if type(antitamper) == "table" and type(antitamper.teardown) == "function" then
-        local ok, err = pcall(antitamper.teardown)
-        if not ok then warn("[AntiTamper] " .. tostring(err)) end
-    end
 
     if type(_G.ExodusUICleanup) == "function" then pcall(_G.ExodusUICleanup) end
     disconnectAll(state.characterConnections)
