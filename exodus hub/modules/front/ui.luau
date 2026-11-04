@@ -102,7 +102,7 @@ local function attachFlow(s)
 	return g
 end
 local function twPlay(obj, t, props, style, dir)
-	if not obj or obj.Parent == nil then return nil end
+	if not obj then return nil end
 	local ok, tween = pcall(function() return TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props) end)
 	if not ok or not tween then return nil end
 	tween:Play(); return tween
@@ -207,8 +207,8 @@ local function paintClashBall()
 end
 local function syncAutoClashToggle()
 	if not (autoClashTrack and autoClashThumb) then return end
-	local v = UIState.clashBallOn; autoClashTrack.BackgroundColor3 = v and C.toggleOn or C.toggleOff
-	autoClashThumb.Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
+	local v = UIState.clashBallOn; twPlay(autoClashTrack, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT)
+	twPlay(autoClashThumb, 0.32, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_OUT, DIR_OUT)
 end
 local function setClashBall(v, silent)
 	UIState.clashBallOn = v; setConfigValue("AutoClash", v)
@@ -218,7 +218,7 @@ local function setClashBall(v, silent)
 end
 local function showClashBall(v)
 	setConfigValue("ClashBallVisible", v); local config = Utils.getConfig(); local clashX = config.ClashBallX or 14; local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
-	clashBall.Position = v and UDim2.new(0, clashX, 0, clashY) or UDim2.new(0, OFFSCREEN_X, 0, clashY)
+	twPlay(clashBall, (v and 0.22) or 0.18, { Position = v and UDim2.new(0, clashX, 0, clashY) or UDim2.new(0, OFFSCREEN_X, 0, clashY) }, EASE_OUT, DIR_OUT)
 end
 local function paintDarkBall(v)
 	if not darkBall or not darkBall.Parent then return end
@@ -226,7 +226,7 @@ local function paintDarkBall(v)
 end
 local function showDarkBall(v)
 	setConfigValue("DarkBallVisible", v); local config = Utils.getConfig(); local x = config.DarkBallX or 14; local y = config.DarkBallY or (viewport().Y / 2 + CLASH_SIZE / 2 + 8)
-	darkBall.Position = v and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y)
+	twPlay(darkBall, v and 0.22 or 0.18, { Position = v and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
 end
 local function setDarkBall(v)
 	if not setConfigValue("AutoDark", v) then return end
@@ -238,7 +238,7 @@ local function setDarkBall(v)
 end
 local function showMovementBall(ball, visible, visibleKey, xKey, yKey, yOffset)
 	setConfigValue(visibleKey, visible); local config = Utils.getConfig(); local x = config[xKey] or (CLASH_SIZE + 22); local y = config[yKey] or (viewport().Y / 2 + yOffset)
-	ball.Position = visible and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y)
+	twPlay(ball, visible and 0.22 or 0.18, { Position = visible and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
 end
 local function showJumpBall(v) showMovementBall(jumpBall, v, "JumpBallVisible", "JumpBallX", "JumpBallY", -CLASH_SIZE / 2) end
 local function showUpDashBall(v) showMovementBall(upDashBall, v, "UpDashBallVisible", "UpDashBallX", "UpDashBallY", CLASH_SIZE / 2 + 8) end
@@ -402,8 +402,8 @@ local function makeToggle(trackParent, initial)
 	})
 	corner(thumb, 999)
 	local function setVisual(v)
-		track.BackgroundColor3 = v and C.toggleOn or C.toggleOff
-		thumb.Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10)
+		twPlay(track, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT)
+		twPlay(thumb, 0.25, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_SINE, DIR_INOUT)
 	end
 	return track, thumb, setVisual
 end
