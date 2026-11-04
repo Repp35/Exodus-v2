@@ -33,7 +33,7 @@ local function evaluate(root, time)
 	if not finite(timing.parryRadius) or timing.parryRadius <= 0 or not finite(timing.noWindowParryRadius) or timing.distance <= 0 then return nil end
 	local minimum = GameInfo.getBallSpeedLimits()
 	if not finite(minimum) or timing.speed < minimum * 0.375 then return nil end
-	local velocity = snapshot.velocity
+	local velocity = timing.velocity or snapshot.velocity
 	if typeof(velocity) ~= "Vector3" then return nil end
 	local displacement = rootPosition - snapshot.position; local rootVelocity = root.AssemblyLinearVelocity
 	if typeof(rootVelocity) ~= "Vector3" then rootVelocity = Vector3.zero end
@@ -44,7 +44,8 @@ local function evaluate(root, time)
 	if impact + 2 * ping + 0.1 >= FIERCE_DURATION then return nil end
 	local arrival = time + impact + 2 * ping + 0.05
 	if attempt and finite(attempt.deadline) and attempt.deadline >= arrival then return nil end
-	local cooldownPastImpact = finite(cooldown.endsAt) and cooldown.endsAt > arrival
+	local cooldownPastImpact = (finite(cooldown.endsAt) and cooldown.endsAt > arrival)
+		or (finite(cooldown.remaining) and time + cooldown.remaining > arrival)
 	local expiredMiss = cooldown.active == true and attempt and attempt.expired == true
 	if not cooldownPastImpact and not expiredMiss then return nil end
 	local ability = GameInfo.getFierceDeflectAbility()

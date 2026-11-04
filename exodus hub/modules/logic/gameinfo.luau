@@ -316,7 +316,6 @@ function GameInfo.getHeldDeflectServerCooldown()
 end
 -- [[ deflect attempt tracking ]]
 
-local EARLY_MARGIN = 0.050
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function currentTargetMatches()
 	local player = Players and Players.LocalPlayer
@@ -335,7 +334,7 @@ function GameInfo.noteDeflectPress()
 	deflectState.attempt = {
 		id = deflectState.pressRevision,
 		at = pressAt,
-		deadline = pressAt + window + EARLY_MARGIN,
+		deadline = pressAt + window,
 		window = window,
 		targetId = Players.LocalPlayer.UserId,
 	}
@@ -388,6 +387,10 @@ function GameInfo.getDeflectCooldownState()
 	end
 	if deflectState.rawActive and finite(deflectState.endsAt) and time >= deflectState.endsAt then deflectState.rawActive = false; deflectState.endsAt = nil end
 	local ability = locateDeflectAbility(); local localCooldown = ability and finite(ability.Cooldown) and ability.Cooldown > 0; local cooldownRunning = deflectState.rawActive or localCooldown == true
+	if localCooldown then deflectState.known = true end
+	local remaining = localCooldown and ability.Cooldown or 0
+	if deflectState.rawActive and finite(deflectState.endsAt) then remaining = math.max(remaining, deflectState.endsAt - time) end
+	deflectState.remaining = math.max(0, remaining)
 	if deflectState.fierceUsedForTarget and not currentTargetMatches() then deflectState.fierceUsedForTarget = false end
 	local attempt = deflectState.attempt; deflectState.active = false
 	if attempt then
@@ -405,14 +408,14 @@ function GameInfo.getDeflectCooldownState()
 end
 function GameInfo.getFierceDeflectAbility()
 	locateDeflectAbility(); local ability = clientAbilities and clientAbilities.Abilities[19]
-	if type(ability) == "table" and type(ability.SendEvent) == "function" then return ability end
+	if type(ability) == "table" and type(ability.ActivateAndBlock) == "function" then return ability end
 	return nil
 end
 function GameInfo.activateFierceDeflect(ability)
 	if ability ~= GameInfo.getFierceDeflectAbility() or not ability then return false, "Deflexo Feroz não equipado" end
 	if type(ability.IsAvailable) ~= "function" or not ability:IsAvailable(false) then return false, "Deflexo Feroz indisponível" end
 	if type(ability.IsOwnerAlive) ~= "function" or not ability:IsOwnerAlive() then return false, "jogador indisponível" end
-	ability:SendEvent(2.4141700243704228e76); return true
+	ability:ActivateAndBlock(); return true
 end
 function GameInfo.getDashAbility()
 	locateDeflectAbility(); local ability = clientAbilities and clientAbilities.Abilities[2]

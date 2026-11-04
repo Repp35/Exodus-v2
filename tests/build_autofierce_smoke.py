@@ -41,7 +41,7 @@ local function scenario()
  mod.api.setup({Utils=utils,GameInfo=info,AutoParry=parry,AutoClash=clash,Spam=spam}); assert(mod.api.bindCharacter(character))
  local function step() mod.step(root,mod.generation()) end
  local function packet() mod.api.onBallSync({Source="packet",TargetPlayerID=42}) end
- return {step=step,packet=packet,calls=calls,config=config,cooldown=cooldown,ball=ball,ability=ability,info=info,advance=function(v) t=v end}
+ return {step=step,packet=packet,calls=calls,config=config,cooldown=cooldown,ball=ball,ability=ability,info=info,parry=parry,advance=function(v) t=v end}
 end
 do
  local s=scenario(); s.step()
@@ -56,6 +56,9 @@ do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt=nil; s.cooldo
 do local s=scenario(); s.cooldown.attempt={expired=false,deadline=11}; s.step(); assert(#s.calls==0,"active normal deflect window could still protect") end
 do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt={expired=false,deadline=10.3}; s.packet(); assert(#s.calls==5,"incoming packet should trigger fierce when cooldown exceeds impact") end
 do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt=nil; s.packet(); assert(#s.calls==5,"blocking server cooldown must protect on target return without a previous attempt") end
+do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt=nil; s.cooldown.endsAt=nil; s.cooldown.remaining=1; s.packet(); assert(#s.calls==5,"client cooldown remaining beyond impact must trigger fierce") end
+do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt=nil; s.cooldown.endsAt=nil; s.cooldown.remaining=0.1; s.packet(); assert(#s.calls==0,"client cooldown ending before impact must not trigger fierce") end
+do local s=scenario(); s.ball.velocity=vec(0); s.parry.getTiming=function() return {approaching=true,distance=78.5,speed=100,velocity=vec(100),parryRadius=45,noWindowParryRadius=8.5} end; s.packet(); assert(#s.calls==5,"measured current velocity must be used when snapshot velocity is stale") end
 do local s=scenario(); s.ball.targetId=7; s.step(); assert(#s.calls==0,"different target") end
 do local s=scenario(); s.ball.syncSequence=2; s.step(); assert(#s.calls==0,"stale target snapshot") end
 do local s=scenario(); s.ball.position=vec(-600); s.step(); assert(#s.calls==0,"impact outside ability duration") end

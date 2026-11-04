@@ -624,6 +624,7 @@ function AutoParry.getTiming(snapshot, time, rootPosition, windowFactor, baseWin
 	return {
 		distance = distance,
 		speed = speed,
+		velocity = velocity,
 		parryRadius = parryRadius,
 		fullRadius = parryRadius,
 		pureRadius = T.BASE_RADIUS,
