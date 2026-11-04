@@ -204,11 +204,13 @@ local function computeDeflectWindow(speed)
 	if not isFiniteNumber(minimum) or not isFiniteNumber(maximum) or maximum <= minimum then minimum, maximum = 16, 600 end
 	local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); return T.BASE_WINDOW + (T.MIN_DEFLECT_WINDOW - T.BASE_WINDOW) * fraction
 end
-local function computeParryRadius(speed, ping, resilienceBonus, windowFactor, useGameWindow)
+local function computeParryRadius(speed, ping, resilienceBonus, windowFactor, baseWindow)
 	local validSpeed = isFiniteNumber(speed) and math.max(speed, 0) or 0; local deflectWindow = computeDeflectWindow(validSpeed); local validPing = isFiniteNumber(ping) and math.max(ping, 0) or 0
-	if useGameWindow and GameInfo and type(GameInfo.getDeflectWindow) == "function" then
+	if baseWindow == "game" and GameInfo and type(GameInfo.getDeflectWindow) == "function" then
 		local actual = GameInfo.getDeflectWindow(validSpeed)
 		if isFiniteNumber(actual) and actual > 0 then deflectWindow = actual end
+	elseif isFiniteNumber(baseWindow) and baseWindow > 0 then
+		deflectWindow = baseWindow
 	end
 	local leadTime = deflectWindow + validPing; local factor = tonumber(windowFactor)
 	if not isFiniteNumber(factor) then factor = getWindowFactor() end
@@ -558,7 +560,7 @@ local function getRootPosition()
 	if candidate and candidate.Parent then return GameInfo.getRootPosition(candidate) end
 	return nil
 end
-function AutoParry.getTiming(snapshot, time, rootPosition, windowFactor, useGameWindow)
+function AutoParry.getTiming(snapshot, time, rootPosition, windowFactor, baseWindow)
 	if type(snapshot) ~= "table" then return nil end
 	time = tonumber(time) or clock(); local position = snapshot.position; local ball = snapshot.ball
 	if not isValidVector3(position) and isValidBall(ball) then
@@ -582,7 +584,7 @@ function AutoParry.getTiming(snapshot, time, rootPosition, windowFactor, useGame
 	if not isFiniteNumber(speed) or speed < 0 then return nil end
 	local delta = rootPosition - position; local distance = delta.Magnitude; local resilienceBonus = getResilienceBonus(time)
 	local parryRadius, leadTime, noWindowRadius, pingRadius, deflectWindow, effectiveWindow, requestedFactor =
-		computeParryRadius(speed, R.ping, resilienceBonus, windowFactor, useGameWindow)
+		computeParryRadius(speed, R.ping, resilienceBonus, windowFactor, baseWindow)
 	local distanceToRadius = distance - parryRadius; local tti = speed > 0 and math.max(distanceToRadius, 0) / speed or math.huge
 	local approaching = isValidVector3(velocity) and speed >= minimumBallSpeed() and distance > 0 and velocity:Dot(delta) > 0 or false
 	return {
@@ -604,7 +606,7 @@ function AutoParry.getTiming(snapshot, time, rootPosition, windowFactor, useGame
 		targeted = snapshot.targeted == true,
 	}
 end
-function AutoParry.getRadius(mode, windowFactor, speedOverride, useGameWindow): RadiusResult
+function AutoParry.getRadius(mode, windowFactor, speedOverride, baseWindow): RadiusResult
 	mode = mode or "geometry"
 	if mode ~= "geometry" and mode ~= "tti" and mode ~= "speed_distance" then mode = "geometry" end
 	local speed = tonumber(speedOverride)
@@ -612,7 +614,7 @@ function AutoParry.getRadius(mode, windowFactor, speedOverride, useGameWindow): 
 	if not isFiniteNumber(speed) or speed < 0 then speed = 0 end
 	local time = clock(); local resilienceBonus = getResilienceBonus(time)
 	local fullRadius, leadTime, noWindowRadius, pingRadius, deflectWindow, effectiveWindow, requestedFactor =
-		computeParryRadius(speed, R.ping, resilienceBonus, windowFactor, useGameWindow)
+		computeParryRadius(speed, R.ping, resilienceBonus, windowFactor, baseWindow)
 	local value = fullRadius
 	if mode == "tti" then
 		value = speed > 0 and math.max(R.lastDistance - fullRadius, 0) / speed or math.huge
