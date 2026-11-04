@@ -28,6 +28,7 @@ local T = {
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
 	ACT_DEACT_LOCK_TIME = 0.05,
 	PROXIMITY_RADIUS = 6,
+	PARTNER_PROXIMITY_FACTOR = 0.3,
 	DASH_DETECT_WINDOW = 0.25,
 	OWN_DASH_ESCAPE_CONFIRM_FRAMES = 2,
 	DASH_RETURN_DOT = 0.3,
@@ -65,6 +66,8 @@ local R = {
 	runService = nil,
 	lastTarget = -1,
 	clashPartnerId = -1,
+	proximityPartnerId = -1,
+	proximitySwitchAt = 0,
 	lastSpeed = 0,
 	ttiEma = nil,
 	ttiEmaAt = 0,
@@ -265,7 +268,7 @@ local function clearReturnState()
 	R.returnFromTarget = -1; R.returnServerAt = nil; R.returnToken += 1
 end
 local function resetTargetState()
-	R.targetResetToken += 1; R.lastTarget = -1; R.clashPartnerId = -1; R.dashBonusUntil = 0
+	R.targetResetToken += 1; R.lastTarget = -1; R.clashPartnerId = -1; R.proximityPartnerId = -1; R.proximitySwitchAt = 0; R.dashBonusUntil = 0
 	R.wasMeTarget = nil; clearReturnState(); R.lastClashSwitchAt = 0; R.lastClashSwitchServerAt = nil
 	R.clashIntervalMs = 0; R.lastDirectionSwitchAt = 0; R.clashIntervalEma = nil; R.clashIntervalEmaSamples = 0
 	R.ttiEma = nil; R.ttiEmaAt = 0; R.lastDashEvent = nil; R.lastDashData = nil
@@ -397,6 +400,21 @@ local function shouldActivate(snapshot, t)
 		if dot < T.ACTIVATION_MIN_DOT then R.lastGate = "ball_not_approaching"; return false end
 	end
 	R.lastGate = "activation_ready"; return true
+end
+local function tryPartnerProximityActivate(snapshot, t)
+	local partnerId = R.proximityPartnerId
+	if partnerId == -1 or partnerId == R.localUserId then return false end
+	if R.lastTarget ~= R.localUserId and R.lastTarget ~= partnerId then return false end
+	local player = R.players and R.players:GetPlayerByUserId(partnerId)
+	local partnerRoot = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local root = getRootPosition()
+	local ballPosition = getSnapshotPosition(snapshot)
+	if not root or not partnerRoot or not partnerRoot.Parent or not ballPosition or R.parryRadius <= 0 then return false end
+	local proximityRadius = R.parryRadius * T.PARTNER_PROXIMITY_FACTOR
+	if distanceSquared(root, partnerRoot.Position) > proximityRadius * proximityRadius then return false end
+	if distanceSquared(root, ballPosition) > R.parryRadius * R.parryRadius then return false end
+	R.lastGate = "partner_proximity_ready"
+	return true
 end
 local function tryReturnActivate(snapshot, t)
 	if not isSnapshotTargeted(snapshot) then R.lastGate = "act_not_targeted"; return false end
@@ -634,7 +652,15 @@ local function evaluateClash(t, snapshot)
 		if Deactivation.shouldDeactivate(t, snapshot) then setActive(false, "target_deactivated") end
 		return
 	end
-	if tryReturnActivate(snapshot, t) then local activationReason = getActivationReason(snapshot, t); clearReturnState(); setActive(true, "activated", snapshot, activationReason) end
+	if tryPartnerProximityActivate(snapshot, t) then
+		R.clashPartnerId = R.proximityPartnerId
+		clearReturnState()
+		setActive(true, "activated", snapshot, "partner_proximity")
+	elseif tryReturnActivate(snapshot, t) then
+		local activationReason = getActivationReason(snapshot, t)
+		clearReturnState()
+		setActive(true, "activated", snapshot, activationReason)
+	end
 end
 
 -- hub
@@ -812,7 +838,14 @@ function AutoClash.onBallSync(data)
 			R.lastClashSwitchAt = t; R.lastClashSwitchServerAt = serverTime
 		end
 	end
-	if wasMe ~= isMe then R.lastDirectionSwitchAt = t end
+	if wasMe ~= isMe then
+		R.lastDirectionSwitchAt = t
+		local partnerId = isMe and previousTarget or target
+		if partnerId ~= -1 and partnerId ~= R.localUserId then
+			R.proximityPartnerId = partnerId
+			R.proximitySwitchAt = t
+		end
+	end
 	if wasMe and not isMe then
 		if R.active and R.clashPartnerId ~= -1 and target ~= R.clashPartnerId then setActive(false, "target_redirected") end
 		beginReturnWindow(t, target, serverTime); R.clashPartnerId = target; Deactivation.clearConfirmation(); R.lastGate = "target_lost"
@@ -825,7 +858,7 @@ function AutoClash.onBallSync(data)
 	elseif not wasMe and not isMe and target ~= previousTarget then
 		clearReturnState()
 		if R.active then setActive(false, "target_redirected") end
-		R.clashPartnerId = -1; R.lastGate = "target_redirected"
+		R.clashPartnerId = -1; R.proximityPartnerId = -1; R.proximitySwitchAt = 0; R.lastGate = "target_redirected"
 	end
 	R.wasMeTarget = isMe
 	if R.returnPending and data.Source ~= "snapshot" then
