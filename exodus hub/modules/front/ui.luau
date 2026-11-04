@@ -263,6 +263,7 @@ local function setJumpBall(v)
 end
 local MINI_W, MINI_H = 120, 90
 local function showMini(v, visBtn)
+	setConfigValue("MiniSpamVisible", v)
 	local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30
 	twPlay(
 		miniGui,
@@ -640,8 +641,10 @@ local function createKeybindSelector(yPos, parent)
 	return nextCardY(yPos, CARD_H)
 end
 local function createSpamCard(yPos, parent)
-	local f = cardFrame(yPos, SPAM_CARD_H, parent); cardLabel("Manual Spam", f); local visBtn = makeBtn("Mini UI: Oculto", 8, 24, COL_W - 16, 30, f, C.btnDark); visBtn.TextSize = 11
-	trackConn(visBtn.Activated:Connect(function() showMini(miniGui.Position.X.Offset > viewport().X - 50, visBtn) end))
+	local f = cardFrame(yPos, SPAM_CARD_H, parent); cardLabel("Manual Spam", f)
+	local visible = Utils.getConfigValue("MiniSpamVisible") == true
+	local visBtn = makeBtn(visible and "Mini UI: Visivel" or "Mini UI: Oculto", 8, 24, COL_W - 16, 30, f, visible and Color3.fromRGB(0, 130, 65) or C.btnDark); visBtn.TextSize = 11
+	trackConn(visBtn.Activated:Connect(function() showMini(Utils.getConfigValue("MiniSpamVisible") ~= true, visBtn) end))
 	local config = Utils.getConfig(); local kbBtn = makeBtn(config.SpamKeybind and config.SpamKeybind.Name or "X", 8, 64, COL_W - 16, 32, f, C.btnBlue)
 	bindKeyCapture(kbBtn, function(keyCode)
 		setConfigValue("SpamKeybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_OUT)
@@ -882,7 +885,7 @@ function ExodusUI.setup(deps)
 	})
 	corner(spamBtn, 10)
 	trackConn(spamBtn.Activated:Connect(function() setSpam(not UIState.spamOn) end))
-	miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY)
+	miniGui.Position = UDim2.new(0, config.MiniSpamVisible and (config.MiniX or (viewport().X - MINI_W - 14)) or MINI_OFF_X, 0, miniY)
 	makeDraggable(miniTitleBar, miniGui, function()
 		setConfigValue("MiniX", miniGui.Position.X.Offset); setConfigValue("MiniY", miniGui.Position.Y.Offset)
 	end)
