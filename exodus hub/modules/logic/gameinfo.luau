@@ -547,9 +547,9 @@ end
 function GameInfo.getDeflectWindow(speed)
 	local minimum, maximum = GameInfo.getBallSpeedLimits()
 	local ball = gameBallModule
-	if ball and type(ball.GetCombinedSpeed) == "function" then
-		local ok, combined = pcall(ball.GetCombinedSpeed, ball)
-		if ok and type(combined) == "number" and combined == combined then speed = combined end
+	local sync = getDecodedSyncData()
+	if type(sync) == "table" and type(sync.Speed) == "number" and sync.Speed == sync.Speed then
+		speed = sync.Speed
 	end
 	if type(speed) ~= "number" or speed ~= speed or maximum <= minimum then return nil end
 	local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
