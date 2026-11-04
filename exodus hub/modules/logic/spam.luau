@@ -1,6 +1,8 @@
 -- [[ spam ]]
 
 local Spam = {}
+local MIN_CLICK_INTERVAL = 0.030
+local MAX_CPS = 1 / MIN_CLICK_INTERVAL
 
 local Utils, Remote
 local connection
@@ -30,7 +32,10 @@ local function setActive(value, reason)
 	if Utils and type(Utils.recordTransition) == "function" then Utils.recordTransition("Spam", value and "stopped" or "running", status.phase, reason) end
 end
 local function requestParry()
-	local time = now(); status.lastRequestAt = time; local ok, result, detail = pcall(Remote.fireParry, 1)
+	local time = now()
+	if time - status.lastRequestAt < MIN_CLICK_INTERVAL then return end
+	status.lastRequestAt = time
+	local ok, result, detail = pcall(Remote.fireParry, 1)
 	if ok and result == true then status.lastError = nil; return end
 	local message = tostring(ok and (detail or "Remote.fireParry indisponível") or result); status.lastError = message
 	if time - status.lastErrorAt >= 1 then
@@ -50,6 +55,7 @@ local function tick(dt)
 	local rate
 	if type(Utils.getConfigValue) == "function" then rate = tonumber(Utils.getConfigValue("CPS")) or 0 else rate = tonumber(Utils.getConfig().CPS) or 0 end
 	if rate ~= rate or rate == math.huge or rate < 0 then rate = 0 end
+	rate = math.min(rate, MAX_CPS)
 	if lastMode ~= "CPS" or rate ~= lastRate then generation += 1; phase = 0; lastMode, lastRate = "CPS", rate end
 	local clicks = 0
 	if rate > 0 then phase += rate * dt; clicks = math.floor(phase + 1e-9); phase -= clicks end
@@ -77,7 +83,7 @@ local function startCpfWorker()
 			if mode == "CPF" and Utils.isActive() and Utils.isSpamActive() and rate and rate == rate and rate > 0 and rate < math.huge then
 				if not active then setActive(true, "spam_active") end
 				if lastMode ~= "CPF" or lastRate ~= rate then generation += 1; phase = 0; lastMode, lastRate = "CPF", rate; due, previousRate = nil, nil end
-				local time = now(); local interval = 1 / (rate * 60)
+				local time = now(); local interval = math.max(MIN_CLICK_INTERVAL, 1 / (rate * 60))
 				if previousRate ~= rate or due == nil then due = time + interval; previousRate = rate end
 				if time >= due then
 					requestParry(); due += interval
@@ -134,7 +140,7 @@ function Spam.setup(deps)
 end
 function Spam.resetState()
 	generation += 1; setActive(false, "reset"); phase = 0; lastMode, lastRate = nil, nil
-	status.phase = "stopped"; status.lastRequestAt = 0; status.lastError = nil; status.lastErrorAt = -math.huge
+	status.phase = "stopped"; status.lastError = nil; status.lastErrorAt = -math.huge
 	status.cpfFps, status.cpfClicks = 0, 0
 end
 function Spam.teardown()
