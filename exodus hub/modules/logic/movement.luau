@@ -22,7 +22,9 @@ function Movement.syncJump()
 		if player.Character ~= character or (humanoid and humanoid.Parent ~= character) then character = player.Character; humanoid = nil end
 		if not character or not character.Parent then return end
 		if not humanoid then humanoid = character:FindFirstChildOfClass("Humanoid") end
-		if humanoid and humanoid.Health > 0 and humanoid.FloorMaterial ~= Enum.Material.Air then humanoid.Jump = true end
+		if humanoid and humanoid.Health > 0 and humanoid.FloorMaterial ~= Enum.Material.Air and humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then
+			humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+		end
 	end)
 	Utils.trackGlobal(jumpConnection); return true
 end
