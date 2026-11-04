@@ -362,8 +362,6 @@ local function stopForOutsidePull(position, reason)
 	if R.active then
 		R.pullSuspension = { partner = partner, stoppedAt = now(), lastTarget = R.lastTarget, switched = false }; setActive(false, reason); clearReturnState()
 		if Utils.setAutoSpamActive then Utils.setAutoSpamActive(false) end
-	elseif Utils and Utils.isManualSpamActive and Utils.isManualSpamActive() then
-		if Utils.setAutoSpamActive then Utils.setAutoSpamActive(false) end
 	end
 	R.pullEvent = { reason = reason, at = now(), position = position }; R.lastGate = reason; return true
 end
