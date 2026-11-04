@@ -441,7 +441,7 @@ function GameInfo.getDeflectCooldownState()
 	if deflectState.fierceUsedForTarget and not currentTargetMatches() then deflectState.fierceUsedForTarget = false end
 	local attempt = deflectState.attempt
 	deflectState.active = false
-	deflectState.blocking = cooldownRunning or deflectState.fierceUsedForTarget == true
+	deflectState.blocking = cooldownRunning or attempt ~= nil or deflectState.fierceUsedForTarget == true
 	if attempt then
 		local valid = currentTargetMatches() and attempt.ball == getBall()
 		if not valid then
