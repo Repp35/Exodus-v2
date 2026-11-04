@@ -41,7 +41,6 @@ local T = {
 	STATIONARY_TIMEOUT = 0.10,
 	MAX_RES_STACK = math.ceil(7.5 / 0.225),
 	SERVER_SIGNAL_RETRY = 0.5,
-	SERVER_SETTLE_MARGIN = 0.05,
 }
 
 -- state
@@ -86,7 +85,6 @@ local R = {
 	serverCooldownActive = false,
 	serverCooldownId = 0,
 	serverCooldownEventAt = -math.huge,
-	serverWindowUntil = 0,
 	serverSignalsBound = false,
 	nextServerSignalCheck = 0,
 	serverSignalsMissingAt = nil,
@@ -152,7 +150,7 @@ local function resetTracking()
 	R.lastFireAt = 0; R.lastApproaching = false; R.lastTarget = -1; R.lastSyncSequence = nil
 	R.targetId = -1; R.targetKnown = false; R.teleported = false; R.teleportSequence = nil
 	R.resilienceBonus = 0; R.resilienceBonusAt = -1
-	R.attempt = nil; R.serverCooldownActive = false; R.serverCooldownId = 0; R.serverCooldownEventAt = -math.huge; R.serverWindowUntil = 0
+	R.attempt = nil; R.serverCooldownActive = false; R.serverCooldownId = 0; R.serverCooldownEventAt = -math.huge
 	R.serverSignalsBound = false; R.nextServerSignalCheck = 0; R.serverSignalsMissingAt = nil; R.serverSignalsWarningAt = 0
 end
 local function invalidateLife()
@@ -163,21 +161,6 @@ local function observeTarget(targetId)
 	if targetId ~= R.player.UserId then R.targetAwaySeen = true; R.attempt = nil
 	elseif R.targetAwaySeen then R.targetAwaySeen = false; R.firedForTarget = false; R.targetCycle += 1 end
 end
--- An active server deflect window can outlast its cooldown in a clash. This
--- conservative bound is only for recovery, not the AP's configured radius.
-local function recoveryWindowBound()
-	local minimum, maximum
-	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum, maximum = GameInfo.getBallSpeedLimits() end
-	if not isFiniteNumber(minimum) or not isFiniteNumber(maximum) or maximum <= minimum then minimum, maximum = 16, 600 end
-	local data = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
-	local speed = type(data) == "table" and tonumber(data.Speed) or nil
-	if not isFiniteNumber(speed) or speed < 0 then speed = minimum end
-	-- Speed rises by 7/s in the dump. Leave extra room for delayed ball updates.
-	speed = math.max(0, speed - 7 * (2 * R.ping + 0.5))
-	local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
-	-- 850-200 ms plus up to 150 ms noob and 120 ms resilience bonuses.
-	return math.max(0.85 - 0.65 * fraction, 0.32) + 0.27
-end
 local function onServerCooldown(abilityId, eventId, value)
 	if not R.alive or not R.bound or not GameInfo or type(GameInfo.decodeDeflectServerEvent) ~= "function" then return end
 	local kind = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
@@ -185,17 +168,15 @@ local function onServerCooldown(abilityId, eventId, value)
 	local time = clock(); local attempt = R.attempt; R.serverCooldownEventAt = time
 	if kind == "started" then
 		R.serverCooldownId += 1; R.serverCooldownActive = true
-		R.serverWindowUntil = time + recoveryWindowBound()
-		if attempt and not attempt.confirmed and not attempt.reset and attempt.cycle == R.targetCycle then
+		if attempt and not attempt.confirmed and attempt.cycle == R.targetCycle then
 			attempt.cooldownId = R.serverCooldownId; attempt.readyAt = nil
 		end
 	elseif kind == "stopped" then
-		if R.serverCooldownActive and attempt and attempt.cooldownId == R.serverCooldownId and not attempt.confirmed and not attempt.reset then attempt.readyAt = time end
+		if R.serverCooldownActive and attempt and attempt.cooldownId == R.serverCooldownId and not attempt.confirmed then attempt.readyAt = time end
 		R.serverCooldownActive = false
 	elseif kind == "reset" then
 		R.serverCooldownActive = false
-		-- OnParried also resets the cooldown; it is not evidence of a miss.
-		if attempt then attempt.reset = true; attempt.readyAt = nil end
+		if attempt and not attempt.confirmed then attempt.cooldownId = R.serverCooldownId; attempt.readyAt = time end
 	end
 end
 local function onServerParried()
@@ -209,8 +190,6 @@ local function seedHeldServerCooldown(time)
 	if not ok or not isFiniteNumber(duration) or not isFiniteNumber(receivedAt) then return end
 	if duration <= 0 or receivedAt > time or time >= receivedAt + duration or receivedAt <= R.serverCooldownEventAt + 0.01 then return end
 	R.serverCooldownId += 1; R.serverCooldownActive = true; R.serverCooldownEventAt = receivedAt
-	-- The old ball speed may no longer be available; use the full dump maximum.
-	R.serverWindowUntil = receivedAt + 1.12
 end
 local function ensureServerSignals(time, generation)
 	if R.serverSignalsBound or time < R.nextServerSignalCheck then return end
@@ -235,12 +214,9 @@ local function ensureServerSignals(time, generation)
 end
 local function canRetry(time, ball)
 	local attempt = R.attempt
-	if not attempt or attempt.confirmed or attempt.reset or attempt.ball ~= ball or attempt.cycle ~= R.targetCycle or R.targetAwaySeen then return false end
+	if not attempt or attempt.confirmed or attempt.ball ~= ball or attempt.cycle ~= R.targetCycle or R.targetAwaySeen then return false end
 	if not attempt.readyAt or R.serverCooldownActive or attempt.cooldownId ~= R.serverCooldownId then return false end
-	-- A previous cooldown can stop while the new press is still in flight.
-	local settledAt = attempt.firedAt + 2 * R.ping + T.SERVER_SETTLE_MARGIN
-	-- A queued press can renew the window immediately after the stop event.
-	return time >= settledAt and time >= attempt.readyAt + T.SERVER_SETTLE_MARGIN and time >= R.serverWindowUntil
+	return true
 end
 local function getResilienceBonus(time)
 	if not R.alive or not R.bound or not R.player then return 0 end
@@ -430,12 +406,12 @@ local function updateVelocity(ball, position, time, dt, syncData, requireMovemen
 end
 local function requestParry(ball, reason)
 	local cycle = R.targetCycle; local time = clock()
-	local attempt = { ball = ball, cycle = cycle, firedAt = time, cooldownId = R.serverCooldownActive and R.serverCooldownId or nil, readyAt = nil, confirmed = false, reset = false }
+	local attempt = { ball = ball, cycle = cycle, firedAt = time, cooldownId = R.serverCooldownActive and R.serverCooldownId or nil, readyAt = nil, confirmed = false }
 	-- Lock before invoking Deflect, including if a signal re-enters this module.
 	R.attempt = attempt; R.armed = false; R.firedForTarget = true; R.lastFireAt = time
 	seedHeldServerCooldown(time)
 	if R.attempt ~= attempt or R.targetCycle ~= cycle or R.targetAwaySeen or R.teleported then return false end
-	if attempt.confirmed or attempt.reset then return false end
+	if attempt.confirmed then return false end
 	if reason == "parry_requested" and (isSpamActive() or not isSystemActive() or not isAutoParryEnabled()) then
 		R.attempt = nil; R.firedForTarget = false; R.armed = true; return false
 	end
@@ -634,7 +610,7 @@ function AutoParry.getTargetStatus()
 		approaching = R.lastApproaching == true,
 		targetId = R.targetId,
 		targetKnown = R.targetKnown == true,
-		recovery = R.attempt and (R.attempt.confirmed and "confirmed" or R.attempt.reset and "reset" or R.attempt.readyAt and "cooldown_stopped" or "waiting") or "inactive",
+		recovery = R.attempt and (R.attempt.confirmed and "confirmed" or R.attempt.readyAt and "cooldown_stopped" or "waiting") or "inactive",
 	}
 end
 local function getRootPosition()

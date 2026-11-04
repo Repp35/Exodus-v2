@@ -112,44 +112,33 @@ end
 do
  local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,1.45); s.frame(3)
  assert(s.count()==1, "running server cooldown must remain locked")
-	 s.cd:emit(1,STOP); s.frame(3.01); assert(s.count()==1, "stop must settle before retry")
-	 s.frame(3.06); assert(s.count()==2, "expired miss must retry")
+	 s.cd:emit(1,STOP); s.frame(3.01); assert(s.count()==2, "expired miss must retry")
 	 s.frame(3.07); s.frame(4); assert(s.count()==2, "retry must lock again")
 	 s.cd:emit(1,SET,1.45); s.frame(5.5); s.cd:emit(1,STOP); s.frame(5.56)
  assert(s.count()==3, "a second confirmed miss can also recover")
 end
--- SetCooldown(0) and the separate parry acknowledgement are not misses.
+-- A cancelled cooldown is ready; a confirmed parry still stays locked.
 do
  local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,1.45); s.cd:emit(1,SET,0)
- s.cd:emit(1,STOP); s.frame(4); assert(s.count()==1, "server reset must not retry")
- s.parried:emit(); s.frame(5); assert(s.count()==1, "confirmed parry must stay locked")
+ s.frame(1.02); assert(s.count()==2, "cancelled cooldown must immediately allow retry")
 end
--- The server can renew a queued press right after sending cooldown stopped.
+do
+ local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,1.45); s.parried:emit(); s.cd:emit(1,SET,0)
+ s.frame(2); assert(s.count()==1, "confirmed parry must stay locked")
+end
+-- A new cooldown before the next frame prevents a retry.
 do
  local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,1.45)
- s.frame(2.5); s.cd:emit(1,STOP); s.frame(2.51); assert(s.count()==1)
- s.cd:emit(1,SET,0.38); s.frame(2.6); assert(s.count()==1, "renewal must cancel the pending retry")
- s.frame(4); s.cd:emit(1,STOP); s.frame(4.06); assert(s.count()==2, "retry after the renewed cooldown stops")
-end
--- Clash cooldown may finish while the original deflection window is still open.
-do
- local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,0.38)
- s.frame(1.39); s.cd:emit(1,STOP); s.frame(1.4)
- assert(s.count()==1, "early cooldown end must not interrupt an active window")
- s.parried:emit(); s.frame(3); assert(s.count()==1, "late success must cancel retry")
-end
-do
- local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,0.38)
- s.frame(1.39); s.cd:emit(1,STOP); s.frame(1.4); assert(s.count()==1)
- s.frame(2.2); assert(s.count()==2, "miss retries after both cooldown and window")
+ s.cd:emit(1,STOP); s.cd:emit(1,SET,0.38); s.frame(1.02)
+ assert(s.count()==1, "renewal must cancel the pending retry")
+ s.cd:emit(1,STOP); s.frame(1.03); assert(s.count()==2, "retry after the renewed cooldown stops")
 end
 -- A cooldown that began before the AP press is still known to the listener.
 do
  local s=newScenario(); s.frame(1.01,-100); s.cd:emit(1,SET,1.45)
  s.frame(2.4,-10); assert(s.count()==1)
  s.frame(2.41); s.cd:emit(1,STOP); s.frame(2.42)
- assert(s.count()==1, "wait for the in-flight click to settle")
- s.frame(2.6); assert(s.count()==2, "retry after an existing cooldown stops")
+ assert(s.count()==2, "retry after an existing cooldown stops")
 end
 do
  local s=newScenario({HeldServerCooldown=1.45, HeldServerCooldownAt=0.5})
