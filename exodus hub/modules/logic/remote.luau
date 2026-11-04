@@ -283,7 +283,8 @@ function Remote.fireParry(_flag)
 	if ability then
 		local previousPress = ability.LastPressClock; local ok, err = xpcall(ability.Deflect, deflectTrace, ability)
 		if not ok then remoteState = "deflect_error"; return false, err end
-		if ability.LastPressClock ~= previousPress then GameInfo.noteDeflectPress() end
+		if ability.LastPressClock == previousPress then return false, "Deflect não registrou clique" end
+		GameInfo.noteDeflectPress()
 		remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
 		if not loggedParryMethods.deflect and ability.LastPressClock ~= previousPress and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
 		return true
