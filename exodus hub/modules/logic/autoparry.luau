@@ -364,7 +364,7 @@ local function onHeartbeat(character, root, dt, generation)
 	local time = clock(); samplePing(time); local cooldown = GameInfo.getDeflectCooldownState(); local syncData = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
 	if cooldown and type(cooldown.retryRevision) == "number" and cooldown.retryRevision > R.lastRetryRevision then
 		R.lastRetryRevision = cooldown.retryRevision
-		if not cooldown.blocking then R.firedForTarget = false; R.armed = true end
+		if not cooldown.blocking and not R.firedForTarget then R.armed = true end
 	end
 	if type(syncData) == "table" and syncData.Teleported == true then
 		if not R.teleported then enterTeleportLock(time) end
