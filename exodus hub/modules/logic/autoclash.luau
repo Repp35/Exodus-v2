@@ -27,7 +27,6 @@ local T = {
 	DASH_WINDOW_FACTOR = 1.0,
 	ACT_DEACT_LOCK_RADIUS_FACTOR = 0.70,
 	ACT_DEACT_LOCK_TIME = 0.05,
-	PROXIMITY_RADIUS = 6,
 	DASH_DETECT_WINDOW = 0.25,
 	OWN_DASH_ESCAPE_CONFIRM_FRAMES = 2,
 	DASH_RETURN_DOT = 0.3,
@@ -361,9 +360,6 @@ local function stopForOutsidePull(position, reason)
 	local partner = R.clashPartnerId ~= -1 and R.clashPartnerId or (R.lastTarget ~= R.localUserId and R.lastTarget or -1)
 	if R.active then
 		R.pullSuspension = { partner = partner, stoppedAt = now(), lastTarget = R.lastTarget, switched = false }; setActive(false, reason); clearReturnState()
-		if Utils.stopAllSpam then Utils.stopAllSpam() end
-	elseif Utils and Utils.isManualSpamActive and Utils.isManualSpamActive() then
-		if Utils.stopAllSpam then Utils.stopAllSpam() end
 	end
 	R.pullEvent = { reason = reason, at = now(), position = position }; R.lastGate = reason; return true
 end
@@ -399,35 +395,38 @@ local function updateParryState(t, snapshot)
 	R.lastSpeed = math.max(finiteNumber(snapshot and snapshot.speed, 0), 0); refreshRadiusCache(t); local root = getRootPosition()
 	if root then updateTtiEma(t, root, snapshot) end
 end
-local function shouldActivate(snapshot, t)
-	if not snapshot or not snapshot.ball or not snapshot.ball.Parent then R.lastGate = "no_ball"; return false end
-	if R.lastTarget ~= R.localUserId then R.lastGate = "target_not_me"; return false end
-	if not isSnapshotTargeted(snapshot) then R.lastGate = "target_not_me"; return false end
-	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
-	if not root then R.lastGate = "no_root"; return false end
-	if not position or R.parryRadius <= 0 then R.lastGate = "no_effective_radius"; return false end
-	local dx = root.X - position.X; local dy = root.Y - position.Y; local dz = root.Z - position.Z; local distanceSq = dx * dx + dy * dy + dz * dz
-	local effectiveRadius = getActivationRadius(t)
-	
+-- [[ activation prediction ]]
+local function predictImpact(snapshot)
+	local root, position = getRootPosition(), getSnapshotPosition(snapshot)
+	if not root then return nil, "no_root" end
+	if not position or R.parryRadius <= 0 then return nil, "no_effective_radius" end
 	local velocity = snapshot.velocity
 	if typeof(velocity) ~= "Vector3" then velocity = snapshot.ball.AssemblyLinearVelocity end
-	if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 6 then R.lastGate = "ball_speed_invalid"; return false end
-	if distanceSq > 0.000001 then
-		local dot = (velocity.X * dx + velocity.Y * dy + velocity.Z * dz) / (velocity.Magnitude * math.sqrt(distanceSq))
-		if dot < T.ACTIVATION_MIN_DOT then R.lastGate = "ball_not_approaching"; return false end
-	end
-	local distance = math.sqrt(distanceSq)
-	local closing = distance > 0 and (velocity.X * dx + velocity.Y * dy + velocity.Z * dz) / distance or velocity.Magnitude
-	if closing <= 0 then R.lastGate = "ball_not_closing"; return false end
-	local radiusData = FN.getRadius and FN.getRadius("geometry", 0, snapshot.speed, "game")
-	local hitRadius = type(radiusData) == "table" and tonumber(radiusData.noWindowParryRadius) or nil
-	if not hitRadius or hitRadius ~= hitRadius or hitRadius < 0 or hitRadius == math.huge then R.lastGate = "impact_radius_unavailable"; return false end
-	local impact = math.max(0, distance - hitRadius) / closing
-	local gameWindow = type(radiusData) == "table" and tonumber(radiusData.deflectWindow) or nil
-	if not gameWindow or gameWindow <= 0 or gameWindow == math.huge then R.lastGate = "game_window_unavailable"; return false end
-	if impact > gameWindow + getPingOneWay() then R.lastGate = "impact_not_imminent"; return false end
-	R.lastGate = "activation_ready"; return true
+	if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 6 then return nil, "ball_speed_invalid" end
+	local delta = root - position
+	local distance = delta.Magnitude
+	if distance <= 0 then return nil, "ball_not_closing" end
+	local closing = velocity:Dot(delta) / distance
+	if closing <= 0 then return nil, "ball_not_closing" end
+	if closing / velocity.Magnitude < T.ACTIVATION_MIN_DOT then return nil, "ball_not_approaching" end
+	local data = FN.getRadius and FN.getRadius("geometry", 0, snapshot.speed, "game")
+	local radius = type(data) == "table" and tonumber(data.noWindowParryRadius) or nil
+	if not radius or radius ~= radius or radius < 0 or radius == math.huge then return nil, "impact_radius_unavailable" end
+	local window = type(data) == "table" and tonumber(data.deflectWindow) or nil
+	if not window or window <= 0 or window == math.huge then return nil, "game_window_unavailable" end
+	return math.max(0, distance - radius) / closing, window
 end
+
+local function shouldActivate(snapshot, t)
+	if not snapshot or not snapshot.ball or not snapshot.ball.Parent then R.lastGate = "no_ball"; return false end
+	if R.lastTarget ~= R.localUserId or not isSnapshotTargeted(snapshot) then R.lastGate = "target_not_me"; return false end
+	local impact, window = predictImpact(snapshot)
+	if not impact then R.lastGate = window; return false end
+	if impact > window + getPingOneWay() then R.lastGate = "impact_not_imminent"; return false end
+	R.lastGate = "activation_ready"
+	return true
+end
+
 local function tryReturnActivate(snapshot, t)
 	if not isSnapshotTargeted(snapshot) then R.lastGate = "act_not_targeted"; return false end
 	if not R.returnPending then R.lastGate = "act_no_return_pending"; return false end
@@ -745,7 +744,6 @@ local function heartbeatStep(generation, character, root)
 		waitForSnapshot(t, "snapshot_stale"); return
 	end
 	R.snapshotMissingAt = nil
-	if R.active and type(Utils.isAutoSpamActive) == "function" and not Utils.isAutoSpamActive() then Utils.setAutoSpamActive(true) end
 	local targetChanged = snapshotTarget and (R.wasMeTarget == nil or snapshotTarget ~= R.lastTarget)
 	local targetCleared = snapshot.targetId ~= nil and not snapshotTarget and (R.lastTarget ~= -1 or R.active)
 	if targetChanged or targetCleared then
@@ -975,7 +973,6 @@ function AutoClash.isActive() return R.active == true end
 function AutoClash.getPullEvent() return R.pullEvent end
 function AutoClash.stopSpam()
 	setActive(false, "fierce_deflect"); clearReturnState(); R.lastGate = "fierce_deflect"
-	if Utils and Utils.setAutoSpamActive then Utils.setAutoSpamActive(false) end
 end
 function AutoClash.getTargetSwitch(): TargetSwitch
 	return {
@@ -1098,8 +1095,8 @@ AutoClash.__contract = {
 
 	onBallSync = true,
 	bindCharacter = true,
-	minAutoParryVersion = 10,
-	requiresVersions = { AutoParry = 10 },
+	minAutoParryVersion = 11,
+	requiresVersions = { AutoParry = 11 },
 }
 
 return AutoClash
