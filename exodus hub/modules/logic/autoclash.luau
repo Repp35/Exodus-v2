@@ -46,6 +46,7 @@ local T = {
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DIRECTION_DEACT_MARGIN_FACTOR = 1.10,
 	DEACT_CONFIRM_HOLD = 0.050,
+	OUTSIDE_RADIUS_HOLD = 0.050,
 	DEACT_CONFIRM_FRAMES = 2,
 	DEACT_CONFIRM_MAX_GAP = 0.10,
 	CLASH_INTERVAL_EMA_ALPHA = 0.4,
@@ -108,6 +109,7 @@ local R = {
 	deactivationCandidateAt = 0,
 	deactivationConfirmFrames = 0,
 	deactivationLastConfirmAt = 0,
+	outsideRadiusSince = nil,
 
 	-- evaluation
 
@@ -282,7 +284,7 @@ local function resetOwnDashState()
 end
 local function resetDeactivationState()
 	resetOwnDashState(); R.dashDeactLockedUntil = 0; R.deactivationCandidate = nil; R.deactivationCandidateAt = 0
-	R.deactivationConfirmFrames = 0; R.deactivationLastConfirmAt = 0
+	R.deactivationConfirmFrames = 0; R.deactivationLastConfirmAt = 0; R.outsideRadiusSince = nil
 end
 local function queryRadius(factor)
 	local f = FN.getRadius
@@ -606,6 +608,17 @@ function OwnDash.shouldDeactivate(t)
 	R.lastGate = "own_dash_escape_not_farther"; return false
 end
 function Deactivation.shouldDeactivate(t, snapshot)
+	local rootPosition = getRootPosition()
+	local ballPosition = getSnapshotPosition(snapshot)
+	if rootPosition and ballPosition and R.parryRadius > 0 and distanceSquared(rootPosition, ballPosition) > R.parryRadius * R.parryRadius then
+		if not R.outsideRadiusSince or t < R.outsideRadiusSince then R.outsideRadiusSince = t end
+		if t - R.outsideRadiusSince >= T.OUTSIDE_RADIUS_HOLD then
+			R.lastGate = "deact_outside_radius"
+			return true
+		end
+	else
+		R.outsideRadiusSince = nil
+	end
 	local dashEscape = OwnDash.shouldDeactivate(t)
 	if dashEscape and not isSnapshotTargeted(snapshot) then R.lastGate = "own_dash_escape"; return true end
 	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
