@@ -412,18 +412,18 @@ local function onHeartbeat(character, root, dt, generation)
 		if R.lastSyncSequence == nil or snapshot.syncSequence ~= R.lastSyncSequence then R.lastTarget = tonumber(snapshot.targetId) or -1 end
 		R.lastSyncSequence = snapshot.syncSequence
 	end
-	if not isValidBall(ball) then resetParryLock(); clearBallState(); setPhase("waiting", "ball_or_target_invalid"); return end
+	if not isValidBall(ball) then R.armed = not R.firedForTarget; clearBallState(); setPhase("waiting", "ball_or_target_invalid"); return end
 	if snapshot then observeTarget(tonumber(snapshot.targetId)) end
 	if not targeted then
-		resetParryLock(); R.targeted = false; R.lastApproaching = false; local positionOk, position = pcall(GameInfo.getBallPosition, ball)
+		R.armed = not R.firedForTarget; R.targeted = false; R.lastApproaching = false; local positionOk, position = pcall(GameInfo.getBallPosition, ball)
 		if not positionOk or not isValidVector3(position) or not updateVelocity(ball, position, time, dt, syncData) then clearBallState() end
 		setPhase("waiting", "ball_or_target_invalid"); return
 	end
 	local positionOk, position = pcall(function() return GameInfo.getBallPosition(ball) end)
-	if not positionOk or not isValidVector3(position) then resetParryLock(); return end
-	if not updateVelocity(ball, position, time, dt, syncData, not R.lastTargeted) then resetParryLock(); setPhase("waiting", "ball_speed_outlier"); return end
+	if not positionOk or not isValidVector3(position) then setPhase("waiting", "ball_position_unavailable"); return end
+	if not updateVelocity(ball, position, time, dt, syncData, not R.lastTargeted) then setPhase("waiting", "ball_speed_outlier"); return end
 	local rootPositionOk, rootPosition = pcall(function() return GameInfo.getRootPosition(root) end)
-	if not rootPositionOk or not isValidVector3(rootPosition) then resetParryLock(); return end
+	if not rootPositionOk or not isValidVector3(rootPosition) then setPhase("waiting", "root_position_unavailable"); return end
 	local delta = rootPosition - position; local distance = delta.Magnitude; local speed = R.velocity.Magnitude
 	local approaching = speed >= minimumBallSpeed() and distance > 0 and R.velocity:Dot(delta) > 0
 	if not R.lastTargeted and not R.firedForTarget then R.armed = true end
@@ -560,7 +560,7 @@ function AutoParry.onBallSync(data)
 		if ok then targetId = tonumber(value) or -1 end
 	end
 	observeTarget(targetId)
-	if targetId > 0 and R.player and targetId ~= R.player.UserId then resetParryLock() end
+	if targetId > 0 and R.player and targetId ~= R.player.UserId then R.armed = not R.firedForTarget end
 	if targetId == -1 and R.lastTarget ~= -1 then clearBallState() end
 	R.targetId = targetId; R.targetKnown = true; R.lastTarget = targetId
 	if data.Source == "packet" and R.player and targetId == R.player.UserId and R.character and R.root then
