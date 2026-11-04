@@ -21,6 +21,8 @@ local UIState = {
 	btnIsDragging = function() return false end,
 	panelTween = nil,
 	btnTween = nil,
+	pageGeneration = 0,
+	pageTweens = {},
 }
 
 local setSpam
@@ -72,7 +74,7 @@ local GRAD = {
 	Color3.fromRGB(236, 72, 153),
 }
 
-local EASE_OUT, EASE_BACK, EASE_SINE = Enum.EasingStyle.Quint, Enum.EasingStyle.Back, Enum.EasingStyle.Sine
+local EASE_OUT, EASE_SINE = Enum.EasingStyle.Cubic, Enum.EasingStyle.Sine
 local DIR_OUT, DIR_IN, DIR_INOUT = Enum.EasingDirection.Out, Enum.EasingDirection.In, Enum.EasingDirection.InOut
 
 -- helpers
@@ -205,13 +207,13 @@ end
 local function syncAutoClashToggle()
 	if not (autoClashTrack and autoClashThumb) then return end
 	local v = UIState.clashBallOn; twPlay(autoClashTrack, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT)
-	twPlay(autoClashThumb, 0.32, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_BACK, DIR_OUT)
+	twPlay(autoClashThumb, 0.32, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_OUT, DIR_OUT)
 end
 local function setClashBall(v, silent)
 	UIState.clashBallOn = v; setConfigValue("AutoClash", v)
 	if silent then return end
 	paintClashBall(); twPlay(clashBall, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
-	task.delay(0.08, function() twPlay(clashBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_BACK, DIR_OUT) end)
+	task.delay(0.08, function() twPlay(clashBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
 end
 local function showClashBall(v)
 	setConfigValue("ClashBallVisible", v); local config = Utils.getConfig(); local clashX = config.ClashBallX or 14; local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
@@ -219,7 +221,7 @@ local function showClashBall(v)
 		clashBall,
 		(v and 0.22) or 0.18,
 		{ Position = v and UDim2.new(0, clashX, 0, clashY) or UDim2.new(0, OFFSCREEN_X, 0, clashY) },
-		v and EASE_BACK or EASE_OUT,
+		EASE_OUT,
 		DIR_OUT
 	)
 end
@@ -231,19 +233,19 @@ end
 local function showDarkBall(v)
 	setConfigValue("DarkBallVisible", v); local config = Utils.getConfig()
 	local x = config.DarkBallX or 14; local y = config.DarkBallY or (viewport().Y / 2 + CLASH_SIZE / 2 + 8)
-	twPlay(darkBall, v and 0.22 or 0.18, { Position = v and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, v and EASE_BACK or EASE_OUT, DIR_OUT)
+	twPlay(darkBall, v and 0.22 or 0.18, { Position = v and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
 end
 local function setDarkBall(v)
 	if not setConfigValue("AutoDark", v) then return end
 	if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
 	paintDarkBall(v); if autoDarkSetVisual then autoDarkSetVisual(v) end
 	twPlay(darkBall, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
-	task.delay(0.08, function() twPlay(darkBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_BACK, DIR_OUT) end)
+	task.delay(0.08, function() twPlay(darkBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
 end
 local function showMovementBall(ball, visible, visibleKey, xKey, yKey, yOffset)
 	setConfigValue(visibleKey, visible); local config = Utils.getConfig()
 	local x = config[xKey] or (CLASH_SIZE + 22); local y = config[yKey] or (viewport().Y / 2 + yOffset)
-	twPlay(ball, visible and 0.22 or 0.18, { Position = visible and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, visible and EASE_BACK or EASE_OUT, DIR_OUT)
+	twPlay(ball, visible and 0.22 or 0.18, { Position = visible and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
 end
 local function showJumpBall(v) showMovementBall(jumpBall, v, "JumpBallVisible", "JumpBallX", "JumpBallY", -CLASH_SIZE / 2) end
 local function showUpDashBall(v) showMovementBall(upDashBall, v, "UpDashBallVisible", "UpDashBallX", "UpDashBallY", CLASH_SIZE / 2 + 8) end
@@ -262,7 +264,7 @@ local function showMini(v, visBtn)
 		miniGui,
 		(v and 0.22) or 0.18,
 		{ Position = v and UDim2.new(0, miniX, 0, miniY) or UDim2.new(0, MINI_OFF_X, 0, miniY) },
-		v and EASE_BACK or EASE_OUT,
+		EASE_OUT,
 		DIR_OUT
 	)
 	if visBtn and visBtn.Parent then visBtn.Text = v and "Mini UI: Visivel" or "Mini UI: Oculto"; twPlay(visBtn, 0.15, { BackgroundColor3 = v and Color3.fromRGB(0, 130, 65) or C.btnDark }) end
@@ -274,7 +276,7 @@ setSpam = function(v)
 	if spamBtn then
 		spamBtn.Text = v and "ON" or "OFF"; twPlay(spamBtn, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT)
 		twPlay(spamBtn, 0.08, { Size = UDim2.new(1, -22, 0, 44) }, EASE_SINE, DIR_OUT)
-		task.delay(0.08, function() twPlay(spamBtn, 0.28, { Size = UDim2.new(1, -16, 0, 48) }, EASE_BACK, DIR_OUT) end)
+		task.delay(0.08, function() twPlay(spamBtn, 0.28, { Size = UDim2.new(1, -16, 0, 48) }, EASE_OUT, DIR_OUT) end)
 	end
 end
 local PW, PH = 540, 380
@@ -300,6 +302,9 @@ local PARTICLE_COLORS = {
 -- cleanup
 local function cleanupUI()
 	safeCancel(UIState.panelTween); safeCancel(UIState.btnTween); disconnectUIConnections(); UIState.connections = {}
+	UIState.pageGeneration += 1
+	for _, tween in ipairs(UIState.pageTweens) do safeCancel(tween) end
+	UIState.pageTweens = {}
 	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false
 	if Utils then Utils.setManualSpamActive(false) end
 	UIState.panelTween = nil; UIState.btnTween = nil
@@ -405,9 +410,7 @@ local function makeToggle(trackParent, initial)
 	corner(thumb, 999)
 	local function setVisual(v)
 		twPlay(track, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT)
-		twPlay(thumb, 0.32, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_BACK, DIR_OUT)
-		twPlay(thumb, 0.08, { Size = UDim2.new(0, 24, 0, 24) }, EASE_SINE, DIR_OUT)
-		task.delay(0.08, function() twPlay(thumb, 0.18, { Size = UDim2.new(0, 20, 0, 20) }, EASE_BACK, DIR_OUT) end)
+		twPlay(thumb, 0.25, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_SINE, DIR_INOUT)
 	end
 	return track, thumb, setVisual
 end
@@ -589,7 +592,7 @@ local function createRateSelector(yPos, parent)
 		twPlay(modeThumb, duration, {
 			Position = targetPosition,
 			BackgroundColor3 = isCPS and C.accent or C.accentPink,
-		}, EASE_BACK, DIR_OUT)
+		}, EASE_OUT, DIR_OUT)
 		for mode, button in pairs(modeButtons) do
 			twPlay(button, animated and 0.2 or 0, {
 				TextColor3 = mode == currentMode and C.text or C.subtext,
@@ -627,7 +630,7 @@ local function createKeybindSelector(yPos, parent)
 	})
 	local config = Utils.getConfig(); local kbBtn = makeBtn(config.Keybind and config.Keybind.Name or "V", 0, 0, 88, 30, f, C.btnBlue); kbBtn.Position = UDim2.new(1, -100, 0.5, -15)
 	bindKeyCapture(kbBtn, function(keyCode)
-		setConfigValue("Keybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_BACK)
+		setConfigValue("Keybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_OUT)
 	end)
 	return nextCardY(yPos, CARD_H)
 end
@@ -636,7 +639,7 @@ local function createSpamCard(yPos, parent)
 	trackConn(visBtn.Activated:Connect(function() showMini(miniGui.Position.X.Offset > viewport().X - 50, visBtn) end))
 	local config = Utils.getConfig(); local kbBtn = makeBtn(config.SpamKeybind and config.SpamKeybind.Name or "X", 8, 64, COL_W - 16, 32, f, C.btnBlue)
 	bindKeyCapture(kbBtn, function(keyCode)
-		setConfigValue("SpamKeybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_BACK)
+		setConfigValue("SpamKeybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_OUT)
 	end)
 	return nextCardY(yPos, SPAM_CARD_H)
 end
@@ -644,18 +647,23 @@ local function togglePanel()
 	if not configPanel or not configPanel.Parent or not floatingButton or not floatingButton.Parent then return end
 	UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
 	if UIState.panelOpen then
-		configPanel.Visible = true; configPanel.BackgroundTransparency = 1; configPanel.Size = UDim2.new(0, PW * 0.88, 0, PH * 0.88)
-		UIState.panelTween = twPlay(configPanel, 0.28, { Size = UDim2.new(0, PW, 0, PH), BackgroundTransparency = 0 }, EASE_BACK, DIR_OUT)
+		if not configPanel.Visible then configPanel.GroupTransparency = 1; configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97) end
+		configPanel.Visible = true
+		UIState.panelTween = twPlay(configPanel, 0.28, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
 		UIState.btnTween = twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN)
 	else
-		UIState.panelTween = twPlay(configPanel, 0.22, { Size = UDim2.new(0, PW * 0.9, 0, PH * 0.9), BackgroundTransparency = 1 }, EASE_OUT, DIR_IN)
+		UIState.panelTween = twPlay(configPanel, 0.22, { Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97), GroupTransparency = 1 }, EASE_OUT, DIR_IN)
 		UIState.btnTween =
-			twPlay(floatingButton, 0.22, { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE) }, EASE_BACK, DIR_OUT)
-		local conn
-		conn = trackConn(UIState.panelTween.Completed:Connect(function()
-			if not UIState.panelOpen then configPanel.Visible = false; configPanel.Size = UDim2.new(0, PW, 0, PH); configPanel.BackgroundTransparency = 0 end
-			safeDisconnect(conn); untrackConn(conn)
-		end))
+			twPlay(floatingButton, 0.22, { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE) }, EASE_OUT, DIR_OUT)
+		if UIState.panelTween then
+			local conn
+			conn = trackConn(UIState.panelTween.Completed:Connect(function()
+				if not UIState.panelOpen then configPanel.Visible = false; configPanel.Size = UDim2.new(0, PW, 0, PH); configPanel.GroupTransparency = 0 end
+				safeDisconnect(conn); untrackConn(conn)
+			end))
+		else
+			configPanel.Visible = false; configPanel.Size = UDim2.new(0, PW, 0, PH); configPanel.GroupTransparency = 0
+		end
 	end
 end
 
@@ -788,7 +796,7 @@ function ExodusUI.setup(deps)
 	upDashBall, upDashX, upDashY = createMovementBall("ExodusUpDashBall", "DASH\n↑", C.upDash, "UpDashBallX", "UpDashBallY", CLASH_SIZE / 2 + 8, function(ball)
 		if type(Controls.onUpDash) == "function" then Controls.onUpDash() end
 		twPlay(ball, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
-		task.delay(0.08, function() twPlay(ball, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_BACK, DIR_OUT) end)
+		task.delay(0.08, function() twPlay(ball, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
 	end)
 	local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30
 	miniGui = inst("Frame", {
@@ -873,12 +881,13 @@ function ExodusUI.setup(deps)
 	makeDraggable(miniTitleBar, miniGui, function()
 		setConfigValue("MiniX", miniGui.Position.X.Offset); setConfigValue("MiniY", miniGui.Position.Y.Offset)
 	end)
-	configPanel = inst("Frame", {
+	configPanel = inst("CanvasGroup", {
 		Name = "ExodusPanel",
 		Size = UDim2.new(0, PW, 0, PH),
 		Position = panelPos(),
 		BackgroundColor3 = C.bg,
 		BackgroundTransparency = 0.08,
+		GroupTransparency = 0,
 		Visible = false,
 		ZIndex = 5,
 		ClipsDescendants = true,
@@ -958,19 +967,33 @@ function ExodusUI.setup(deps)
 	trackConn(closeButton.MouseEnter:Connect(function() twPlay(closeButton, 0.12, { BackgroundTransparency = 0 }) end))
 	trackConn(closeButton.MouseLeave:Connect(function() twPlay(closeButton, 0.12, { BackgroundTransparency = 0.3 }) end))
 	trackConn(closeButton.Activated:Connect(togglePanel))
+	local pageGroups = {}
+	for index = 1, 3 do
+		pageGroups[index] = inst("CanvasGroup", {
+			Name = "Page" .. index,
+			Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
+			Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
+			BackgroundTransparency = 1,
+			GroupTransparency = index == 1 and 0 or 1,
+			Visible = index == 1,
+			ClipsDescendants = true,
+			ZIndex = 6,
+			Parent = configPanel,
+		})
+	end
 	colLeft = inst("Frame", {
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-		Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
+		Position = UDim2.new(0, 0, 0, 0),
 		BackgroundTransparency = 1,
 		ZIndex = 6,
-		Parent = configPanel,
+		Parent = pageGroups[1],
 	})
 	colRight = inst("Frame", {
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-		Position = UDim2.new(0, PAD + COL_W + GAP, 0, TITLE_H + PAD),
+		Position = UDim2.new(0, COL_W + GAP, 0, 0),
 		BackgroundTransparency = 1,
 		ZIndex = 6,
-		Parent = configPanel,
+		Parent = pageGroups[1],
 	})
 	killBtn = inst("TextButton", {
 		Size = UDim2.new(0, 124, 0, 26),
@@ -1010,35 +1033,35 @@ function ExodusUI.setup(deps)
 	end
 	local settingsLeft = inst("Frame", {
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-		Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
+		Position = UDim2.new(0, 0, 0, 0),
 		BackgroundTransparency = 1,
-		Visible = false,
+		Visible = true,
 		ZIndex = 6,
-		Parent = configPanel,
+		Parent = pageGroups[2],
 	})
 	local settingsRight = inst("Frame", {
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-		Position = UDim2.new(0, PAD + COL_W + GAP, 0, TITLE_H + PAD),
+		Position = UDim2.new(0, COL_W + GAP, 0, 0),
 		BackgroundTransparency = 1,
-		Visible = false,
+		Visible = true,
 		ZIndex = 6,
-		Parent = configPanel,
+		Parent = pageGroups[2],
 	})
 	local utilities = inst("Frame", {
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-		Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
+		Position = UDim2.new(0, 0, 0, 0),
 		BackgroundTransparency = 1,
-		Visible = false,
+		Visible = true,
 		ZIndex = 6,
-		Parent = configPanel,
+		Parent = pageGroups[3],
 	})
 	local utilitiesRight = inst("Frame", {
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-		Position = UDim2.new(0, PAD + COL_W + GAP, 0, TITLE_H + PAD),
+		Position = UDim2.new(0, COL_W + GAP, 0, 0),
 		BackgroundTransparency = 1,
-		Visible = false,
+		Visible = true,
 		ZIndex = 6,
-		Parent = configPanel,
+		Parent = pageGroups[3],
 	})
 	local darkYPos = createToggleCard("Auto Dark", "AutoDark", 4, utilitiesRight, function(value)
 		paintDarkBall(value)
@@ -1114,6 +1137,17 @@ function ExodusUI.setup(deps)
 		end)
 	end
 	local page = 1
+	local pageInputShield = inst("TextButton", {
+		Name = "PageInputShield",
+		Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
+		Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+		Visible = false,
+		ZIndex = 20,
+		Parent = configPanel,
+	})
 	local nav = inst("TextButton", {
 		Size = UDim2.new(0, 130, 0, 26),
 		Position = UDim2.new(0, PAD, 1, -PAD - 26),
@@ -1127,9 +1161,39 @@ function ExodusUI.setup(deps)
 	})
 	corner(nav, 6)
 	trackConn(nav.Activated:Connect(function()
-		page = page % 3 + 1; colLeft.Visible = page == 1; colRight.Visible = page == 1; settingsLeft.Visible = page == 2
-		settingsRight.Visible = page == 2; utilities.Visible = page == 3; utilitiesRight.Visible = page == 3
+		page = page % 3 + 1; UIState.pageGeneration += 1; local generation = UIState.pageGeneration
+		for _, tween in ipairs(UIState.pageTweens) do safeCancel(tween) end
+		UIState.pageTweens = {}; pageInputShield.Visible = true
 		nav.Text = page == 1 and "Configurações →" or (page == 2 and "Utilidades →" or "Principal →")
+		local incoming
+		for index, group in ipairs(pageGroups) do
+			if index == page then
+				if not group.Visible then
+					group.Position = UDim2.new(0, PAD + 20, 0, TITLE_H + PAD); group.GroupTransparency = 1; group.Visible = true
+				end
+				incoming = twPlay(group, 0.28, { Position = UDim2.new(0, PAD, 0, TITLE_H + PAD), GroupTransparency = 0 }, EASE_OUT, DIR_INOUT)
+				if incoming then UIState.pageTweens[#UIState.pageTweens + 1] = incoming end
+			elseif group.Visible then
+				local outgoing = twPlay(group, 0.28, { Position = UDim2.new(0, PAD - 20, 0, TITLE_H + PAD), GroupTransparency = 1 }, EASE_OUT, DIR_INOUT)
+				if outgoing then UIState.pageTweens[#UIState.pageTweens + 1] = outgoing end
+			end
+		end
+		local conn
+		local function finish()
+			if conn then safeDisconnect(conn); untrackConn(conn); conn = nil end
+			if generation ~= UIState.pageGeneration or not pageInputShield.Parent then return end
+			for index, group in ipairs(pageGroups) do
+				group.Visible = index == page; group.GroupTransparency = index == page and 0 or 1
+				group.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
+			end
+			UIState.pageTweens = {}; pageInputShield.Visible = false
+		end
+		if incoming then
+			conn = trackConn(incoming.Completed:Connect(finish))
+			task.delay(0.5, finish)
+		else
+			finish()
+		end
 	end))
 	if config.ClashBallVisible then clashBall.Position = UDim2.new(0, clashX, 0, clashY) end
 	if config.DarkBallVisible then darkBall.Position = UDim2.new(0, darkX, 0, darkY) end
