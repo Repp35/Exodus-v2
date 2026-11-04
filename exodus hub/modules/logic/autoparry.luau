@@ -214,7 +214,7 @@ local function computeParryRadius(speed, ping, resilienceBonus, windowFactor, ba
 	end
 	local leadTime = deflectWindow + validPing; local factor = tonumber(windowFactor)
 	if not isFiniteNumber(factor) then factor = getWindowFactor() end
-	factor = math.clamp(factor, T.MIN_WINDOW_FACTOR, T.MAX_WINDOW_FACTOR); local validResilience = isFiniteNumber(resilienceBonus) and math.max(resilienceBonus, 0) or 0
+	factor = math.clamp(factor, T.MIN_WINDOW_FACTOR, baseWindow == nil and T.MAX_WINDOW_FACTOR or math.max(T.MAX_WINDOW_FACTOR, factor)); local validResilience = isFiniteNumber(resilienceBonus) and math.max(resilienceBonus, 0) or 0
 	local baseRadius = T.BASE_RADIUS + validResilience
 	local anticipation = validSpeed * leadTime * factor
 	local noWindowRadius = baseRadius
