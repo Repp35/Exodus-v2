@@ -210,9 +210,13 @@ end
 
 function Spam.teardown()
     stopWorker()
-    for _, connection in ipairs({spamObserver, frameConnection}) do
-        if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(connection) end
-        connection:Disconnect()
+    if spamObserver then
+        if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(spamObserver) end
+        spamObserver:Disconnect()
+    end
+    if frameConnection then
+        if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(frameConnection) end
+        frameConnection:Disconnect()
     end
     spamObserver, frameConnection = nil, nil
     Spam.resetState()
