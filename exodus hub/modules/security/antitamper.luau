@@ -1,315 +1,349 @@
 -- [[ antitamper ]]
 
+-- helpers
 local AntiTamper = {}
-local PCall, Type, RawGet, RawEqual = pcall, type, rawget, rawequal
-local Debug = debug
-local DebugInfo = Type(Debug) == "table" and Debug.info or nil
-local Task = task
-local Spawn = Type(Task) == "table" and Task.spawn or nil
-local Wait = Type(Task) == "table" and Task.wait or nil
+local PCall = pcall
+local Type = type
+local ToString = tostring
+local RawGet = rawget
+local RawEqual = rawequal
+local Next = next
+local GlobalEnv = _G
+local DebugTable = debug
+local DebugInfo = Type(DebugTable) == "table" and DebugTable.info or nil
+local DebugGetUpvalue = Type(DebugTable) == "table" and DebugTable.getupvalue or nil
+local TaskTable = task
+local TaskSpawn = Type(TaskTable) == "table" and TaskTable.spawn or nil
+local TaskWait = Type(TaskTable) == "table" and TaskTable.wait or nil
+local Freeze = (Type(table) == "table" and Type(table.freeze) == "function" and table.freeze) or function(value) return value end
 
-local T = {
-    INTERVAL = 0.5,
-    KICK_MESSAGE = "Exodus: violacao de integridade detectada.",
-    UPVALUE_DEPTH = 3,
-    MAX_UPVALUES = 128,
-    MAX_FUNCTIONS = 8192,
-    MAX_TABLES = 4096,
-    REQUIRE_DEBUG_INFO = true,
-    CHECK_UPVALUES = false,
-    CHECK_UPVALUE_TYPES = false,
-    KICK_AFTER = 1,
-    WATCHDOGS = 2,
+-- environment
+local T = Freeze({
+	INTERVAL = 0.5,
+	KICK_MESSAGE = "Exodus: violacao de integridade detectada.",
+	UPVALUE_DEPTH = 3,
+	MAX_UPVALUES = 128,
+	MAX_FUNCTIONS = 8192,
+	MAX_TABLES = 4096,
+	REQUIRE_DEBUG_INFO = true,
+	CHECK_UPVALUES = false,
+	CHECK_UPVALUE_TYPES = false,
+	KICK_AFTER = 1,
+	WATCHDOGS = 2,
+})
+local State = {
+	ready = false,
+	passed = false,
+	watching = false,
+	kicked = false,
+	generation = 0,
+	violations = 0,
+	fingerprints = 0,
+	tables = 0,
+	lastFailure = nil,
+	lastViolation = nil,
 }
 
-if Type(table.freeze) == "function" then table.freeze(T) end
+local Utils
+local UtilsGetLocalPlayer
+local UtilsApiVersion
+local LocalPlayer
+local LocalPlayerKick
+local Baseline = nil
 
-local state = {
-    ready = false,
-    passed = false,
-    watching = false,
-    kicked = false,
-    generation = 0,
-    violations = 0,
-    fingerprints = 0,
-    tables = 0,
-    lastFailure = nil,
-    lastViolation = nil,
-}
-
-local Utils, getApiVersion, localPlayer, kickMethod
-local baseline
-
-local function failure(reason)
-    state.passed = false
-    state.lastFailure = reason
-    return false, reason
+-- roots
+local function valueKind(value) return Type(value) end
+local function formatKey(key)
+	local ok, result = PCall(ToString, key)
+	if ok then return result end
+	return "<unknown>"
 end
 
+-- api
+local function fail(reason)
+	State.passed = false; State.lastFailure = reason; return false, reason
+end
 local function kick()
-    if state.kicked then return end
-    state.kicked, state.watching = true, false
-    state.generation += 1
-    -- Integrity failures stop the watchdog but never disconnect the player.
+	if State.kicked then return end
+	State.kicked = true; State.watching = false
+	if not LocalPlayer or Type(LocalPlayerKick) ~= "function" then return end
+	PCall(LocalPlayerKick, LocalPlayer, T.KICK_MESSAGE)
 end
-
 local function violation(reason)
-    if state.kicked then return end
-    state.violations += 1
-    state.lastViolation = reason
-    state.passed, state.watching = false, false
-    if state.violations >= T.KICK_AFTER then kick() end
+	if State.kicked then return end
+	State.violations += 1; State.lastViolation = reason; State.passed = false; State.watching = false
+	if State.violations >= T.KICK_AFTER then kick() end
 end
-
-local function functionInfo(fn)
-    if Type(DebugInfo) ~= "function" then return nil end
-    local ok, source, line, name, argc, variadic = PCall(DebugInfo, fn, "slna")
-    if not ok then return nil end
-    return {source, line, name, argc, variadic}
+local function getRoots()
+	local roots = {}; local seen = {}
+	local function add(name, owner, key)
+		local value = RawGet(owner, key)
+		if Type(value) ~= "table" then return end
+		if seen[value] then return end
+		seen[value] = true
+		roots[#roots + 1] = {
+			name = name,
+			owner = owner,
+			key = key,
+			value = value,
+		}
+	end
+	add("ExodusModules", GlobalEnv, "ExodusModules"); local exodus = RawGet(GlobalEnv, "Exodus")
+	if Type(exodus) == "table" then add("Exodus.Modules", exodus, "Modules") end
+	return roots
 end
-
-local function sameInfo(first, second)
-    if not first or not second then return true end
-    for index = 1, 5 do
-        if first[index] ~= second[index] then return false end
-    end
-    return true
+local function getFunctionInfo(fn)
+	if Type(DebugInfo) ~= "function" then return nil end
+	local ok, source, line, name, argc, variadic = PCall(DebugInfo, fn, "slna")
+	if not ok then return nil end
+	return {
+		source = source,
+		line = line,
+		name = name,
+		argc = argc,
+		variadic = variadic,
+	}
 end
-
-local function roots()
-    local results, seen = {}, {}
-    local function add(name, owner, key)
-        local value = RawGet(owner, key)
-        if Type(value) ~= "table" or seen[value] then return end
-        seen[value] = true
-        results[#results + 1] = {owner = owner, key = key, value = value, path = name}
-    end
-    add("ExodusModules", _G, "ExodusModules")
-    local exodus = RawGet(_G, "Exodus")
-    if Type(exodus) == "table" then add("Exodus.Modules", exodus, "Modules") end
-    return results
+local function sameFunctionInfo(a, b)
+	if not a or not b then return true end
+	return a.source == b.source and a.line == b.line and a.name == b.name and a.argc == b.argc and a.variadic == b.variadic
 end
+local function snapshotFunction(fn, baseline, seen, depth)
+	if Type(fn) ~= "function" then return true end
+	if seen[fn] then return true end
+	if #baseline.functions >= T.MAX_FUNCTIONS then return false, "limite de fingerprints atingido" end
+	seen[fn] = true
+	local entry = {
+		fn = fn,
+		info = getFunctionInfo(fn),
+		upvalues = {},
+	}
 
-local function snapshot()
-    local found = roots()
-    if #found == 0 then return nil, "nenhum root do Exodus encontrado" end
+	baseline.functions[#baseline.functions + 1] = entry
+	if not T.CHECK_UPVALUES then return true end
+	if Type(DebugGetUpvalue) ~= "function" then return true end
+	for index = 1, T.MAX_UPVALUES do
+		local ok, name, value = PCall(DebugGetUpvalue, fn, index)
+		if not ok then break end
+		if not name then break end
+		local kind = valueKind(value)
+		local upvalue = {
+			index = index,
+			name = name,
+			kind = kind,
+			reference = (kind == "function" or kind == "table" or kind == "thread" or kind == "userdata") and value or nil,
+		}
 
-    local result = {roots = found, tables = {}, tableEdges = {}, functionEdges = {}, functions = {}}
-    local seenTables, seenFunctions = {}, {}
-
-    local function addFunction(fn)
-        if seenFunctions[fn] then return true end
-        if #result.functions >= T.MAX_FUNCTIONS then
-            return false, "limite de fingerprints atingido"
-        end
-        seenFunctions[fn] = true
-        result.functions[#result.functions + 1] = {fn = fn, info = functionInfo(fn)}
-        return true
-    end
-
-    local function visit(owner, path)
-        if seenTables[owner] then return true end
-        if #result.tables >= T.MAX_TABLES then
-            return false, "limite de tabelas monitoradas atingido"
-        end
-
-        seenTables[owner] = true
-        result.tables[#result.tables + 1] = owner
-
-        for key, value in next, owner do
-            local ok, label = PCall(tostring, key)
-            local childPath = path .. "[" .. (ok and label or "<unknown>") .. "]"
-
-            if Type(value) == "table" then
-                result.tableEdges[#result.tableEdges + 1] = {
-                    owner = owner, key = key, value = value, path = childPath,
-                }
-                local valid, err = visit(value, childPath)
-                if not valid then return false, err end
-            elseif Type(value) == "function" then
-                result.functionEdges[#result.functionEdges + 1] = {
-                    owner = owner, key = key, fn = value, path = childPath,
-                }
-                local valid, err = addFunction(value)
-                if not valid then return false, err end
-            end
-
-            if #result.functions >= T.MAX_FUNCTIONS then
-                return false, "limite de fingerprints atingido"
-            end
-        end
-        return true
-    end
-
-    for _, root in ipairs(found) do
-        local ok, err = visit(root.value, root.path)
-        if not ok then return nil, err end
-    end
-
-    if #result.functions == 0 then
-        return nil, "nenhuma funcao encontrada para fingerprint"
-    end
-    return result
+		entry.upvalues[#entry.upvalues + 1] = upvalue
+		if depth < T.UPVALUE_DEPTH and kind == "function" then
+			local okNested, err = snapshotFunction(value, baseline, seen, depth + 1)
+			if not okNested then return false, err end
+		end
+	end
+	return true
 end
+local function snapshotTable(tbl, baseline, seenTables, seenFunctions, depth, path)
+	if Type(tbl) ~= "table" then return true end
+	if seenTables[tbl] then return true end
+	if #baseline.tables >= T.MAX_TABLES then return false, "limite de tabelas monitoradas atingido" end
+	seenTables[tbl] = true; baseline.tables[#baseline.tables + 1] = tbl
+	for key, value in Next, tbl do
+		local currentPath = path .. "[" .. formatKey(key) .. "]"; local kind = Type(value)
+		if kind == "table" then
+			baseline.tableEdges[#baseline.tableEdges + 1] = {
+				owner = tbl,
+				key = key,
+				value = value,
+				path = currentPath,
+			}
+			local ok, err = snapshotTable(value, baseline, seenTables, seenFunctions, depth + 1, currentPath)
+			if not ok then return false, err end
+		elseif kind == "function" then
+			baseline.functionEdges[#baseline.functionEdges + 1] = {
+				owner = tbl,
+				key = key,
+				fn = value,
+				path = currentPath,
+			}
+			local ok, err = snapshotFunction(value, baseline, seenFunctions, 0)
+			if not ok then return false, err end
+		end
+		if #baseline.functions >= T.MAX_FUNCTIONS then return false, "limite de fingerprints atingido" end
+	end
+	return true
+end
+local function buildBaseline()
+	local roots = getRoots()
+	if #roots == 0 then return nil, "nenhum root do Exodus encontrado" end
+	local baseline = {
+		roots = {},
+		tables = {},
+		tableEdges = {},
+		functionEdges = {},
+		functions = {},
+	}
 
+	local seenTables = {}; local seenFunctions = {}
+	for _, root in ipairs(roots) do
+		baseline.roots[#baseline.roots + 1] = {
+			owner = root.owner,
+			key = root.key,
+			value = root.value,
+			path = root.name,
+		}
+		local ok, err = snapshotTable(root.value, baseline, seenTables, seenFunctions, 0, root.name)
+		if not ok then return nil, err end
+	end
+	if #baseline.functions == 0 then return nil, "nenhuma funcao encontrada para fingerprint" end
+	return baseline
+end
+local function verifyRoots()
+	for _, entry in ipairs(Baseline.roots) do
+		local current = RawGet(entry.owner, entry.key)
+		if not RawEqual(current, entry.value) then return false, ("root alterado: %s"):format(entry.path) end
+	end
+	return true
+end
+local function verifyTables()
+	for _, entry in ipairs(Baseline.tableEdges) do
+		local current = RawGet(entry.owner, entry.key)
+		if not RawEqual(current, entry.value) then return false, ("tabela alterada: %s"):format(entry.path) end
+	end
+	return true
+end
+local function verifyFunctionEdges()
+	for _, entry in ipairs(Baseline.functionEdges) do
+		local current = RawGet(entry.owner, entry.key)
+		if not RawEqual(current, entry.fn) then return false, ("funcao substituida: %s"):format(entry.path) end
+	end
+	return true
+end
+local function verifyFunctions()
+	for _, entry in ipairs(Baseline.functions) do
+		local fn = entry.fn
+		if Type(fn) ~= "function" then return false, "fingerprint perdeu referencia de funcao" end
+		if DebugInfo and entry.info then
+			local currentInfo = getFunctionInfo(fn)
+			if currentInfo and not sameFunctionInfo(entry.info, currentInfo) then return false, "metadados de funcao alterados" end
+		end
+
+		-- upvalues
+		if T.CHECK_UPVALUES and Type(DebugGetUpvalue) == "function" then
+			for _, saved in ipairs(entry.upvalues) do
+				local ok, name, value = PCall(DebugGetUpvalue, fn, saved.index)
+				if not ok then break end
+				if name ~= saved.name then return false, ("upvalue renomeado: %s"):format(saved.name) end
+				if saved.reference ~= nil then
+					if not RawEqual(value, saved.reference) then return false, ("referencia de upvalue alterada: %s"):format(saved.name) end
+				elseif T.CHECK_UPVALUE_TYPES then
+					if Type(value) ~= saved.kind then return false, ("tipo de upvalue alterado: %s"):format(saved.name) end
+				end
+			end
+		end
+	end
+	return true
+end
+local function verifyRuntimeAPIs()
+	if Type(debug) ~= "table" or not RawEqual(debug, DebugTable) then return false, "tabela debug alterada" end
+	if Type(DebugInfo) == "function" then
+		if debug.info ~= DebugInfo then return false, "debug.info alterado" end
+	end
+	if Type(task) ~= "table" or not RawEqual(task, TaskTable) then return false, "tabela task alterada" end
+	if Type(TaskSpawn) == "function" and task.spawn ~= TaskSpawn then return false, "task.spawn alterado" end
+	if Type(TaskWait) == "function" and task.wait ~= TaskWait then return false, "task.wait alterado" end
+	return true
+end
 local function verify()
-    if not baseline then return false, "baseline inexistente" end
-    if Type(debug) ~= "table" or not RawEqual(debug, Debug) then
-        return false, "tabela debug alterada"
-    end
-    if Type(DebugInfo) == "function" and debug.info ~= DebugInfo then
-        return false, "debug.info alterado"
-    end
-    if Type(task) ~= "table" or not RawEqual(task, Task) then
-        return false, "tabela task alterada"
-    end
-    if Type(Spawn) == "function" and task.spawn ~= Spawn then
-        return false, "task.spawn alterado"
-    end
-    if Type(Wait) == "function" and task.wait ~= Wait then
-        return false, "task.wait alterado"
-    end
-
-    for _, edge in ipairs(baseline.roots) do
-        if not RawEqual(RawGet(edge.owner, edge.key), edge.value) then
-            return false, "root alterado: " .. edge.path
-        end
-    end
-    for _, edge in ipairs(baseline.tableEdges) do
-        if not RawEqual(RawGet(edge.owner, edge.key), edge.value) then
-            return false, "tabela alterada: " .. edge.path
-        end
-    end
-    for _, edge in ipairs(baseline.functionEdges) do
-        if not RawEqual(RawGet(edge.owner, edge.key), edge.fn) then
-            return false, "funcao substituida: " .. edge.path
-        end
-    end
-    for _, entry in ipairs(baseline.functions) do
-        if Type(entry.fn) ~= "function" then
-            return false, "fingerprint perdeu referencia de funcao"
-        end
-        if entry.info and not sameInfo(entry.info, functionInfo(entry.fn)) then
-            return false, "metadados de funcao alterados"
-        end
-    end
-    return true
+	if not Baseline then return false, "baseline inexistente" end
+	local ok, reason = verifyRuntimeAPIs()
+	if not ok then return false, reason end
+	ok, reason = verifyRoots()
+	if not ok then return false, reason end
+	ok, reason = verifyTables()
+	if not ok then return false, reason end
+	ok, reason = verifyFunctionEdges()
+	if not ok then return false, reason end
+	ok, reason = verifyFunctions()
+	if not ok then return false, reason end
+	return true
 end
-
-local function watchdog(offset)
-    local token = state.generation
-    Spawn(function()
-        if offset > 0 then Wait(offset) end
-        while state.watching and token == state.generation do
-            local ok, passed, reason = PCall(verify)
-            if not ok then
-                violation("erro interno do watchdog")
-                break
-            end
-            if not passed then
-                violation(reason or "falha de integridade")
-                break
-            end
-            Wait(T.INTERVAL)
-        end
-    end)
+local function startWatchdog(delayTime)
+	local generation = State.generation
+	TaskSpawn(function()
+		if delayTime > 0 then TaskWait(delayTime) end
+		while State.watching and generation == State.generation do
+			local ok, passed, reason = PCall(verify)
+			if not ok then violation("erro interno do watchdog"); break end
+			if not passed then violation(reason or "falha de integridade"); break end
+			TaskWait(T.INTERVAL)
+		end
+	end)
 end
-
-local function start()
-    if T.REQUIRE_DEBUG_INFO and Type(DebugInfo) ~= "function" then
-        return failure("debug.info indisponivel")
-    end
-    if Type(Spawn) ~= "function" or Type(Wait) ~= "function" then
-        return failure("task API indisponivel")
-    end
-
-    local built, err = snapshot()
-    if not built then return failure(err) end
-    baseline = built
-    state.fingerprints = #baseline.functions
-    state.tables = #baseline.tables
-
-    local valid, reason = verify()
-    if not valid then return failure(reason) end
-
-    state.passed = true
-    state.lastFailure = nil
-    state.watching = true
-    state.generation += 1
-    for index = 1, T.WATCHDOGS do
-        watchdog((index - 1) * T.INTERVAL / T.WATCHDOGS)
-    end
-    return true
+local function watch()
+	if Type(TaskSpawn) ~= "function" or Type(TaskWait) ~= "function" then return fail("task.spawn/task.wait indisponivel") end
+	State.watching = true; State.generation += 1
+	for index = 1, T.WATCHDOGS do
+		startWatchdog((index - 1) * (T.INTERVAL / T.WATCHDOGS))
+	end
+	return true
 end
-
+local function run()
+	if T.REQUIRE_DEBUG_INFO and Type(DebugInfo) ~= "function" then return fail("debug.info indisponivel") end
+	if Type(TaskSpawn) ~= "function" or Type(TaskWait) ~= "function" then return fail("task API indisponivel") end
+	local baseline, reason = buildBaseline()
+	if not baseline then return fail(reason) end
+	Baseline = baseline; State.fingerprints = #baseline.functions; State.tables = #baseline.tables; local ok, verifyReason = verify()
+	if not ok then return fail(verifyReason) end
+	State.passed = true; State.lastFailure = nil; watch(); return true
+end
 function AntiTamper.setup(deps)
-    if Type(deps) ~= "table" or Type(deps.Utils) ~= "table" then
-        return false, "dependência ausente: Utils"
-    end
-    if Type(deps.Utils.getLocalPlayer) ~= "function"
-        or Type(deps.Utils.apiVersion) ~= "function" then
-        return false, "dependência ausente: Utils.getLocalPlayer/apiVersion"
-    end
-
-    Utils, getApiVersion = deps.Utils, deps.Utils.apiVersion
-    local ok, player = PCall(Utils.getLocalPlayer)
-    if not ok or not player then return false, "Players.LocalPlayer indisponível" end
-
-    local kickOk, method = PCall(function() return player.Kick end)
-    if not kickOk or Type(method) ~= "function" then
-        return false, "LocalPlayer.Kick indisponível"
-    end
-
-    localPlayer, kickMethod = player, method
-    state.ready = true
-    state.passed, state.watching, state.kicked = false, false, false
-    state.generation += 1
-    state.violations, state.fingerprints, state.tables = 0, 0, 0
-    state.lastFailure, state.lastViolation = nil, nil
-    baseline = nil
-
-    local passed, reason = start()
-    if not passed then state.ready = false end
-    return passed, reason
+	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
+	if type(deps.Utils.getLocalPlayer) ~= "function" or type(deps.Utils.apiVersion) ~= "function" then return false, "dependência ausente: Utils.getLocalPlayer/apiVersion" end
+	Utils = deps.Utils; UtilsGetLocalPlayer = Utils.getLocalPlayer; UtilsApiVersion = Utils.apiVersion; local playerOk, player = PCall(UtilsGetLocalPlayer)
+	if not playerOk or not player then return false, "Players.LocalPlayer indisponível" end
+	local kickOk, kickMethod = PCall(function() return player.Kick end)
+	if not kickOk or Type(kickMethod) ~= "function" then return false, "LocalPlayer.Kick indisponível" end
+	LocalPlayer = player; LocalPlayerKick = kickMethod; State.ready = true; State.passed = false
+	State.kicked = false; State.watching = false; State.generation += 1; State.violations = 0
+	State.fingerprints = 0; State.tables = 0; State.lastFailure = nil; State.lastViolation = nil
+	Baseline = nil; local ok, reason = run()
+	if not ok then State.ready = false end
+	return ok, reason
 end
-
 function AntiTamper.teardown()
-    state.ready, state.passed, state.watching, state.kicked = false, false, false, false
-    state.generation += 1
-    state.violations, state.fingerprints, state.tables = 0, 0, 0
-    state.lastFailure, state.lastViolation = nil, nil
-    baseline, Utils, getApiVersion, localPlayer, kickMethod = nil, nil, nil, nil, nil
+	State.ready = false; State.passed = false; State.watching = false; State.kicked = false
+	State.generation += 1; State.violations = 0; State.fingerprints = 0; State.tables = 0
+	State.lastFailure = nil; State.lastViolation = nil; Baseline = nil; LocalPlayer = nil
+	LocalPlayerKick = nil; UtilsGetLocalPlayer = nil; UtilsApiVersion = nil; Utils = nil
 end
-
-function AntiTamper.isPassed()
-    return state.ready and state.passed and not state.kicked
-end
-
+function AntiTamper.isPassed() return State.ready == true and State.passed == true and State.kicked == false end
 function AntiTamper.getStatus()
-    local schema = 1
-    if Type(getApiVersion) == "function" then
-        local ok, value = PCall(getApiVersion)
-        if ok then schema = value or 1 end
-    end
-    return {
-        schema = schema,
-        ready = state.ready,
-        passed = state.passed,
-        watching = state.watching,
-        kicked = state.kicked,
-        violations = state.violations,
-        fingerprints = state.fingerprints,
-        tables = state.tables,
-        lastViolation = state.lastViolation,
-        lastFailure = state.lastFailure,
-        generation = state.generation,
-    }
+	local schema = 1
+	if Type(UtilsApiVersion) == "function" then
+		local ok, result = PCall(UtilsApiVersion)
+		if ok then schema = result or 1 end
+	end
+	return {
+		schema = schema,
+		ready = State.ready,
+		passed = State.passed,
+		watching = State.watching,
+		kicked = State.kicked,
+		violations = State.violations,
+		fingerprints = State.fingerprints,
+		tables = State.tables,
+		lastViolation = State.lastViolation,
+		lastFailure = State.lastFailure,
+		generation = State.generation,
+	}
 end
-
 AntiTamper.__contract = {
-    requires = {Utils = "utils"},
-    requiresMethods = {Utils = {"getLocalPlayer", "apiVersion"}},
-    provides = {"setup", "teardown", "isPassed"},
+	requiresMethods = { Utils = { "getLocalPlayer", "apiVersion" } },
+	provides = { "setup", "teardown", "isPassed" },
+	requires = {
+		Utils = "utils",
+	},
+
 }
 
 return AntiTamper

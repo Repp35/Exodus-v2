@@ -24,6 +24,7 @@ local MODULE_MANIFEST = {
 	{ name = "config", path = "modules/front/config.luau" },
 	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
 	{ name = "utils", path = "modules/logic/utils.luau" },
+	{ name = "antitamper", path = "modules/security/antitamper.luau" },
 	{ name = "gameinfo", path = "modules/logic/gameinfo.luau" },
 	{ name = "autodark", path = "modules/logic/autodark.luau" },
 	{ name = "movement", path = "modules/logic/movement.luau" },
@@ -219,7 +220,7 @@ local function clearRegistry()
 end
 local function stopPreviousRuntime()
 	if type(Modules.remote) == "table" and type(Modules.remote.stopMaintenance) == "function" then pcall(Modules.remote.stopMaintenance) end
-	for _, name in ipairs({ "character", "autofierce", "spam", "autoclash", "autodark", "movement", "dash", "autoparry" }) do
+	for _, name in ipairs({ "character", "autofierce", "spam", "autoclash", "autodark", "movement", "dash", "autoparry", "antitamper" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
 			if type(module.teardown) == "function" then pcall(module.teardown) elseif type(module.resetState) == "function" then pcall(module.resetState) end
@@ -295,8 +296,7 @@ local function loadModule(name, relativePath, url, localRoot)
 	return nil, fetchError or "origem remota indisponível"
 end
 local function loadModules(urls, localRoot)
-	local loaded = {}
-	local names = {}
+	local loaded = {}; local names = {}
 	for _, name in ipairs(MODULE_ORDER) do
 		names[#names + 1] = name
 	end
@@ -571,10 +571,7 @@ local function waitForLocalPlayer(timeout)
 	return false, "LocalPlayer indisponível após esperar " .. tostring(timeout or 10) .. "s"
 end
 local function startInternal()
-	printStartup("Exodus: iniciando")
-	stopPreviousRuntime()
-	clearRegistry()
-	local playerReady, playerError = waitForLocalPlayer(10)
+	printStartup("Exodus: iniciando"); stopPreviousRuntime(); clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
 	if not playerReady then return false, "Loader", playerError end
 	local localRoot = findCompleteLocalRoot()
 	local version, revisionError
