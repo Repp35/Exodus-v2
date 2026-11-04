@@ -27,6 +27,7 @@ local setSpam
 local screenGui
 local floatingButton
 local clashBall
+local darkBall
 local miniGui
 local configPanel
 local particleLayer
@@ -54,6 +55,8 @@ local C = {
 	btnDark = Color3.fromRGB(30, 30, 65),
 	toggleOn = Color3.fromRGB(139, 92, 246),
 	toggleOff = Color3.fromRGB(45, 45, 80),
+	darkOn = Color3.fromRGB(151, 66, 221),
+	darkOff = Color3.fromRGB(52, 34, 87),
 	hold = Color3.fromRGB(236, 72, 153),
 	inputBg = Color3.fromRGB(16, 16, 38),
 }
@@ -188,7 +191,7 @@ local function btnPos()
 end
 local CLASH_SIZE = 64
 local OFFSCREEN_X = -CLASH_SIZE - 40
-local autoClashTrack, autoClashThumb
+local autoClashTrack, autoClashThumb, autoDarkSetVisual
 local function paintClashBall()
 	if not clashBall or not clashBall.Parent then return end
 	twPlay(clashBall, 0.28, { BackgroundColor3 = UIState.clashBallOn and C.green or C.red }, EASE_SINE, DIR_INOUT); clashBall.Text = UIState.clashBallOn and "ON" or "OFF"
@@ -214,6 +217,23 @@ local function showClashBall(v)
 		v and EASE_BACK or EASE_OUT,
 		DIR_OUT
 	)
+end
+local function paintDarkBall(v)
+	if not darkBall or not darkBall.Parent then return end
+	twPlay(darkBall, 0.28, { BackgroundColor3 = v and C.darkOn or C.darkOff }, EASE_SINE, DIR_INOUT)
+	darkBall.Text = v and "ON" or "OFF"; darkBall.TextSize = v and 18 or 16
+end
+local function showDarkBall(v)
+	setConfigValue("DarkBallVisible", v); local config = Utils.getConfig()
+	local x = config.DarkBallX or 14; local y = config.DarkBallY or (viewport().Y / 2 + CLASH_SIZE / 2 + 8)
+	twPlay(darkBall, v and 0.22 or 0.18, { Position = v and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, v and EASE_BACK or EASE_OUT, DIR_OUT)
+end
+local function setDarkBall(v)
+	if not setConfigValue("AutoDark", v) then return end
+	if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
+	paintDarkBall(v); if autoDarkSetVisual then autoDarkSetVisual(v) end
+	twPlay(darkBall, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
+	task.delay(0.08, function() twPlay(darkBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_BACK, DIR_OUT) end)
 end
 local MINI_W, MINI_H = 120, 90
 local function showMini(v, visBtn)
@@ -269,10 +289,10 @@ local function cleanupUI()
 	end
 	local current = screenGui
 	if current then pcall(function() current:Destroy() end) end
-	screenGui = nil; floatingButton = nil; clashBall = nil; miniGui = nil
+	screenGui = nil; floatingButton = nil; clashBall = nil; darkBall = nil; miniGui = nil
 	configPanel = nil; particleLayer = nil; titleBar = nil; closeButton = nil
 	colLeft = nil; colRight = nil; killBtn = nil; autoClashTrack = nil
-	autoClashThumb = nil
+	autoClashThumb = nil; autoDarkSetVisual = nil
 	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil end
 end
 
@@ -404,6 +424,7 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
 	})
 	local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
 	if configKey == "AutoClash" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
+	if configKey == "AutoDark" then autoDarkSetVisual = setVisual end
 	trackConn(inst("TextButton", {
 		Size = UDim2.new(1, 0, 1, 0),
 		BackgroundTransparency = 1,
@@ -704,6 +725,28 @@ function ExodusUI.setup(deps)
 	trackConn(clashBall.Activated:Connect(function()
 		setClashBall(not UIState.clashBallOn); syncAutoClashToggle()
 	end))
+	local darkX = config.DarkBallX or 14; local darkY = config.DarkBallY or (viewport().Y / 2 + CLASH_SIZE / 2 + 8)
+	darkBall = inst("TextButton", {
+		Name = "ExodusDarkBall",
+		Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
+		Position = UDim2.new(0, OFFSCREEN_X, 0, darkY),
+		BackgroundColor3 = config.AutoDark and C.darkOn or C.darkOff,
+		Text = config.AutoDark and "ON" or "OFF",
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = config.AutoDark and 18 or 16,
+		Font = Enum.Font.GothamBold,
+		Active = true,
+		ZIndex = 8,
+		Parent = screenGui,
+	})
+	corner(darkBall, 999); stroke(darkBall, Color3.new(0, 0, 0), 2)
+	local isDarkDragging = makeDraggable(darkBall, darkBall, function()
+		setConfigValue("DarkBallX", darkBall.Position.X.Offset); setConfigValue("DarkBallY", darkBall.Position.Y.Offset)
+	end)
+	trackConn(darkBall.Activated:Connect(function()
+		if isDarkDragging() then return end
+		setDarkBall(Utils.getConfigValue("AutoDark") ~= true)
+	end))
 	local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30
 	miniGui = inst("Frame", {
 		Name = "ExodusSpamMini",
@@ -906,7 +949,6 @@ function ExodusUI.setup(deps)
 			setClashBall(value, true); paintClashBall()
 		end,
 		ClashBallVisible = showClashBall,
-		AutoDark = function() if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end end,
 	}
 
 	for _, definition in ipairs(UIConfig.panelToggles) do
@@ -947,6 +989,19 @@ function ExodusUI.setup(deps)
 		ZIndex = 6,
 		Parent = configPanel,
 	})
+	local utilitiesRight = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, PAD + COL_W + GAP, 0, TITLE_H + PAD),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 6,
+		Parent = configPanel,
+	})
+	local darkYPos = createToggleCard("Auto Dark", "AutoDark", 4, utilitiesRight, function(value)
+		paintDarkBall(value)
+		if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
+	end)
+	createToggleCard("Mini Dark UI", "DarkBallVisible", darkYPos, utilitiesRight, showDarkBall)
 	createParryTimingCard(4, settingsLeft); local clashY = createClashTimingCard("Ativação AC (ms)", "AutoClashActivationMs", 180, 4, settingsRight)
 	createClashTimingCard("Desativação AC (ms)", "AutoClashDeactivationMs", 130, clashY, settingsRight)
 	local antiConnection
@@ -1028,9 +1083,11 @@ function ExodusUI.setup(deps)
 	corner(nav, 6)
 	trackConn(nav.Activated:Connect(function()
 		page = page % 3 + 1; colLeft.Visible = page == 1; colRight.Visible = page == 1; settingsLeft.Visible = page == 2
-		settingsRight.Visible = page == 2; utilities.Visible = page == 3; nav.Text = page == 1 and "Configurações →" or (page == 2 and "Utilidades →" or "Principal →")
+		settingsRight.Visible = page == 2; utilities.Visible = page == 3; utilitiesRight.Visible = page == 3
+		nav.Text = page == 1 and "Configurações →" or (page == 2 and "Utilidades →" or "Principal →")
 	end))
 	if config.ClashBallVisible then clashBall.Position = UDim2.new(0, clashX, 0, clashY) end
+	if config.DarkBallVisible then darkBall.Position = UDim2.new(0, darkX, 0, darkY) end
 	setSpam(Utils.isManualSpamActive()); return true
 end
 

@@ -17,11 +17,6 @@ UIConfig.panelToggles = {
 		label = "Mini Clash UI",
 		key = "ClashBallVisible",
 	},
-	{
-		kind = "toggle",
-		label = "Auto Dark",
-		key = "AutoDark",
-	},
 }
 
 UIConfig.panelComponents = {
@@ -44,6 +39,7 @@ UIConfig.__config = {
 		AutoClashActivationMs = "delayMs",
 		AutoClashDeactivationMs = "delayMs",
 		ClashBallVisible = "boolean",
+		DarkBallVisible = "boolean",
 		CPS = "rate",
 		CPF = "rate",
 		SpamRateMode = "rateMode",
@@ -53,6 +49,8 @@ UIConfig.__config = {
 		BtnY = "position",
 		ClashBallX = "position",
 		ClashBallY = "position",
+		DarkBallX = "position",
+		DarkBallY = "position",
 		MiniX = "position",
 		MiniY = "position",
 		PanelX = "position",
@@ -67,6 +65,7 @@ UIConfig.__config = {
 		AutoClashActivationMs = 180,
 		AutoClashDeactivationMs = 130,
 		ClashBallVisible = false,
+		DarkBallVisible = false,
 		CPS = 24,
 		CPF = 0.36,
 		SpamRateMode = "CPF",
