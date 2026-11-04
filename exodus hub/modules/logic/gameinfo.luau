@@ -309,47 +309,18 @@ local function sampleDeflectPress(time)
 	if not finite(pressAt) or pressAt <= deflectState.lastObservedPressClock then return end
 	deflectState.lastObservedPressClock = pressAt
 	if time - pressAt > 0.5 or pressAt > time + 0.05 or not currentTargetMatches() then return end
-
 	if deflectState.attempt or deflectState.fierceUsedForTarget then return end
-	local snapshot = getSnapshot(nil, time)
-	local player = Players and Players.LocalPlayer
-	local character = player and player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not snapshot or not snapshot.valid or not root or not root:IsA("BasePart") then return end
-	if typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return end
-
-	local speed = finite(snapshot.syncSpeed) and snapshot.syncSpeed or snapshot.speed
+	local sync = getDecodedSyncData()
+	local speed = type(sync) == "table" and tonumber(sync.Speed) or nil
 	local window = GameInfo.getDeflectWindow(speed)
 	if not finite(window) or window <= 0 then return end
-
-	local direction = root.Position - snapshot.position
-	local distance = direction.Magnitude
-	local tti
-	if distance > 0.001 then
-		local velocity = snapshot.velocity
-		if velocity.Magnitude > 0.1 and finite(speed) and speed > 0 then
-			velocity = velocity.Unit * speed
-		end
-		local rootVelocity = root.AssemblyLinearVelocity
-		if typeof(rootVelocity) ~= "Vector3" then rootVelocity = Vector3.zero end
-		local closing = (velocity - rootVelocity):Dot(direction) / distance
-		if closing > 0.001 then
-			local range = GameInfo.getDeflectRange()
-			if not finite(range) then range = 8.5 end
-			tti = math.max(distance - range, 0) / closing
-		end
-	end
-
 	deflectState.pressRevision += 1
 	deflectState.attempt = {
 		id = deflectState.pressRevision,
 		at = pressAt,
-		deadline = pressAt + window,
+		deadline = pressAt + window + EARLY_MARGIN,
 		window = window,
-		ttiAtPress = tti,
-		early = finite(tti) and tti >= window - EARLY_MARGIN or false,
-		ball = snapshot.ball,
-		targetId = player.UserId,
+		targetId = Players.LocalPlayer.UserId,
 	}
 	deflectState.known = true
 	deflectState.active = false
@@ -443,15 +414,14 @@ function GameInfo.getDeflectCooldownState()
 	deflectState.active = false
 	deflectState.blocking = cooldownRunning or attempt ~= nil or deflectState.fierceUsedForTarget == true
 	if attempt then
-		local valid = currentTargetMatches() and attempt.ball == getBall()
+		local valid = currentTargetMatches()
 		if not valid then
 			deflectState.attempt = nil
 		else
 			local expired = time >= attempt.deadline
-			local failed = attempt.early or expired
 			attempt.expired = expired
-			attempt.failed = failed
-			if failed and cooldownRunning then
+			attempt.failed = expired
+			if expired and cooldownRunning then
 				deflectState.active = true
 			elseif expired and not cooldownRunning then
 				deflectState.retryRevision += 1
