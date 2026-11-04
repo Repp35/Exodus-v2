@@ -61,6 +61,10 @@ assert(info.getSyncData()==sync and info.getSyncSequence()==102, 'provider shoul
 provider.lastSeq=65535
 assert(info.applyPacket({Sequence=0,TargetPlayerID=42,Speed=100}), 'wrapped sequence must be accepted')
 assert(info.getTargetId()==42, 'wrapped packet must update target')
+info.getDeflectWindow=function() return 0.4 end
+info.noteDeflectPress()
+local cooldown=info.getDeflectCooldownState()
+assert(cooldown.attempt and cooldown.blocking and cooldown.attempt.targetId==42, 'a Deflect invocation must be tracked without LastPressClock')
 print('GameInfo motion and packet scenarios: PASS')
 '''
 out.write_text(pre+source+post, encoding='utf-8')

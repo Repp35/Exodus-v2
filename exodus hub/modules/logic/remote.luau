@@ -284,15 +284,11 @@ end
 function Remote.fireParry(_flag)
 	local ability = getDeflectAbility()
 	if ability then
-		local previousPress = ability.LastPressClock; local ok, err = xpcall(ability.Deflect, deflectTrace, ability)
-		if not ok then remoteState = "deflect_error"; return false, err end
-		if ability.LastPressClock == previousPress then
-			remoteState = "deflect_ignored"
-			if type(previousPress) ~= "number" then return false, "Deflect não confirmou clique: LastPressClock indisponível" end
-			return false, "Deflect não registrou clique (LastPressClock não mudou)"
-		end
+		local ok, result = xpcall(ability.Deflect, deflectTrace, ability)
+		if not ok then remoteState = "deflect_error"; return false, result end
+		if result == false then remoteState = "deflect_ignored"; return false, "Deflect recusou a chamada" end
 		GameInfo.noteDeflectPress(); remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
-		if not loggedParryMethods.deflect and ability.LastPressClock ~= previousPress and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
+		if not loggedParryMethods.deflect then logParryMethod("deflect", "Deflect() chamado") end
 		return true
 	end
 	remoteState = "unavailable"; parryInitialized = false; parryRemoteSource = nil; return false, "Deflect indisponível"

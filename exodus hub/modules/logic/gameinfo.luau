@@ -66,7 +66,6 @@ local deflectState = {
 	retryRevision = 0,
 	pressRevision = 0,
 	lastEventAt = -math.huge,
-	lastObservedPressClock = -math.huge,
 	attempt = nil,
 }
 
@@ -265,7 +264,6 @@ function GameInfo.setup(deps)
 		retryRevision = 0,
 		pressRevision = 0,
 		lastEventAt = -math.huge,
-		lastObservedPressClock = -math.huge,
 		attempt = nil,
 	}
 
@@ -327,11 +325,9 @@ local function currentTargetMatches()
 	if type(sync) == "table" and sync.Teleported == true then return false end
 	return resolveTargetId(sync) == player.UserId
 end
-local function sampleDeflectPress(time)
-	local ability = locateDeflectAbility(); local pressAt = ability and ability.LastPressClock
-	if not finite(pressAt) or pressAt <= deflectState.lastObservedPressClock then return end
-	deflectState.lastObservedPressClock = pressAt
-	if time - pressAt > 0.5 or pressAt > time + 0.05 or not currentTargetMatches() then return end
+function GameInfo.noteDeflectPress()
+	local pressAt = os.clock()
+	if not currentTargetMatches() then return end
 	if deflectState.attempt or deflectState.fierceUsedForTarget then return end
 	local sync = getDecodedSyncData(); local speed = type(sync) == "table" and tonumber(sync.Speed) or nil; local window = GameInfo.getDeflectWindow(speed)
 	if not finite(window) or window <= 0 then return end
@@ -345,7 +341,6 @@ local function sampleDeflectPress(time)
 	}
 	deflectState.known = true; deflectState.active = false
 end
-function GameInfo.noteDeflectPress() sampleDeflectPress(os.clock()) end
 function GameInfo.noteFierceDeflectActivation()
 	deflectState.attempt = nil; deflectState.active = false; deflectState.fierceUsedForTarget = currentTargetMatches()
 end
@@ -391,7 +386,6 @@ function GameInfo.getDeflectCooldownState()
 			deflectState.known = true; deflectState.rawActive = true; deflectState.lastEventAt = receivedAt; deflectState.endsAt = receivedAt + duration
 		end
 	end
-	sampleDeflectPress(time)
 	if deflectState.rawActive and finite(deflectState.endsAt) and time >= deflectState.endsAt then deflectState.rawActive = false; deflectState.endsAt = nil end
 	local ability = locateDeflectAbility(); local localCooldown = ability and finite(ability.Cooldown) and ability.Cooldown > 0; local cooldownRunning = deflectState.rawActive or localCooldown == true
 	if deflectState.fierceUsedForTarget and not currentTargetMatches() then deflectState.fierceUsedForTarget = false end

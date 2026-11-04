@@ -6,7 +6,7 @@ output = Path(sys.argv[2])
 source = (root / 'exodus hub/modules/logic/remote.luau').read_text()
 pre = r'''
 local deflectCount, touchCount, noteCount = 0, 0, 0
-local abilities = {Abilities = {[1] = {Deflect = function(self) deflectCount += 1; self.LastPressClock=(self.LastPressClock or 0)+1 end}}}
+local abilities = {Abilities = {[1] = {Deflect = function() deflectCount += 1 end}}}
 local module = {IsA = function(_, kind) return kind == "ModuleScript" end}
 local touch = {IsA = function(_, kind) return kind == "BindableEvent" end, Fire = function() touchCount += 1 end}
 local ts = {FindFirstChild = function(_, name) if name == "ClientAbilities" then return module end end}
@@ -22,12 +22,14 @@ end
 local remote = moduleSource()
 assert(remote.setup({Utils={getReplicatedStorage=function() return storage end,apiVersion=function() return 1 end},GameInfo={getDeflectAbility=function() return abilities.Abilities[1] end,noteDeflectPress=function() noteCount+=1 end}}))
 assert(remote.fireParry(1) and deflectCount == 1 and touchCount == 0 and noteCount==1, "must call and register active Deflect")
-abilities.Abilities[1] = {Deflect = function(self) deflectCount += 10; self.LastPressClock=(self.LastPressClock or 0)+1 end}
-assert(remote.fireParry(1) and deflectCount == 11 and noteCount==2, "must use replacement ability")
-abilities.Abilities[1].Deflect=function() end
-local ok, reason=remote.fireParry(1); assert(not ok and reason:find("não mudou",1,true) and remote.getStatus().state=="deflect_ignored" and noteCount==2, "ignored local Deflect must be reported without starting normalization")
-abilities.Abilities[1].LastPressClock=nil
-ok, reason=remote.fireParry(1); assert(not ok and reason:find("indisponível",1,true) and noteCount==2, "missing click clock must be distinguished from a rejected click")
+for _=1,3 do assert(remote.fireParry(1), "repeated Deflect calls must work without a click clock") end
+assert(deflectCount==4 and noteCount==4, "repeated calls were not delivered")
+abilities.Abilities[1] = {Deflect = function() deflectCount += 10 end}
+assert(remote.fireParry(1) and deflectCount == 14 and noteCount==5, "must use replacement ability")
+abilities.Abilities[1].Deflect=function() return false end
+local ok, reason=remote.fireParry(1); assert(not ok and reason:find("recusou",1,true) and remote.getStatus().state=="deflect_ignored" and noteCount==5, "explicit rejection must not start tracking")
+abilities.Abilities[1].Deflect=function() error("deflect failure") end
+ok, reason=remote.fireParry(1); assert(not ok and reason:find("deflect failure",1,true) and noteCount==5, "real failures must still be reported")
 abilities.Abilities[1] = nil
 assert(not remote.fireParry(1) and touchCount == 0, "missing ability must not use TouchTap")
 assert(not remote.initParry() and not remote.usesGameDeflect() and remote.getRemote() == nil, "missing ability must not expose another method")
