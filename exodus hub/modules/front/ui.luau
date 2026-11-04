@@ -102,19 +102,10 @@ local function attachFlow(s)
 	return g
 end
 local function twPlay(obj, t, props, style, dir)
-	if not obj then return nil end
-	local ok, tween = pcall(function()
-		if not obj.Parent then return nil end
-		return TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props)
-	end)
-	if ok and tween then
-		local played = pcall(function() tween:Play() end)
-		if played then return tween end
-	end
-	pcall(function()
-		for property, value in pairs(props) do obj[property] = value end
-	end)
-	return nil
+	if not obj or obj.Parent == nil then return nil end
+	local ok, tween = pcall(function() return TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props) end)
+	if not ok or not tween then return nil end
+	tween:Play(); return tween
 end
 
 -- safety
@@ -246,10 +237,7 @@ local function setDarkBall(v)
 	task.delay(0.08, function() twPlay(darkBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
 end
 local function showMovementBall(ball, visible, visibleKey, xKey, yKey, yOffset)
-	if not setConfigValue(visibleKey, visible) then return end
-	local config = Utils.getConfig()
-	local x = config[xKey] or (CLASH_SIZE + 22)
-	local y = config[yKey] or (viewport().Y / 2 + yOffset)
+	setConfigValue(visibleKey, visible); local config = Utils.getConfig(); local x = config[xKey] or (CLASH_SIZE + 22); local y = config[yKey] or (viewport().Y / 2 + yOffset)
 	twPlay(ball, visible and 0.22 or 0.18, { Position = visible and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
 end
 local function showJumpBall(v) showMovementBall(jumpBall, v, "JumpBallVisible", "JumpBallX", "JumpBallY", -CLASH_SIZE / 2) end
