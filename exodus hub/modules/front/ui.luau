@@ -130,8 +130,9 @@ local function untrackConn(c)
 		if UIState.connections[i] == c then table.remove(UIState.connections, i); return end
 	end
 end
-local function safeDisconnect(c)
-	if c then safe(function() c:Disconnect() end) end
+local function safeDisconnect(connection)
+	if not connection then return end
+	safe(function() connection:Disconnect() end)
 end
 local function disconnectUIConnections()
 	for i = #UIState.connections, 1, -1 do
@@ -288,7 +289,10 @@ local PARTICLE_COLORS = {
 
 -- cleanup
 local function cleanupUI()
-	safeCancel(UIState.panelTween); safeCancel(UIState.btnTween); disconnectUIConnections(); UIState.connections = {}
+	safeCancel(UIState.panelTween)
+	safeCancel(UIState.btnTween)
+	disconnectUIConnections()
+	UIState.connections = {}
 	UIState.pageGeneration += 1
 	for _, tween in ipairs(UIState.pageTweens) do
 		safeCancel(tween)
