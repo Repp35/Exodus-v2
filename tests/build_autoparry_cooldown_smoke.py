@@ -120,7 +120,7 @@ do
  local s=newScenario(); s.info.noteDeflectPress(); s.frame(1.01)
  assert(s.count()==1, "pending normalization must not block the normal AP")
 end
--- Grace extends the variable server window and the 50 ms margin.
+-- Grace extends the variable server window and the 100 ms margin.
 do
  local s=newScenario(); s.frame(1.01); s.info.noteDeflectPress()
  local firstDeadline=s.info.getDeflectCooldownState().normalizingUntil
@@ -147,7 +147,7 @@ do
  local fastDeadline=fast.info.getDeflectCooldownState().normalizingUntil
  assert(fastDeadline<slowDeadline, "normalization must follow ball speed")
  local predicted=newScenario({PredictedResetUntil=3}); predicted.frame(1.01); predicted.info.noteDeflectPress()
- assert(predicted.info.getDeflectCooldownState().normalizingUntil>=3.05, "prediction deadline and 50 ms margin")
+ assert(predicted.info.getDeflectCooldownState().normalizingUntil>=3.10, "prediction deadline and 100 ms margin")
 end
 -- A server cooldown must stop; observing its start alone is not a miss.
 do
