@@ -272,7 +272,6 @@ function Remote.setup(deps)
 		or not deps.Utils
 		or type(deps.GameInfo) ~= "table"
 		or type(deps.GameInfo.getDeflectAbility) ~= "function"
-		or type(deps.GameInfo.noteDeflectPress) ~= "function"
 	then
 		return false, "dependência ausente: Utils ou API de Deflect do GameInfo"
 	end
@@ -287,7 +286,7 @@ function Remote.fireParry(_flag)
 		local ok, result = xpcall(ability.Deflect, deflectTrace, ability)
 		if not ok then remoteState = "deflect_error"; return false, result end
 		if result == false then remoteState = "deflect_ignored"; return false, "Deflect recusou a chamada" end
-		GameInfo.noteDeflectPress(); remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
+		remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
 		if not loggedParryMethods.deflect then logParryMethod("deflect", "Deflect() chamado") end
 		return true
 	end
@@ -371,7 +370,7 @@ end
 Remote.__contract = {
 	requiresMethods = {
 		Utils = { "getReplicatedStorage", "trackGlobal", "untrackGlobal", "apiVersion" },
-		GameInfo = { "getDeflectAbility", "noteDeflectPress" },
+		GameInfo = { "getDeflectAbility" },
 	},
 
 	provides = { "setup", "getRemote", "initParry", "fireParry", "bindBallSync", "startMaintenance", "stopMaintenance" },
