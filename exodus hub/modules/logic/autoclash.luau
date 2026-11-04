@@ -623,10 +623,7 @@ function Deactivation.shouldDeactivate(t, snapshot)
 	local ballPosition = getSnapshotPosition(snapshot)
 	if rootPosition and ballPosition and R.parryRadius > 0 and distanceSquared(rootPosition, ballPosition) > R.parryRadius * R.parryRadius then
 		if not R.outsideRadiusSince or t < R.outsideRadiusSince then R.outsideRadiusSince = t end
-		if t - R.outsideRadiusSince >= T.OUTSIDE_RADIUS_HOLD then
-			R.lastGate = "deact_outside_radius"
-			return true
-		end
+		-- Distance alone is not a reliable clash termination signal.
 	else
 		R.outsideRadiusSince = nil
 	end
@@ -637,7 +634,7 @@ function Deactivation.shouldDeactivate(t, snapshot)
 	if t < R.activationDeactLockedUntil then Deactivation.clearConfirmation(); R.lastGate = "deact_activation_lock"; return false end
 	if t < R.dashDeactLockedUntil then Deactivation.clearConfirmation(); R.lastGate = "deact_dash_lock"; return false end
 	local speed = R.lastSpeed
-	if speed <= 0 then R.lastGate = "deact_ball_stopped"; return not isSnapshotTargeted(snapshot) end
+	if speed <= 0 then Deactivation.clearConfirmation(); R.lastGate = "deact_ball_stopped"; return false end
 	if Deactivation.direction(t, snapshot, speed) then return Deactivation.confirm(t, "deact_direction") end
 	Deactivation.clearConfirmation(); R.lastGate = "deact_none"; return false
 end
@@ -740,7 +737,7 @@ local function heartbeatStep(generation, character, root)
 		waitForSnapshot(t, "snapshot_stale"); return
 	end
 	R.snapshotMissingAt = nil
-	if R.active and type(Utils.isAutoSpamActive) == "function" and not Utils.isAutoSpamActive() then Utils.setAutoSpamActive(true) end
+	-- Active Auto Clash owns the automatic spam state through setActive.
 	local targetChanged = snapshotTarget and (R.wasMeTarget == nil or snapshotTarget ~= R.lastTarget)
 	local targetCleared = snapshot.targetId ~= nil and not snapshotTarget and (R.lastTarget ~= -1 or R.active)
 	if targetChanged or targetCleared then
