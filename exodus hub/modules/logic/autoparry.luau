@@ -117,7 +117,7 @@ end
 
 local function factor(override)
  local c = getConfig()
- local value = tonumber(override) or tonumber(c.ParryWindowFactor) or T.WINDOW_FACTOR
+ local value = tonumber(override) or tonumber(c.AutoParryWindowFactor) or T.WINDOW_FACTOR
  return math.clamp(value, 0, 1)
 end
 
@@ -220,10 +220,10 @@ local function onHeartbeat(character, root, dt, generation)
  local cd = cooldown()
  if cd and finite(cd.retryRevision) and cd.retryRevision > S.lastRetryRevision then
   S.lastRetryRevision = cd.retryRevision
-  if not cd.blocking and not S.away then resetCycle() end
+  -- Retry revision does not create a new target cycle.
  end
  local sync = GameInfo and safe(GameInfo.getSyncData)
- if type(sync) == "table" and sync.Teleported == true then S.teleport = true end
+ if type(sync) == "table" then S.teleport = sync.Teleported == true end
  if S.teleport then setPhase("waiting", "teleport_lock"); return end
  if not enabled() then setPhase("waiting", "disabled"); return end
  local ball, snapshot = readSnapshot(now)
@@ -238,7 +238,7 @@ local function onHeartbeat(character, root, dt, generation)
   observeTarget(targetId)
   S.targetId, S.targetKnown = targetId, true
  end
- local targeted = snapshot and snapshot.targeted == true
+ local targeted = snapshot and (snapshot.targeted == true or targetId == S.player.UserId)
  if not snapshot then targeted = S.player and targetId == S.player.UserId end
  S.targeted = targeted == true
  if not S.targeted then setPhase("waiting", "not_targeted"); return end
