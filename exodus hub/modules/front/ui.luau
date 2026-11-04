@@ -102,10 +102,19 @@ local function attachFlow(s)
 	return g
 end
 local function twPlay(obj, t, props, style, dir)
-	if not obj or obj.Parent == nil then return nil end
-	local ok, tween = pcall(function() return TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props) end)
-	if not ok or not tween then return nil end
-	tween:Play(); return tween
+	if not obj then return nil end
+	local ok, tween = pcall(function()
+		if obj.Parent == nil then return nil end
+		return TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props)
+	end)
+	if ok and tween then
+		local played = pcall(function() tween:Play() end)
+		if played then return tween end
+	end
+	pcall(function()
+		for property, value in pairs(props) do obj[property] = value end
+	end)
+	return nil
 end
 
 -- safety
