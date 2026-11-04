@@ -14,6 +14,9 @@ local remoteState = "uninitialized"
 local captureEnabled = false
 local loggedParryMethods = {}
 local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local lastDeflectFrame = -1
+local deflectInFlight = false
 local T = {
 	STORAGE_SCHEMA = 1,
 	STORAGE_FILE = "deflect_remotes.json",
@@ -277,18 +280,25 @@ function Remote.setup(deps)
 		return false, "dependência ausente: Utils ou API de Deflect do GameInfo"
 	end
 	Utils = deps.Utils; GameInfo = deps.GameInfo; captureEnabled = deps.captureDiagnostics == true; remoteState = "deflect_only"
-	table.clear(loggedParryMethods); return true
+	table.clear(loggedParryMethods); lastDeflectFrame = -1; deflectInFlight = false; return true
 end
 
 -- parry
 function Remote.fireParry(_flag)
+	if deflectInFlight then return false, "Deflect já está sendo executado" end
+	local frame = RunService.FrameNumber
+	if frame == lastDeflectFrame then return false, "Deflect já solicitado neste frame" end
 	local ability = getDeflectAbility()
 	if ability then
-		local previousPress = ability.LastPressClock; local ok, err = xpcall(ability.Deflect, deflectTrace, ability)
+		deflectInFlight = true
+		lastDeflectFrame = frame
+		local previousPress = ability.LastPressClock
+		local ok, err = xpcall(ability.Deflect, deflectTrace, ability)
+		deflectInFlight = false
 		if not ok then remoteState = "deflect_error"; return false, err end
 		if ability.LastPressClock == previousPress then return false, "Deflect não registrou clique" end
 		GameInfo.noteDeflectPress(); remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
-		if not loggedParryMethods.deflect and ability.LastPressClock ~= previousPress and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
+		if not loggedParryMethods.deflect and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
 		return true
 	end
 	remoteState = "unavailable"; parryInitialized = false; parryRemoteSource = nil; return false, "Deflect indisponível"
