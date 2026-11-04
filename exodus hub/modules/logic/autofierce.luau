@@ -7,8 +7,6 @@ local connection
 local lastActivationAt = -math.huge
 
 local FIERCE_DURATION = 5
-local CRITICAL_RATIO = 0.30
-local ARM_RATIO = 0.70
 local tracking = { ball = nil, target = nil, cooldownAt = nil, outside = false }
 
 local function disconnect()
@@ -45,22 +43,18 @@ local function evaluate(root, time)
 	if typeof(rootPosition) ~= "Vector3" then return nil end
 
 	local timing = AutoParry.getTiming(snapshot, time, rootPosition, 1)
-	local radius = AutoParry.getTiming(snapshot, time, rootPosition, Utils.getConfigValue("AutoParryWindowFactor") or 0.5)
-	if not timing or not radius or not timing.approaching or not finite(timing.distance) or not finite(timing.speed) then return nil end
-	if not finite(radius.parryRadius) or radius.parryRadius <= 0 or timing.distance <= 0 then return nil end
+	if not timing or not timing.approaching or not finite(timing.distance) or not finite(timing.speed) then return nil end
+	if not finite(timing.parryRadius) or timing.parryRadius <= 0 or timing.distance <= 0 then return nil end
 	local minimum = GameInfo.getBallSpeedLimits()
 	if not finite(minimum) or timing.speed < minimum * 0.375 then return nil end
-
-	if tracking.ball ~= snapshot.ball or tracking.target ~= snapshot.targetId or tracking.cooldownAt ~= attempt.id then
-		resetTracking()
-		tracking.ball = snapshot.ball
-		tracking.target = snapshot.targetId
-		tracking.cooldownAt = attempt.id
-	end
-	if timing.distance > radius.parryRadius * ARM_RATIO then tracking.outside = true end
-	local critical = tracking.outside and timing.distance <= radius.parryRadius * CRITICAL_RATIO
 	local miss = cooldown.active and attempt.expired == true
 	if not miss then return nil end
+
+	local pull = AutoClash.getPullEvent()
+	local pulledOutside = pull and finite(pull.at) and time - pull.at >= 0 and time - pull.at <= 0.65
+		and typeof(pull.position) == "Vector3"
+		and (pull.position - rootPosition).Magnitude > timing.parryRadius
+	if not pulledOutside and timing.distance > timing.parryRadius * 3 then return nil end
 
 	local velocity = snapshot.velocity
 	if typeof(velocity) ~= "Vector3" then return nil end
@@ -161,13 +155,13 @@ AutoFierce.__contract = {
 			"getSyncSequence",
 			"getRootPosition",
 			"getBallSpeedLimits",
-						"getLocalPing",
+			"getLocalPing",
 			"getFierceDeflectAbility",
 			"activateFierceDeflect",
 			"noteFierceDeflectActivation",
 		},
 		AutoParry = { "getTiming" },
-		AutoClash = { "stopSpam" },
+		AutoClash = { "stopSpam", "getPullEvent" },
 		Spam = { "resetState" },
 	},
 	provides = { "setup", "bindCharacter", "detachCharacter", "teardown" },
