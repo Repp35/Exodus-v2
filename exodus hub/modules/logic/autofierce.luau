@@ -7,7 +7,8 @@ local generation = 0
 local connection
 local boundRoot
 local lastActivationAt = -math.huge
-local FIERCE_DURATION = 5
+local MISS_TRIGGER_SECONDS = 0.12
+local MAX_TRIGGER_SECONDS = 0.30
 local function disconnect()
 	if not connection then return end
 	if Utils and type(Utils.untrackCharacter) == "function" then Utils.untrackCharacter(connection) end
@@ -42,10 +43,12 @@ local function evaluate(root, time)
 	if not finite(closing) or closing <= 0 then return nil end
 	local impact = math.max(0, timing.distance - timing.noWindowParryRadius) / closing; local ping = GameInfo.getLocalPing()
 	if not finite(ping) or ping < 0 then return nil end
-	if impact + 2 * ping + 0.1 >= FIERCE_DURATION then return nil end
-	local arrival = time + impact + 2 * ping + 0.05
-	if attempt and finite(attempt.deadline) and attempt.deadline >= arrival then return nil end
-	if time + uiRemaining <= arrival then return nil end
+	local oneWayPing = ping * 0.5
+	local timeToMiss = impact - oneWayPing
+	if timeToMiss > math.min(MAX_TRIGGER_SECONDS, MISS_TRIGGER_SECONDS + oneWayPing) then return nil end
+	local arrival = time + math.max(0, timeToMiss)
+	if attempt and finite(attempt.deadline) and attempt.deadline <= arrival then return nil end
+	if uiRemaining <= math.max(0, timeToMiss) + 0.05 then return nil end
 	local ability = GameInfo.getFierceDeflectAbility()
 	if not ability or type(ability.IsAvailable) ~= "function" or not ability:IsAvailable(false) then return nil end
 	if type(ability.IsOwnerAlive) ~= "function" or not ability:IsOwnerAlive() then return nil end
