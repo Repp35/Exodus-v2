@@ -49,9 +49,8 @@ end
 local function kick()
     if state.kicked then return end
     state.kicked, state.watching = true, false
-    if localPlayer and Type(kickMethod) == "function" then
-        PCall(kickMethod, localPlayer, T.KICK_MESSAGE)
-    end
+    state.generation += 1
+    -- Integrity failures stop the watchdog but never disconnect the player.
 end
 
 local function violation(reason)
