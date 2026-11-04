@@ -661,6 +661,7 @@ end
 
 -- evaluation
 local function evaluateClash(t, snapshot)
+	if not R.bound or not Utils or not GameInfo then return end
 	local root = R.boundRoot
 	if not root or not root.Parent then return end
 	local ball = snapshot and snapshot.ball; local snapshotUsable = ball and ball.Parent
@@ -739,7 +740,7 @@ local function waitForSnapshot(t, reason)
 	R.lastGate = reason
 end
 local function heartbeatStep(generation, character, root)
-	if generation ~= R.generation or not character.Parent or not root.Parent then return end
+	if generation ~= R.generation or not R.bound or not character.Parent or not root.Parent then return end
 	local t = now()
 	if not checkHubState() then return end
 	if not R.returnPending and R.returnExpiresAt > 0 and t >= R.returnExpiresAt then clearReturnState(); R.lastGate = "return_expired" end
