@@ -408,7 +408,7 @@ local function shouldActivate(snapshot, t)
 	if not position or R.parryRadius <= 0 then R.lastGate = "no_effective_radius"; return false end
 	local dx = root.X - position.X; local dy = root.Y - position.Y; local dz = root.Z - position.Z; local distanceSq = dx * dx + dy * dy + dz * dz
 	local effectiveRadius = getActivationRadius(t)
-	if distanceSq > effectiveRadius * effectiveRadius then R.lastGate = "outside_effective_radius"; return false end
+	
 	local velocity = snapshot.velocity
 	if typeof(velocity) ~= "Vector3" then velocity = snapshot.ball.AssemblyLinearVelocity end
 	if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 6 then R.lastGate = "ball_speed_invalid"; return false end
@@ -416,6 +416,14 @@ local function shouldActivate(snapshot, t)
 		local dot = (velocity.X * dx + velocity.Y * dy + velocity.Z * dz) / (velocity.Magnitude * math.sqrt(distanceSq))
 		if dot < T.ACTIVATION_MIN_DOT then R.lastGate = "ball_not_approaching"; return false end
 	end
+	local distance = math.sqrt(distanceSq)
+	local closing = distance > 0 and (velocity.X * dx + velocity.Y * dy + velocity.Z * dz) / distance or velocity.Magnitude
+	if closing <= 0 then R.lastGate = "ball_not_closing"; return false end
+	local radiusData = FN.getRadius and FN.getRadius("geometry", 0, snapshot.speed, "game")
+	local hitRadius = type(radiusData) == "table" and tonumber(radiusData.noWindowParryRadius) or nil
+	if not hitRadius or hitRadius ~= hitRadius or hitRadius < 0 or hitRadius == math.huge then R.lastGate = "impact_radius_unavailable"; return false end
+	local impact = math.max(0, distance - hitRadius) / closing
+	if impact > T.ACTIVATION_TTI_MAX + getPingOneWay() then R.lastGate = "impact_not_imminent"; return false end
 	R.lastGate = "activation_ready"; return true
 end
 local function tryReturnActivate(snapshot, t)
@@ -425,7 +433,7 @@ local function tryReturnActivate(snapshot, t)
 end
 local function emergencyReason(snapshot)
 	if R.lastTarget ~= R.localUserId or not isSnapshotTargeted(snapshot) or snapshot.teleported == true then return nil end
-	if snapshot.grace == true then return "grace" end
+	
 	local root, position, velocity = getRootPosition(), getSnapshotPosition(snapshot), snapshot.velocity
 	if not root or not position or typeof(velocity) ~= "Vector3" or velocity.Magnitude < 6 then return nil end
 	local dx, dy, dz = root.X - position.X, root.Y - position.Y, root.Z - position.Z
@@ -442,9 +450,7 @@ local function emergencyReason(snapshot)
 end
 local function getActivationReason(snapshot, t)
 	if t < R.dashBonusUntil then return "anti_dash" end
-	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
-	if root and position and distanceSquared(root, position) <= T.PROXIMITY_RADIUS * T.PROXIMITY_RADIUS then return "proximity" end
-	return "effective_radius"
+	return "predicted_impact"
 end
 
 -- deactivation
@@ -683,7 +689,7 @@ local function evaluateClash(t, snapshot)
 				and opponentRoot
 				and opponentRoot.Parent
 				and distanceSquared(root.Position, opponentRoot.Position) <= R.parryRadius ^ 2
-			if inRange and suspension.switched and (target == R.localUserId or target == suspension.partner) then
+			if inRange and suspension.switched and target == R.localUserId and shouldActivate(snapshot, t) then
 				R.pullSuspension = nil; R.lastTarget = target; R.clashPartnerId = suspension.partner; setActive(true, "pull_return", snapshot, "pull_return")
 				return
 			end
@@ -814,20 +820,6 @@ local function bindCharacter(character)
 		addConnection(R.connections, connection)
 		if Utils.trackCharacter then Utils.trackCharacter(connection) end
 	end
-	local haunter = type(GameInfo.getHaunterRemote) == "function" and GameInfo.getHaunterRemote()
-	if haunter then
-		local connection = haunter.OnClientEvent:Connect(function(_, destination)
-			if generation ~= R.generation or not R.bound or R.active or not checkHubState() or typeof(destination) ~= "CFrame" then return end
-			local ownPosition = getRootPosition()
-			if not ownPosition or distanceSquared(ownPosition, destination.Position) > 10 * 10 then return end
-			local snapshot = readValidatedSnapshot(now())
-			if not snapshot or snapshot.teleported or not isSnapshotTargeted(snapshot) then return end
-			updateParryState(now(), snapshot); R.lastTarget = R.localUserId; R.wasMeTarget = true; clearReturnState()
-			setActive(true, "haunter", snapshot, "haunter")
-		end)
-		addConnection(R.connections, connection)
-		if Utils.trackCharacter then Utils.trackCharacter(connection) end
-	end
 	local ancestry = character.AncestryChanged:Connect(function(_, parent)
 		if parent then return end
 		resetRuntime("character_removed"); R.lastGate = "character_removed"
@@ -837,7 +829,7 @@ local function bindCharacter(character)
 	R.bound = true; setPhase("waiting", "character_bound"); return true
 end
 local function evaluatePacketThreat(data, time)
-	if data.Source == "snapshot" or (data.Source ~= "packet" and data.Grace ~= true) then return end
+	if data.Source ~= "packet" then return end
 	local snapshot = readValidatedSnapshot(time)
 	if snapshot and snapshot.teleported ~= true then evaluateClash(time, snapshot) end
 end
@@ -928,7 +920,7 @@ function AutoClash.onBallSync(data)
 		R.clashPartnerId = -1; R.lastGate = "target_redirected"
 	end
 	R.wasMeTarget = isMe
-	if (R.returnPending or (isMe and (data.Source == "packet" or data.Grace == true))) and data.Source ~= "snapshot" then
+	if (R.returnPending or (isMe and data.Source == "packet")) and data.Source ~= "snapshot" then
 		local snapshot = readValidatedSnapshot(t)
 		if snapshot and snapshot.teleported ~= true then evaluateClash(t, snapshot) end
 	end
