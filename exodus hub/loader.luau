@@ -64,6 +64,7 @@ local SINGLE_RESULT_API = {
 		getDeflectRange = true,
 		getDeflectAbility = true,
 		getDeflectServerEvents = true,
+		getDeflectCooldownState = true,
 		getDeflectCD = true,
 		isSnapshotValid = true,
 		getLocalPing = true,

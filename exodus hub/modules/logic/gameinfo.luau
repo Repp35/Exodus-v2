@@ -58,6 +58,11 @@ local clientAbilitiesModule
 local clientAbilities
 local sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt
 local lastModuleError = {}
+local deflectState = { known = false, active = false, readyRevision = 0, lastEventAt = -math.huge }
+local deflectConnection
+local nextDeflectSignalCheck = 0
+local nextHeldCooldownCheck = 0
+local deflectMissingAt, nextDeflectWarning = nil, 0
 
 local function reportModuleError(name, message)
 	local time = os.clock()
@@ -221,12 +226,19 @@ function GameInfo.setup(deps)
 	then
 		return false, "dependência ausente: Utils"
 	end
+	if deflectConnection then
+		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(deflectConnection) end
+		deflectConnection:Disconnect(); deflectConnection = nil
+	end
 	Utils = deps.Utils; Players = Utils.getPlayers(); Workspace = Utils.getWorkspace()
 	if not Players then return false, "dependência ausente: Players" end
 	if not Workspace then return false, "dependência ausente: Workspace" end
 	cachedBall = nil; ballWatcherReady = false; ballSearchComplete = false; nextBallSearch = 0
 	nextSpeedRead = 0; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil
-	clientAbilitiesModule = nil; clientAbilities = nil; sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil; return true
+	clientAbilitiesModule = nil; clientAbilities = nil; sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil
+	deflectState = { known = false, active = false, readyRevision = 0, lastEventAt = -math.huge }; nextDeflectSignalCheck = 0; nextHeldCooldownCheck = 0
+	deflectMissingAt = nil; nextDeflectWarning = 0
+	GameInfo.getDeflectCooldownState(); return true
 end
 function GameInfo.getBall() return getBall() end
 function GameInfo.getBallPosition(ball) return ball.Position end
@@ -247,8 +259,8 @@ function GameInfo.getDeflectServerEvents()
 	if not remotes then return nil end
 	local cooldown = remotes:FindFirstChild("RE_" .. tostring(5.520474058077904e76))
 	local parried = remotes:FindFirstChild("RE_" .. tostring(9.611859444202098e76))
-	if not cooldown or not cooldown:IsA("RemoteEvent") or not parried or not parried:IsA("RemoteEvent") then return nil end
-	return { cooldown = cooldown.OnClientEvent, parried = parried.OnClientEvent }
+	if not cooldown or not cooldown:IsA("RemoteEvent") then return nil end
+	return { cooldown = cooldown.OnClientEvent, parried = parried and parried:IsA("RemoteEvent") and parried.OnClientEvent or nil }
 end
 function GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
 	if abilityId ~= 1 then return nil end
@@ -269,6 +281,41 @@ function GameInfo.getHeldDeflectServerCooldown()
 		return duration, receivedAt
 	end
 	return nil
+end
+function GameInfo.getDeflectCooldownState()
+	local time = os.clock()
+	if deflectConnection and deflectConnection.Connected == false then
+		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(deflectConnection) end
+		deflectConnection = nil; deflectState.known = false; deflectState.active = false; nextDeflectSignalCheck = 0
+	end
+	if not deflectConnection and time >= nextDeflectSignalCheck then
+		nextDeflectSignalCheck = time + 0.5
+		local signals = GameInfo.getDeflectServerEvents()
+		if signals and signals.cooldown then
+			deflectConnection = signals.cooldown:Connect(function(abilityId, eventId, value)
+				local kind = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
+				if not kind then return end
+				deflectState.known = true; deflectState.lastEventAt = os.clock()
+				if kind == "started" then deflectState.active = true
+				else deflectState.active = false; deflectState.readyRevision += 1 end
+			end)
+			if Utils and type(Utils.trackGlobal) == "function" then Utils.trackGlobal(deflectConnection) end
+			deflectMissingAt = nil
+		else
+			if not deflectMissingAt then deflectMissingAt = time end
+			if time - deflectMissingAt >= 3 and time >= nextDeflectWarning then
+				nextDeflectWarning = time + 10; reportModuleError("DeflectCooldown", "evento de cooldown do servidor indisponível")
+			end
+		end
+	end
+	if not deflectState.active and time >= nextHeldCooldownCheck then
+		nextHeldCooldownCheck = time + 0.05
+		local duration, receivedAt = GameInfo.getHeldDeflectServerCooldown()
+		if duration and receivedAt and receivedAt <= time and time < receivedAt + duration and receivedAt > deflectState.lastEventAt + 0.01 then
+			deflectState.known = true; deflectState.active = true; deflectState.lastEventAt = receivedAt
+		end
+	end
+	return deflectState
 end
 function GameInfo.getDashAbility()
 	locateDeflectAbility()
@@ -411,6 +458,7 @@ GameInfo.__contract = {
 		"getDeflectServerEvents",
 		"decodeDeflectServerEvent",
 		"getHeldDeflectServerCooldown",
+		"getDeflectCooldownState",
 		"getDashAbility",
 		"getDarkSealAbility",
 		"getBallSpeedLimits",

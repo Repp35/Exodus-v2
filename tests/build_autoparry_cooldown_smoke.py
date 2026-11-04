@@ -12,7 +12,7 @@ auto = auto.replace(
     "setDeps=function(a,b,c) Remote=a; GameInfo=b; Utils=c end}\n",
 )
 gameinfo = (root / "exodus hub/modules/logic/gameinfo.luau").read_text()
-events = gameinfo[gameinfo.index("function GameInfo.getDeflectServerEvents()") : gameinfo.index("function GameInfo.getDashAbility()")]
+events = gameinfo[gameinfo.index("function GameInfo.getDeflectServerEvents()") : gameinfo.index("function GameInfo.getDashAbility()")].replace("os.clock()", "currentTime")
 
 pre = '''local currentTime = 1
 math.clamp = math.clamp or function(v, low, high) return math.max(low, math.min(high, v)) end
@@ -58,6 +58,8 @@ local function newScenario(heldAbility)
  local storage = {FindFirstChild=function(_, name) if name=="TS" then return ts end end}
  local Utils = {getReplicatedStorage=function() return storage end}
  local GameInfo = {}
+ local deflectState = {known=false,active=false,readyRevision=0,lastEventAt=-math.huge}
+ local deflectConnection; local nextDeflectSignalCheck=0; local nextHeldCooldownCheck=0
  local function locateDeflectAbility() return heldAbility end
  GAMEINFO_EVENTS
  local ball = {instance=true, Parent={}, Position=vec(-10), AssemblyLinearVelocity=vec(100), IsA=function() return true end}
@@ -95,18 +97,13 @@ do
  s.cd:emit(2,SET,1.45); s.cd:emit(1,999,1.45); s.frame(5)
  assert(s.count()==1, "unrelated ability/events must not arm a retry")
 end
--- Checking the held server value can re-enter; the target lock is already set.
+-- Reentry while the parry request reads shared state must keep the lock.
 do
- local s=newScenario(); s.frame(1.01,-100); local reenter=true
- s.info.getHeldDeflectServerCooldown=function()
-  if reenter then reenter=false; s.frame(1.03,-10) end
+ local s=newScenario(); s.frame(1.01,-100); local original=s.info.getDeflectCooldownState; local calls=0
+ s.info.getDeflectCooldownState=function()
+  calls+=1; if calls==2 then s.frame(1.03,-10) end; return original()
  end
- s.frame(1.02,-10); assert(s.count()==1, "held-state reentry must not double click")
-end
-do
- local s=newScenario(); s.frame(1.01,-100)
- s.info.getHeldDeflectServerCooldown=function() s.spam(true) end
- s.frame(1.02,-10); assert(s.count()==0, "spam taking over during the held check must prevent firing")
+ s.frame(1.02,-10); assert(s.count()==1, "shared-state reentry must not double click")
 end
 -- A server cooldown must stop; observing its start alone is not a miss.
 do
@@ -140,15 +137,15 @@ end
 -- A cooldown that began before the AP press is still known to the listener.
 do
  local s=newScenario(); s.frame(1.01,-100); s.cd:emit(1,SET,1.45)
- s.frame(2.4,-10); assert(s.count()==1)
+ s.frame(2.4,-10); assert(s.count()==0, "AP must wait when the server cooldown is already active")
  s.frame(2.41); s.cd:emit(1,STOP); s.frame(2.42)
- assert(s.count()==2, "retry after an existing cooldown stops")
+ assert(s.count()==1, "first AP click after existing cooldown stops")
 end
 do
  local s=newScenario({HeldServerCooldown=1.45, HeldServerCooldownAt=0.5})
- s.frame(1.01); assert(s.count()==1 and s.R.serverCooldownActive, "restore the game's held server cooldown")
+ s.frame(1.01); assert(s.count()==0 and s.info.getDeflectCooldownState().active, "restore the game's held server cooldown")
  s.frame(2); s.cd:emit(1,STOP); s.frame(2.06)
- assert(s.count()==2, "a held server cooldown can recover after stopping")
+ assert(s.count()==1, "a held server cooldown can recover after stopping")
 end
 -- Recovery only runs for the same target and the usual approach/radius gates.
 do
@@ -164,11 +161,16 @@ do
  assert(s.count()==1, "a different target must cancel pending recovery")
  s.target(42); s.frame(2.52); assert(s.count()==2, "returning target is a new cycle")
 end
--- Spam and teleports invalidate pending attempts instead of reviving old ones.
+-- A cooldown caused by spam remains visible even without an AP attempt.
 do
  local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,1.45)
  s.spam(true); s.frame(1.2); s.frame(2.5); s.cd:emit(1,STOP)
- s.spam(false); s.frame(2.51); assert(s.count()==1, "spam must cancel stale recovery")
+ s.spam(false); s.frame(2.51); assert(s.count()==2, "AP must rearm after cooldown expires during spam")
+end
+do
+ local s=newScenario(); s.spam(true); s.frame(1.01); s.cd:emit(1,SET,1.45)
+ s.spam(false); s.frame(1.02); assert(s.count()==0, "spam cooldown must block the AP even without an earlier AP click")
+ s.cd:emit(1,STOP); s.frame(1.03); assert(s.count()==1, "AP must fire when spam cooldown ends")
 end
 do
  local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,1.45)
