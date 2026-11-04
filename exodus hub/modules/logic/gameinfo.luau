@@ -239,6 +239,12 @@ function GameInfo.getDeflectRange()
 	local player = Players and Players.LocalPlayer; return player and player:GetAttribute("DeflectRange") or nil
 end
 function GameInfo.getDeflectAbility() return locateDeflectAbility() end
+function GameInfo.getDashAbility()
+	locateDeflectAbility()
+	local ability = clientAbilities and clientAbilities.Abilities[2]
+	if type(ability) == "table" and type(ability.Dash) == "function" then return ability end
+	return nil
+end
 function GameInfo.getDarkSealAbility()
 	locateDeflectAbility()
 	local ability = clientAbilities and clientAbilities.Abilities[20]
@@ -371,6 +377,7 @@ GameInfo.__contract = {
 		"getLocalPing",
 		"getDeflectRange",
 		"getDeflectAbility",
+		"getDashAbility",
 		"getDarkSealAbility",
 		"getBallSpeedLimits",
 		"getDeflectCD",

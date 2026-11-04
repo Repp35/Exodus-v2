@@ -28,6 +28,8 @@ local screenGui
 local floatingButton
 local clashBall
 local darkBall
+local jumpBall
+local upDashBall
 local miniGui
 local configPanel
 local particleLayer
@@ -57,6 +59,9 @@ local C = {
 	toggleOff = Color3.fromRGB(45, 45, 80),
 	darkOn = Color3.fromRGB(151, 66, 221),
 	darkOff = Color3.fromRGB(52, 34, 87),
+	jumpOn = Color3.fromRGB(16, 154, 201),
+	jumpOff = Color3.fromRGB(24, 72, 105),
+	upDash = Color3.fromRGB(226, 135, 36),
 	hold = Color3.fromRGB(236, 72, 153),
 	inputBg = Color3.fromRGB(16, 16, 38),
 }
@@ -235,6 +240,21 @@ local function setDarkBall(v)
 	twPlay(darkBall, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
 	task.delay(0.08, function() twPlay(darkBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_BACK, DIR_OUT) end)
 end
+local function showMovementBall(ball, visible, visibleKey, xKey, yKey, yOffset)
+	setConfigValue(visibleKey, visible); local config = Utils.getConfig()
+	local x = config[xKey] or (CLASH_SIZE + 22); local y = config[yKey] or (viewport().Y / 2 + yOffset)
+	twPlay(ball, visible and 0.22 or 0.18, { Position = visible and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, visible and EASE_BACK or EASE_OUT, DIR_OUT)
+end
+local function showJumpBall(v) showMovementBall(jumpBall, v, "JumpBallVisible", "JumpBallX", "JumpBallY", -CLASH_SIZE / 2) end
+local function showUpDashBall(v) showMovementBall(upDashBall, v, "UpDashBallVisible", "UpDashBallX", "UpDashBallY", CLASH_SIZE / 2 + 8) end
+local function setJumpBall(v)
+	if not setConfigValue("AutoJump", v) then return end
+	if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
+	if jumpBall and jumpBall.Parent then
+		jumpBall.Text = v and "JUMP\nON" or "JUMP\nOFF"
+		twPlay(jumpBall, 0.2, { BackgroundColor3 = v and C.jumpOn or C.jumpOff }, EASE_SINE, DIR_INOUT)
+	end
+end
 local MINI_W, MINI_H = 120, 90
 local function showMini(v, visBtn)
 	local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30
@@ -289,7 +309,7 @@ local function cleanupUI()
 	end
 	local current = screenGui
 	if current then pcall(function() current:Destroy() end) end
-	screenGui = nil; floatingButton = nil; clashBall = nil; darkBall = nil; miniGui = nil
+	screenGui = nil; floatingButton = nil; clashBall = nil; darkBall = nil; jumpBall = nil; upDashBall = nil; miniGui = nil
 	configPanel = nil; particleLayer = nil; titleBar = nil; closeButton = nil
 	colLeft = nil; colRight = nil; killBtn = nil; autoClashTrack = nil
 	autoClashThumb = nil; autoDarkSetVisual = nil
@@ -747,6 +767,29 @@ function ExodusUI.setup(deps)
 		if isDarkDragging() then return end
 		setDarkBall(Utils.getConfigValue("AutoDark") ~= true)
 	end))
+	local function createMovementBall(name, text, color, xKey, yKey, yOffset, onClick)
+		local x = config[xKey] or (CLASH_SIZE + 22); local y = config[yKey] or (viewport().Y / 2 + yOffset)
+		local ball = inst("TextButton", {
+			Name = name, Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE), Position = UDim2.new(0, OFFSCREEN_X, 0, y),
+			BackgroundColor3 = color, Text = text, TextColor3 = Color3.new(1, 1, 1), TextSize = 15,
+			Font = Enum.Font.GothamBold, Active = true, ZIndex = 8, Parent = screenGui,
+		})
+		corner(ball, 999); stroke(ball, Color3.new(0, 0, 0), 2)
+		local dragging = makeDraggable(ball, ball, function()
+			setConfigValue(xKey, ball.Position.X.Offset); setConfigValue(yKey, ball.Position.Y.Offset)
+		end)
+		trackConn(ball.Activated:Connect(function() if not dragging() then onClick(ball) end end))
+		return ball, x, y
+	end
+	local jumpX, jumpY, upDashX, upDashY
+	jumpBall, jumpX, jumpY = createMovementBall("ExodusJumpBall", config.AutoJump and "JUMP\nON" or "JUMP\nOFF", config.AutoJump and C.jumpOn or C.jumpOff, "JumpBallX", "JumpBallY", -CLASH_SIZE / 2, function()
+		setJumpBall(Utils.getConfigValue("AutoJump") ~= true)
+	end)
+	upDashBall, upDashX, upDashY = createMovementBall("ExodusUpDashBall", "DASH\n↑", C.upDash, "UpDashBallX", "UpDashBallY", CLASH_SIZE / 2 + 8, function(ball)
+		if type(Controls.onUpDash) == "function" then Controls.onUpDash() end
+		twPlay(ball, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
+		task.delay(0.08, function() twPlay(ball, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_BACK, DIR_OUT) end)
+	end)
 	local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30
 	miniGui = inst("Frame", {
 		Name = "ExodusSpamMini",
@@ -1001,7 +1044,9 @@ function ExodusUI.setup(deps)
 		paintDarkBall(value)
 		if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
 	end)
-	createToggleCard("Mini Dark UI", "DarkBallVisible", darkYPos, utilitiesRight, showDarkBall)
+	local jumpYPos = createToggleCard("Mini Dark UI", "DarkBallVisible", darkYPos, utilitiesRight, showDarkBall)
+	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, utilitiesRight, showJumpBall)
+	createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, utilitiesRight, showUpDashBall)
 	createParryTimingCard(4, settingsLeft); local clashY = createClashTimingCard("Ativação AC (ms)", "AutoClashActivationMs", 180, 4, settingsRight)
 	createClashTimingCard("Desativação AC (ms)", "AutoClashDeactivationMs", 130, clashY, settingsRight)
 	local antiConnection
@@ -1088,6 +1133,8 @@ function ExodusUI.setup(deps)
 	end))
 	if config.ClashBallVisible then clashBall.Position = UDim2.new(0, clashX, 0, clashY) end
 	if config.DarkBallVisible then darkBall.Position = UDim2.new(0, darkX, 0, darkY) end
+	if config.JumpBallVisible then jumpBall.Position = UDim2.new(0, jumpX, 0, jumpY) end
+	if config.UpDashBallVisible then upDashBall.Position = UDim2.new(0, upDashX, 0, upDashY) end
 	setSpam(Utils.isManualSpamActive()); return true
 end
 
