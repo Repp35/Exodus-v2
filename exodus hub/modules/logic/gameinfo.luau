@@ -518,7 +518,7 @@ function GameInfo.getDeflectWindow(speed)
 	local minimum, maximum = GameInfo.getBallSpeedLimits()
 	local ball = gameBallModule
 	local sync = getDecodedSyncData()
-	if type(sync) == "table" and type(sync.Speed) == "number" and sync.Speed == sync.Speed then
+	if (type(speed) ~= "number" or speed ~= speed) and type(sync) == "table" and type(sync.Speed) == "number" and sync.Speed == sync.Speed then
 		speed = sync.Speed
 	end
 	if type(speed) ~= "number" or speed ~= speed or maximum <= minimum then return nil end
