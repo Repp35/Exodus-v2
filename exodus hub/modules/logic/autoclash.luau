@@ -684,15 +684,10 @@ local function evaluateClash(t, snapshot)
 		if t - suspension.stoppedAt > 2 or not Utils.isActive() or Utils.getConfigValue("AutoClash") ~= true then
 			R.pullSuspension = nil
 		else
-			local position = getSnapshotPosition(snapshot); local target = normalizeTarget(snapshot.targetId); local opponent = R.players and R.players:GetPlayerByUserId(suspension.partner)
-			local opponentRoot = opponent and opponent.Character and opponent.Character:FindFirstChild("HumanoidRootPart"); local inRange = position
-				and R.parryRadius > 0
-				and distanceSquared(root.Position, position) <= R.parryRadius ^ 2
-				and opponentRoot
-				and opponentRoot.Parent
-				and distanceSquared(root.Position, opponentRoot.Position) <= R.parryRadius ^ 2
-			if inRange and suspension.switched and target == R.localUserId and shouldActivate(snapshot, t) then
-				R.pullSuspension = nil; R.lastTarget = target; R.clashPartnerId = suspension.partner; setActive(true, "pull_return", snapshot, "pull_return")
+			local target = normalizeTarget(snapshot.targetId)
+			if suspension.switched and target == R.localUserId and shouldActivate(snapshot, t) then
+				R.pullSuspension = nil; R.lastTarget = target; R.clashPartnerId = suspension.partner
+				setActive(true, "pull_return", snapshot, "pull_return")
 				return
 			end
 			return
