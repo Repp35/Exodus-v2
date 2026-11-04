@@ -194,6 +194,11 @@ local function getStorageStatus()
 	}
 end
 
+-- remote validation (ball synchronization only)
+local function isAlive(remote)
+	return remote and typeof(remote) == "Instance" and remote:IsA("RemoteEvent") and remote.Parent ~= nil
+end
+
 -- deflect ability
 local function getDeflectAbility()
 	return GameInfo and GameInfo.getDeflectAbility() or nil
