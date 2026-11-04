@@ -122,11 +122,10 @@ local function factor(override)
 end
 
 local function minSpeed()
- local limits = GameInfo and safe(GameInfo.getBallSpeedLimits)
- if type(limits) == "table" then
-  local n = tonumber(limits.min or limits.minimum)
-  if finite(n) and n > 0 then return n end
- end
+ local minimum = GameInfo and safe(GameInfo.getBallSpeedLimits)
+ if type(minimum) == "table" then minimum = minimum.min or minimum.minimum end
+ minimum = tonumber(minimum)
+ if finite(minimum) and minimum > 0 then return minimum end
  return T.MIN_SPEED
 end
 
@@ -183,7 +182,7 @@ end
 
 local function readSnapshot(now)
  local snapshot = GameInfo and (safe(GameInfo.getSnapshotAt, now) or safe(GameInfo.getSnapshot))
- if type(snapshot) == "table" and safe(GameInfo.isSnapshotValid, snapshot, now) == false then snapshot = nil end
+ if type(snapshot) == "table" and safe(GameInfo.isSnapshotValid, snapshot, now) ~= true then snapshot = nil end
  local ball = snapshot and snapshot.ball or (GameInfo and safe(GameInfo.getBall))
  if typeof(ball) ~= "Instance" or not ball:IsA("BasePart") or not ball.Parent then return nil end
  return ball, snapshot
