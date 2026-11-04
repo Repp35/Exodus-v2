@@ -20,7 +20,7 @@ local T = {
 	RETURN_WIN_LO = 0.18,
 	RETURN_WIN_MIN_FACTOR = 0.10,
 	PING_FACTOR = 0.3,
-	ACTIVATION_WINDOW_FACTOR = 0.8,
+	ACTIVATION_WINDOW_FACTOR = 1.0,
 	ACTIVATION_MIN_DOT = 0.3,
 	ACTIVATION_TTI_MAX = 0.35,
 	ACTIVATION_TTI_EMA_ALPHA = 0.4,
@@ -129,6 +129,8 @@ local R = {
 	lastDashData = nil,
 	connections = {},
 	darkConnections = {},
+	pullSuspension = nil,
+	pullEvent = nil,
 }
 
 local FN = {
@@ -294,7 +296,7 @@ local function refreshRadiusCache(t)
 	if R.radiusCacheAt > 0 and t - R.radiusCacheAt < 1 / 60 and math.abs(R.lastSpeed - R.radiusCacheSpeed) < 2 then return end
 	local base = queryRadius(1.0)
 	if base > 0 then R.parryRadius = base; R.radiusSafety = base end
-	if not R.active then R.radiusActivation = queryRadius(T.ACTIVATION_WINDOW_FACTOR) end
+	if not R.active then R.radiusActivation = base end
 	R.radiusCacheAt = t; R.radiusCacheSpeed = R.lastSpeed
 end
 local function getActivationRadius(t)
@@ -304,7 +306,7 @@ local function getActivationRadius(t)
 		return queryRadius(T.DASH_WINDOW_FACTOR)
 	end
 	if R.radiusActivation > 0 then return R.radiusActivation end
-	return queryRadius(T.ACTIVATION_WINDOW_FACTOR)
+	return queryRadius(1.0)
 end
 
 -- activation
@@ -334,10 +336,17 @@ local function setActive(active, reason, snapshot, activationReason)
 	setPhase(active and "active" or "idle", reason)
 end
 local function stopForOutsidePull(position, reason)
-	if not R.active or typeof(position) ~= "Vector3" or R.parryRadius <= 0 then return false end
+	if typeof(position) ~= "Vector3" or R.parryRadius <= 0 then return false end
 	local root = getRootPosition()
 	if not root or distanceSquared(root, position) <= R.parryRadius * R.parryRadius then return false end
-	setActive(false, reason); clearReturnState(); R.lastGate = reason
+	local partner = R.clashPartnerId ~= -1 and R.clashPartnerId or (R.lastTarget ~= R.localUserId and R.lastTarget or -1)
+	if R.active then
+		R.pullSuspension = { partner = partner, stoppedAt = now(), lastTarget = R.lastTarget, switched = false }
+		setActive(false, reason)
+		if Utils.stopAllSpam then Utils.stopAllSpam() end
+	end
+	R.pullEvent = { reason = reason, at = now(), position = position }
+	R.lastGate = reason
 	return true
 end
 local function resetRuntime(reason)
@@ -351,7 +360,7 @@ local function resetRuntime(reason)
 	R.bound = false; R.boundRoot = nil; R.lastSpeed = 0
 	R.parryRadius = 0; R.radiusCacheAt = 0; R.radiusCacheSpeed = -1; R.radiusActivation = 0
 	R.radiusSafety = 0; R.lastSyncAt = 0; R.lastSequence = nil; R.lastTargetSource = nil
-	R.teleported = false; R.activationDeactLockedUntil = 0; resetTargetState(); resetDeactivationState()
+	R.teleported = false; R.activationDeactLockedUntil = 0; R.pullSuspension = nil; R.pullEvent = nil; resetTargetState(); resetDeactivationState()
 	R.lastGate = "detached"; setPhase("detached", reason or "reset")
 end
 local function updateTtiEma(t, root, snapshot)
@@ -604,6 +613,24 @@ local function evaluateClash(t, snapshot)
 	end
 	if not snapshotUsable then R.lastGate = "no_ball"; return end
 	updateParryState(t, snapshot)
+	if R.pullSuspension then
+		local suspension = R.pullSuspension
+		if t - suspension.stoppedAt > 2 or not Utils.isActive() or Utils.getConfigValue("AutoClash") ~= true then
+			R.pullSuspension = nil
+		else
+			local position = getSnapshotPosition(snapshot)
+			local target = normalizeTarget(snapshot.targetId)
+			local inRange = position and R.parryRadius > 0 and distanceSquared(root.Position, position) <= R.parryRadius ^ 2
+			if inRange and suspension.switched and (target == R.localUserId or target == suspension.partner) then
+				R.pullSuspension = nil
+				R.lastTarget = target
+				R.clashPartnerId = suspension.partner
+				setActive(true, "pull_return", snapshot, "pull_return")
+				return
+			end
+			return
+		end
+	end
 	if R.active then
 		if Deactivation.shouldDeactivate(t, snapshot) then setActive(false, "target_deactivated") end
 		return
@@ -673,7 +700,7 @@ local function bindCharacter(character)
 	local function watchDarkSeal(player)
 		if player.UserId == R.localUserId or R.darkConnections[player] then return end
 		local connection = player:GetAttributeChangedSignal("DarkSealed"):Connect(function()
-			if generation ~= R.generation or not R.bound or not R.active or player:GetAttribute("DarkSealed") ~= true then return end
+			if generation ~= R.generation or not R.bound or player:GetAttribute("DarkSealed") ~= true then return end
 			local targetRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 			if targetRoot and targetRoot.Parent then stopForOutsidePull(targetRoot.Position, "dark_seal_pull") end
 		end)
@@ -749,7 +776,7 @@ function AutoClash.onBallSync(data)
 	end
 	R.teleported = false
 	local possessorId = normalizeTarget(data.PossessorId)
-	if R.active and possessorId and possessorId ~= R.localUserId and R.players then
+	if possessorId and possessorId ~= R.localUserId and R.players then
 		local possessor = R.players:GetPlayerByUserId(possessorId)
 		local targetRoot = possessor and possessor.Character and possessor.Character:FindFirstChild("HumanoidRootPart")
 		if targetRoot and targetRoot.Parent and stopForOutsidePull(targetRoot.Position, "possession_pull") then return true end
@@ -774,6 +801,16 @@ function AutoClash.onBallSync(data)
 	if target == previousTarget and wasMe ~= nil then return true end
 	R.lastTarget = target
 	if wasMe == nil then R.wasMeTarget = isMe; clearReturnState(); R.lastGate = isMe and "initial_me" or "initial_not_me"; return true end
+	if R.pullSuspension then
+		local suspension = R.pullSuspension
+		if (target == R.localUserId or target == suspension.partner) and target ~= suspension.lastTarget then
+			suspension.switched = true
+		end
+		suspension.lastTarget = target
+		R.lastTarget = target
+		R.wasMeTarget = isMe
+		return true
+	end
 
 	if R.active and R.clashPartnerId ~= -1 and R.clashPartnerId ~= R.localUserId then
 		local previousWasPartner = previousTarget == R.clashPartnerId; local currentIsPartner = target == R.clashPartnerId
@@ -855,7 +892,7 @@ function AutoClash.setup(deps)
 		return false
 	end
 	R.localUserId = player.UserId; R.generation = 0; R.bound = false; R.active = false
-	R.phase = "detached"; R.boundRoot = nil; R.players = nil; R.runService = nil
+	R.phase = "detached"; R.boundRoot = nil; R.players = nil; R.runService = nil; R.pullSuspension = nil; R.pullEvent = nil
 	R.lastSpeed = 0; R.parryRadius = 0; R.radiusActivation = 0; R.radiusSafety = 0
 	R.lastSyncAt = 0; R.lastSequence = nil; R.lastTargetSource = nil; R.teleported = false
 	R.activationDeactLockedUntil = 0; R.connections = {}; resetTargetState(); resetDeactivationState()
@@ -873,6 +910,7 @@ function AutoClash.teardown()
 	end
 end
 function AutoClash.isActive() return R.active == true end
+function AutoClash.getPullEvent() return R.pullEvent end
 function AutoClash.stopSpam()
 	setActive(false, "fierce_deflect"); clearReturnState(); R.lastGate = "fierce_deflect"
 	if Utils and Utils.setAutoSpamActive then Utils.setAutoSpamActive(false) end
@@ -983,6 +1021,7 @@ AutoClash.__contract = {
 		"getStatus",
 		"getTargetSwitch",
 		"getDashData",
+		"getPullEvent",
 		"stopSpam",
 	},
 	requires = {
