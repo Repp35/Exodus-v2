@@ -7,7 +7,6 @@ local connection
 local lastActivationAt = -math.huge
 
 local FIERCE_DURATION = 5
-local tracking = { ball = nil, target = nil, cooldownAt = nil, outside = false }
 
 local function disconnect()
 	if not connection then return end
@@ -18,25 +17,20 @@ end
 
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 
-local function resetTracking()
-	tracking.ball = nil; tracking.target = nil
-	tracking.cooldownAt = nil; tracking.outside = false
-end
-
 local function evaluate(root, time)
 	if not Utils.isActive() or Utils.getConfigValue("AutoFierceDeflect") ~= true then return nil end
 	local cooldown = GameInfo.getDeflectCooldownState()
 	local attempt = cooldown and cooldown.attempt
 	if not attempt or not cooldown.known or not cooldown.blocking then
-		resetTracking(); return nil
+		return nil
 	end
 
 	local sync = GameInfo.getSyncData()
-	if type(sync) == "table" and sync.Teleported == true then resetTracking(); return nil end
+	if type(sync) == "table" and sync.Teleported == true then return nil end
 	local snapshot = GameInfo.getSnapshot(nil, time)
-	if not GameInfo.isSnapshotValid(snapshot) or snapshot.teleported == true then resetTracking(); return nil end
+	if not GameInfo.isSnapshotValid(snapshot) or snapshot.teleported == true then return nil end
 	local player = Utils.getLocalPlayer()
-	if not player or not snapshot.targeted or snapshot.targetId ~= player.UserId then resetTracking(); return nil end
+	if not player or not snapshot.targeted or snapshot.targetId ~= player.UserId then return nil end
 	local sequence = GameInfo.getSyncSequence()
 	if type(sequence) == "number" and snapshot.syncSequence ~= sequence then return nil end
 	local rootPosition = GameInfo.getRootPosition(root)
@@ -49,12 +43,6 @@ local function evaluate(root, time)
 	if not finite(minimum) or timing.speed < minimum * 0.375 then return nil end
 	local miss = cooldown.active and attempt.expired == true
 	if not miss then return nil end
-
-	local pull = AutoClash.getPullEvent()
-	local pulledOutside = pull and finite(pull.at) and time - pull.at >= 0 and time - pull.at <= 0.65
-		and typeof(pull.position) == "Vector3"
-		and (pull.position - rootPosition).Magnitude > timing.parryRadius
-	if not pulledOutside and timing.distance > timing.parryRadius * 3 then return nil end
 
 	local velocity = snapshot.velocity
 	if typeof(velocity) ~= "Vector3" then return nil end
@@ -92,7 +80,6 @@ local function step(root, current)
 	local checked = evaluate(root, Utils.now())
 	if checked ~= ability then return end
 	lastActivationAt = Utils.now()
-	resetTracking()
 	local ok, sent, detail = pcall(GameInfo.activateFierceDeflect, ability)
 	if ok and sent then
 		GameInfo.noteFierceDeflectActivation()
@@ -119,13 +106,11 @@ function AutoFierce.bindCharacter(character)
 	end)
 	Utils.trackCharacter(connection)
 	lastActivationAt = -math.huge
-	resetTracking()
 	return true
 end
 function AutoFierce.detachCharacter()
 	generation += 1
 	disconnect()
-	resetTracking()
 end
 function AutoFierce.teardown()
 	AutoFierce.detachCharacter()
@@ -161,7 +146,7 @@ AutoFierce.__contract = {
 			"noteFierceDeflectActivation",
 		},
 		AutoParry = { "getTiming" },
-		AutoClash = { "stopSpam", "getPullEvent" },
+		AutoClash = { "stopSpam" },
 		Spam = { "resetState" },
 	},
 	provides = { "setup", "bindCharacter", "detachCharacter", "teardown" },
