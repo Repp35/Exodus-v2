@@ -281,37 +281,17 @@ function Remote.setup(deps)
 end
 
 -- parry
-local function fireCapturedParry(flag)
-	local remote = resolvePhantomBallzRemote()
-	if not remote then return false, "remote de parry indisponível" end
-	local ok, err = pcall(function() remote:FireServer(payloadFor(flag)) end)
-	if not ok then remoteState = "remote_error"; return false, tostring(err) end
-	remoteState = "captured"; logParryMethod("captured", "fallback de parry via remote capturado")
-	return true
-end
-function Remote.fireParry(flag)
+function Remote.fireParry(_flag)
 	local ability = getDeflectAbility()
 	if ability then
-		local previousPress = ability.LastPressClock
-		local ok, err = xpcall(ability.Deflect, deflectTrace, ability)
-		if not ok then
-			remoteState = "deflect_error"
-			return false, err
-		end
-		if ability.LastPressClock ~= previousPress then
-			GameInfo.noteDeflectPress(); remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
-			if not loggedParryMethods.deflect and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
-			return true
-		end
-		local sent, detail = fireCapturedParry(flag)
-		if sent then return true end
-		remoteState = "deflect_ignored"
-		return false, "Deflect ignorou clique; " .. tostring(detail)
+		local previousPress = ability.LastPressClock; local ok, err = xpcall(ability.Deflect, deflectTrace, ability)
+		if not ok then remoteState = "deflect_error"; return false, err end
+		if ability.LastPressClock == previousPress then return false, "Deflect não registrou clique" end
+		GameInfo.noteDeflectPress(); remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
+		if not loggedParryMethods.deflect and ability.LastPressClock ~= previousPress and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
+		return true
 	end
-	local sent, detail = fireCapturedParry(flag)
-	if sent then return true end
-	remoteState = "unavailable"; parryInitialized = false
-	return false, "Deflect indisponível; " .. tostring(detail)
+	remoteState = "unavailable"; parryInitialized = false; parryRemoteSource = nil; return false, "Deflect indisponível"
 end
 function Remote.initParry()
 	parryInitialized = getDeflectAbility() ~= nil; return parryInitialized
