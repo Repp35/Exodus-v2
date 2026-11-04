@@ -5,6 +5,7 @@ local AutoFierce = {}
 local Utils, GameInfo, AutoParry, AutoClash, Spam
 local generation = 0
 local connection
+local boundRoot
 local lastActivationAt = -math.huge
 local FIERCE_DURATION = 5
 local function disconnect()
@@ -16,7 +17,7 @@ local function finite(value) return type(value) == "number" and value == value a
 local function evaluate(root, time)
 	if not Utils.isActive() or Utils.getConfigValue("AutoFierceDeflect") ~= true then return nil end
 	local cooldown = GameInfo.getDeflectCooldownState(); local attempt = cooldown and cooldown.attempt
-	if not attempt or not cooldown.known or not cooldown.blocking then return nil end
+	if not cooldown or not cooldown.known or not cooldown.blocking then return nil end
 	local sync = GameInfo.getSyncData()
 	if type(sync) == "table" and sync.Teleported == true then return nil end
 	local snapshot = GameInfo.getSnapshot(nil, time)
@@ -29,11 +30,9 @@ local function evaluate(root, time)
 	if typeof(rootPosition) ~= "Vector3" then return nil end
 	local timing = AutoParry.getTiming(snapshot, time, rootPosition, 1, "game")
 	if not timing or not timing.approaching or not finite(timing.distance) or not finite(timing.speed) then return nil end
-	if not finite(timing.parryRadius) or timing.parryRadius <= 0 or timing.distance <= 0 then return nil end
+	if not finite(timing.parryRadius) or timing.parryRadius <= 0 or not finite(timing.noWindowParryRadius) or timing.distance <= 0 then return nil end
 	local minimum = GameInfo.getBallSpeedLimits()
 	if not finite(minimum) or timing.speed < minimum * 0.375 then return nil end
-	local miss = cooldown.active and attempt.expired == true
-	if not miss then return nil end
 	local velocity = snapshot.velocity
 	if typeof(velocity) ~= "Vector3" then return nil end
 	local displacement = rootPosition - snapshot.position; local rootVelocity = root.AssemblyLinearVelocity
@@ -43,6 +42,11 @@ local function evaluate(root, time)
 	local impact = math.max(0, timing.distance - timing.noWindowParryRadius) / closing; local ping = GameInfo.getLocalPing()
 	if not finite(ping) or ping < 0 then return nil end
 	if impact + 2 * ping + 0.1 >= FIERCE_DURATION then return nil end
+	local arrival = time + impact + 2 * ping + 0.05
+	if attempt and finite(attempt.deadline) and attempt.deadline >= arrival then return nil end
+	local cooldownPastImpact = finite(cooldown.endsAt) and cooldown.endsAt > arrival
+	local expiredMiss = cooldown.active == true and attempt and attempt.expired == true
+	if not cooldownPastImpact and not expiredMiss then return nil end
 	local ability = GameInfo.getFierceDeflectAbility()
 	if not ability or type(ability.IsAvailable) ~= "function" or not ability:IsAvailable(false) then return nil end
 	if type(ability.IsOwnerAlive) ~= "function" or not ability:IsOwnerAlive() then return nil end
@@ -67,17 +71,22 @@ function AutoFierce.setup(deps)
 	Utils, GameInfo, AutoParry, AutoClash, Spam = deps.Utils, deps.GameInfo, deps.AutoParry, deps.AutoClash, deps.Spam; return true
 end
 function AutoFierce.bindCharacter(character)
-	generation += 1; disconnect(); local current = generation; local root = character and character:FindFirstChild("HumanoidRootPart")
+	generation += 1; disconnect(); boundRoot = nil; local current = generation; local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not root or not root.Parent then return false, "HumanoidRootPart indisponível" end
 	local runService = Utils.getRunService(); local signal = runService and (runService.PostSimulation or runService.Heartbeat)
 	if not signal then return false, "RunService indisponível" end
-	connection = signal:Connect(function()
+	boundRoot = root; connection = signal:Connect(function()
 		if character.Parent then step(root, current) end
 	end)
 	Utils.trackCharacter(connection); lastActivationAt = -math.huge; return true
 end
 function AutoFierce.detachCharacter()
-	generation += 1; disconnect()
+	generation += 1; disconnect(); boundRoot = nil
+end
+function AutoFierce.onBallSync(data)
+	if type(data) ~= "table" or data.Source ~= "packet" or data.Teleported == true or not boundRoot or not Utils then return end
+	local player = Utils.getLocalPlayer()
+	if player and tonumber(data.TargetPlayerID) == player.UserId then step(boundRoot, generation) end
 end
 function AutoFierce.teardown()
 	AutoFierce.detachCharacter(); Utils, GameInfo, AutoParry, AutoClash, Spam = nil, nil, nil, nil, nil
@@ -116,8 +125,9 @@ AutoFierce.__contract = {
 		Spam = { "resetState" },
 	},
 
-	provides = { "setup", "bindCharacter", "detachCharacter", "teardown" },
+	provides = { "setup", "bindCharacter", "detachCharacter", "teardown", "onBallSync" },
 	bindCharacter = true,
+	onBallSync = true,
 }
 
 return AutoFierce

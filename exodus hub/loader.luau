@@ -478,7 +478,7 @@ local function bindRuntime(loaded, log)
 							packet.Source = "packet"
 							if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
 							if not packet.Teleported then
-								for _, name in ipairs({ "autoclash", "autoparry" }) do
+								for _, name in ipairs({ "autoclash", "autofierce", "autoparry" }) do
 									for _, sub in ipairs(ballSyncSubscribers) do
 										if sub.name == name then callSync(sub.name, sub.handler, packet) end
 									end

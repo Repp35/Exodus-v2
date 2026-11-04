@@ -10,8 +10,8 @@ pre=r'''
 local scheduled={}
 local task={defer=function(fn) table.insert(scheduled,fn) end}
 local function flush() while #scheduled>0 do local fn=table.remove(scheduled,1); fn() end end
-local MODULE_ORDER={'utils','gameinfo','autoparry','autoclash'}
-local MODULE_BY_NAME={gameinfo={path='gameinfo'},remote={path='remote'},autoparry={path='autoparry'},autoclash={path='autoclash'}}
+local MODULE_ORDER={'utils','gameinfo','autoparry','autoclash','autofierce'}
+local MODULE_BY_NAME={gameinfo={path='gameinfo'},remote={path='remote'},autoparry={path='autoparry'},autoclash={path='autoclash'},autofierce={path='autofierce'}}
 local function contractOf(module) return module.__contract or {} end
 local function printRawError(name, message) error(name..': '..tostring(message)) end
 local HttpService={JSONDecode=function() return nil end}
@@ -36,16 +36,17 @@ local utils={trackGlobal=function() end,isActive=function() return true end}
 local events,parryEvents={},{}
 local clash={__contract={onBallSync=true},onBallSync=function(data) if data.Source=='packet' then assert(appliedSequence==data.Sequence); table.insert(deliveryOrder,'clash') end; table.insert(events,{seq=data.Sequence,target=data.TargetPlayerID,tele=data.Teleported}) end}
 local parry={__contract={onBallSync=true},onBallSync=function(data) if data.Source=='packet' then assert(appliedSequence==data.Sequence); table.insert(deliveryOrder,'parry') end; table.insert(parryEvents,{seq=data.Sequence or data.TeleportSequence,tele=data.Teleported,target=data.TargetPlayerID}) end}
+local fierce={__contract={onBallSync=true},onBallSync=function(data) if data.Source=='packet' then assert(appliedSequence==data.Sequence); table.insert(deliveryOrder,'fierce') end end}
 local function packet(seq,target,tele)
     local b=buffer.create(92);buffer.writeu8(b,0,tele and 1 or 0);buffer.writeu16(b,1,seq);buffer.writef64(b,55,target);return b
 end
 '''
 post=r'''
-local result=assert(bindRuntime({utils=utils,gameinfo=info,remote=remote,autoparry=parry,autoclash=clash}))
+local result=assert(bindRuntime({utils=utils,gameinfo=info,remote=remote,autoparry=parry,autoclash=clash,autofierce=fierce}))
 assert(result.ballSync and receiver)
 -- Three transitions arriving before the deferred refresh must each be delivered.
 receiver(packet(11,42,false)); receiver(packet(12,7,false)); receiver(packet(13,42,false))
-assert(table.concat(deliveryOrder,',')=='clash,parry', 'packet should update GameInfo and let clash take over before parry')
+assert(table.concat(deliveryOrder,',')=='clash,fierce,parry', 'packet should update GameInfo and evaluate clash and fierce before parry')
 assert(#events==3 and events[1].seq==11 and events[2].seq==12 and events[3].seq==13, 'target events coalesced')
 assert(#parryEvents==3 and parryEvents[1].target==42 and parryEvents[2].target==7 and parryEvents[3].target==42, 'parry target transitions coalesced')
 serverSequence=13;providerData={TargetPlayerID=42,Teleported=false};flush()
