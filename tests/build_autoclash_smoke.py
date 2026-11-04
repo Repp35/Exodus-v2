@@ -28,8 +28,9 @@ local utils = {
     apiVersion = function() return 1 end,
 }
 local clash = assert(loadstring(SOURCE))()
+local pressure
 assert(clash.setup({
-    AutoParry = {getRadius = function() return {} end, getStatus = function() return {} end},
+    AutoParry = {getRadius = function() return {} end, getStatus = function() return {} end, getPressure = function() return pressure end},
     Dash = {setHandler = function() end, tick = function() end},
     GameInfo = {
         getTargetId = function() return -1 end,
@@ -52,6 +53,16 @@ clash.onBallSync({TargetPlayerID = 42})
 local status = clash.getStatus()
 assert(status.returnPending == true and status.clashPartnerId == 7,
     "return transition not armed: " .. tostring(status.lastGate))
+pressure={level=0.8, averageReturnTime=0.1}
+time += 0.05; clash.onBallSync({TargetPlayerID = 7})
+assert(clash.getStatus().returnWindowBonus == 0.5, "high pressure did not expand return window")
+time += 0.22; clash.onBallSync({TargetPlayerID = 42})
+assert(clash.getStatus().returnPending, "adaptive window rejected return after the base window")
+pressure=nil
+time += 0.05; clash.onBallSync({TargetPlayerID = 7})
+assert(clash.getStatus().returnWindowBonus == 0, "missing pressure did not restore baseline")
+time += 0.22; clash.onBallSync({TargetPlayerID = 42})
+assert(not clash.getStatus().returnPending, "baseline incorrectly accepted late return")
 clash.teardown()
 print("AutoClash target transitions: PASS")
 '''

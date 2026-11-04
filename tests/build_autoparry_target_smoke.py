@@ -73,6 +73,13 @@ assert(fires==7,"a reentrant callback during Deflect must not send twice")
 target=7; sync.TargetPlayerID=7; snapshotSeq=23; frame(-2); frame(-1)
 target=42; sync.TargetPlayerID=42; snapshotSeq=24; startSpamOnRootRead=true; frame(-0.5)
 assert(fires==7,"AP must not fire if spam takes over during calculation")
+startSpamOnRootRead=false; spamOn=false
+info.getDeflectCooldownState=function() return {retryRevision=1,blocking=false,active=false} end
+frame(-1.4); frame(-0.4)
+assert(fires==8, "confirmed failed attempt must rearm the same target")
+frame(-0.3)
+assert(fires==8, "the same retry revision must not rearm twice")
+assert(#R.pressureClicks==8 and R.pressureClicks[1].speed>0, "successful AP clicks must produce pressure samples")
 print("AP same-frame dispatch and target cycles: PASS")
 '''
 output.write_text(pre+source+post)

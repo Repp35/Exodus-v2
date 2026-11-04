@@ -82,6 +82,10 @@ local R = {
 	resilienceBonusAt = -1,
 	lastFireRevision = 0,
 	lastRetryRevision = 0,
+	pressureClicks = {},
+	pressureReturns = {},
+	pressureAwayTarget = nil,
+	pressureAwayAt = nil,
 }
 
 local function clock() return os.clock() end
@@ -143,13 +147,26 @@ local function resetTracking()
 	R.lastFireAt = 0; R.lastApproaching = false; R.lastTarget = -1; R.lastSyncSequence = nil
 	R.targetId = -1; R.targetKnown = false; R.teleported = false; R.teleportSequence = nil
 	R.resilienceBonus = 0; R.resilienceBonusAt = -1; R.lastFireRevision = 0; R.lastRetryRevision = 0
+	table.clear(R.pressureClicks); table.clear(R.pressureReturns); R.pressureAwayTarget = nil; R.pressureAwayAt = nil
 end
 local function invalidateLife()
 	R.lifeGeneration += 1; R.alive = false; R.bound = false; resetParryLock()
 end
 local function observeTarget(targetId)
 	if not R.player or not isFiniteNumber(targetId) or targetId <= 0 then return end
-	if targetId ~= R.player.UserId then R.targetAwaySeen = true elseif R.targetAwaySeen then R.targetAwaySeen = false; R.firedForTarget = false; R.targetCycle += 1 end
+	if targetId ~= R.player.UserId then
+		if not R.targetAwaySeen then R.pressureAwayTarget = targetId; R.pressureAwayAt = clock()
+		elseif R.pressureAwayTarget ~= targetId then R.pressureAwayTarget = nil; R.pressureAwayAt = nil end
+		R.targetAwaySeen = true
+	elseif R.targetAwaySeen then
+		local time = clock(); local elapsed = R.pressureAwayAt and time - R.pressureAwayAt
+		if R.pressureAwayTarget and elapsed and elapsed > 0 and elapsed <= 3 then
+			table.insert(R.pressureReturns, {at = time, interval = elapsed})
+			if #R.pressureReturns > 32 then table.remove(R.pressureReturns, 1) end
+		end
+		R.pressureAwayTarget = nil; R.pressureAwayAt = nil
+		R.targetAwaySeen = false; R.firedForTarget = false; R.targetCycle += 1
+	end
 end
 local function getResilienceBonus(time)
 	if not R.alive or not R.bound or not R.player then return 0 end
@@ -270,6 +287,7 @@ local function enterTeleportLock(_, sequence)
 	if type(sequence) == "number" then R.teleportSequence = sequence end
 	if R.teleported then return end
 	R.teleported = true; R.firedForTarget = false; R.targetAwaySeen = false; R.targetCycle += 1
+	table.clear(R.pressureClicks); table.clear(R.pressureReturns); R.pressureAwayAt = nil; R.pressureAwayTarget = nil
 	R.lastTarget = -1; resetParryLock(); clearBallState(); R.lastFireAt = 0
 	setPhase("waiting", "teleport_lock")
 end
@@ -345,6 +363,8 @@ local function updateVelocity(ball, position, time, dt, syncData, requireMovemen
 end
 local function requestParry(ball, reason)
 	local cycle = R.targetCycle; local time = clock(); local previouslyFired = R.firedForTarget; R.armed = false
+	local speed, distance, lead, factor = R.lastSpeed, R.lastDistance, R.lastLeadTime, getWindowFactor()
+	local baseRadius = T.BASE_RADIUS + getResilienceBonus(time)
 	R.firedForTarget = true; local cooldown = GameInfo.getDeflectCooldownState()
 	if R.targetCycle ~= cycle or R.targetAwaySeen or R.teleported then R.firedForTarget = previouslyFired; R.armed = not previouslyFired; return false end
 	if
@@ -354,7 +374,14 @@ local function requestParry(ball, reason)
 		R.firedForTarget = previouslyFired; R.armed = not previouslyFired; return false
 	end
 	R.lastFireRevision = cooldown and cooldown.readyRevision or 0; R.lastFireAt = time
-	if getRemoteParry(ball) then setPhase("fired", reason); return true end
+	if getRemoteParry(ball) then
+		if isFiniteNumber(speed) and speed > 0 and isFiniteNumber(distance) and isFiniteNumber(lead) and lead > 0 and factor > 0 then
+			local actual = math.max(0, (distance - baseRadius) / (speed * lead))
+			table.insert(R.pressureClicks, {at = time, factor = actual, configured = factor, speed = speed})
+			if #R.pressureClicks > 32 then table.remove(R.pressureClicks, 1) end
+		end
+		setPhase("fired", reason); return true
+	end
 	if R.targetCycle == cycle then R.firedForTarget = false; R.armed = true end
 	return false
 end
@@ -364,7 +391,7 @@ local function onHeartbeat(character, root, dt, generation)
 	local time = clock(); samplePing(time); local cooldown = GameInfo.getDeflectCooldownState(); local syncData = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
 	if cooldown and type(cooldown.retryRevision) == "number" and cooldown.retryRevision > R.lastRetryRevision then
 		R.lastRetryRevision = cooldown.retryRevision
-		if not cooldown.blocking and not R.firedForTarget then R.armed = true end
+		if not cooldown.blocking and not R.targetAwaySeen then R.firedForTarget = false; R.armed = true end
 	end
 	if type(syncData) == "table" and syncData.Teleported == true then
 		if not R.teleported then enterTeleportLock(time) end
@@ -645,6 +672,29 @@ function AutoParry.getRadius(mode, windowFactor, speedOverride, baseWindow): Rad
 		tti = tti,
 	}
 end
+function AutoParry.getPressure()
+	local time = clock(); local count, factorSum, configuredSum, speedSum, ratioSum = 0, 0, 0, 0, 0
+	for i = #R.pressureClicks, 1, -1 do
+		local sample = R.pressureClicks[i]
+		if time < sample.at or time - sample.at > 3 then table.remove(R.pressureClicks, i)
+		else
+			count += 1; factorSum += sample.factor; configuredSum += sample.configured; speedSum += sample.speed
+			ratioSum += math.clamp(sample.factor / sample.configured, 0, 1)
+		end
+	end
+	local returns, intervalSum = 0, 0
+	for i = #R.pressureReturns, 1, -1 do
+		local sample = R.pressureReturns[i]
+		if time < sample.at or time - sample.at > 3 then table.remove(R.pressureReturns, i)
+		else returns += 1; intervalSum += sample.interval end
+	end
+	return {
+		samples = count, cps = count / 3, averageFactor = count > 0 and factorSum / count or nil,
+		configuredFactor = count > 0 and configuredSum / count or nil, averageSpeed = count > 0 and speedSum / count or nil,
+		returnSamples = returns, averageReturnTime = returns > 0 and intervalSum / returns or nil,
+		level = count >= 3 and returns >= 2 and math.clamp(1 - ratioSum / count, 0, 1) or nil,
+	}
+end
 function AutoParry.getStatus()
 	local time = clock(); local target = AutoParry.getTargetStatus(); local radius = AutoParry.getRadius("geometry", getWindowFactor()); local resilience = getResilienceStatus()
 	local apiVersion
@@ -707,6 +757,7 @@ function AutoParry.getStatus()
 		},
 
 		target = target,
+		pressure = AutoParry.getPressure(),
 		cycle = {
 			fired = R.armed == false,
 			armed = R.armed == true,

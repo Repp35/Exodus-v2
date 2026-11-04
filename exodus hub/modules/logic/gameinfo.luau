@@ -246,7 +246,7 @@ function GameInfo.setup(deps)
 	if not Players then return false, "dependência ausente: Players" end
 	if not Workspace then return false, "dependência ausente: Workspace" end
 	cachedBall = nil; ballWatcherReady = false; ballSearchComplete = false; nextBallSearch = 0
-	nextSpeedRead = 0; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil
+	nextSpeedRead = 0; speedLimitMin, speedLimitMax = 16, 600; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil
 	clientAbilitiesModule = nil; clientAbilities = nil; sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil
 	deflectState = {
 		known = false,
@@ -386,7 +386,7 @@ function GameInfo.getDeflectCooldownState()
 	if deflectState.rawActive and finite(deflectState.endsAt) and time >= deflectState.endsAt then deflectState.rawActive = false; deflectState.endsAt = nil end
 	local ability = locateDeflectAbility(); local localCooldown = ability and finite(ability.Cooldown) and ability.Cooldown > 0; local cooldownRunning = deflectState.rawActive or localCooldown == true
 	if deflectState.fierceUsedForTarget and not currentTargetMatches() then deflectState.fierceUsedForTarget = false end
-	local attempt = deflectState.attempt; deflectState.active = false; deflectState.blocking = cooldownRunning or attempt ~= nil or deflectState.fierceUsedForTarget == true
+	local attempt = deflectState.attempt; deflectState.active = false
 	if attempt then
 		local valid = currentTargetMatches()
 		if not valid then
@@ -397,6 +397,7 @@ function GameInfo.getDeflectCooldownState()
 			elseif expired and not cooldownRunning then deflectState.retryRevision += 1; deflectState.readyRevision += 1; deflectState.attempt = nil end
 		end
 	end
+	deflectState.blocking = cooldownRunning or deflectState.attempt ~= nil or deflectState.fierceUsedForTarget == true
 	return deflectState
 end
 function GameInfo.getFierceDeflectAbility()

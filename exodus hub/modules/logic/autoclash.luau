@@ -83,6 +83,7 @@ local R = {
 	lostMeAt = nil,
 	returnExpiresAt = 0,
 	returnWindow = 0,
+	returnWindowBonus = 0,
 	returnPending = false,
 	returnFromTarget = -1,
 	returnServerAt = nil,
@@ -239,7 +240,18 @@ local function getReturnWindow(speed)
 	local minimum, maximum
 	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum, maximum = GameInfo.getBallSpeedLimits() end
 	local low = configured and math.clamp(configured, 0, 400) / 1000 or T.RETURN_WIN_LO; local base = lerpBySpeed(speed, low, low * T.RETURN_WIN_MIN_FACTOR, minimum or speed, maximum or speed)
-	return math.max(base + pingCompensation(), 2 / 60)
+	local bonus = 0
+	if AutoParry and type(AutoParry.getPressure) == "function" then
+		local ok, pressure = pcall(AutoParry.getPressure)
+		if ok and type(pressure) == "table" then
+			local level = pressure.level; local interval = pressure.averageReturnTime
+			if type(level) == "number" and level == level and type(interval) == "number" and interval > 0 and interval <= 0.5 then
+				if level >= 0.6 then bonus = 0.5 elseif level >= 0.4 then bonus = 0.3 elseif level >= 0.2 then bonus = 0.15 end
+			end
+		end
+	end
+	R.returnWindowBonus = bonus
+	return math.max(base + pingCompensation(), 2 / 60) * (1 + bonus)
 end
 local function beginReturnWindow(t, fromTarget, serverTime)
 	local window = getReturnWindow(R.lastSpeed)
@@ -266,7 +278,7 @@ local function disconnectList(list, trackCharacter)
 	end
 end
 local function clearReturnState()
-	R.lostMeAt = nil; R.returnExpiresAt = 0; R.returnWindow = 0; R.returnPending = false
+	R.lostMeAt = nil; R.returnExpiresAt = 0; R.returnWindow = 0; R.returnWindowBonus = 0; R.returnPending = false
 	R.returnFromTarget = -1; R.returnServerAt = nil; R.returnToken += 1
 end
 local function resetTargetState()
@@ -1033,6 +1045,7 @@ function AutoClash.getStatus()
 		ownDashEscapeLastAt = R.ownDashEscapeLastAt,
 		returnPending = R.returnPending == true,
 		returnWindow = R.returnWindow,
+		returnWindowBonus = R.returnWindowBonus,
 		returnExpiresAt = R.returnExpiresAt,
 		returnFromTarget = R.returnFromTarget,
 		returnToken = R.returnToken,
