@@ -402,6 +402,7 @@ local function onHeartbeat(character, root, dt, generation)
 	if distance > parryRadius then setPhase("waiting", "outside_radius"); return end
 	if cooldown and cooldown.active then setPhase("waiting", "deflect_cooldown"); return end
 	if R.firedForTarget then
+		if cooldown and cooldown.normalizing then setPhase("waiting", "cooldown_normalizing"); return end
 		if not cooldown or not cooldown.known or cooldown.readyRevision <= R.lastFireRevision then setPhase("waiting", "target_already_parried"); return end
 		R.armed = true
 	end

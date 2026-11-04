@@ -58,13 +58,15 @@ local function newScenario(heldAbility)
  local storage = {FindFirstChild=function(_, name) if name=="TS" then return ts end end}
  local Utils = {getReplicatedStorage=function() return storage end}
  local GameInfo = {}
+ local sync
+ local function getDecodedSyncData() return sync end
  local deflectState = {known=false,active=false,readyRevision=0,lastEventAt=-math.huge}
  local deflectConnection; local nextDeflectSignalCheck=0; local nextHeldCooldownCheck=0
  local function locateDeflectAbility() return heldAbility end
  GAMEINFO_EVENTS
  local ball = {instance=true, Parent={}, Position=vec(-10), AssemblyLinearVelocity=vec(100), IsA=function() return true end}
  local root = {Parent={}, Position=vec(0)}; local char={Parent={}}
- local player = {UserId=42}; local sync={Speed=100, TargetPlayerID=42, Teleported=false}
+ local player = {UserId=42}; sync={Speed=100, TargetPlayerID=42, Teleported=false}
  local target=42; local spam=false; local fires=0; local ping=0.05
  GameInfo.getBallSpeedLimits=function() return 16,600 end
  GameInfo.getDeflectRange=function() return 8.5 end
@@ -104,6 +106,42 @@ do
   calls+=1; if calls==2 then s.frame(1.03,-10) end; return original()
  end
  s.frame(1.02,-10); assert(s.count()==1, "shared-state reentry must not double click")
+end
+-- A local click cannot rearm from an early server cooldown reset.
+do
+ local s=newScenario(); s.frame(1.01); s.info.noteDeflectPress()
+ local deadline=s.info.getDeflectCooldownState().normalizingUntil
+ s.cd:emit(1,SET,1.45); s.cd:emit(1,SET,0)
+ s.frame(deadline-0.001); assert(s.count()==1, "early reset must not double click")
+ s.frame(deadline+0.001); assert(s.count()==2, "expired normalization must permit recovery")
+end
+-- Grace extends the variable server window and the 50 ms margin.
+do
+ local s=newScenario(); s.frame(1.01); s.info.noteDeflectPress()
+ local firstDeadline=s.info.getDeflectCooldownState().normalizingUntil
+ s.cd:emit(1,SET,1.45); s.cd:emit(1,SET,0)
+ s.frame(1.1); s.info.noteDeflectPress()
+ s.frame(firstDeadline+0.01); assert(s.count()==1, "old cooldown reset must not rearm a newer click")
+end
+do
+ local normal=newScenario(); normal.frame(1.01); normal.info.noteDeflectPress()
+ local withoutGrace=normal.info.getDeflectCooldownState().normalizingUntil
+ local grace=newScenario(); grace.sync.Grace=true; grace.frame(1.01); grace.info.noteDeflectPress()
+ local withGrace=grace.info.getDeflectCooldownState().normalizingUntil
+ assert(math.abs(withGrace-withoutGrace-0.125)<0.001, "grace must add ping plus 75 ms")
+ grace.cd:emit(1,SET,1.45); grace.frame(withGrace-0.001)
+ assert(not grace.info.getDeflectCooldownState().active, "cooldown must remain unconfirmed until normalization")
+ grace.frame(withGrace+0.001); assert(grace.info.getDeflectCooldownState().active, "persistent cooldown must be confirmed")
+end
+-- The game's window shrinks with speed and honors its prediction deadline.
+do
+ local slow=newScenario(); slow.sync.Speed=16; slow.frame(1.01); slow.info.noteDeflectPress()
+ local slowDeadline=slow.info.getDeflectCooldownState().normalizingUntil
+ local fast=newScenario(); fast.sync.Speed=600; fast.frame(1.01); fast.info.noteDeflectPress()
+ local fastDeadline=fast.info.getDeflectCooldownState().normalizingUntil
+ assert(fastDeadline<slowDeadline, "normalization must follow ball speed")
+ local predicted=newScenario({PredictedResetUntil=3}); predicted.frame(1.01); predicted.info.noteDeflectPress()
+ assert(predicted.info.getDeflectCooldownState().normalizingUntil>=3.05, "prediction deadline and 50 ms margin")
 end
 -- A server cooldown must stop; observing its start alone is not a miss.
 do

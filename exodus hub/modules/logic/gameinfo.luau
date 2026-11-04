@@ -58,7 +58,7 @@ local clientAbilitiesModule
 local clientAbilities
 local sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt
 local lastModuleError = {}
-local deflectState = { known = false, active = false, readyRevision = 0, lastEventAt = -math.huge }
+local deflectState = { known = false, active = false, rawActive = false, readyRevision = 0, lastEventAt = -math.huge }
 local deflectConnection
 local nextDeflectSignalCheck = 0
 local nextHeldCooldownCheck = 0
@@ -236,7 +236,7 @@ function GameInfo.setup(deps)
 	cachedBall = nil; ballWatcherReady = false; ballSearchComplete = false; nextBallSearch = 0
 	nextSpeedRead = 0; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil
 	clientAbilitiesModule = nil; clientAbilities = nil; sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil
-	deflectState = { known = false, active = false, readyRevision = 0, lastEventAt = -math.huge }; nextDeflectSignalCheck = 0; nextHeldCooldownCheck = 0
+	deflectState = { known = false, active = false, rawActive = false, readyRevision = 0, lastEventAt = -math.huge }; nextDeflectSignalCheck = 0; nextHeldCooldownCheck = 0
 	deflectMissingAt = nil; nextDeflectWarning = 0
 	GameInfo.getDeflectCooldownState(); return true
 end
@@ -282,11 +282,45 @@ function GameInfo.getHeldDeflectServerCooldown()
 	end
 	return nil
 end
+local function deflectNormalizationDeadline(startedAt)
+	local data = getDecodedSyncData(); local speed = type(data) == "table" and tonumber(data.Speed) or nil
+	local minimum, maximum = GameInfo.getBallSpeedLimits()
+	if type(speed) ~= "number" or speed ~= speed then speed = minimum end
+	local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
+	-- The server window can include the noob and resilience bonuses.
+	local window = math.max(0.85 - 0.65 * fraction, 0.32) + 0.15
+	local range = GameInfo.getDeflectRange()
+	if type(range) == "number" then window += math.clamp((range - 8.5) / 7.5, 0, 1) * 0.12 end
+	local ping = GameInfo.getLocalPing(); if type(ping) ~= "number" or ping ~= ping or ping < 0 then ping = 0 end
+	local grace = type(data) == "table" and (data.Grace == true or data.OldGrace == true) and math.clamp(ping + 0.075, 0.075, 0.35) or 0
+	local predicted = locateDeflectAbility(); predicted = predicted and predicted.PredictedResetUntil
+	local deadline = startedAt + window + grace
+	if type(predicted) == "number" and predicted == predicted then deadline = math.max(deadline, predicted) end
+	return deadline + 0.05
+end
+function GameInfo.noteDeflectPress()
+	local time = os.clock(); local state = GameInfo.getDeflectCooldownState()
+	if state.normalizing then
+		-- A new click consumes an earlier reset; it cannot rearm the new click.
+		if state.pendingClear then state.pendingClear = false; state.normalizationStartedAt = time; state.normalizingUntil = deflectNormalizationDeadline(time) end
+		return
+	end
+	if state.active then return end
+	state.normalizationStartedAt = time; state.normalizingUntil = deflectNormalizationDeadline(time); state.normalizing = true
+end
 function GameInfo.getDeflectCooldownState()
 	local time = os.clock()
+	if deflectState.normalizing then
+		deflectState.normalizingUntil = math.max(deflectState.normalizingUntil, deflectNormalizationDeadline(deflectState.normalizationStartedAt))
+		if time >= deflectState.normalizingUntil then
+			deflectState.normalizing = false; deflectState.active = deflectState.rawActive == true
+			if deflectState.pendingClear and not deflectState.rawActive then deflectState.readyRevision += 1 end
+			deflectState.pendingClear = false
+		end
+	end
 	if deflectConnection and deflectConnection.Connected == false then
 		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(deflectConnection) end
-		deflectConnection = nil; deflectState.known = false; deflectState.active = false; deflectState.endsAt = nil; nextDeflectSignalCheck = 0
+		deflectConnection = nil; deflectState.known = false; deflectState.active = false; deflectState.rawActive = false; deflectState.endsAt = nil; nextDeflectSignalCheck = 0
 	end
 	if not deflectConnection and time >= nextDeflectSignalCheck then
 		nextDeflectSignalCheck = time + 0.5
@@ -296,8 +330,12 @@ function GameInfo.getDeflectCooldownState()
 				local kind, duration = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
 				if not kind then return end
 				deflectState.known = true; deflectState.lastEventAt = os.clock()
-				if kind == "started" then deflectState.active = true; deflectState.endsAt = deflectState.lastEventAt + duration
-				else deflectState.active = false; deflectState.endsAt = nil; deflectState.readyRevision += 1 end
+				if kind == "started" then
+					deflectState.rawActive = true; deflectState.active = not deflectState.normalizing; deflectState.pendingClear = false; deflectState.endsAt = deflectState.lastEventAt + duration
+				else
+					deflectState.rawActive = false; deflectState.active = false; deflectState.endsAt = nil
+					if deflectState.normalizing then deflectState.pendingClear = true else deflectState.readyRevision += 1 end
+				end
 			end)
 			if Utils and type(Utils.trackGlobal) == "function" then Utils.trackGlobal(deflectConnection) end
 			deflectMissingAt = nil
@@ -308,11 +346,11 @@ function GameInfo.getDeflectCooldownState()
 			end
 		end
 	end
-	if not deflectState.active and time >= nextHeldCooldownCheck then
+	if not deflectState.rawActive and time >= nextHeldCooldownCheck then
 		nextHeldCooldownCheck = time + 0.05
 		local duration, receivedAt = GameInfo.getHeldDeflectServerCooldown()
 		if duration and receivedAt and receivedAt <= time and time < receivedAt + duration and receivedAt > deflectState.lastEventAt + 0.01 then
-			deflectState.known = true; deflectState.active = true; deflectState.lastEventAt = receivedAt; deflectState.endsAt = receivedAt + duration
+			deflectState.known = true; deflectState.rawActive = true; deflectState.active = not deflectState.normalizing; deflectState.lastEventAt = receivedAt; deflectState.endsAt = receivedAt + duration
 		end
 	end
 	return deflectState
@@ -471,6 +509,7 @@ GameInfo.__contract = {
 		"decodeDeflectServerEvent",
 		"getHeldDeflectServerCooldown",
 		"getDeflectCooldownState",
+		"noteDeflectPress",
 		"getFierceDeflectAbility",
 		"activateFierceDeflect",
 		"getDashAbility",
