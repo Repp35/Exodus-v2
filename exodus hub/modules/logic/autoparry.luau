@@ -393,18 +393,15 @@ local function onHeartbeat(character, root, dt, generation)
 	if not rootPositionOk or not isValidVector3(rootPosition) then resetParryLock(); return end
 	local delta = rootPosition - position; local distance = delta.Magnitude; local speed = R.velocity.Magnitude
 	local approaching = speed >= minimumBallSpeed() and distance > 0 and R.velocity:Dot(delta) > 0
-	if not R.lastTargeted then R.armed = true end
+	if not R.lastTargeted and not R.firedForTarget then R.armed = true end
 	R.lastTargeted = targeted; R.targeted = targeted; local resilienceBonus = getResilienceBonus(time)
 	local parryRadius, leadTime = computeParryRadius(speed, R.ping, resilienceBonus, getWindowFactor()); R.lastDistance = distance; R.lastSpeed = speed; R.lastLeadTime = leadTime
 	R.lastApproaching = approaching; R.targetId = tonumber(snapshot and snapshot.targetId) or -1; R.targetKnown = snapshot ~= nil and snapshot.targetId ~= nil
-	if speed < minimumBallSpeed() then R.armed = true; setPhase("waiting", "ball_speed_invalid"); return end
-	if not approaching then R.armed = true; setPhase("waiting", "ball_not_approaching"); return end
+	if speed < minimumBallSpeed() then if not R.firedForTarget then R.armed = true end; setPhase("waiting", "ball_speed_invalid"); return end
+	if not approaching then if not R.firedForTarget then R.armed = true end; setPhase("waiting", "ball_not_approaching"); return end
 	if distance > parryRadius then setPhase("waiting", "outside_radius"); return end
 	if cooldown and cooldown.active then setPhase("waiting", "deflect_cooldown"); return end
-	if R.firedForTarget then
-		if not cooldown or not cooldown.known or cooldown.readyRevision <= R.lastFireRevision then setPhase("waiting", "target_already_parried"); return end
-		R.armed = true
-	end
+	if R.firedForTarget then setPhase("waiting", "target_already_parried"); return end
 	if isSpamActive() or not isSystemActive() or not isAutoParryEnabled() then resetParryLock(); clearBallState(); setPhase("waiting", "parry_gate_changed"); return end
 	if R.lastSyncSequence ~= nil and R.lastTarget > 0 and R.player and R.lastTarget ~= R.player.UserId then setPhase("waiting", "target_changed"); return end
 	if R.armed then requestParry(ball, "parry_requested") end
