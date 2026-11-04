@@ -7,7 +7,6 @@ local connection
 local lastActivationAt = -math.huge
 
 -- Upper bound in the dump: 850 ms, plus up to 150 ms and 120 ms bonuses.
-local MAX_SERVER_WINDOW = 1.12
 local FIERCE_DURATION = 5
 local RADIUS_MULTIPLIER = 3
 
@@ -49,7 +48,7 @@ local function evaluate(root, time)
 	local impactAt = time + impact
 	-- The duration is received after the server starts it; account for transit.
 	local earliestCooldownEnd = cooldown.endsAt - ping - 0.05
-	if impactAt <= cooldown.lastEventAt + MAX_SERVER_WINDOW then return nil end
+	if time >= cooldown.endsAt or earliestCooldownEnd <= time then return nil end
 	if impactAt + 0.03 >= earliestCooldownEnd or impact + 2 * ping + 0.1 >= FIERCE_DURATION then return nil end
 	local ability = GameInfo.getFierceDeflectAbility()
 	if not ability or type(ability.IsAvailable) ~= "function" or not ability:IsAvailable(false) then return nil end
