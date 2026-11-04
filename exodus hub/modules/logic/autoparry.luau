@@ -82,7 +82,6 @@ local R = {
 	resilienceBonus = 0,
 	resilienceBonusAt = -1,
 	lastFireRevision = 0,
-	lastRetryRevision = 0,
 	pressureClicks = {},
 	pressureReturns = {},
 	pressureAwayTarget = nil,
@@ -147,7 +146,7 @@ local function resetTracking()
 	R.pingAt = 0; R.lastDistance = 0; R.lastSpeed = 0; R.lastLeadTime = T.MIN_LEAD_TIME
 	R.lastFireAt = 0; R.lastApproaching = false; R.lastTarget = -1; R.lastSyncSequence = nil
 	R.targetId = -1; R.targetKnown = false; R.teleported = false; R.teleportSequence = nil
-	R.resilienceBonus = 0; R.resilienceBonusAt = -1; R.lastFireRevision = 0; R.lastRetryRevision = 0
+	R.resilienceBonus = 0; R.resilienceBonusAt = -1; R.lastFireRevision = 0
 	table.clear(R.pressureClicks); table.clear(R.pressureReturns); R.pressureAwayTarget = nil; R.pressureAwayAt = nil
 end
 local function invalidateLife()
@@ -390,10 +389,6 @@ local function onHeartbeat(character, root, dt, generation)
 	if generation ~= R.generation or not R.alive or not R.bound then return end
 	if not character.Parent or not root.Parent then return end
 	local time = clock(); samplePing(time); local cooldown = GameInfo.getDeflectCooldownState(); local syncData = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
-	if cooldown and type(cooldown.retryRevision) == "number" and cooldown.retryRevision > R.lastRetryRevision then
-		R.lastRetryRevision = cooldown.retryRevision
-		if not cooldown.blocking and not R.targetAwaySeen then R.firedForTarget = false; R.armed = true end
-	end
 	if type(syncData) == "table" and syncData.Teleported == true then
 		if not R.teleported then enterTeleportLock(time) end
 	elseif R.teleported and type(syncData) == "table" then

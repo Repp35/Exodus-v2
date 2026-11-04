@@ -699,10 +699,6 @@ local function checkHubState()
 	if not Utils then R.lastGate = "no_utils"; return false end
 	if Utils.isManualSpamActive() then return stopForGate("manual_spam") end
 	if not Utils.isActive() then return stopForGate("hub_inactive") end
-	if GameInfo and type(GameInfo.getDeflectCooldownState) == "function" then
-		local ok, cooldown = pcall(GameInfo.getDeflectCooldownState)
-		if ok and type(cooldown) == "table" and cooldown.fierceUsedForTarget == true then return stopForGate("fierce_active") end
-	end
 	local enabled
 	if type(Utils.getConfigValue) == "function" then enabled = Utils.getConfigValue("AutoClash") else local config = Utils.getConfig(); enabled = type(config) == "table" and config.AutoClash end
 	if enabled ~= true then return stopForGate("hub_disabled") end
@@ -973,7 +969,7 @@ end
 function AutoClash.isActive() return R.active == true end
 function AutoClash.getPullEvent() return R.pullEvent end
 function AutoClash.stopSpam()
-	setActive(false, "fierce_deflect"); clearReturnState(); R.lastGate = "fierce_deflect"
+	setActive(false, "stop_spam"); clearReturnState(); R.lastGate = "stop_spam"
 	if Utils and Utils.setAutoSpamActive then Utils.setAutoSpamActive(false) end
 end
 function AutoClash.getTargetSwitch(): TargetSwitch

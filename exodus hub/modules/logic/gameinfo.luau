@@ -62,11 +62,11 @@ local deflectState = {
 	known = false,
 	active = false,
 	rawActive = false,
-	readyRevision = 0,
-	retryRevision = 0,
-	pressRevision = 0,
+
+
+
 	lastEventAt = -math.huge,
-	attempt = nil,
+
 }
 
 local deflectConnection
@@ -260,11 +260,11 @@ function GameInfo.setup(deps)
 		known = false,
 		active = false,
 		rawActive = false,
-		readyRevision = 0,
-		retryRevision = 0,
-		pressRevision = 0,
+
+
+
 		lastEventAt = -math.huge,
-		attempt = nil,
+
 	}
 
 	nextDeflectSignalCheck = 0; nextHeldCooldownCheck = 0; deflectMissingAt = nil; nextDeflectWarning = 0
@@ -325,35 +325,6 @@ function GameInfo.getHeldDeflectServerCooldown()
 	end
 	return nil
 end
--- [[ deflect attempt tracking ]]
-
-local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
-local function currentTargetMatches()
-	local player = Players and Players.LocalPlayer
-	if not player then return false end
-	local sync = getDecodedSyncData()
-	if type(sync) == "table" and sync.Teleported == true then return false end
-	return resolveTargetId(sync) == player.UserId
-end
-function GameInfo.noteDeflectPress()
-	local pressAt = os.clock()
-	if not currentTargetMatches() then return end
-	if deflectState.attempt or deflectState.fierceUsedForTarget then return end
-	local sync = getDecodedSyncData(); local speed = type(sync) == "table" and tonumber(sync.Speed) or nil; local window = GameInfo.getDeflectWindow(speed)
-	if not finite(window) or window <= 0 then return end
-	deflectState.pressRevision += 1
-	deflectState.attempt = {
-		id = deflectState.pressRevision,
-		at = pressAt,
-		deadline = pressAt + window,
-		window = window,
-		targetId = Players.LocalPlayer.UserId,
-	}
-	deflectState.known = true; deflectState.active = false
-end
-function GameInfo.noteFierceDeflectActivation()
-	deflectState.attempt = nil; deflectState.active = false; deflectState.fierceUsedForTarget = currentTargetMatches()
-end
 function GameInfo.getDeflectCooldownState()
 	local time = os.clock()
 	if deflectConnection and deflectConnection.Connected == false then
@@ -384,7 +355,7 @@ function GameInfo.getDeflectCooldownState()
 		local signals = GameInfo.getDeflectServerEvents()
 		if signals and signals.parried then
 			deflectParriedConnection = signals.parried:Connect(function()
-				deflectState.attempt = nil; deflectState.active = false; deflectState.rawActive = false; deflectState.endsAt = nil
+				deflectState.active = false; deflectState.rawActive = false; deflectState.endsAt = nil
 				deflectState.lastEventAt = os.clock()
 			end)
 			if Utils and type(Utils.trackGlobal) == "function" then Utils.trackGlobal(deflectParriedConnection) end
@@ -402,31 +373,9 @@ function GameInfo.getDeflectCooldownState()
 	local remaining = localCooldown and ability.Cooldown or 0
 	if deflectState.rawActive and finite(deflectState.endsAt) then remaining = math.max(remaining, deflectState.endsAt - time) end
 	deflectState.remaining = math.max(0, remaining)
-	if deflectState.fierceUsedForTarget and not currentTargetMatches() then deflectState.fierceUsedForTarget = false end
-	local attempt = deflectState.attempt; deflectState.active = false
-	if attempt then
-		local valid = currentTargetMatches()
-		if not valid then
-			deflectState.attempt = nil
-		else
-			local expired = time >= attempt.deadline; attempt.expired = expired; attempt.failed = expired
-			if expired and cooldownRunning then deflectState.active = true
-			elseif expired and not cooldownRunning then deflectState.retryRevision += 1; deflectState.readyRevision += 1; deflectState.attempt = nil end
-		end
-	end
-	deflectState.blocking = cooldownRunning or deflectState.attempt ~= nil or deflectState.fierceUsedForTarget == true
+	deflectState.active = cooldownRunning
+	deflectState.blocking = cooldownRunning
 	return deflectState
-end
-function GameInfo.getFierceDeflectAbility()
-	locateDeflectAbility(); local ability = clientAbilities and clientAbilities.Abilities[19]
-	if type(ability) == "table" and type(ability.ActivateAndBlock) == "function" then return ability end
-	return nil
-end
-function GameInfo.activateFierceDeflect(ability)
-	if ability ~= GameInfo.getFierceDeflectAbility() or not ability then return false, "Deflexo Feroz não equipado" end
-	if type(ability.IsAvailable) ~= "function" or not ability:IsAvailable(false) then return false, "Deflexo Feroz indisponível" end
-	if type(ability.IsOwnerAlive) ~= "function" or not ability:IsOwnerAlive() then return false, "jogador indisponível" end
-	ability:ActivateAndBlock(); return true
 end
 function GameInfo.getDashAbility()
 	locateDeflectAbility(); local ability = clientAbilities and clientAbilities.Abilities[2]
@@ -599,15 +548,10 @@ GameInfo.__contract = {
 		"getDeflectRange",
 		"getDeflectWindow",
 		"getDeflectAbility",
-		"getDeflectUICooldown",
 		"getDeflectServerEvents",
 		"decodeDeflectServerEvent",
 		"getHeldDeflectServerCooldown",
 		"getDeflectCooldownState",
-		"noteDeflectPress",
-		"noteFierceDeflectActivation",
-		"getFierceDeflectAbility",
-		"activateFierceDeflect",
 		"getDashAbility",
 		"getDarkSealAbility",
 		"getBallSpeedLimits",

@@ -36,7 +36,7 @@ UIConfig.__config = {
 		AutoClash = "boolean",
 		AutoDark = "boolean",
 		AutoJump = "boolean",
-		AutoFierceDeflect = "boolean",
+
 		AutoClashActivationMs = "delayMs",
 		AutoClashDeactivationMs = "delayMs",
 		ClashBallVisible = "boolean",
@@ -71,7 +71,7 @@ UIConfig.__config = {
 		AutoClash = true,
 		AutoDark = false,
 		AutoJump = false,
-		AutoFierceDeflect = false,
+
 		AutoClashActivationMs = 180,
 		AutoClashDeactivationMs = 130,
 		ClashBallVisible = false,
