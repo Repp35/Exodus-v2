@@ -325,6 +325,7 @@ function GameInfo.getHeldDeflectServerCooldown()
 	end
 	return nil
 end
+local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 function GameInfo.getDeflectCooldownState()
 	local time = os.clock()
 	if deflectConnection and deflectConnection.Connected == false then
