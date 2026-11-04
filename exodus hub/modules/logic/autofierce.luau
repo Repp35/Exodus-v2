@@ -58,7 +58,6 @@ local function step(root, current)
 	local ability = evaluate(root, time)
 	if not ability then return end
 	Utils.stopAllSpam(); Spam.resetState()
-	if not Utils.setConfig({ AutoClash = false }) then AutoClash.stopSpam(); return end
 	AutoClash.stopSpam()
 	if Utils.isSpamActive() then return end
 	local checked = evaluate(root, Utils.now())
@@ -99,7 +98,6 @@ AutoFierce.__contract = {
 			"getLocalPlayer",
 			"getRunService",
 			"now",
-			"setConfig",
 			"stopAllSpam",
 			"isSpamActive",
 			"recordError",

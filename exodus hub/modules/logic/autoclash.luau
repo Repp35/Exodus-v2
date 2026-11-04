@@ -89,6 +89,8 @@ local R = {
 	lastSequence = nil,
 	lastTargetSource = nil,
 	teleported = false,
+	snapshotMissingAt = nil,
+	recoveryUntil = 0,
 
 	-- activation
 	activationDeactLockedUntil = 0,
@@ -283,6 +285,7 @@ local function clearReturnState()
 end
 local function resetTargetState()
 	R.targetResetToken += 1; R.lastTarget = -1; R.clashPartnerId = -1; R.dashBonusUntil = 0
+	R.recoveryUntil = 0
 	R.wasMeTarget = nil; clearReturnState(); R.lastClashSwitchAt = 0; R.lastClashSwitchServerAt = nil
 	R.clashIntervalMs = 0; R.lastDirectionSwitchAt = 0; R.clashIntervalEma = nil; R.clashIntervalEmaSamples = 0
 	R.ttiEma = nil; R.ttiEmaAt = 0; R.lastDashEvent = nil; R.lastDashData = nil
@@ -374,7 +377,7 @@ local function resetRuntime(reason)
 	end
 	R.bound = false; R.boundRoot = nil; R.lastSpeed = 0; R.parryRadius = 0
 	R.radiusCacheAt = 0; R.radiusCacheSpeed = -1; R.radiusActivation = 0; R.radiusSafety = 0
-	R.lastSyncAt = 0; R.lastSequence = nil; R.lastTargetSource = nil; R.teleported = false
+	R.lastSyncAt = 0; R.lastSequence = nil; R.lastTargetSource = nil; R.teleported = false; R.snapshotMissingAt = nil
 	R.activationDeactLockedUntil = 0; R.pullSuspension = nil; R.pullEvent = nil; resetTargetState()
 	resetDeactivationState(); R.lastGate = "detached"; setPhase("detached", reason or "reset")
 end
@@ -622,6 +625,9 @@ function OwnDash.shouldDeactivate(t)
 	R.lastGate = "own_dash_escape_not_farther"; return false
 end
 function Deactivation.shouldDeactivate(t, snapshot)
+	if isSnapshotTargeted(snapshot) and R.lastTarget == R.localUserId then
+		R.outsideRadiusSince = nil; Deactivation.clearConfirmation(); R.lastGate = "targeted"; return false
+	end
 	local rootPosition = getRootPosition()
 	local ballPosition = getSnapshotPosition(snapshot)
 	if rootPosition and ballPosition and R.parryRadius > 0 and distanceSquared(rootPosition, ballPosition) > R.parryRadius * R.parryRadius then
@@ -660,6 +666,9 @@ local function evaluateClash(t, snapshot)
 		local emergency = emergencyReason(snapshot)
 		if emergency then
 			R.pullSuspension = nil; clearReturnState(); setActive(true, "emergency", snapshot, emergency); return
+		end
+		if R.recoveryUntil > 0 and t <= R.recoveryUntil and shouldActivate(snapshot, t) then
+			R.recoveryUntil = 0; clearReturnState(); setActive(true, "recovered", snapshot, "snapshot_recovered"); return
 		end
 	end
 	if R.pullSuspension then
@@ -703,6 +712,10 @@ local function checkHubState()
 	if not Utils then R.lastGate = "no_utils"; return false end
 	if Utils.isManualSpamActive() then return stopForGate("manual_spam") end
 	if not Utils.isActive() then return stopForGate("hub_inactive") end
+	if GameInfo and type(GameInfo.getDeflectCooldownState) == "function" then
+		local ok, cooldown = pcall(GameInfo.getDeflectCooldownState)
+		if ok and type(cooldown) == "table" and cooldown.fierceUsedForTarget == true then return stopForGate("fierce_active") end
+	end
 	local enabled
 	if type(Utils.getConfigValue) == "function" then enabled = Utils.getConfigValue("AutoClash") else local config = Utils.getConfig(); enabled = type(config) == "table" and config.AutoClash end
 	if enabled ~= true then return stopForGate("hub_disabled") end
@@ -710,6 +723,13 @@ local function checkHubState()
 end
 
 -- heartbeat
+local function waitForSnapshot(t, reason)
+	if not R.snapshotMissingAt then R.snapshotMissingAt = t end
+	if R.active and (t < R.snapshotMissingAt or t - R.snapshotMissingAt >= 0.2) then
+		R.recoveryUntil = t + 1; setActive(false, reason)
+	end
+	R.lastGate = reason
+end
 local function heartbeatStep(generation, character, root)
 	if generation ~= R.generation or not character.Parent or not root.Parent then return end
 	local t = now()
@@ -717,8 +737,7 @@ local function heartbeatStep(generation, character, root)
 	if not R.returnPending and R.returnExpiresAt > 0 and t >= R.returnExpiresAt then clearReturnState(); R.lastGate = "return_expired" end
 	local snapshot, snapshotError = readValidatedSnapshot(t)
 	if not snapshot then
-		if R.active then setActive(false, snapshotError == "snapshot_invalid" and "snapshot_invalid" or "ball_lost"); resetTargetState() end
-		R.lastGate = snapshotError
+		waitForSnapshot(t, snapshotError)
 		return
 	end
 	if Dash and type(Dash.tick) == "function" then Dash.tick(t) end
@@ -727,7 +746,19 @@ local function heartbeatStep(generation, character, root)
 		if not R.teleported then AutoClash.onBallSync({ Sequence = snapshot.syncSequence, Teleported = true, Source = "snapshot" }) end
 		R.lastGate = "teleported"; return
 	end
-	R.teleported = false; local snapshotTarget = normalizeTarget(snapshot.targetId); local targetChanged = snapshotTarget and (R.wasMeTarget == nil or snapshotTarget ~= R.lastTarget)
+	R.teleported = false; local snapshotTarget = normalizeTarget(snapshot.targetId)
+	local snapshotSequence = snapshot.syncSequence
+	if type(snapshotSequence) == "number" and type(R.lastSequence) == "number" then
+		local delta = (snapshotSequence - R.lastSequence) % 65536
+		if delta >= 32768 or (delta == 0 and snapshotTarget and R.lastTarget > 0 and snapshotTarget ~= R.lastTarget) then
+			waitForSnapshot(t, "snapshot_stale"); return
+		end
+	elseif snapshotSequence == nil and R.lastTargetSource == "event" and snapshotTarget and R.lastTarget > 0 and snapshotTarget ~= R.lastTarget and t - R.lastSyncAt < 0.2 then
+		waitForSnapshot(t, "snapshot_stale"); return
+	end
+	R.snapshotMissingAt = nil
+	if R.active and type(Utils.isAutoSpamActive) == "function" and not Utils.isAutoSpamActive() then Utils.setAutoSpamActive(true) end
+	local targetChanged = snapshotTarget and (R.wasMeTarget == nil or snapshotTarget ~= R.lastTarget)
 	local targetCleared = snapshot.targetId ~= nil and not snapshotTarget and (R.lastTarget ~= -1 or R.active)
 	if targetChanged or targetCleared then
 		local sequence = snapshot.syncSequence
@@ -821,7 +852,7 @@ function AutoClash.onBallSync(data)
 	if type(sequence) == "number" and sequence == sequence and sequence >= 0 and sequence < 65536 and sequence % 1 == 0 then
 		if R.lastSequence ~= nil then
 			local delta = (sequence - R.lastSequence) % 65536
-			if delta == 0 or delta > 32768 then return true end
+			if delta == 0 or delta >= 32768 then return true end
 		end
 		R.lastSequence = sequence
 	end

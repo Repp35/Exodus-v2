@@ -9,9 +9,11 @@ def quote(path):
 
 script = r'''
 local now = 1
+task={spawn=function() end,delay=function(_,fn,...) fn(...) end}
 local ping = 0
 local heartbeatCallback, renderCallback, dashCallback
 local autoSpam, manualSpam, hubActive, clashEnabled = false, false, true, true
+local fierceUsed = false
 local presses, ticks = 0, 0
 local snapshotFailure, validationFailure = false, false
 local errors = {}
@@ -73,6 +75,7 @@ local info = {
     getLocalPing=function() return ping end,
     getSyncSequence=function() return seq end,
     getSyncData=function() return nil end,
+    getDeflectCooldownState=function() return {fierceUsedForTarget=fierceUsed} end,
     getManifestRemote=function() return {OnClientEvent=signal(function(fn) manifestCallback=fn end)} end,
 }
 local utils = {
@@ -94,8 +97,13 @@ local parry = {
 }
 local dash = {setHandler=function(fn) dashCallback=fn end, tick=function() ticks+=1 end}
 local remote = {fireParry=function() presses+=1; return true end}
-local clash = assert(loadstring(CLASH_SOURCE))()
-local spam = assert(loadstring(SPAM_SOURCE))()
+local function sandboxLoad(source)
+    local chunk=assert(loadstring(source))
+    setfenv(chunk, setmetatable({typeof=typeof,task=task},{__index=getfenv()}))
+    return chunk()
+end
+local clash = sandboxLoad(CLASH_SOURCE)
+local spam = sandboxLoad(SPAM_SOURCE)
 assert(spam.setup({Utils=utils,Remote=remote}))
 assert(clash.setup({AutoParry=parry,GameInfo=info,Dash=dash,Utils=utils}))
 assert(clash.bindCharacter(ownCharacter))
@@ -119,7 +127,7 @@ local function expect(value, message)
     if not value then error(message .. ': ' .. tostring(clash.getStatus().lastGate), 2) end
 end
 local function fresh()
-    clash.detachCharacter(); autoSpam=false; manualSpam=false; hubActive=true; clashEnabled=true; ping=0
+    clash.detachCharacter(); autoSpam=false; manualSpam=false; hubActive=true; clashEnabled=true; fierceUsed=false; ping=0
     seq=nil; snapshot.syncSequence=nil; snapshot.teleported=false; snapshotFailure=false; validationFailure=false
     snapshot.speed=100; snapshot.syncSpeed=100; snapshot.velocity=vec(100); snapshot.position=vec(-20)
     ball.Parent=parent; opponentRoot.Position=vec(40); opponentRoot.AssemblyLinearVelocity=vec(0)
@@ -211,11 +219,11 @@ opponentRoot.Position=vec(30); step(.02)
 pending=clash.getDashData(); expect(pending and pending.dangerous, 'approaching dash was not confirmed')
 expect(clash.getStatus().returnWindow>initialWindow, 'dash must extend the outbound return window')
 -- The 180 ms setting is the low-speed return window, not a fixed cap at every speed.
-fresh(); snapshot.speed=60; snapshot.syncSpeed=60; snapshot.velocity=vec(60); snapshot.position=vec(-10)
+fresh(); snapshot.speed=60; snapshot.syncSpeed=60; snapshot.velocity=vec(60); snapshot.position=vec(-16)
 event(myId,0,110); step(.01); event(enemyId,.01,110.01)
 expect(math.abs(clash.getStatus().returnWindow-.18)<1e-8, 'low-speed return window changed')
 event(myId,.02,110.189); step(.001); expect(clash.isActive(), 'return within 180 ms was rejected')
-fresh(); snapshot.speed=60; snapshot.syncSpeed=60; snapshot.velocity=vec(60); snapshot.position=vec(-10)
+fresh(); snapshot.speed=60; snapshot.syncSpeed=60; snapshot.velocity=vec(60); snapshot.position=vec(-16)
 event(myId,0,120); step(.01); event(enemyId,.01,120.01); event(myId,.02,120.191); step(.001)
 expect(not clash.isActive(), 'return outside 180 ms was accepted')
 -- Snapshot sequences recover missed events without overwriting newer events.
@@ -236,21 +244,39 @@ expect(clash.isActive(), 'opponent dash away stopped spam while targeted')
 snapshot.speed=0; snapshot.velocity=vec(0); step(.02)
 expect(clash.isActive() and autoSpam, 'stopped ball ended clash while still targeted')
 snapshot.speed=100; snapshot.velocity=vec(100)
--- Invalid or missing ball must turn automatic spam off.
-ball.Parent=nil; step(.01); expect(not clash.isActive() and not autoSpam, 'missing ball did not stop spam'); ball.Parent=parent
--- An internal API error is reported with its source, stops spam, and can recover.
+snapshot.position=vec(-200); step(.08); step(.08)
+expect(clash.isActive() and autoSpam, 'distant incoming ball stopped clash while still targeting the player')
+snapshot.position=vec(-20)
+local currentSeq=seq; snapshot.syncSequence=(currentSeq-1)%65536; snapshot.targetId=enemyId; snapshot.targeted=false; snapshot.position=vec(-200)
+step(.1); step(.1); expect(clash.isActive() and autoSpam and clash.getStatus().lastGate=='snapshot_stale', 'older snapshot stopped active clash')
+step(.11); expect(not clash.isActive() and not autoSpam, 'permanently stale snapshot must eventually stop spam')
+snapshot.syncSequence=currentSeq; snapshot.targetId=myId; snapshot.targeted=true; snapshot.position=vec(-20)
+step(.01); expect(clash.isActive() and autoSpam, 'fresh snapshot must recover clash after stale data')
+-- A brief invalid snapshot is tolerated; persistent loss stops spam.
+ball.Parent=nil; step(.01); expect(clash.isActive() and autoSpam, 'brief missing ball stopped spam')
+step(.21); expect(not clash.isActive() and not autoSpam, 'persistent missing ball did not stop spam'); ball.Parent=parent
+step(.01); expect(clash.isActive() and autoSpam, 'clash did not recover when a valid incoming ball returned')
+-- An internal API error is reported with its source without stopping on one bad frame.
 fresh(); event(myId,0,140); step(.01); event(enemyId,.01,140.01); event(myId,.05,140.06)
 expect(clash.isActive(), 'setup for snapshot failure')
 snapshotFailure=true; step(.01)
-expect(not clash.isActive() and not autoSpam, 'snapshot failure did not stop automatic spam')
+expect(clash.isActive() and autoSpam, 'brief snapshot failure stopped automatic spam')
 expect(errors[#errors] and errors[#errors].source=='GameInfo.getSnapshot' and string.find(errors[#errors].message,'raw snapshot failure',1,true), 'snapshot failure was not reported')
 local errorCount=#errors; step(.01); step(.01)
 expect(#errors==errorCount, 'same API error should not flood the log each frame')
-snapshotFailure=false; event(myId,.01,140.08); event(enemyId,.01,140.09); event(myId,.05,140.14)
-expect(clash.isActive(), 'clash failed to recover after snapshot error')
+snapshotFailure=false; step(.01); expect(clash.isActive() and autoSpam, 'clash failed to recover from a brief snapshot error')
+autoSpam=false; step(.01); expect(clash.isActive() and autoSpam, 'active clash did not recover automatic spam state')
 validationFailure=true; step(.01)
-expect(not clash.isActive() and errors[#errors] and errors[#errors].source=='GameInfo.isSnapshotValid' and string.find(errors[#errors].message,'raw validation failure',1,true), 'validation failure was not reported')
+expect(clash.isActive() and errors[#errors] and errors[#errors].source=='GameInfo.isSnapshotValid' and string.find(errors[#errors].message,'raw validation failure',1,true), 'validation failure was not reported')
+step(.21); expect(not clash.isActive() and not autoSpam, 'persistent invalid snapshots must stop spam')
 validationFailure=false
+-- Fierce stops the active state without changing the user's setting, and the next return can rearm.
+fresh(); event(myId,0,150); step(.01); event(enemyId,.01,150.01); event(myId,.05,150.06)
+expect(clash.isActive(), 'setup for fierce handoff')
+clash.stopSpam(); fierceUsed=true; step(.01)
+expect(not clash.isActive() and not autoSpam and clashEnabled, 'fierce must suspend clash without disabling its setting')
+fierceUsed=false; event(myId,.01,150.08); event(enemyId,.01,150.09); event(myId,.05,150.14)
+expect(clash.isActive() and autoSpam and clashEnabled, 'clash did not resume after fierce target cycle')
 -- Disabling or manually taking over must clear automatic spam without rearming itself.
 fresh(); event(myId,0,100); step(.01); event(enemyId,.01,100.01); event(myId,.05,100.06); step(.001)
 expect(clash.isActive(), 'setup for manual takeover')
