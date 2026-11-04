@@ -363,6 +363,7 @@ local function updateVelocity(ball, position, time, dt, syncData, requireMovemen
 	R.lastPosition = position; R.lastPositionAt = time; return true
 end
 local function requestParry(ball, reason)
+	if not R.armed or R.firedForTarget then return false end
 	local cycle = R.targetCycle; local time = clock(); local previouslyFired = R.firedForTarget; R.armed = false
 	local speed, distance, lead, factor = R.lastSpeed, R.lastDistance, R.lastLeadTime, getWindowFactor()
 	local baseRadius = T.BASE_RADIUS + getResilienceBonus(time)
