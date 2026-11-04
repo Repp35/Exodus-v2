@@ -311,12 +311,12 @@ function GameInfo.getDeflectUICooldown()
     if not ability or type(ability.Interface) ~= "table" then return nil end
 
     local duration = ability.LastCooldown
-    if not finite(duration) or duration <= 0 then return nil end
+    if type(duration) ~= "number" or duration ~= duration or duration <= 0 or duration >= math.huge then return nil end
     local bar = ability.Interface.UIAbilityCooldown
     if not bar then return nil end
 
     local ok, scale = pcall(function() return bar.Size.Y.Scale end)
-    if not ok or not finite(scale) then return nil end
+    if not ok or type(scale) ~= "number" or scale ~= scale or scale == math.huge or scale == -math.huge then return nil end
     return math.clamp(scale, 0, 1) * duration
 end
 
