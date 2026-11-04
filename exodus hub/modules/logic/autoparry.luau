@@ -40,6 +40,8 @@ local T = {
 	RES_CAP_STUDS = 7.5,
 	STATIONARY_TIMEOUT = 0.10,
 	MAX_RES_STACK = math.ceil(7.5 / 0.225),
+	SERVER_SIGNAL_RETRY = 0.5,
+	SERVER_SETTLE_MARGIN = 0.05,
 }
 
 -- state
@@ -80,6 +82,15 @@ local R = {
 	lastMovingAt = nil,
 	resilienceBonus = 0,
 	resilienceBonusAt = -1,
+	attempt = nil,
+	serverCooldownActive = false,
+	serverCooldownId = 0,
+	serverCooldownEventAt = -math.huge,
+	serverWindowUntil = 0,
+	serverSignalsBound = false,
+	nextServerSignalCheck = 0,
+	serverSignalsMissingAt = nil,
+	serverSignalsWarningAt = 0,
 }
 
 local function clock() return os.clock() end
@@ -141,13 +152,95 @@ local function resetTracking()
 	R.lastFireAt = 0; R.lastApproaching = false; R.lastTarget = -1; R.lastSyncSequence = nil
 	R.targetId = -1; R.targetKnown = false; R.teleported = false; R.teleportSequence = nil
 	R.resilienceBonus = 0; R.resilienceBonusAt = -1
+	R.attempt = nil; R.serverCooldownActive = false; R.serverCooldownId = 0; R.serverCooldownEventAt = -math.huge; R.serverWindowUntil = 0
+	R.serverSignalsBound = false; R.nextServerSignalCheck = 0; R.serverSignalsMissingAt = nil; R.serverSignalsWarningAt = 0
 end
 local function invalidateLife()
 	R.lifeGeneration += 1; R.alive = false; R.bound = false; resetParryLock()
 end
 local function observeTarget(targetId)
 	if not R.player or not isFiniteNumber(targetId) or targetId <= 0 then return end
-	if targetId ~= R.player.UserId then R.targetAwaySeen = true elseif R.targetAwaySeen then R.targetAwaySeen = false; R.firedForTarget = false; R.targetCycle += 1 end
+	if targetId ~= R.player.UserId then R.targetAwaySeen = true; R.attempt = nil
+	elseif R.targetAwaySeen then R.targetAwaySeen = false; R.firedForTarget = false; R.targetCycle += 1 end
+end
+-- An active server deflect window can outlast its cooldown in a clash. This
+-- conservative bound is only for recovery, not the AP's configured radius.
+local function recoveryWindowBound()
+	local minimum, maximum
+	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum, maximum = GameInfo.getBallSpeedLimits() end
+	if not isFiniteNumber(minimum) or not isFiniteNumber(maximum) or maximum <= minimum then minimum, maximum = 16, 600 end
+	local data = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
+	local speed = type(data) == "table" and tonumber(data.Speed) or nil
+	if not isFiniteNumber(speed) or speed < 0 then speed = minimum end
+	-- Speed rises by 7/s in the dump. Leave extra room for delayed ball updates.
+	speed = math.max(0, speed - 7 * (2 * R.ping + 0.5))
+	local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
+	-- 850-200 ms plus up to 150 ms noob and 120 ms resilience bonuses.
+	return math.max(0.85 - 0.65 * fraction, 0.32) + 0.27
+end
+local function onServerCooldown(abilityId, eventId, value)
+	if not R.alive or not R.bound or not GameInfo or type(GameInfo.decodeDeflectServerEvent) ~= "function" then return end
+	local kind = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
+	if not kind then return end
+	local time = clock(); local attempt = R.attempt; R.serverCooldownEventAt = time
+	if kind == "started" then
+		R.serverCooldownId += 1; R.serverCooldownActive = true
+		R.serverWindowUntil = time + recoveryWindowBound()
+		if attempt and not attempt.confirmed and not attempt.reset and attempt.cycle == R.targetCycle then
+			attempt.cooldownId = R.serverCooldownId; attempt.readyAt = nil
+		end
+	elseif kind == "stopped" then
+		if R.serverCooldownActive and attempt and attempt.cooldownId == R.serverCooldownId and not attempt.confirmed and not attempt.reset then attempt.readyAt = time end
+		R.serverCooldownActive = false
+	elseif kind == "reset" then
+		R.serverCooldownActive = false
+		-- OnParried also resets the cooldown; it is not evidence of a miss.
+		if attempt then attempt.reset = true; attempt.readyAt = nil end
+	end
+end
+local function onServerParried()
+	R.serverCooldownEventAt = clock()
+	local attempt = R.attempt
+	if attempt then attempt.confirmed = true; attempt.readyAt = nil end
+end
+local function seedHeldServerCooldown(time)
+	if R.serverCooldownActive or not GameInfo or type(GameInfo.getHeldDeflectServerCooldown) ~= "function" then return end
+	local ok, duration, receivedAt = pcall(GameInfo.getHeldDeflectServerCooldown)
+	if not ok or not isFiniteNumber(duration) or not isFiniteNumber(receivedAt) then return end
+	if duration <= 0 or receivedAt > time or time >= receivedAt + duration or receivedAt <= R.serverCooldownEventAt + 0.01 then return end
+	R.serverCooldownId += 1; R.serverCooldownActive = true; R.serverCooldownEventAt = receivedAt
+	-- The old ball speed may no longer be available; use the full dump maximum.
+	R.serverWindowUntil = receivedAt + 1.12
+end
+local function ensureServerSignals(time, generation)
+	if R.serverSignalsBound or time < R.nextServerSignalCheck then return end
+	R.nextServerSignalCheck = time + T.SERVER_SIGNAL_RETRY
+	local ok, signals = pcall(GameInfo.getDeflectServerEvents); local connectionError
+	if ok and type(signals) == "table" and signals.cooldown and signals.parried then
+		local cooldownOk, cooldown = pcall(function() return signals.cooldown:Connect(function(...) if generation == R.generation then onServerCooldown(...) end end) end)
+		local parriedOk, parried = pcall(function() return signals.parried:Connect(function() if generation == R.generation then onServerParried() end end) end)
+		if cooldownOk and cooldown and parriedOk and parried then
+			trackConnection(cooldown); trackConnection(parried); R.serverSignalsBound = true; R.serverSignalsMissingAt = nil; seedHeldServerCooldown(time); return
+		end
+		if not cooldownOk then connectionError = cooldown elseif not parriedOk then connectionError = parried end
+		if cooldownOk and cooldown then cooldown:Disconnect() end
+		if parriedOk and parried then parried:Disconnect() end
+	end
+	if not R.serverSignalsMissingAt then R.serverSignalsMissingAt = time end
+	if time - R.serverSignalsMissingAt >= 3 and time >= R.serverSignalsWarningAt then
+		R.serverSignalsWarningAt = time + 10
+		local message = connectionError and tostring(connectionError) or (ok and "eventos de cooldown/defesa do servidor indisponíveis" or tostring(signals))
+		if Utils and type(Utils.recordError) == "function" then Utils.recordError("AutoParry", message) else warn("[AutoParry] " .. message) end
+	end
+end
+local function canRetry(time, ball)
+	local attempt = R.attempt
+	if not attempt or attempt.confirmed or attempt.reset or attempt.ball ~= ball or attempt.cycle ~= R.targetCycle or R.targetAwaySeen then return false end
+	if not attempt.readyAt or R.serverCooldownActive or attempt.cooldownId ~= R.serverCooldownId then return false end
+	-- A previous cooldown can stop while the new press is still in flight.
+	local settledAt = attempt.firedAt + 2 * R.ping + T.SERVER_SETTLE_MARGIN
+	-- A queued press can renew the window immediately after the stop event.
+	return time >= settledAt and time >= attempt.readyAt + T.SERVER_SETTLE_MARGIN and time >= R.serverWindowUntil
 end
 local function getResilienceBonus(time)
 	if not R.alive or not R.bound or not R.player then return 0 end
@@ -261,7 +354,7 @@ local function isTeleportLocked() return R.teleported end
 local function enterTeleportLock(_, sequence)
 	if type(sequence) == "number" then R.teleportSequence = sequence end
 	if R.teleported then return end
-	R.teleported = true; R.firedForTarget = false; R.targetAwaySeen = false; R.targetCycle += 1
+	R.teleported = true; R.firedForTarget = false; R.targetAwaySeen = false; R.targetCycle += 1; R.attempt = nil
 	R.lastTarget = -1; resetParryLock(); clearBallState(); R.lastFireAt = 0
 	setPhase("waiting", "teleport_lock")
 end
@@ -335,19 +428,38 @@ local function updateVelocity(ball, position, time, dt, syncData, requireMovemen
 	end
 	R.lastPosition = position; R.lastPositionAt = time; return true
 end
+local function requestParry(ball, reason)
+	local cycle = R.targetCycle; local time = clock()
+	local attempt = { ball = ball, cycle = cycle, firedAt = time, cooldownId = R.serverCooldownActive and R.serverCooldownId or nil, readyAt = nil, confirmed = false, reset = false }
+	-- Lock before invoking Deflect, including if a signal re-enters this module.
+	R.attempt = attempt; R.armed = false; R.firedForTarget = true; R.lastFireAt = time
+	seedHeldServerCooldown(time)
+	if R.attempt ~= attempt or R.targetCycle ~= cycle or R.targetAwaySeen or R.teleported then return false end
+	if attempt.confirmed or attempt.reset then return false end
+	if reason == "parry_requested" and (isSpamActive() or not isSystemActive() or not isAutoParryEnabled()) then
+		R.attempt = nil; R.firedForTarget = false; R.armed = true; return false
+	end
+	if not attempt.cooldownId and R.serverCooldownActive then attempt.cooldownId = R.serverCooldownId end
+	if getRemoteParry(ball) then
+		if R.attempt == attempt then setPhase("fired", reason) end
+		return true
+	end
+	if R.targetCycle == cycle and R.attempt == attempt then R.attempt = nil; R.firedForTarget = false; R.armed = true end
+	return false
+end
 local function onHeartbeat(character, root, dt, generation)
 	if generation ~= R.generation or not R.alive or not R.bound then return end
 	if not character.Parent or not root.Parent then return end
-	local time = clock(); samplePing(time); local syncData = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
+	local time = clock(); samplePing(time); ensureServerSignals(time, generation); local syncData = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
 	if type(syncData) == "table" and syncData.Teleported == true then
 		if not R.teleported then enterTeleportLock(time) end
 	elseif R.teleported and type(syncData) == "table" then
 		leaveTeleportLock(time)
 	end
 	if R.teleported then clearBallState(); resetParryLock(); setPhase("waiting", "teleport_lock"); return end
-	if not isAutoParryEnabled() then resetParryLock(); setPhase("waiting", "auto_parry_disabled"); return end
-	if isSpamActive() then resetParryLock(); clearBallState(); setPhase("waiting", "spam_active"); return end
-	if not isSystemActive() then resetParryLock(); setPhase("waiting", "system_inactive"); return end
+	if not isAutoParryEnabled() then R.attempt = nil; resetParryLock(); setPhase("waiting", "auto_parry_disabled"); return end
+	if isSpamActive() then R.attempt = nil; resetParryLock(); clearBallState(); setPhase("waiting", "spam_active"); return end
+	if not isSystemActive() then R.attempt = nil; resetParryLock(); setPhase("waiting", "system_inactive"); return end
 	local ball, targeted, snapshot = readFrameState(time)
 	if snapshot and R.lastSyncSequence ~= nil then
 		local sequence = snapshot.syncSequence; local targetId = tonumber(snapshot.targetId)
@@ -383,13 +495,13 @@ local function onHeartbeat(character, root, dt, generation)
 	if speed < minimumBallSpeed() then R.armed = true; setPhase("waiting", "ball_speed_invalid"); return end
 	if not approaching then R.armed = true; setPhase("waiting", "ball_not_approaching"); return end
 	if distance > parryRadius then setPhase("waiting", "outside_radius"); return end
-	if R.firedForTarget then setPhase("waiting", "target_already_parried"); return end
+	if R.firedForTarget then
+		if not canRetry(time, ball) then setPhase("waiting", "target_already_parried"); return end
+		R.armed = true
+	end
 	if isSpamActive() or not isSystemActive() or not isAutoParryEnabled() then resetParryLock(); clearBallState(); setPhase("waiting", "parry_gate_changed"); return end
 	if R.lastSyncSequence ~= nil and R.lastTarget > 0 and R.player and R.lastTarget ~= R.player.UserId then setPhase("waiting", "target_changed"); return end
-	if R.armed then
-		local cycle = R.targetCycle; R.armed = false; R.firedForTarget = true
-		if getRemoteParry(ball) then R.lastFireAt = clock(); setPhase("fired", "parry_requested") elseif R.targetCycle == cycle then R.firedForTarget = false; R.armed = true end
-	end
+	if R.armed then requestParry(ball, "parry_requested") end
 end
 local function detachCharacterInternal(reason)
 	R.generation += 1; disconnectConnections(); invalidateLife(); R.root = nil
@@ -407,6 +519,9 @@ function AutoParry.setup(deps)
 		or type(gameInfo.getSyncData) ~= "function"
 		or type(gameInfo.getTargetId) ~= "function"
 		or type(gameInfo.getDeflectRange) ~= "function"
+		or type(gameInfo.getDeflectServerEvents) ~= "function"
+		or type(gameInfo.decodeDeflectServerEvent) ~= "function"
+		or type(gameInfo.getHeldDeflectServerCooldown) ~= "function"
 		or type(gameInfo.getLocalPing) ~= "function"
 		or type(gameInfo.getBallPosition) ~= "function"
 		or type(gameInfo.getBallVelocity) ~= "function"
@@ -451,6 +566,7 @@ function AutoParry.bindCharacter(character)
 	if not playerOk or not player then return false, "Players.LocalPlayer indisponivel" end
 	R.root = root; R.player = player; R.alive = true; R.bound = true
 	resetTracking(); setPhase("waiting", "character_bound")
+	ensureServerSignals(clock(), generation)
 	local heartbeatOk, heartbeatConnection = pcall(function()
 		return signal:Connect(function(dt) onHeartbeat(character, root, dt, generation) end)
 	end)
@@ -469,12 +585,7 @@ function AutoParry.fire()
 	if R.firedForTarget then return false end
 	if isTeleportLocked() then return false end
 	if not R.lastApproaching or R.lastSpeed < minimumBallSpeed() then return false end
-	local cycle = R.targetCycle; R.armed = false; R.firedForTarget = true; local fired = getRemoteParry(R.lastBall)
-	if not fired then
-		if R.targetCycle == cycle then R.firedForTarget = false; R.armed = true end
-		return false
-	end
-	R.lastFireAt = clock(); setPhase("fired", "manual_parry"); return true
+	return requestParry(R.lastBall, "manual_parry")
 end
 function AutoParry.resetState() detachCharacterInternal("reset") end
 function AutoParry.detachCharacter() detachCharacterInternal("detach") end
@@ -523,6 +634,7 @@ function AutoParry.getTargetStatus()
 		approaching = R.lastApproaching == true,
 		targetId = R.targetId,
 		targetKnown = R.targetKnown == true,
+		recovery = R.attempt and (R.attempt.confirmed and "confirmed" or R.attempt.reset and "reset" or R.attempt.readyAt and "cooldown_stopped" or "waiting") or "inactive",
 	}
 end
 local function getRootPosition()
@@ -709,6 +821,9 @@ AutoParry.__contract = {
 			"getSyncData",
 			"getTargetId",
 			"getDeflectRange",
+			"getDeflectServerEvents",
+			"decodeDeflectServerEvent",
+			"getHeldDeflectServerCooldown",
 			"getLocalPing",
 			"getBallPosition",
 			"getBallVelocity",

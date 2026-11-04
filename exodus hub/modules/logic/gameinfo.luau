@@ -239,6 +239,37 @@ function GameInfo.getDeflectRange()
 	local player = Players and Players.LocalPlayer; return player and player:GetAttribute("DeflectRange") or nil
 end
 function GameInfo.getDeflectAbility() return locateDeflectAbility() end
+-- These are server-to-client events; the local ability's Cooldown is predicted.
+function GameInfo.getDeflectServerEvents()
+	local storage = Utils and Utils.getReplicatedStorage()
+	local ts = storage and storage:FindFirstChild("TS")
+	local remotes = ts and ts:FindFirstChild("GeneratedNetworkRemotes")
+	if not remotes then return nil end
+	local cooldown = remotes:FindFirstChild("RE_" .. tostring(5.520474058077904e76))
+	local parried = remotes:FindFirstChild("RE_" .. tostring(9.611859444202098e76))
+	if not cooldown or not cooldown:IsA("RemoteEvent") or not parried or not parried:IsA("RemoteEvent") then return nil end
+	return { cooldown = cooldown.OnClientEvent, parried = parried.OnClientEvent }
+end
+function GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
+	if abilityId ~= 1 then return nil end
+	if eventId == 5.93848805167512e76 and type(value) == "number" and value == value and value > -math.huge and value < math.huge then
+		if value > 0 then return "started", value end
+		return "reset", 0
+	end
+	if eventId == 6.60750295352893e76 then return "stopped", 0 end
+	return nil
+end
+-- DeflectAbility only writes HeldServerCooldown when a server update is held
+-- during its local prediction; unlike Cooldown, this is not a local press.
+function GameInfo.getHeldDeflectServerCooldown()
+	local ability = locateDeflectAbility()
+	if not ability then return nil end
+	local duration, receivedAt = ability.HeldServerCooldown, ability.HeldServerCooldownAt
+	if type(duration) == "number" and duration > 0 and duration < math.huge and type(receivedAt) == "number" and receivedAt == receivedAt and receivedAt > -math.huge and receivedAt < math.huge then
+		return duration, receivedAt
+	end
+	return nil
+end
 function GameInfo.getDashAbility()
 	locateDeflectAbility()
 	local ability = clientAbilities and clientAbilities.Abilities[2]
@@ -377,6 +408,9 @@ GameInfo.__contract = {
 		"getLocalPing",
 		"getDeflectRange",
 		"getDeflectAbility",
+		"getDeflectServerEvents",
+		"decodeDeflectServerEvent",
+		"getHeldDeflectServerCooldown",
 		"getDashAbility",
 		"getDarkSealAbility",
 		"getBallSpeedLimits",
