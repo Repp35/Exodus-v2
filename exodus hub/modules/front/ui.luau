@@ -530,7 +530,7 @@ local function createClashTimingCard(label, key, fallback, yPos, parent)
 	trackConn(input.FocusLost:Connect(function()
 		local value = tonumber(input.Text)
 		if not value or value ~= value or value == math.huge or value == -math.huge then value = tonumber(Utils.getConfigValue(key)) or fallback end
-		value = math.clamp(value, 0, 500); setConfigValue(key, value); input.Text = tostring(value)
+		value = math.clamp(value, 0, 400); setConfigValue(key, value); input.Text = tostring(value)
 	end))
 	return nextCardY(yPos, CARD_H)
 end

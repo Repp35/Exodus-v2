@@ -18,7 +18,7 @@ local function validateValue(key, kind, value: any)
 	if kind == "boolean" and type(value) ~= "boolean" then return false, "flag inválida: " .. key end
 	if kind == "rate" and (not isFiniteNumber(value) or value < 0) then return false, "taxa inválida: " .. key end
 	if kind == "delay" and (not isFiniteNumber(value) or value < 0 or value > 5) then return false, "atraso inválido: " .. key end
-	if kind == "delayMs" and (not isFiniteNumber(value) or value < 0 or value > 500) then return false, "tempo inválido: " .. key end
+	if kind == "delayMs" and (not isFiniteNumber(value) or value < 0 or value > 400) then return false, "tempo inválido: " .. key end
 	if kind == "position" and (not isFiniteNumber(value) or value < -10000 or value > 10000) then return false, "posição inválida: " .. key end
 	if kind == "keyCode" and not validKeyCode(value) then return false, "keybind inválido: " .. key end
 	if kind == "rateMode" and value ~= "CPS" and value ~= "CPF" then return false, "SpamRateMode inválido" end
