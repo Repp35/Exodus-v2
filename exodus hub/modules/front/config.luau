@@ -12,6 +12,7 @@ local SupportedKinds = {
 	keyCode = true,
 	rateMode = true,
 }
+
 local function isFiniteNumber(value) return type(value) == "number" and value == value and value < math.huge and value > -math.huge end
 local function validKeyCode(value) return typeof(value) == "EnumItem" and value.EnumType == Enum.KeyCode end
 local function validateValue(key, kind, value: any)

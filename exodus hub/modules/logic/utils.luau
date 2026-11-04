@@ -89,12 +89,10 @@ function Utils.observeConfig(observer)
 end
 local NamespaceUpdating = false
 local TransitionRefreshPending = false
-
 task.defer(function()
 	local ok, err = pcall(WorkspaceService.SetAttribute, WorkspaceService, "CPS_LIMIT", math.huge)
 	if not ok then warn("[Utils] Não foi possível atualizar CPS_LIMIT: " .. tostring(err)) end
 end)
-
 local function isConnection(value) return value ~= nil and type(value.Disconnect) == "function" end
 local function disconnect(connection)
 	if not isConnection(connection) then return false end
@@ -196,6 +194,7 @@ local function getStateSnapshotInternal()
 			global = #State.connections,
 			character = #State.characterConnections,
 		},
+
 	}
 end
 local function updateNamespace()
@@ -298,6 +297,7 @@ function Utils.recordError(source, message)
 		message = tostring(message or ""),
 		at = os.clock(),
 	}
+
 	State.diagnostics.lastError = entry; appendLimited(State.diagnostics.errors, entry, T.MAX_DIAGNOSTIC_ENTRIES); warn(("[%s] %s"):format(entry.source, entry.message)); updateNamespace()
 	return true
 end
@@ -317,8 +317,7 @@ function Utils.setManualSpamActive(value)
 	recordTransitionInternal("Spam", previous and "active" or "inactive", nextValue and "active" or "inactive", "manual_toggle"); return true
 end
 function Utils.stopAllSpam()
-	local manual, automatic = State.manualSpamActive, State.autoSpamActive
-	State.manualSpamActive = false; State.autoSpamActive = false
+	local manual, automatic = State.manualSpamActive, State.autoSpamActive; State.manualSpamActive = false; State.autoSpamActive = false
 	if manual or automatic then notifySpamObservers() end
 	return true
 end
@@ -457,6 +456,7 @@ Utils.__contract = {
 		"observeConfig",
 		"normalizeSpamRate",
 	},
+
 	requires = {},
 }
 

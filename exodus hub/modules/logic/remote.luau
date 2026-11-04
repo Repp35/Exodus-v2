@@ -243,9 +243,7 @@ local function getTouchTap()
 	if event and event:IsA("BindableEvent") then return event end
 	return nil
 end
-
 local function getDeflectAbility() return GameInfo and GameInfo.getDeflectAbility() or nil end
-
 local function logParryMethod(method, message)
 	if loggedParryMethods[method] then return end
 	loggedParryMethods[method] = true; print("[Exodus Remote] " .. message)
@@ -254,7 +252,6 @@ local function deflectTrace(message)
 	if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(tostring(message), 2) end
 	return tostring(message)
 end
-
 local function payloadFor(flag)
 	local payload = buffer.create(25); buffer.writeu8(payload, 0, flag == 0 and 0 or 1); local camera = game:GetService("Workspace").CurrentCamera
 	local cf = camera and camera.CFrame or CFrame.identity
@@ -270,7 +267,13 @@ end
 
 -- setup
 function Remote.setup(deps)
-	if type(deps) ~= "table" or not deps.Utils or type(deps.GameInfo) ~= "table" or type(deps.GameInfo.getDeflectAbility) ~= "function" or type(deps.GameInfo.noteDeflectPress) ~= "function" then
+	if
+		type(deps) ~= "table"
+		or not deps.Utils
+		or type(deps.GameInfo) ~= "table"
+		or type(deps.GameInfo.getDeflectAbility) ~= "function"
+		or type(deps.GameInfo.noteDeflectPress) ~= "function"
+	then
 		return false, "dependência ausente: Utils ou API de Deflect do GameInfo"
 	end
 	Utils = deps.Utils; GameInfo = deps.GameInfo; captureEnabled = deps.captureDiagnostics == true; remoteState = "deflect_only"
@@ -284,8 +287,7 @@ function Remote.fireParry(_flag)
 		local previousPress = ability.LastPressClock; local ok, err = xpcall(ability.Deflect, deflectTrace, ability)
 		if not ok then remoteState = "deflect_error"; return false, err end
 		if ability.LastPressClock == previousPress then return false, "Deflect não registrou clique" end
-		GameInfo.noteDeflectPress()
-		remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
+		GameInfo.noteDeflectPress(); remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
 		if not loggedParryMethods.deflect and ability.LastPressClock ~= previousPress and isAlive(ability.did) then logParryMethod("deflect", "primeiro envio: Deflect() → RemoteEvent") end
 		return true
 	end
@@ -371,6 +373,7 @@ Remote.__contract = {
 		Utils = { "getReplicatedStorage", "trackGlobal", "untrackGlobal", "apiVersion" },
 		GameInfo = { "getDeflectAbility", "noteDeflectPress" },
 	},
+
 	provides = { "setup", "getRemote", "initParry", "fireParry", "bindBallSync", "startMaintenance", "stopMaintenance" },
 	requires = { Utils = "utils", GameInfo = "gameinfo" },
 	ballSync = true,

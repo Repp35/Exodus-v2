@@ -72,7 +72,12 @@ local SINGLE_RESULT_API = {
 		getLocalPing = true,
 	},
 }
-local TWO_RESULT_API = { remote = { fireParry = true }, gameinfo = { getBallSpeedLimits = true, decodeDeflectServerEvent = true, getHeldDeflectServerCooldown = true, activateFierceDeflect = true } }
+
+local TWO_RESULT_API = {
+	remote = { fireParry = true },
+	gameinfo = { getBallSpeedLimits = true, decodeDeflectServerEvent = true, getHeldDeflectServerCooldown = true, activateFierceDeflect = true },
+}
+
 local function withTrace(err)
 	local message = tostring(err)
 	if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(message, 2) end
@@ -109,7 +114,6 @@ local function instrumentApi(name, module, path)
 		end
 	end
 end
-
 local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
 for _, entry in ipairs(MODULE_MANIFEST) do
@@ -135,6 +139,7 @@ local function getRequestFunction()
 		{ synApi and synApi.request },
 		{ fluxusApi and fluxusApi.request },
 	}
+
 	for _, item in ipairs(candidates) do
 		local candidate = item[1]
 		if type(candidate) == "function" then return candidate end
@@ -172,7 +177,6 @@ local function request(url, headers)
 					Method = "GET",
 					Headers = headers,
 				})
-
 				if type(response) ~= "table" then error("Resposta HTTP inválida") end
 				local statusCode = tonumber(response.StatusCode or response.status_code)
 				if not statusCode or statusCode < 200 or statusCode >= 300 then error("HTTP " .. tostring(statusCode or "sem status")) end
@@ -426,7 +430,6 @@ local function bindRuntime(loaded, log)
 	then
 		return nil, "contrato de runtime incompleto"
 	end
-	-- Remotes may not exist yet when the loader starts; maintenance discovers them later.
 	local remoteCallOk, parryRemote = pcall(remote.getRemote); local initCallOk, initialized = false, false
 	if remoteCallOk and parryRemote then initCallOk, initialized = pcall(remote.initParry) end
 	local ballSyncSubscribers = {}
@@ -459,15 +462,11 @@ local function bindRuntime(loaded, log)
 	local pendingSyncRefresh = false
 	local lastClashPacketSequence
 	local function onBallSync(...)
-		-- O RemoteEvent pode enviar a tabela como argumento extra ou como string JSON:
-		-- procura o primeiro argumento utilizável antes de desistir.
 		local argCount = select("#", ...)
 		local data
 		for index = 1, argCount do
 			local value = select(index, ...)
 			if typeof(value) == "buffer" then
-				-- Preserve each accepted target transition even when several packets
-				-- arrive before the deferred replicator refresh.
 				if type(gameInfo.decodeBallPacket) == "function" then
 					local decodedOk, packet = pcall(gameInfo.decodeBallPacket, value)
 					if decodedOk and type(packet) == "table" and type(packet.Sequence) == "number" then
@@ -484,8 +483,6 @@ local function bindRuntime(loaded, log)
 						end
 					end
 				end
-				-- The game decodes this packet in another callback. Report a reset
-				-- immediately and refresh the decoded state after those callbacks.
 				if buffer.len(value) >= 92 and bit32.btest(buffer.readu8(value, 0), 1) then
 					local sequence = buffer.readu16(value, 1); local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
 					if type(current) ~= "number" or (sequence - current) % 65536 < 32768 then notifyBallSync({ Teleported = true, TeleportSequence = sequence }) end
@@ -510,8 +507,6 @@ local function bindRuntime(loaded, log)
 		local ok, decodedData = pcall(gameInfo.applySync, data)
 		if not ok then local entry = MODULE_BY_NAME.gameinfo; printRawError("GameInfo", decodedData, entry and entry.path or "loader.luau"); return end
 		if type(decodedData) ~= "table" then
-			-- O evento também pode conter bytes ou apenas sinalizar uma atualização
-			-- posterior do BallReplicator. Releia uma vez após os outros callbacks.
 			if not pendingSyncRefresh then
 				pendingSyncRefresh = true
 				task.defer(function()

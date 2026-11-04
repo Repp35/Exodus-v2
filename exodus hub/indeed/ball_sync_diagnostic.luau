@@ -113,7 +113,6 @@ local function appendTree(value, label, depth, visited, nodeState, output)
 	nodeState = nodeState or {
 		count = 0,
 	}
-
 	output = output or {}; nodeState.count += 1; local indent = string.rep("  ", depth); local valueKind = typeof(value)
 
 	-- instance
@@ -210,9 +209,7 @@ local function inspectBallReplicator(moduleScript)
 	if not replicator then log("TS.BallReplicator unavailable: " .. tostring(err)); return nil end
 	local provider = replicator.BallReplicator
 	local syncData = type(provider) == "table" and provider.syncData or nil; Runtime.lastReplicatorSignature = getSignature(syncData); log("TS.BallReplicator module=" .. safePath(moduleScript))
-	recordStructure("TS.BallReplicator.BallReplicator.syncData", syncData)
-
-	return replicator
+	recordStructure("TS.BallReplicator.BallReplicator.syncData", syncData); return replicator
 end
 local function pollGameInfo(gameInfo)
 	if not gameInfo then return end

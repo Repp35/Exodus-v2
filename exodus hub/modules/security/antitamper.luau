@@ -1,7 +1,5 @@
 -- [[ antitamper ]]
 
--- obs: não sei fazer anti tamper 🤧
-
 -- helpers
 local AntiTamper = {}
 local PCall = pcall
@@ -33,7 +31,6 @@ local T = Freeze({
 	KICK_AFTER = 1,
 	WATCHDOGS = 2,
 })
-
 local State = {
 	ready = false,
 	passed = false,
@@ -194,7 +191,6 @@ local function buildBaseline()
 			value = root.value,
 			path = root.name,
 		}
-
 		local ok, err = snapshotTable(root.value, baseline, seenTables, seenFunctions, 0, root.name)
 		if not ok then return nil, err end
 	end
@@ -347,6 +343,7 @@ AntiTamper.__contract = {
 	requires = {
 		Utils = "utils",
 	},
+
 }
 
 return AntiTamper

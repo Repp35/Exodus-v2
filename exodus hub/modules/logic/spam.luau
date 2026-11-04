@@ -23,14 +23,12 @@ local status = {
 }
 
 local function now() return Utils and Utils.now() or os.clock() end
-
 local function setActive(value, reason)
 	if active == value then return end
 	generation += 1; active = value; phase = 0; lastMode, lastRate = nil, nil
 	status.phase = value and "running" or "stopped"
 	if Utils and type(Utils.recordTransition) == "function" then Utils.recordTransition("Spam", value and "stopped" or "running", status.phase, reason) end
 end
-
 local function requestParry()
 	local time = now(); status.lastRequestAt = time; local ok, result, detail = pcall(Remote.fireParry, 1)
 	if ok and result == true then status.lastError = nil; return end
@@ -43,7 +41,6 @@ end
 local function sendScheduled(expectedGeneration)
 	if expectedGeneration == generation and Utils and Remote and Utils.isActive() and Utils.isSpamActive() then requestParry() end
 end
-
 local function tick(dt)
 	if type(dt) ~= "number" or dt ~= dt or dt <= 0 or dt == math.huge then return end
 	local selectedMode = type(Utils.getConfigValue) == "function" and Utils.getConfigValue("SpamRateMode") or Utils.getConfig().SpamRateMode
@@ -108,7 +105,6 @@ local function syncCpfWorker()
 		if mode == "CPF" and (not Utils.isActive() or not Utils.isSpamActive()) then setActive(false, "spam_disabled") end
 	end
 end
-
 function Spam.setup(deps)
 	if
 		type(deps) ~= "table"
@@ -136,13 +132,11 @@ function Spam.setup(deps)
 	end
 	return true
 end
-
 function Spam.resetState()
 	generation += 1; setActive(false, "reset"); phase = 0; lastMode, lastRate = nil, nil
 	status.phase = "stopped"; status.lastRequestAt = 0; status.lastError = nil; status.lastErrorAt = -math.huge
 	status.cpfFps, status.cpfClicks = 0, 0
 end
-
 function Spam.teardown()
 	workerGeneration += 1; cpfWorkerRunning = false; cpfWorkerRate = nil
 	if spamObserver then
@@ -155,7 +149,6 @@ function Spam.teardown()
 	end
 	Spam.resetState(); Utils, Remote = nil, nil
 end
-
 function Spam.getStatus()
 	return {
 		schema = Utils and type(Utils.apiVersion) == "function" and Utils.apiVersion() or 1,
@@ -167,12 +160,12 @@ function Spam.getStatus()
 		cpfCompensation = false,
 	}
 end
-
 Spam.__contract = {
 	requiresMethods = {
 		Remote = { "fireParry" },
 		Utils = { "getRunService", "getConfig", "isActive", "isSpamActive", "now" },
 	},
+
 	provides = { "setup", "resetState", "teardown", "getStatus" },
 	requires = { Remote = "remote", Utils = "utils" },
 }

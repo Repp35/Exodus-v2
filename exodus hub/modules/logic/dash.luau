@@ -111,8 +111,6 @@ local function register(player, position, velocity)
 	local character = player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
 	if typeof(position) ~= "Vector3" and root then position = root.Position end
 	if typeof(velocity) ~= "Vector3" and root then velocity = root.AssemblyLinearVelocity end
-	-- AnimationPlayed can arrive before the dash velocity replicates. Let the
-	-- velocity scan report it instead of consuming the detection debounce.
 	if horizontalSpeed(velocity) < T.VELOCITY_MIN_SPEED then return end
 	R.cooldown[player] = t; local previousPosition = R.lastPosition[player]
 	local event: DashEvent = {
@@ -123,7 +121,6 @@ local function register(player, position, velocity)
 		velocity = velocity,
 		previousPosition = previousPosition,
 	}
-
 	if typeof(position) == "Vector3" then R.lastPosition[player] = position end
 	if type(onDetected) == "function" then onDetected(event) end
 end
@@ -287,6 +284,7 @@ Dash.__contract = {
 	requires = {
 		Utils = "utils",
 	},
+
 }
 
 return Dash

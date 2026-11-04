@@ -142,16 +142,14 @@ local function resetTracking()
 	R.pingAt = 0; R.lastDistance = 0; R.lastSpeed = 0; R.lastLeadTime = T.MIN_LEAD_TIME
 	R.lastFireAt = 0; R.lastApproaching = false; R.lastTarget = -1; R.lastSyncSequence = nil
 	R.targetId = -1; R.targetKnown = false; R.teleported = false; R.teleportSequence = nil
-	R.resilienceBonus = 0; R.resilienceBonusAt = -1
-	R.lastFireRevision = 0; R.lastRetryRevision = 0
+	R.resilienceBonus = 0; R.resilienceBonusAt = -1; R.lastFireRevision = 0; R.lastRetryRevision = 0
 end
 local function invalidateLife()
 	R.lifeGeneration += 1; R.alive = false; R.bound = false; resetParryLock()
 end
 local function observeTarget(targetId)
 	if not R.player or not isFiniteNumber(targetId) or targetId <= 0 then return end
-	if targetId ~= R.player.UserId then R.targetAwaySeen = true
-	elseif R.targetAwaySeen then R.targetAwaySeen = false; R.firedForTarget = false; R.targetCycle += 1 end
+	if targetId ~= R.player.UserId then R.targetAwaySeen = true elseif R.targetAwaySeen then R.targetAwaySeen = false; R.firedForTarget = false; R.targetCycle += 1 end
 end
 local function getResilienceBonus(time)
 	if not R.alive or not R.bound or not R.player then return 0 end
@@ -214,8 +212,8 @@ local function computeParryRadius(speed, ping, resilienceBonus, windowFactor, ba
 	end
 	local leadTime = deflectWindow + validPing; local factor = tonumber(windowFactor)
 	if not isFiniteNumber(factor) then factor = getWindowFactor() end
-	factor = math.clamp(factor, T.MIN_WINDOW_FACTOR, baseWindow == nil and T.MAX_WINDOW_FACTOR or math.max(T.MAX_WINDOW_FACTOR, factor)); local validResilience = isFiniteNumber(resilienceBonus) and math.max(resilienceBonus, 0) or 0
-	local baseRadius = T.BASE_RADIUS + validResilience
+	factor = math.clamp(factor, T.MIN_WINDOW_FACTOR, baseWindow == nil and T.MAX_WINDOW_FACTOR or math.max(T.MAX_WINDOW_FACTOR, factor))
+	local validResilience = isFiniteNumber(resilienceBonus) and math.max(resilienceBonus, 0) or 0; local baseRadius = T.BASE_RADIUS + validResilience
 	local anticipation = validSpeed * leadTime * factor
 	local noWindowRadius = baseRadius
 	local pingRadius = validSpeed * validPing * factor
@@ -346,14 +344,13 @@ local function updateVelocity(ball, position, time, dt, syncData, requireMovemen
 	R.lastPosition = position; R.lastPositionAt = time; return true
 end
 local function requestParry(ball, reason)
-	local cycle = R.targetCycle; local time = clock(); local previouslyFired = R.firedForTarget
-	-- Lock before reading game state or sending, including reentrant callbacks.
-	R.armed = false; R.firedForTarget = true
-	local cooldown = GameInfo.getDeflectCooldownState()
-	if R.targetCycle ~= cycle or R.targetAwaySeen or R.teleported then
-		R.firedForTarget = previouslyFired; R.armed = not previouslyFired; return false
-	end
-	if (cooldown and (cooldown.active or cooldown.blocking)) or (reason == "parry_requested" and (isSpamActive() or not isSystemActive() or not isAutoParryEnabled())) then
+	local cycle = R.targetCycle; local time = clock(); local previouslyFired = R.firedForTarget; R.armed = false
+	R.firedForTarget = true; local cooldown = GameInfo.getDeflectCooldownState()
+	if R.targetCycle ~= cycle or R.targetAwaySeen or R.teleported then R.firedForTarget = previouslyFired; R.armed = not previouslyFired; return false end
+	if
+		(cooldown and (cooldown.active or cooldown.blocking))
+		or (reason == "parry_requested" and (isSpamActive() or not isSystemActive() or not isAutoParryEnabled()))
+	then
 		R.firedForTarget = previouslyFired; R.armed = not previouslyFired; return false
 	end
 	R.lastFireRevision = cooldown and cooldown.readyRevision or 0; R.lastFireAt = time
@@ -410,8 +407,14 @@ local function onHeartbeat(character, root, dt, generation)
 	R.lastTargeted = targeted; R.targeted = targeted; local resilienceBonus = getResilienceBonus(time)
 	local parryRadius, leadTime = computeParryRadius(speed, R.ping, resilienceBonus, getWindowFactor()); R.lastDistance = distance; R.lastSpeed = speed; R.lastLeadTime = leadTime
 	R.lastApproaching = approaching; R.targetId = tonumber(snapshot and snapshot.targetId) or -1; R.targetKnown = snapshot ~= nil and snapshot.targetId ~= nil
-	if speed < minimumBallSpeed() then if not R.firedForTarget then R.armed = true end; setPhase("waiting", "ball_speed_invalid"); return end
-	if not approaching then if not R.firedForTarget then R.armed = true end; setPhase("waiting", "ball_not_approaching"); return end
+	if speed < minimumBallSpeed() then
+		if not R.firedForTarget then R.armed = true end
+		setPhase("waiting", "ball_speed_invalid"); return
+	end
+	if not approaching then
+		if not R.firedForTarget then R.armed = true end
+		setPhase("waiting", "ball_not_approaching"); return
+	end
 	if distance > parryRadius then setPhase("waiting", "outside_radius"); return end
 	if cooldown and (cooldown.active or cooldown.blocking) then setPhase("waiting", "deflect_cooldown"); return end
 	if R.firedForTarget then setPhase("waiting", "target_already_parried"); return end
@@ -479,8 +482,7 @@ function AutoParry.bindCharacter(character)
 	local playerOk, player = pcall(Utils.getLocalPlayer)
 	if not playerOk or not player then return false, "Players.LocalPlayer indisponivel" end
 	R.root = root; R.player = player; R.alive = true; R.bound = true
-	resetTracking(); setPhase("waiting", "character_bound")
-	GameInfo.getDeflectCooldownState()
+	resetTracking(); setPhase("waiting", "character_bound"); GameInfo.getDeflectCooldownState()
 	local heartbeatOk, heartbeatConnection = pcall(function()
 		return signal:Connect(function(dt) onHeartbeat(character, root, dt, generation) end)
 	end)
@@ -623,6 +625,7 @@ function AutoParry.getRadius(mode, windowFactor, speedOverride, baseWindow): Rad
 			speed = speed,
 			distance = R.lastDistance,
 		}
+
 	end
 	local distanceToRadius = R.lastDistance - fullRadius; local tti = speed > 0 and math.max(distanceToRadius, 0) / speed or math.huge
 	return {
@@ -753,6 +756,7 @@ AutoParry.__contract = {
 			"untrackGlobal",
 		},
 	},
+
 	provides = {
 		"setup",
 		"bindCharacter",
@@ -764,6 +768,7 @@ AutoParry.__contract = {
 		"getTiming",
 		"getStatus",
 	},
+
 	requires = {
 		Remote = "remote",
 		GameInfo = "gameinfo",

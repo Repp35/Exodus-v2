@@ -18,7 +18,6 @@ UIConfig.panelToggles = {
 		key = "ClashBallVisible",
 	},
 }
-
 UIConfig.panelComponents = {
 	{
 		kind = "rate_selector",
@@ -86,6 +85,7 @@ UIConfig.__config = {
 		Keybind = Enum.KeyCode.F9,
 		SpamKeybind = Enum.KeyCode.F,
 	},
+
 }
 UIConfig.__contract = {
 	provides = {},

@@ -14,7 +14,6 @@ type UtilsModule = {
 	recordTransition: (string, string, string, string?) -> (),
 	recordError: (string, string) -> (),
 }
-
 type SpamModule = {
 	resetState: () -> (),
 }
@@ -245,11 +244,13 @@ Character.__contract = {
 		},
 		Spam = { "resetState" },
 	},
+
 	provides = { "setup", "teardown" },
 	requires = {
 		Spam = "spam",
 		Utils = "utils",
 	},
+
 }
 
 return Character

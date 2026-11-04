@@ -102,7 +102,6 @@ if bindableManager and type(bindableManager.GetFunction) == "function" then
 		if fn and type(fn.Invoke) == "function" then
 			safe("Invoke." .. name, function()
 				if name == "IsPlayerNoob" then return fn:Invoke(LocalPlayer) end
-
 				return fn:Invoke()
 			end)
 		end
