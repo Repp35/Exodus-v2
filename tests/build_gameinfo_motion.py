@@ -52,6 +52,15 @@ assert(after.speed>99 and after.speed<101, 'movement after teleport blocked')
 local packet=info.decodeBallPacket({seq=102,serverTime=123.5,teleported=false,grace=false,oldGrace=true,targetId=7,highlightId=7,position=vec(5),speed=100})
 assert(packet.Sequence==102 and packet.ServerTime==123.5 and packet.TargetPlayerID==7 and packet.OldGrace, 'packet mapping')
 assert(not info.isSnapshotValid({ball=ball,position=vec(0),velocity=vec(0),speed=0/0,targetId=42,targeted=true}), 'NaN speed accepted')
+local newest={Sequence=102,TargetPlayerID=7,Speed=100,Teleported=false}
+assert(info.applyPacket(newest), 'new packet should be accepted immediately')
+assert(info.getTargetId()==7 and info.getSyncSequence()==102 and info.getSnapshotAt(1.3).targetId==7, 'snapshot must use the newest packet before provider refresh')
+assert(not info.applyPacket({Sequence=101,TargetPlayerID=42}), 'older packets must not replace the target')
+provider.lastSeq=102; sync.TargetPlayerID=7
+assert(info.getSyncData()==sync and info.getSyncSequence()==102, 'provider should resume when it catches up')
+provider.lastSeq=65535
+assert(info.applyPacket({Sequence=0,TargetPlayerID=42,Speed=100}), 'wrapped sequence must be accepted')
+assert(info.getTargetId()==42, 'wrapped packet must update target')
 print('GameInfo motion and packet scenarios: PASS')
 '''
 out.write_text(pre+source+post, encoding='utf-8')

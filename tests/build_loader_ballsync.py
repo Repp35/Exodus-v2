@@ -17,10 +17,12 @@ local function printRawError(name, message) error(name..': '..tostring(message))
 local HttpService={JSONDecode=function() return nil end}
 local serverSequence=10
 local providerData={TargetPlayerID=42,Teleported=false}
+local appliedSequence, deliveryOrder
 local info={
     getSyncSequence=function() return serverSequence end,
     getSyncData=function() return providerData end,
     applySync=function(data) return data or providerData end,
+    applyPacket=function(data) appliedSequence=data.Sequence; deliveryOrder={} end,
     installBallWatcher=function() return true end,
     decodeBallPacket=function(packet)
         local flags=buffer.readu8(packet,0)
@@ -32,8 +34,8 @@ local remote={getRemote=function() return {} end,initParry=function() return tru
     bindBallSync=function(fn) receiver=fn; return true end, startMaintenance=function() return true end}
 local utils={trackGlobal=function() end,isActive=function() return true end}
 local events,parryEvents={},{}
-local clash={__contract={onBallSync=true},onBallSync=function(data) table.insert(events,{seq=data.Sequence,target=data.TargetPlayerID,tele=data.Teleported}) end}
-local parry={__contract={onBallSync=true},onBallSync=function(data) table.insert(parryEvents,{seq=data.Sequence or data.TeleportSequence,tele=data.Teleported,target=data.TargetPlayerID}) end}
+local clash={__contract={onBallSync=true},onBallSync=function(data) if data.Source=='packet' then assert(appliedSequence==data.Sequence); table.insert(deliveryOrder,'clash') end; table.insert(events,{seq=data.Sequence,target=data.TargetPlayerID,tele=data.Teleported}) end}
+local parry={__contract={onBallSync=true},onBallSync=function(data) if data.Source=='packet' then assert(appliedSequence==data.Sequence); table.insert(deliveryOrder,'parry') end; table.insert(parryEvents,{seq=data.Sequence or data.TeleportSequence,tele=data.Teleported,target=data.TargetPlayerID}) end}
 local function packet(seq,target,tele)
     local b=buffer.create(92);buffer.writeu8(b,0,tele and 1 or 0);buffer.writeu16(b,1,seq);buffer.writef64(b,55,target);return b
 end
@@ -43,6 +45,7 @@ local result=assert(bindRuntime({utils=utils,gameinfo=info,remote=remote,autopar
 assert(result.ballSync and receiver)
 -- Three transitions arriving before the deferred refresh must each be delivered.
 receiver(packet(11,42,false)); receiver(packet(12,7,false)); receiver(packet(13,42,false))
+assert(table.concat(deliveryOrder,',')=='clash,parry', 'packet should update GameInfo and let clash take over before parry')
 assert(#events==3 and events[1].seq==11 and events[2].seq==12 and events[3].seq==13, 'target events coalesced')
 assert(#parryEvents==3 and parryEvents[1].target==42 and parryEvents[2].target==7 and parryEvents[3].target==42, 'parry target transitions coalesced')
 serverSequence=13;providerData={TargetPlayerID=42,Teleported=false};flush()

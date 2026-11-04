@@ -52,6 +52,8 @@ local gameBallModule
 local speedLimitMin, speedLimitMax = 16, 600
 local nextSpeedRead = 0
 local lastSyncData
+local lastPacket
+local lastPacketAt = 0
 local clientAbilitiesModule
 local clientAbilities
 local sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt
@@ -114,7 +116,14 @@ local function getBallReplicator()
 	return ballReplicatorModule
 end
 local function getDecodedSyncData()
-	local provider = getBallReplicator(); local data = provider and provider.hasState == true and provider.syncData or lastSyncData
+	local provider = getBallReplicator()
+	if lastPacket and os.clock() - lastPacketAt > 0.5 then lastPacket = nil end
+	if lastPacket then
+		local sequence = provider and provider.hasState == true and provider.lastSeq
+		if type(sequence) ~= "number" or (lastPacket.Sequence - sequence) % 65536 < 32768 and lastPacket.Sequence ~= sequence then return lastPacket end
+		lastPacket = nil
+	end
+	local data = provider and provider.hasState == true and provider.syncData or lastSyncData
 	if type(data) ~= "table" then data = provider and provider.syncData or nil end
 	if type(data) ~= "table" then return nil end
 	return data
@@ -208,7 +217,7 @@ local function getSnapshot(_, time, frameTime): BallSnapshot?
 		grace = grace,
 		oldGrace = oldGrace,
 		syncAt = time,
-		syncSequence = provider and provider.hasState == true and provider.lastSeq or nil,
+		syncSequence = lastPacket and syncData == lastPacket and lastPacket.Sequence or (provider and provider.hasState == true and provider.lastSeq or nil),
 	}
 end
 local function installBallWatcher(trackConnection)
@@ -246,7 +255,7 @@ function GameInfo.setup(deps)
 	if not Players then return false, "dependência ausente: Players" end
 	if not Workspace then return false, "dependência ausente: Workspace" end
 	cachedBall = nil; ballWatcherReady = false; ballSearchComplete = false; nextBallSearch = 0
-	nextSpeedRead = 0; speedLimitMin, speedLimitMax = 16, 600; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil
+	nextSpeedRead = 0; speedLimitMin, speedLimitMax = 16, 600; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil; lastPacket = nil
 	clientAbilitiesModule = nil; clientAbilities = nil; sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil
 	deflectState = {
 		known = false,
@@ -425,7 +434,20 @@ function GameInfo.getSnapshot(lastTarget, time, frameTime): BallSnapshot? return
 function GameInfo.getSnapshotAt(time: number?): BallSnapshot? return getSnapshot(nil, time) end
 function GameInfo.getSyncData() return getDecodedSyncData() end
 function GameInfo.getSyncSequence()
+	local sync = getDecodedSyncData()
+	if sync and sync == lastPacket then return lastPacket.Sequence end
 	local provider = getBallReplicator(); return provider and provider.hasState == true and provider.lastSeq or nil
+end
+function GameInfo.applyPacket(packet)
+	if type(packet) ~= "table" then return false end
+	local sequence = packet.Sequence
+	if type(sequence) ~= "number" or sequence ~= sequence or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return false end
+	local current = GameInfo.getSyncSequence()
+	if type(current) == "number" then
+		local delta = (sequence - current) % 65536
+		if delta == 0 or delta >= 32768 then return false end
+	end
+	lastPacket = packet; lastPacketAt = os.clock(); return true
 end
 function GameInfo.decodeBallPacket(packet): BallSync?
 	local provider = getBallReplicator()

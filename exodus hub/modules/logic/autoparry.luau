@@ -53,6 +53,7 @@ local R = {
 	bound = false,
 	player = nil,
 	root = nil,
+	character = nil,
 	connections = {},
 	armed = true,
 	firedForTarget = false,
@@ -450,7 +451,7 @@ local function onHeartbeat(character, root, dt, generation)
 	if R.armed then requestParry(ball, "parry_requested") end
 end
 local function detachCharacterInternal(reason)
-	R.generation += 1; disconnectConnections(); invalidateLife(); R.root = nil
+	R.generation += 1; disconnectConnections(); invalidateLife(); R.root = nil; R.character = nil
 	resetTracking(); setPhase("detached", reason or "detach")
 end
 function AutoParry.setup(deps)
@@ -508,7 +509,7 @@ function AutoParry.bindCharacter(character)
 	if not signal then return false, "RunService indisponivel" end
 	local playerOk, player = pcall(Utils.getLocalPlayer)
 	if not playerOk or not player then return false, "Players.LocalPlayer indisponivel" end
-	R.root = root; R.player = player; R.alive = true; R.bound = true
+	R.root = root; R.character = character; R.player = player; R.alive = true; R.bound = true
 	resetTracking(); setPhase("waiting", "character_bound"); GameInfo.getDeflectCooldownState()
 	local heartbeatOk, heartbeatConnection = pcall(function()
 		return signal:Connect(function(dt) onHeartbeat(character, root, dt, generation) end)
@@ -566,7 +567,11 @@ function AutoParry.onBallSync(data)
 	observeTarget(targetId)
 	if targetId > 0 and R.player and targetId ~= R.player.UserId then resetParryLock() end
 	if targetId == -1 and R.lastTarget ~= -1 then clearBallState() end
-	R.targetId = targetId; R.targetKnown = true; R.lastTarget = targetId; return true
+	R.targetId = targetId; R.targetKnown = true; R.lastTarget = targetId
+	if data.Source == "packet" and R.player and targetId == R.player.UserId and R.character and R.root then
+		onHeartbeat(R.character, R.root, 0, R.generation)
+	end
+	return true
 end
 function AutoParry.getTargetStatus()
 	return {

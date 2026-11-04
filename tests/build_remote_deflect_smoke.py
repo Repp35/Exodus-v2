@@ -25,7 +25,9 @@ assert(remote.fireParry(1) and deflectCount == 1 and touchCount == 0 and noteCou
 abilities.Abilities[1] = {Deflect = function(self) deflectCount += 10; self.LastPressClock=(self.LastPressClock or 0)+1 end}
 assert(remote.fireParry(1) and deflectCount == 11 and noteCount==2, "must use replacement ability")
 abilities.Abilities[1].Deflect=function() end
-remote.fireParry(1); assert(noteCount==2, "ignored local Deflect must not start normalization")
+local ok, reason=remote.fireParry(1); assert(not ok and reason:find("não mudou",1,true) and remote.getStatus().state=="deflect_ignored" and noteCount==2, "ignored local Deflect must be reported without starting normalization")
+abilities.Abilities[1].LastPressClock=nil
+ok, reason=remote.fireParry(1); assert(not ok and reason:find("indisponível",1,true) and noteCount==2, "missing click clock must be distinguished from a rejected click")
 abilities.Abilities[1] = nil
 assert(not remote.fireParry(1) and touchCount == 0, "missing ability must not use TouchTap")
 assert(not remote.initParry() and not remote.usesGameDeflect() and remote.getRemote() == nil, "missing ability must not expose another method")

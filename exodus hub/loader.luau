@@ -475,9 +475,13 @@ local function bindRuntime(loaded, log)
 						local currentDelta = type(current) == "number" and (sequence - current) % 65536 or 0
 						if (forward == true or (forward > 0 and forward < 32768)) and currentDelta < 32768 then
 							lastClashPacketSequence = sequence
+							packet.Source = "packet"
+							if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
 							if not packet.Teleported then
-								for _, sub in ipairs(ballSyncSubscribers) do
-									if sub.name == "autoclash" or sub.name == "autoparry" then callSync(sub.name, sub.handler, packet) end
+								for _, name in ipairs({ "autoclash", "autoparry" }) do
+									for _, sub in ipairs(ballSyncSubscribers) do
+										if sub.name == name then callSync(sub.name, sub.handler, packet) end
+									end
 								end
 							end
 						end
