@@ -168,21 +168,21 @@ local function onServerCooldown(abilityId, eventId, value)
 	local time = clock(); local attempt = R.attempt; R.serverCooldownEventAt = time
 	if kind == "started" then
 		R.serverCooldownId += 1; R.serverCooldownActive = true
-		if attempt and not attempt.confirmed and attempt.cycle == R.targetCycle then
+		if attempt and attempt.cycle == R.targetCycle then
 			attempt.cooldownId = R.serverCooldownId; attempt.readyAt = nil
 		end
 	elseif kind == "stopped" then
-		if R.serverCooldownActive and attempt and attempt.cooldownId == R.serverCooldownId and not attempt.confirmed then attempt.readyAt = time end
+		if R.serverCooldownActive and attempt and attempt.cooldownId == R.serverCooldownId then attempt.readyAt = time end
 		R.serverCooldownActive = false
 	elseif kind == "reset" then
 		R.serverCooldownActive = false
-		if attempt and not attempt.confirmed then attempt.cooldownId = R.serverCooldownId; attempt.readyAt = time end
+		if attempt then attempt.cooldownId = R.serverCooldownId; attempt.readyAt = time end
 	end
 end
 local function onServerParried()
 	R.serverCooldownEventAt = clock()
 	local attempt = R.attempt
-	if attempt then attempt.confirmed = true; attempt.readyAt = nil end
+	if attempt then attempt.confirmed = true end
 end
 local function seedHeldServerCooldown(time)
 	if R.serverCooldownActive or not GameInfo or type(GameInfo.getHeldDeflectServerCooldown) ~= "function" then return end
@@ -214,7 +214,7 @@ local function ensureServerSignals(time, generation)
 end
 local function canRetry(time, ball)
 	local attempt = R.attempt
-	if not attempt or attempt.confirmed or attempt.ball ~= ball or attempt.cycle ~= R.targetCycle or R.targetAwaySeen then return false end
+	if not attempt or attempt.ball ~= ball or attempt.cycle ~= R.targetCycle or R.targetAwaySeen then return false end
 	if not attempt.readyAt or R.serverCooldownActive or attempt.cooldownId ~= R.serverCooldownId then return false end
 	return true
 end
@@ -411,7 +411,6 @@ local function requestParry(ball, reason)
 	R.attempt = attempt; R.armed = false; R.firedForTarget = true; R.lastFireAt = time
 	seedHeldServerCooldown(time)
 	if R.attempt ~= attempt or R.targetCycle ~= cycle or R.targetAwaySeen or R.teleported then return false end
-	if attempt.confirmed then return false end
 	if reason == "parry_requested" and (isSpamActive() or not isSystemActive() or not isAutoParryEnabled()) then
 		R.attempt = nil; R.firedForTarget = false; R.armed = true; return false
 	end
@@ -610,7 +609,7 @@ function AutoParry.getTargetStatus()
 		approaching = R.lastApproaching == true,
 		targetId = R.targetId,
 		targetKnown = R.targetKnown == true,
-		recovery = R.attempt and (R.attempt.confirmed and "confirmed" or R.attempt.readyAt and "cooldown_stopped" or "waiting") or "inactive",
+		recovery = R.attempt and (R.attempt.readyAt and "cooldown_stopped" or R.attempt.confirmed and "confirmed" or "waiting") or "inactive",
 	}
 end
 local function getRootPosition()

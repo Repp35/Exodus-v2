@@ -117,14 +117,18 @@ do
 	 s.cd:emit(1,SET,1.45); s.frame(5.5); s.cd:emit(1,STOP); s.frame(5.56)
  assert(s.count()==3, "a second confirmed miss can also recover")
 end
--- A cancelled cooldown is ready; a confirmed parry still stays locked.
+-- A cancelled cooldown is ready, even when the last parry was confirmed.
 do
  local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,1.45); s.cd:emit(1,SET,0)
  s.frame(1.02); assert(s.count()==2, "cancelled cooldown must immediately allow retry")
 end
 do
  local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,1.45); s.parried:emit(); s.cd:emit(1,SET,0)
- s.frame(2); assert(s.count()==1, "confirmed parry must stay locked")
+	 s.frame(2); assert(s.count()==2, "confirmed parry must not prevent recovery when cooldown is clear")
+end
+do
+ local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,1.45); s.cd:emit(1,SET,0); s.parried:emit()
+ s.frame(2); assert(s.count()==2, "parry confirmation after reset must not restore the lock")
 end
 -- A new cooldown before the next frame prevents a retry.
 do
