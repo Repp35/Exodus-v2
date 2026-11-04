@@ -107,7 +107,7 @@ local function observeTarget(id)
 end
 
 local function getConfig()
- return Utils and safe(Utils.getConfig) or {}
+ return (Utils and safe(Utils.getConfig)) or {}
 end
 
 local function enabled()
@@ -383,7 +383,7 @@ function AutoParry.getTiming(snapshot, now, rootPosition, windowFactor, baseWind
 end
 
 function AutoParry.getRadius(mode, windowFactor, speedOverride, baseWindow)
- mode = mode == "tti" or mode == "speed_distance" and mode or "geometry"
+ if mode ~= "tti" and mode ~= "speed_distance" then mode = "geometry" end
  local speed = tonumber(speedOverride) or S.speed
  local full, lead, base, pingRadius, win, effective, f = radius(speed, windowFactor, baseWindow)
  local tti = speed > 0 and math.max(S.distance - full, 0) / speed or math.huge
