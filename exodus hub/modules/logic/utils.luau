@@ -89,10 +89,6 @@ function Utils.observeConfig(observer)
 end
 local NamespaceUpdating = false
 local TransitionRefreshPending = false
-task.defer(function()
-	local ok, err = pcall(WorkspaceService.SetAttribute, WorkspaceService, "CPS_LIMIT", math.huge)
-	if not ok then warn("[Utils] Não foi possível atualizar CPS_LIMIT: " .. tostring(err)) end
-end)
 local function isConnection(value) return value ~= nil and type(value.Disconnect) == "function" end
 local function disconnect(connection)
 	if not isConnection(connection) then return false end
