@@ -403,6 +403,15 @@ local function shouldActivate(snapshot, t)
 	end
 	R.lastGate = "activation_ready"; return true
 end
+local function isPartnerNearby(partnerId)
+	if not partnerId or partnerId <= 0 or partnerId == R.localUserId or R.parryRadius <= 0 then return false end
+	local player = R.players and R.players:GetPlayerByUserId(partnerId)
+	local partnerRoot = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local root = getRootPosition()
+	if not root or not partnerRoot or not partnerRoot.Parent then return false end
+	local radius = R.parryRadius * T.PARTNER_PROXIMITY_FACTOR
+	return distanceSquared(root, partnerRoot.Position) <= radius * radius
+end
 local function tryPartnerProximityActivate(snapshot, t)
 	local partnerId = R.proximityPartnerId
 	if partnerId == -1 or partnerId == R.localUserId then return false end
@@ -874,6 +883,15 @@ function AutoClash.onBallSync(data)
 		R.clashPartnerId = -1; R.proximityPartnerId = -1; R.proximitySwitchAt = 0; R.lastGate = "target_redirected"
 	end
 	R.wasMeTarget = isMe
+	if not R.active and target == R.lastActivationPartner and R.lastActivationAt > 0 and isPartnerNearby(target) then
+		local snapshot = readValidatedSnapshot(t)
+		if snapshot and snapshot.teleported ~= true and snapshot.ball and snapshot.ball.Parent then
+			R.clashPartnerId = target
+			clearReturnState()
+			setActive(true, "partner_target_return", snapshot, "partner_target_return")
+			return true
+		end
+	end
 	if R.returnPending and data.Source ~= "snapshot" then
 		local snapshot = readValidatedSnapshot(t)
 		if snapshot and snapshot.teleported ~= true then evaluateClash(t, snapshot) end
