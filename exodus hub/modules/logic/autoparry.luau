@@ -81,6 +81,7 @@ local R = {
 	resilienceBonus = 0,
 	resilienceBonusAt = -1,
 	lastFireRevision = 0,
+	lastRetryRevision = 0,
 }
 
 local function clock() return os.clock() end
@@ -142,7 +143,7 @@ local function resetTracking()
 	R.lastFireAt = 0; R.lastApproaching = false; R.lastTarget = -1; R.lastSyncSequence = nil
 	R.targetId = -1; R.targetKnown = false; R.teleported = false; R.teleportSequence = nil
 	R.resilienceBonus = 0; R.resilienceBonusAt = -1
-	R.lastFireRevision = 0
+	R.lastFireRevision = 0; R.lastRetryRevision = 0
 end
 local function invalidateLife()
 	R.lifeGeneration += 1; R.alive = false; R.bound = false; resetParryLock()
@@ -343,8 +344,10 @@ local function requestParry(ball, reason)
 	-- Lock before reading game state or sending, including reentrant callbacks.
 	R.armed = false; R.firedForTarget = true
 	local cooldown = GameInfo.getDeflectCooldownState()
-	if R.targetCycle ~= cycle or R.targetAwaySeen or R.teleported then return false end
-	if (cooldown and cooldown.active) or (reason == "parry_requested" and (isSpamActive() or not isSystemActive() or not isAutoParryEnabled())) then
+	if R.targetCycle ~= cycle or R.targetAwaySeen or R.teleported then
+		R.firedForTarget = previouslyFired; R.armed = not previouslyFired; return false
+	end
+	if (cooldown and (cooldown.active or cooldown.blocking)) or (reason == "parry_requested" and (isSpamActive() or not isSystemActive() or not isAutoParryEnabled())) then
 		R.firedForTarget = previouslyFired; R.armed = not previouslyFired; return false
 	end
 	R.lastFireRevision = cooldown and cooldown.readyRevision or 0; R.lastFireAt = time
@@ -356,6 +359,10 @@ local function onHeartbeat(character, root, dt, generation)
 	if generation ~= R.generation or not R.alive or not R.bound then return end
 	if not character.Parent or not root.Parent then return end
 	local time = clock(); samplePing(time); local cooldown = GameInfo.getDeflectCooldownState(); local syncData = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
+	if cooldown and type(cooldown.retryRevision) == "number" and cooldown.retryRevision > R.lastRetryRevision then
+		R.lastRetryRevision = cooldown.retryRevision
+		if not cooldown.blocking then R.firedForTarget = false; R.armed = true end
+	end
 	if type(syncData) == "table" and syncData.Teleported == true then
 		if not R.teleported then enterTeleportLock(time) end
 	elseif R.teleported and type(syncData) == "table" then
@@ -400,7 +407,7 @@ local function onHeartbeat(character, root, dt, generation)
 	if speed < minimumBallSpeed() then if not R.firedForTarget then R.armed = true end; setPhase("waiting", "ball_speed_invalid"); return end
 	if not approaching then if not R.firedForTarget then R.armed = true end; setPhase("waiting", "ball_not_approaching"); return end
 	if distance > parryRadius then setPhase("waiting", "outside_radius"); return end
-	if cooldown and cooldown.active then setPhase("waiting", "deflect_cooldown"); return end
+	if cooldown and (cooldown.active or cooldown.blocking) then setPhase("waiting", "deflect_cooldown"); return end
 	if R.firedForTarget then setPhase("waiting", "target_already_parried"); return end
 	if isSpamActive() or not isSystemActive() or not isAutoParryEnabled() then resetParryLock(); clearBallState(); setPhase("waiting", "parry_gate_changed"); return end
 	if R.lastSyncSequence ~= nil and R.lastTarget > 0 and R.player and R.lastTarget ~= R.player.UserId then setPhase("waiting", "target_changed"); return end
