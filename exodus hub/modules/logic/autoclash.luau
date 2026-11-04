@@ -285,7 +285,7 @@ end
 local function queryRadius(factor)
 	local f = FN.getRadius
 	if not f then return R.parryRadius end
-	local status = f("geometry", factor, R.lastSpeed, true)
+	local status = f("geometry", factor, R.lastSpeed, "game")
 	if type(status) ~= "table" then return R.parryRadius end
 	local radius = tonumber(status.fullRadius)
 	if radius and radius == radius and radius >= 0 and radius < math.huge then return radius end
@@ -433,7 +433,7 @@ function Deactivation.confirm(t, reason)
 end
 function Deactivation.direction(t, snapshot, speed)
 	if isSnapshotTargeted(snapshot) then R.lastGate = "deact_direction_targeted"; return false end
-	local radius = AutoParry.getRadius("geometry", 0, speed, true); local pureRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil; local root = getRootPosition()
+	local radius = AutoParry.getRadius("geometry", 0, speed, "game"); local pureRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil; local root = getRootPosition()
 	local position = getSnapshotPosition(snapshot)
 	if not pureRadius or pureRadius ~= pureRadius or pureRadius < 0 or pureRadius == math.huge or not root or not position then
 		Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_unavailable"; return false
