@@ -12,7 +12,7 @@ local RADIUS_MULTIPLIER = 3
 local CRITICAL_RATIO = 0.30
 local ARM_RATIO = 0.70
 local WINDOW_MARGIN = 0.055
-local tracking = { ball = nil, sequence = nil, target = nil, cooldownAt = nil, outside = false, critical = false }
+local tracking = { ball = nil, target = nil, cooldownAt = nil, outside = false }
 
 local function disconnect()
 	if not connection then return end
@@ -24,8 +24,8 @@ end
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 
 local function resetTracking()
-	tracking.ball = nil; tracking.sequence = nil; tracking.target = nil
-	tracking.cooldownAt = nil; tracking.outside = false; tracking.critical = false
+	tracking.ball = nil; tracking.target = nil
+	tracking.cooldownAt = nil; tracking.outside = false
 end
 
 local function evaluate(root, time)
@@ -55,9 +55,8 @@ local function evaluate(root, time)
 		resetTracking()
 		tracking.ball = snapshot.ball; tracking.target = snapshot.targetId; tracking.cooldownAt = cooldown.lastEventAt
 	end
-	if timing.distance > radius.parryRadius * ARM_RATIO then tracking.outside = true; tracking.critical = false end
-	local critical = tracking.outside and not tracking.critical and timing.distance <= radius.parryRadius * CRITICAL_RATIO
-	if critical then tracking.critical = true end
+	if timing.distance > radius.parryRadius * ARM_RATIO then tracking.outside = true end
+	local critical = tracking.outside and timing.distance <= radius.parryRadius * CRITICAL_RATIO
 	local velocity = snapshot.velocity
 	if typeof(velocity) ~= "Vector3" then return nil end
 	local closing = velocity:Dot(rootPosition - snapshot.position) / timing.distance
@@ -99,6 +98,7 @@ local function step(root, current)
 	local checked = evaluate(root, Utils.now())
 	if checked ~= ability then return end
 	lastActivationAt = Utils.now()
+	resetTracking()
 	local ok, sent, detail = pcall(GameInfo.activateFierceDeflect, ability)
 	if not ok or not sent then Utils.recordError("AutoFierce", tostring(ok and detail or sent)) end
 end
