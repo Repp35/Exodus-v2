@@ -620,7 +620,10 @@ local function evaluateClash(t, snapshot)
 		else
 			local position = getSnapshotPosition(snapshot)
 			local target = normalizeTarget(snapshot.targetId)
+			local opponent = R.players and R.players:GetPlayerByUserId(suspension.partner)
+			local opponentRoot = opponent and opponent.Character and opponent.Character:FindFirstChild("HumanoidRootPart")
 			local inRange = position and R.parryRadius > 0 and distanceSquared(root.Position, position) <= R.parryRadius ^ 2
+				and opponentRoot and opponentRoot.Parent and distanceSquared(root.Position, opponentRoot.Position) <= R.parryRadius ^ 2
 			if inRange and suspension.switched and (target == R.localUserId or target == suspension.partner) then
 				R.pullSuspension = nil
 				R.lastTarget = target
