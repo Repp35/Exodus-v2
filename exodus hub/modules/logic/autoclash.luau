@@ -44,7 +44,7 @@ local T = {
 	DEACT_DIRECTION_MAX_LO = 0.13,
 	DEACT_DIRECTION_MAX_MIN_FACTOR = 0.10,
 	DIRECTION_DEACT_MARGIN_FACTOR = 1.10,
-	DEACT_CONFIRM_HOLD = 0.016,
+	DEACT_CONFIRM_HOLD = 0.050,
 	OUTSIDE_RADIUS_HOLD = 0.050,
 	DEACT_CONFIRM_FRAMES = 2,
 	DEACT_CONFIRM_MAX_GAP = 0.10,
@@ -468,43 +468,31 @@ function Deactivation.confirm(t, reason)
 end
 function Deactivation.direction(t, snapshot, speed)
 	if isSnapshotTargeted(snapshot) then R.lastGate = "deact_direction_targeted"; return false end
-	local radius = AutoParry.getRadius("geometry", 0, speed, "game")
-	local pureRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil
-	local root, position = getRootPosition(), getSnapshotPosition(snapshot)
+	local radius = AutoParry.getRadius("geometry", 0, speed, "game"); local pureRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil; local root = getRootPosition()
+	local position = getSnapshotPosition(snapshot)
 	if not pureRadius or pureRadius ~= pureRadius or pureRadius < 0 or pureRadius == math.huge or not root or not position then
 		Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_unavailable"; return false
 	end
-	local protectedRadius = pureRadius * T.DIRECTION_DEACT_MARGIN_FACTOR
-	if distanceSquared(root, position) <= protectedRadius * protectedRadius then
-		Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_protected"; return false
-	end
-	if R.lastDirectionSwitchAt <= 0 or R.lastSyncAt < R.lastDirectionSwitchAt then return false end
-
-	local activationWindow = R.returnWindow > 0 and R.returnWindow or getReturnWindow(speed)
-	local configured = Utils and type(Utils.getConfigValue) == "function" and tonumber(Utils.getConfigValue("AutoClashDeactivationMs"))
-	local configuredLimit = configured and math.clamp(configured, 0, 400) / 1000 or T.DEACT_DIRECTION_MAX_LO
+	local directionDeactRadius = pureRadius * T.DIRECTION_DEACT_MARGIN_FACTOR
+	if distanceSquared(root, position) <= directionDeactRadius * directionDeactRadius then Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_protected"; return false end
+	if R.lastDirectionSwitchAt <= 0 then return false end
+	if R.lastSyncAt < R.lastDirectionSwitchAt then return false end
+	local configured = Utils and type(Utils.getConfigValue) == "function" and tonumber(Utils.getConfigValue("AutoClashDeactivationMs")); local ping = pingCompensation()
 	local minimum, maximum
 	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum, maximum = GameInfo.getBallSpeedLimits() end
-	local speedLimit = lerpBySpeed(speed, configuredLimit, configuredLimit * T.DEACT_DIRECTION_MAX_MIN_FACTOR, minimum or speed, maximum or speed)
-	local deadline = math.max(activationWindow * 1.25, speedLimit + pingCompensation())
-	if R.clashIntervalEma and R.clashIntervalEmaSamples >= 2 then
-		deadline = math.max(deadline, R.clashIntervalEma * 1.5 + pingCompensation())
-	end
-	deadline = math.max(deadline, T.MIN_EVAL_INTERVAL * 1.5)
-	if t - R.lastDirectionSwitchAt <= deadline then return false end
-
-	local velocity = snapshot.velocity
-	if typeof(velocity) ~= "Vector3" then velocity = snapshot.ball and snapshot.ball.AssemblyLinearVelocity end
+	local base = (configured and math.clamp(configured, 0, 400) / 1000 or T.DEACT_DIRECTION_MAX_LO) + ping
+	local baseMax = math.max(lerpBySpeed(speed, base, base * T.DEACT_DIRECTION_MAX_MIN_FACTOR, minimum or speed, maximum or speed), T.MIN_EVAL_INTERVAL * 1.5); local directionMax = baseMax
+	if R.clashIntervalEma and R.clashIntervalEmaSamples >= T.CLASH_INTERVAL_EMA_MIN_SAMPLES then directionMax = math.max(R.clashIntervalEma * T.CLASH_INTERVAL_DIRECTION_FACTOR, baseMax) end
+	if t - R.lastDirectionSwitchAt <= directionMax then return false end
+	local ball = snapshot.ball; local velocity = snapshot.velocity
+	if typeof(velocity) ~= "Vector3" then velocity = ball and ball.AssemblyLinearVelocity end
 	if typeof(velocity) == "Vector3" then
-		local delta = root - position
-		local distance = delta.Magnitude
-		if distance > 0.001 then
-			local closingSpeed = velocity:Dot(delta) / distance
-			if closingSpeed > 0 then
-				local arrival = math.max(0, distance - pureRadius) / closingSpeed
-				if arrival <= math.max(activationWindow, getPingOneWay() + T.MIN_EVAL_INTERVAL * 2) then
-					R.lastGate = "deact_direction_return_approaching"; return false
-				end
+		local dx = root.X - position.X; local dz = root.Z - position.Z; local distSq = dx * dx + dz * dz
+		if distSq > 0.000001 then
+			local dist = math.sqrt(distSq); local spd = velocity.Magnitude
+			if spd > 0 then
+				local dot = (velocity.X * dx + velocity.Z * dz) / (spd * dist); local ttiOk = R.ttiEma and t - R.ttiEmaAt <= T.MIN_EVAL_INTERVAL * 4 and R.ttiEma <= T.ACTIVATION_TTI_MAX
+				if dot >= T.ACTIVATION_MIN_DOT and ttiOk then R.lastGate = "deact_direction_still_converging"; return false end
 			end
 		end
 	end
@@ -639,6 +627,17 @@ end
 function Deactivation.shouldDeactivate(t, snapshot)
 	if isSnapshotTargeted(snapshot) and R.lastTarget == R.localUserId then
 		R.outsideRadiusSince = nil; Deactivation.clearConfirmation(); R.lastGate = "targeted"; return false
+	end
+	local rootPosition = getRootPosition()
+	local ballPosition = getSnapshotPosition(snapshot)
+	if rootPosition and ballPosition and R.parryRadius > 0 and distanceSquared(rootPosition, ballPosition) > R.parryRadius * R.parryRadius then
+		if not R.outsideRadiusSince or t < R.outsideRadiusSince then R.outsideRadiusSince = t end
+		if t - R.outsideRadiusSince >= T.OUTSIDE_RADIUS_HOLD then
+			R.lastGate = "deact_outside_radius"
+			return true
+		end
+	else
+		R.outsideRadiusSince = nil
 	end
 	local dashEscape = OwnDash.shouldDeactivate(t)
 	if dashEscape and not isSnapshotTargeted(snapshot) then R.lastGate = "own_dash_escape"; return true end
