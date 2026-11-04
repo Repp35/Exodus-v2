@@ -60,7 +60,7 @@ local function evaluate(root, time)
 	if timing.distance > radius.parryRadius * ARM_RATIO then tracking.outside = true end
 	local critical = tracking.outside and timing.distance <= radius.parryRadius * CRITICAL_RATIO
 	local miss = cooldown.active and attempt.expired == true
-	if not critical and not miss then return nil end
+	if not miss then return nil end
 
 	local velocity = snapshot.velocity
 	if typeof(velocity) ~= "Vector3" then return nil end
