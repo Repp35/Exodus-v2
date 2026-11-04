@@ -6,6 +6,7 @@ export type ConfigSnapshot = {
 	AutoParry: boolean?,
 	AutoParryWindowFactor: number?,
 	AutoClash: boolean?,
+	AutoDark: boolean?,
 	ClashBallVisible: boolean?,
 	CPS: number?,
 	CPF: number?,
@@ -362,6 +363,7 @@ function Utils.loadConfig()
 				if decodeOk and type(data) == "table" then
 					for key, value in pairs(data) do
 						if type(value) == "table" and type(value.keyCode) == "string" then value = Enum.KeyCode[value.keyCode] end
+						if (key == "AutoClashActivationMs" or key == "AutoClashDeactivationMs") and type(value) == "number" and value == value then value = math.clamp(value, 0, 500) end
 						if value ~= nil then Utils.setConfig({ [key] = value }) end
 					end
 				else

@@ -17,6 +17,11 @@ UIConfig.panelToggles = {
 		label = "Mini Clash UI",
 		key = "ClashBallVisible",
 	},
+	{
+		kind = "toggle",
+		label = "Auto Dark",
+		key = "AutoDark",
+	},
 }
 
 UIConfig.panelComponents = {
@@ -35,6 +40,7 @@ UIConfig.__config = {
 		AutoParry = "boolean",
 		AutoParryWindowFactor = "rate",
 		AutoClash = "boolean",
+		AutoDark = "boolean",
 		AutoClashActivationMs = "delayMs",
 		AutoClashDeactivationMs = "delayMs",
 		ClashBallVisible = "boolean",
@@ -57,6 +63,7 @@ UIConfig.__config = {
 		AutoParry = true,
 		AutoParryWindowFactor = 0.5,
 		AutoClash = true,
+		AutoDark = false,
 		AutoClashActivationMs = 180,
 		AutoClashDeactivationMs = 130,
 		ClashBallVisible = false,

@@ -26,6 +26,7 @@ local MODULE_MANIFEST = {
 	{ name = "utils", path = "modules/logic/utils.luau" },
 	{ name = "antitamper", path = "modules/security/antitamper.luau" },
 	{ name = "gameinfo", path = "modules/logic/gameinfo.luau" },
+	{ name = "autodark", path = "modules/logic/autodark.luau" },
 	{ name = "remote", path = "modules/logic/remote.luau" },
 	{ name = "autoparry", path = "modules/logic/autoparry.luau" },
 	{ name = "dash", path = "modules/logic/dash.luau" },
@@ -210,7 +211,7 @@ local function clearRegistry()
 end
 local function stopPreviousRuntime()
 	if type(Modules.remote) == "table" and type(Modules.remote.stopMaintenance) == "function" then pcall(Modules.remote.stopMaintenance) end
-	for _, name in ipairs({ "character", "spam", "autoclash", "dash", "autoparry", "antitamper" }) do
+	for _, name in ipairs({ "character", "spam", "autoclash", "autodark", "dash", "autoparry", "antitamper" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
 			if type(module.teardown) == "function" then pcall(module.teardown) elseif type(module.resetState) == "function" then pcall(module.resetState) end
@@ -608,6 +609,7 @@ local function startInternal()
 	if not runtimeOk or type(runtime) ~= "table" then utils.stop(); return false, "Runtime", runtimeOk and runtimeError or runtime end
 	Exodus.Runtime = runtime; _G.ExodusOnBurst = loaded.autoparry.fire
 	local uiReady, uiModule, uiError = loadInterface(loaded.ui, utils, {
+		onAutoDarkChanged = function() loaded.autodark.sync() end,
 		onPanic = function()
 			loaded.autoparry.resetState(); utils.setManualSpamActive(false); utils.setAutoSpamActive(false)
 		end,

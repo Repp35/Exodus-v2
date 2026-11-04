@@ -239,6 +239,12 @@ function GameInfo.getDeflectRange()
 	local player = Players and Players.LocalPlayer; return player and player:GetAttribute("DeflectRange") or nil
 end
 function GameInfo.getDeflectAbility() return locateDeflectAbility() end
+function GameInfo.getDarkSealAbility()
+	locateDeflectAbility()
+	local ability = clientAbilities and clientAbilities.Abilities[20]
+	if type(ability) == "table" and type(ability.SendEvent) == "function" then return ability end
+	return nil
+end
 function GameInfo.getSnapshot(lastTarget, time, frameTime): BallSnapshot? return getSnapshot(lastTarget, time, frameTime) end
 function GameInfo.getSnapshotAt(time: number?): BallSnapshot? return getSnapshot(nil, time) end
 function GameInfo.getSyncData() return getDecodedSyncData() end
@@ -365,6 +371,7 @@ GameInfo.__contract = {
 		"getLocalPing",
 		"getDeflectRange",
 		"getDeflectAbility",
+		"getDarkSealAbility",
 		"getBallSpeedLimits",
 		"getDeflectCD",
 		"getSnapshot",
