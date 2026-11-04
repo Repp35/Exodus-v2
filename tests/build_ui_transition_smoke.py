@@ -60,12 +60,19 @@ game={GetService=function(_,name)return ({UserInputService=uis,TweenService=twee
 task={wait=function()end,spawn=function()end,defer=function()end,delay=function(_,fn) delayed[#delayed+1]=fn end}
 math.clamp=function(x,a,b)return math.max(a,math.min(x,b)) end
 local config={AutoParry=true,AutoClash=true,AutoDark=false,ClashBallVisible=false,DarkBallVisible=false,CPF=.36,CPS=24,SpamRateMode="CPF",Keybind=Enum.KeyCode.F9,SpamKeybind=Enum.KeyCode.F}
-local changes=0
+local changes=0; local manualSpam=false; local spamObservers={}; local configObservers={}
+local function observe(list, fn)
+    local item={Connected=true}; function item:Disconnect() self.Connected=false end
+    list[#list+1]={item,fn}; return item
+end
+local function notify(list, value) for _,item in ipairs(list) do if item[1].Connected then item[2](value) end end end
 local utils={
     getConfig=function()return config end,getConfigValue=function(k)return config[k] end,
-    setConfig=function(p)for k,v in pairs(p) do config[k]=v end;return true end,
-    normalizeSpamRate=function(v)return v end,isManualSpamActive=function()return false end,
-    setManualSpamActive=function()end,isActive=function()return true end,stop=function()end,
+    setConfig=function(p)for k,v in pairs(p) do config[k]=v end;notify(configObservers,p);return true end,
+    normalizeSpamRate=function(v)return v end,isManualSpamActive=function()return manualSpam end,
+    setManualSpamActive=function(v) if manualSpam~=v then manualSpam=v;notify(spamObservers) end end,
+    observeSpam=function(fn)return observe(spamObservers,fn) end,observeConfig=function(fn)return observe(configObservers,fn) end,
+    isActive=function()return true end,stop=function()end,
     name=function()return "Exodus" end,version=function()return "1" end,author=function()return "X" end,
 }
 local ui=assert(loadstring(UI_SOURCE))()
@@ -104,7 +111,7 @@ assert(page3.Visible and pageLabel.Text=="3/4 Utilidades")
 nextPage.Activated:Fire(); finishTweens()
 assert(page4.Visible and pageLabel.Text=="4/4 Automáticos")
 nextPage.Activated:Fire(); assert(page4.Visible and not shield.Visible, "next at last page must do nothing")
-for _,name in ipairs({"Auto Dark", "Mini Dark UI", "Auto Jump", "Mini Auto Jump", "Mini Up Dash"}) do
+for _,name in ipairs({"Auto Dark", "Mini Dark UI", "Auto Deflexo Feroz", "Auto Jump", "Mini Auto Jump", "Mini Up Dash"}) do
  local entry=assert(find(function(x)return x.ClassName=="TextLabel" and x.Text==name end), name)
  assert(entry.Parent.Parent.Parent==page4, name .. " must be on autos page")
 end
@@ -123,6 +130,10 @@ local jumpButton=assert(find(function(x)return x.Parent==jumpLabel.Parent and x.
 jumpButton.Activated:Fire(); assert(config.AutoJump and named("ExodusJumpBall").Text=="JUMP\nON", "jump toggle failed")
 named("ExodusJumpBall").Activated:Fire(); assert(not config.AutoJump, "jump mini must stay synchronized")
 assert(named("ExodusClashBall").Text=="ON", "floating clash button changed")
+named("SpamButton").Activated:Fire(); assert(manualSpam and named("SpamButton").Text=="ON")
+utils.setManualSpamActive(false); utils.setConfig({AutoClash=false})
+assert(named("SpamButton").Text=="OFF" and named("ExodusClashBall").Text=="OFF", "external shutdown must update controls")
+assert(config.ClashBallVisible==false, "external shutdown must not alter mini visibility")
 print("UI transitions, rapid navigation and controls: PASS")
 '''
 quote = lambda s: "[========[" + s + "]========]"

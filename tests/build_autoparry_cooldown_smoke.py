@@ -108,8 +108,10 @@ end
 -- A server cooldown must stop; observing its start alone is not a miss.
 do
  local s=newScenario(); s.frame(1.01); s.cd:emit(1,SET,1.45); s.frame(3)
+ assert(math.abs(s.info.getDeflectCooldownState().endsAt-2.46)<0.001, "server duration must be retained")
  assert(s.count()==1, "running server cooldown must remain locked")
 	 s.cd:emit(1,STOP); s.frame(3.01); assert(s.count()==2, "expired miss must retry")
+	 assert(s.info.getDeflectCooldownState().endsAt==nil, "stopped cooldown must clear end estimate")
 	 s.frame(3.07); s.frame(4); assert(s.count()==2, "retry must lock again")
 	 s.cd:emit(1,SET,1.45); s.frame(5.5); s.cd:emit(1,STOP); s.frame(5.56)
  assert(s.count()==3, "a second confirmed miss can also recover")

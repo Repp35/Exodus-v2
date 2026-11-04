@@ -33,6 +33,7 @@ local MODULE_MANIFEST = {
 	{ name = "dash", path = "modules/logic/dash.luau" },
 	{ name = "autoclash", path = "modules/logic/autoclash.luau" },
 	{ name = "spam", path = "modules/logic/spam.luau" },
+	{ name = "autofierce", path = "modules/logic/autofierce.luau" },
 	{ name = "character", path = "modules/logic/character.luau" },
 	{ name = "ui", path = "modules/front/ui.luau" },
 }
@@ -65,12 +66,13 @@ local SINGLE_RESULT_API = {
 		getDeflectAbility = true,
 		getDeflectServerEvents = true,
 		getDeflectCooldownState = true,
+		getFierceDeflectAbility = true,
 		getDeflectCD = true,
 		isSnapshotValid = true,
 		getLocalPing = true,
 	},
 }
-local TWO_RESULT_API = { remote = { fireParry = true }, gameinfo = { getBallSpeedLimits = true, decodeDeflectServerEvent = true, getHeldDeflectServerCooldown = true } }
+local TWO_RESULT_API = { remote = { fireParry = true }, gameinfo = { getBallSpeedLimits = true, decodeDeflectServerEvent = true, getHeldDeflectServerCooldown = true, activateFierceDeflect = true } }
 local function withTrace(err)
 	local message = tostring(err)
 	if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(message, 2) end
@@ -214,7 +216,7 @@ local function clearRegistry()
 end
 local function stopPreviousRuntime()
 	if type(Modules.remote) == "table" and type(Modules.remote.stopMaintenance) == "function" then pcall(Modules.remote.stopMaintenance) end
-	for _, name in ipairs({ "character", "spam", "autoclash", "autodark", "movement", "dash", "autoparry", "antitamper" }) do
+	for _, name in ipairs({ "character", "autofierce", "spam", "autoclash", "autodark", "movement", "dash", "autoparry", "antitamper" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
 			if type(module.teardown) == "function" then pcall(module.teardown) elseif type(module.resetState) == "function" then pcall(module.resetState) end

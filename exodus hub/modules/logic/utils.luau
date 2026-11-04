@@ -70,6 +70,7 @@ local State = {
 
 local DiagnosticsModules = {}
 local SpamObservers = {}
+local ConfigObservers = {}
 local function notifySpamObservers()
 	for observer in pairs(SpamObservers) do
 		local ok, err = pcall(observer)
@@ -80,6 +81,11 @@ function Utils.observeSpam(observer)
 	if type(observer) ~= "function" then return nil end
 	SpamObservers[observer] = true
 	return { Disconnect = function() SpamObservers[observer] = nil end }
+end
+function Utils.observeConfig(observer)
+	if type(observer) ~= "function" then return nil end
+	ConfigObservers[observer] = true
+	return { Disconnect = function() ConfigObservers[observer] = nil end }
 end
 local NamespaceUpdating = false
 local TransitionRefreshPending = false
@@ -310,6 +316,12 @@ function Utils.setManualSpamActive(value)
 	local previous = State.manualSpamActive; State.manualSpamActive = nextValue; notifySpamObservers()
 	recordTransitionInternal("Spam", previous and "active" or "inactive", nextValue and "active" or "inactive", "manual_toggle"); return true
 end
+function Utils.stopAllSpam()
+	local manual, automatic = State.manualSpamActive, State.autoSpamActive
+	State.manualSpamActive = false; State.autoSpamActive = false
+	if manual or automatic then notifySpamObservers() end
+	return true
+end
 function Utils.isFiniteNumber(value) return type(value) == "number" and value == value and value < math.huge and value > -math.huge end
 function Utils.isNonNegativeFiniteNumber(value) return Utils.isFiniteNumber(value) and value >= 0 end
 function Utils.normalizeSpamRate(value, fallback)
@@ -348,6 +360,10 @@ function Utils.setConfig(config)
 	if type(normalized) ~= "table" then return false end
 	for key, value in pairs(normalized) do
 		State.config[key] = value
+	end
+	for observer in pairs(ConfigObservers) do
+		local ok, err = pcall(observer, normalized)
+		if not ok then warn("[Config] " .. tostring(err)) end
 	end
 	if normalized.SpamRateMode ~= nil or normalized.CPF ~= nil then notifySpamObservers() end
 	updateNamespace(); queueConfigSave(); return true
@@ -437,6 +453,8 @@ Utils.__contract = {
 		"isAutoSpamActive",
 		"setManualSpamActive",
 		"setAutoSpamActive",
+		"stopAllSpam",
+		"observeConfig",
 		"normalizeSpamRate",
 	},
 	requires = {},

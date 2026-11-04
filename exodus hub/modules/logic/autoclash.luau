@@ -873,6 +873,10 @@ function AutoClash.teardown()
 	end
 end
 function AutoClash.isActive() return R.active == true end
+function AutoClash.stopSpam()
+	setActive(false, "fierce_deflect"); clearReturnState(); R.lastGate = "fierce_deflect"
+	if Utils and Utils.setAutoSpamActive then Utils.setAutoSpamActive(false) end
+end
 function AutoClash.getTargetSwitch(): TargetSwitch
 	return {
 		timestampMs = R.lastClashSwitchAt * 1000,
@@ -979,6 +983,7 @@ AutoClash.__contract = {
 		"getStatus",
 		"getTargetSwitch",
 		"getDashData",
+		"stopSpam",
 	},
 	requires = {
 		AutoParry = "autoparry",

@@ -443,7 +443,7 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
 		BackgroundTransparency = 1,
 		Text = labelText,
 		TextColor3 = C.text,
-		TextSize = 14,
+		TextSize = labelText == "Auto Deflexo Feroz" and 11 or 14,
 		Font = Enum.Font.GothamSemibold,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 7,
@@ -1079,7 +1079,8 @@ function ExodusUI.setup(deps)
 		paintDarkBall(value)
 		if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
 	end)
-	createToggleCard("Mini Dark UI", "DarkBallVisible", darkYPos, autosLeft, showDarkBall)
+	local fierceYPos = createToggleCard("Mini Dark UI", "DarkBallVisible", darkYPos, autosLeft, showDarkBall)
+	createToggleCard("Auto Deflexo Feroz", "AutoFierceDeflect", fierceYPos, autosLeft)
 	local jumpYPos = createToggleCard("Auto Jump", "AutoJump", 4, autosRight, function(value)
 		paintJumpBall(value)
 		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
@@ -1237,6 +1238,16 @@ function ExodusUI.setup(deps)
 	if config.DarkBallVisible then darkBall.Position = UDim2.new(0, darkX, 0, darkY) end
 	if config.JumpBallVisible then jumpBall.Position = UDim2.new(0, jumpX, 0, jumpY) end
 	if config.UpDashBallVisible then upDashBall.Position = UDim2.new(0, upDashX, 0, upDashY) end
+	if type(Utils.observeSpam) == "function" then
+		trackConn(Utils.observeSpam(function() setSpam(Utils.isManualSpamActive()) end))
+	end
+	if type(Utils.observeConfig) == "function" then
+		trackConn(Utils.observeConfig(function(changes)
+			if changes.AutoClash ~= nil then
+				UIState.clashBallOn = changes.AutoClash == true; paintClashBall(); syncAutoClashToggle()
+			end
+		end))
+	end
 	setSpam(Utils.isManualSpamActive()); return true
 end
 

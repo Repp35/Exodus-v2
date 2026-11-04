@@ -286,18 +286,18 @@ function GameInfo.getDeflectCooldownState()
 	local time = os.clock()
 	if deflectConnection and deflectConnection.Connected == false then
 		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(deflectConnection) end
-		deflectConnection = nil; deflectState.known = false; deflectState.active = false; nextDeflectSignalCheck = 0
+		deflectConnection = nil; deflectState.known = false; deflectState.active = false; deflectState.endsAt = nil; nextDeflectSignalCheck = 0
 	end
 	if not deflectConnection and time >= nextDeflectSignalCheck then
 		nextDeflectSignalCheck = time + 0.5
 		local signals = GameInfo.getDeflectServerEvents()
 		if signals and signals.cooldown then
 			deflectConnection = signals.cooldown:Connect(function(abilityId, eventId, value)
-				local kind = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
+				local kind, duration = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
 				if not kind then return end
 				deflectState.known = true; deflectState.lastEventAt = os.clock()
-				if kind == "started" then deflectState.active = true
-				else deflectState.active = false; deflectState.readyRevision += 1 end
+				if kind == "started" then deflectState.active = true; deflectState.endsAt = deflectState.lastEventAt + duration
+				else deflectState.active = false; deflectState.endsAt = nil; deflectState.readyRevision += 1 end
 			end)
 			if Utils and type(Utils.trackGlobal) == "function" then Utils.trackGlobal(deflectConnection) end
 			deflectMissingAt = nil
@@ -312,10 +312,22 @@ function GameInfo.getDeflectCooldownState()
 		nextHeldCooldownCheck = time + 0.05
 		local duration, receivedAt = GameInfo.getHeldDeflectServerCooldown()
 		if duration and receivedAt and receivedAt <= time and time < receivedAt + duration and receivedAt > deflectState.lastEventAt + 0.01 then
-			deflectState.known = true; deflectState.active = true; deflectState.lastEventAt = receivedAt
+			deflectState.known = true; deflectState.active = true; deflectState.lastEventAt = receivedAt; deflectState.endsAt = receivedAt + duration
 		end
 	end
 	return deflectState
+end
+function GameInfo.getFierceDeflectAbility()
+	locateDeflectAbility()
+	local ability = clientAbilities and clientAbilities.Abilities[19]
+	if type(ability) == "table" and type(ability.SendEvent) == "function" then return ability end
+	return nil
+end
+function GameInfo.activateFierceDeflect(ability)
+	if ability ~= GameInfo.getFierceDeflectAbility() or not ability then return false, "Deflexo Feroz não equipado" end
+	if type(ability.IsAvailable) ~= "function" or not ability:IsAvailable(false) then return false, "Deflexo Feroz indisponível" end
+	if type(ability.IsOwnerAlive) ~= "function" or not ability:IsOwnerAlive() then return false, "jogador indisponível" end
+	ability:SendEvent(2.4141700243704228e76); return true
 end
 function GameInfo.getDashAbility()
 	locateDeflectAbility()
@@ -459,6 +471,8 @@ GameInfo.__contract = {
 		"decodeDeflectServerEvent",
 		"getHeldDeflectServerCooldown",
 		"getDeflectCooldownState",
+		"getFierceDeflectAbility",
+		"activateFierceDeflect",
 		"getDashAbility",
 		"getDarkSealAbility",
 		"getBallSpeedLimits",
