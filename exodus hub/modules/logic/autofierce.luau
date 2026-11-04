@@ -42,7 +42,7 @@ local function evaluate(root, time)
 	local rootPosition = GameInfo.getRootPosition(root)
 	if typeof(rootPosition) ~= "Vector3" then return nil end
 
-	local timing = AutoParry.getTiming(snapshot, time, rootPosition, 1)
+	local timing = AutoParry.getTiming(snapshot, time, rootPosition, 1, "game")
 	if not timing or not timing.approaching or not finite(timing.distance) or not finite(timing.speed) then return nil end
 	if not finite(timing.parryRadius) or timing.parryRadius <= 0 or timing.distance <= 0 then return nil end
 	local minimum = GameInfo.getBallSpeedLimits()
