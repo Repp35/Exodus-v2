@@ -7,8 +7,6 @@ local generation = 0
 local connection
 local boundRoot
 local lastActivationAt = -math.huge
-local MISS_TRIGGER_SECONDS = 0.12
-local MAX_TRIGGER_SECONDS = 0.30
 local function disconnect()
 	if not connection then return end
 	if Utils and type(Utils.untrackCharacter) == "function" then Utils.untrackCharacter(connection) end
@@ -17,7 +15,8 @@ end
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function evaluate(root, time)
 	if not Utils.isActive() or Utils.getConfigValue("AutoFierceDeflect") ~= true then return nil end
-	local cooldown = GameInfo.getDeflectCooldownState(); local attempt = cooldown and cooldown.attempt
+	local cooldown = GameInfo.getDeflectCooldownState()
+	if not cooldown or (not cooldown.active and not cooldown.blocking) then return nil end
 	local uiRemaining = GameInfo.getDeflectUICooldown()
 	if not finite(uiRemaining) or uiRemaining <= 0 then return nil end
 	local sync = GameInfo.getSyncData()
@@ -30,25 +29,12 @@ local function evaluate(root, time)
 	if type(sequence) == "number" and snapshot.syncSequence ~= sequence then return nil end
 	local rootPosition = GameInfo.getRootPosition(root)
 	if typeof(rootPosition) ~= "Vector3" then return nil end
-	local timing = AutoParry.getTiming(snapshot, time, rootPosition, 1, "game")
+	local timing = AutoParry.getTiming(snapshot, time, rootPosition)
 	if not timing or not timing.approaching or not finite(timing.distance) or not finite(timing.speed) then return nil end
-	if not finite(timing.parryRadius) or timing.parryRadius <= 0 or not finite(timing.noWindowParryRadius) or timing.distance <= 0 then return nil end
+	if not finite(timing.parryRadius) or timing.parryRadius <= 0 or timing.distance <= 0 then return nil end
+	if timing.distance > timing.parryRadius then return nil end
 	local minimum = GameInfo.getBallSpeedLimits()
 	if not finite(minimum) or timing.speed < minimum * 0.375 then return nil end
-	local velocity = timing.velocity or snapshot.velocity
-	if typeof(velocity) ~= "Vector3" then return nil end
-	local displacement = rootPosition - snapshot.position; local rootVelocity = root.AssemblyLinearVelocity
-	if typeof(rootVelocity) ~= "Vector3" then rootVelocity = Vector3.zero end
-	local closing = (velocity - rootVelocity):Dot(displacement) / timing.distance
-	if not finite(closing) or closing <= 0 then return nil end
-	local impact = math.max(0, timing.distance - timing.noWindowParryRadius) / closing; local ping = GameInfo.getLocalPing()
-	if not finite(ping) or ping < 0 then return nil end
-	local oneWayPing = ping * 0.5
-	local timeToMiss = impact - oneWayPing
-	if timeToMiss > math.min(MAX_TRIGGER_SECONDS, MISS_TRIGGER_SECONDS + oneWayPing) then return nil end
-	local arrival = time + math.max(0, timeToMiss)
-	if attempt and finite(attempt.deadline) and attempt.deadline <= arrival then return nil end
-	if uiRemaining <= math.max(0, timeToMiss) + 0.05 then return nil end
 	local ability = GameInfo.getFierceDeflectAbility()
 	if not ability or type(ability.IsAvailable) ~= "function" or not ability:IsAvailable(false) then return nil end
 	if type(ability.IsOwnerAlive) ~= "function" or not ability:IsOwnerAlive() then return nil end
