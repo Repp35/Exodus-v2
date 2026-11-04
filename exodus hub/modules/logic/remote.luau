@@ -6,7 +6,6 @@ local Utils
 local GameInfo
 local ballSyncConnection
 local ballSyncRemote
-local parryRemote
 local parryInitialized = false
 local maintenanceGeneration = 0
 local parryRemoteSource
@@ -194,75 +193,21 @@ local function getStorageStatus()
 		lastError = captureEnabled == true and Storage.lastError or nil,
 	}
 end
-local function isAlive(remote) return remote and typeof(remote) == "Instance" and remote:IsA("RemoteEvent") and remote.Parent ~= nil end
 
--- discovery
-local function resolvePhantomBallzRemote()
-	if isAlive(parryRemote) then return parryRemote end
-	parryRemote = nil; local ReplicatedStorage = Utils.getReplicatedStorage(); local touchTap = ReplicatedStorage and ReplicatedStorage:FindFirstChild("TouchTap")
-	if not touchTap or not touchTap:IsA("BindableEvent") then return nil end
-	if type(getconnections) ~= "function" then return nil end
-	local okConnections, connections = pcall(getconnections, touchTap.Event)
-	if not okConnections or type(connections) ~= "table" then return nil end
-	local lp = game:GetService("Players").LocalPlayer
-	for _, connection in ipairs(connections) do
-		local fn = connection.Function
-		if type(fn) == "function" then
-			if type(getfenv) == "function" then
-				local okEnv, env = pcall(getfenv, fn)
-				if okEnv and type(env) == "table" then
-					local globalEnv = rawget(env, "_G"); local did = type(globalEnv) == "table" and rawget(globalEnv, "did2") or nil
-					if isAlive(did) then
-						parryRemote = did; parryRemoteSource = "phantomballz:getfenv:_G.did2"; remoteState = "captured"; captureRemote(did)
-						return did
-					end
-				end
-			end
-			if debug and type(debug.getupvalues) == "function" then
-				local okUps, upvalues = pcall(debug.getupvalues, fn)
-				if okUps and type(upvalues) == "table" then
-					for _, value in pairs(upvalues) do
-						if type(value) == "table" and rawget(value, "Owner") == lp and rawget(value, "BaseDistance") == 8.5 then
-							local did = rawget(value, "did")
-							if isAlive(did) then
-								parryRemote = did; parryRemoteSource = "phantomballz:getupvalues:did"; remoteState = "captured"; captureRemote(did)
-								return did
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-	return nil
+-- deflect ability
+local function getDeflectAbility()
+	return GameInfo and GameInfo.getDeflectAbility() or nil
 end
-
--- payload
-local function getTouchTap()
-	local storage = Utils and Utils.getReplicatedStorage(); local event = storage and storage:FindFirstChild("TouchTap")
-	if event and event:IsA("BindableEvent") then return event end
-	return nil
-end
-local function getDeflectAbility() return GameInfo and GameInfo.getDeflectAbility() or nil end
 local function logParryMethod(method, message)
 	if loggedParryMethods[method] then return end
-	loggedParryMethods[method] = true; print("[Exodus Remote] " .. message)
+	loggedParryMethods[method] = true
+	print("[Exodus Remote] " .. message)
 end
 local function deflectTrace(message)
-	if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(tostring(message), 2) end
+	if type(debug) == "table" and type(debug.traceback) == "function" then
+		return debug.traceback(tostring(message), 2)
+	end
 	return tostring(message)
-end
-local function payloadFor(flag)
-	local payload = buffer.create(25); buffer.writeu8(payload, 0, flag == 0 and 0 or 1); local camera = game:GetService("Workspace").CurrentCamera
-	local cf = camera and camera.CFrame or CFrame.identity
-	local position, direction = cf.Position, cf.LookVector
-	buffer.writef32(payload, 1, position.X); buffer.writef32(payload, 5, position.Y); buffer.writef32(payload, 9, position.Z); buffer.writef32(payload, 13, direction.X)
-	buffer.writef32(payload, 17, direction.Y); buffer.writef32(payload, 21, direction.Z); return payload
-end
-function Remote.setParryRemote(remote)
-	if not isAlive(remote) then return false end
-	parryRemote = remote; parryRemoteSource = "external"; parryInitialized = false; remoteState = "captured"
-	captureRemote(remote); return true
 end
 
 -- setup
