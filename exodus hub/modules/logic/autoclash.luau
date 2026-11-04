@@ -420,6 +420,23 @@ local function tryReturnActivate(snapshot, t)
 	if not R.returnPending then R.lastGate = "act_no_return_pending"; return false end
 	return shouldActivate(snapshot, t)
 end
+local function emergencyReason(snapshot)
+	if R.lastTarget ~= R.localUserId or not isSnapshotTargeted(snapshot) or snapshot.teleported == true then return nil end
+	if snapshot.grace == true then return "grace" end
+	local root, position, velocity = getRootPosition(), getSnapshotPosition(snapshot), snapshot.velocity
+	if not root or not position or typeof(velocity) ~= "Vector3" or velocity.Magnitude < 6 then return nil end
+	local dx, dy, dz = root.X - position.X, root.Y - position.Y, root.Z - position.Z
+	local distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+	if distance <= 0 then return nil end
+	local closing = (velocity.X * dx + velocity.Y * dy + velocity.Z * dz) / distance
+	if closing <= 0 or closing ~= closing or closing == math.huge then return nil end
+	local radius = FN.getRadius and FN.getRadius("geometry", 0, snapshot.speed, "game")
+	local hitRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil
+	if not hitRadius or hitRadius ~= hitRadius or hitRadius < 0 or hitRadius == math.huge then return nil end
+	local impact = math.max(0, distance - hitRadius) / closing
+	if impact <= math.clamp(getPingOneWay() + 0.05, 0.05, 0.15) then return "imminent_impact" end
+	return nil
+end
 local function getActivationReason(snapshot, t)
 	if t < R.dashBonusUntil then return "anti_dash" end
 	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
@@ -639,6 +656,12 @@ local function evaluateClash(t, snapshot)
 	end
 	if not snapshotUsable then R.lastGate = "no_ball"; return end
 	updateParryState(t, snapshot)
+	if not R.active then
+		local emergency = emergencyReason(snapshot)
+		if emergency then
+			R.pullSuspension = nil; clearReturnState(); setActive(true, "emergency", snapshot, emergency); return
+		end
+	end
 	if R.pullSuspension then
 		local suspension = R.pullSuspension
 		if t - suspension.stoppedAt > 2 or not Utils.isActive() or Utils.getConfigValue("AutoClash") ~= true then
@@ -782,6 +805,11 @@ local function bindCharacter(character)
 	if Utils.trackCharacter then Utils.trackCharacter(ancestry) end
 	R.bound = true; setPhase("waiting", "character_bound"); return true
 end
+local function evaluatePacketThreat(data, time)
+	if data.Source == "snapshot" or (data.Source ~= "packet" and data.Grace ~= true) then return end
+	local snapshot = readValidatedSnapshot(time)
+	if snapshot and snapshot.teleported ~= true then evaluateClash(time, snapshot) end
+end
 function AutoClash.onBallSync(data)
 	if type(data) ~= "table" or not Utils or not R.localUserId or not R.bound then return end
 	if not checkHubState() then return end
@@ -823,9 +851,16 @@ function AutoClash.onBallSync(data)
 	local serverTime = tonumber(data.ServerTime)
 	if not serverTime or serverTime ~= serverTime or serverTime == math.huge or serverTime == -math.huge then serverTime = nil end
 	local previousTarget = R.lastTarget; local wasMe = R.wasMeTarget; local isMe = target == R.localUserId
-	if target == previousTarget and wasMe ~= nil then return true end
+	if target == previousTarget and wasMe ~= nil then
+		if isMe and not R.active then evaluatePacketThreat(data, t) end
+		return true
+	end
 	R.lastTarget = target
-	if wasMe == nil then R.wasMeTarget = isMe; clearReturnState(); R.lastGate = isMe and "initial_me" or "initial_not_me"; return true end
+	if wasMe == nil then
+		R.wasMeTarget = isMe; clearReturnState(); R.lastGate = isMe and "initial_me" or "initial_not_me"
+		if isMe then evaluatePacketThreat(data, t) end
+		return true
+	end
 	if R.pullSuspension then
 		local suspension = R.pullSuspension
 		if (target == R.localUserId or target == suspension.partner) and target ~= suspension.lastTarget then suspension.switched = true end
@@ -862,7 +897,7 @@ function AutoClash.onBallSync(data)
 		R.clashPartnerId = -1; R.lastGate = "target_redirected"
 	end
 	R.wasMeTarget = isMe
-	if R.returnPending and data.Source ~= "snapshot" then
+	if (R.returnPending or (isMe and (data.Source == "packet" or data.Grace == true))) and data.Source ~= "snapshot" then
 		local snapshot = readValidatedSnapshot(t)
 		if snapshot and snapshot.teleported ~= true then evaluateClash(t, snapshot) end
 	end
