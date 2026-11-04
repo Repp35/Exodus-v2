@@ -28,7 +28,7 @@ local function scenario()
   setConfig=function(p) calls[#calls+1]="config"; for k,v in pairs(p) do config[k]=v end; if config.afterStop then config.afterStop() end; return true end,
   stopAllSpam=function() calls[#calls+1]="stop"; manual=false; automatic=false end,
   isSpamActive=function() return manual or automatic end,recordError=function(_,e) error(e) end,trackCharacter=function() end,untrackCharacter=function() end}
- local info={getDeflectCooldownState=function() return cooldown end,getSyncData=function() return {Teleported=false} end,
+ local info={getDeflectCooldownState=function() return cooldown end,getDeflectUICooldown=function() return .95 end,getSyncData=function() return {Teleported=false} end,
   getSnapshot=function() return ball end,isSnapshotValid=function(s) return s~=nil end,getSyncSequence=function() return 3 end,
   getRootPosition=function(r) return r.Position end,getBallSpeedLimits=function() return 16,600 end,getLocalPing=function() return .05 end,
   getFierceDeflectAbility=function() return ability end,noteFierceDeflectActivation=function() end,activateFierceDeflect=function(a)
@@ -49,15 +49,14 @@ do
  assert(s.config.ClashBallVisible==true, "mini visibility changed")
  s.step(); assert(#s.calls==5, "duplicate ability request")
 end
-do local s=scenario(); s.cooldown.blocking=false; s.step(); assert(#s.calls==0,"ready parry must not spend ability") end
-do local s=scenario(); s.cooldown.known=false; s.step(); assert(#s.calls==0,"unknown cooldown must not spend ability") end
-do local s=scenario(); s.cooldown.attempt=nil; s.cooldown.endsAt=nil; s.step(); assert(#s.calls==0,"unknown cooldown duration must not spend ability") end
-do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt=nil; s.cooldown.endsAt=10.18; s.step(); assert(#s.calls==0,"normal cooldown can end in time") end
+do local s=scenario(); s.info.getDeflectUICooldown=function() return 0 end; s.step(); assert(#s.calls==0,"ready UI must not spend ability") end
+do local s=scenario(); s.info.getDeflectUICooldown=function() return nil end; s.step(); assert(#s.calls==0,"unavailable UI must not spend ability") end
+do local s=scenario(); s.cooldown.attempt=nil; s.info.getDeflectUICooldown=function() return .18 end; s.step(); assert(#s.calls==0,"UI cooldown ending in time must not spend ability") end
 do local s=scenario(); s.cooldown.attempt={expired=false,deadline=11}; s.step(); assert(#s.calls==0,"active normal deflect window could still protect") end
 do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt={expired=false,deadline=10.3}; s.packet(); assert(#s.calls==5,"incoming packet should trigger fierce when cooldown exceeds impact") end
 do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt=nil; s.packet(); assert(#s.calls==5,"blocking server cooldown must protect on target return without a previous attempt") end
-do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt=nil; s.cooldown.endsAt=nil; s.cooldown.remaining=1; s.packet(); assert(#s.calls==5,"client cooldown remaining beyond impact must trigger fierce") end
-do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt=nil; s.cooldown.endsAt=nil; s.cooldown.remaining=0.1; s.packet(); assert(#s.calls==0,"client cooldown ending before impact must not trigger fierce") end
+do local s=scenario(); s.cooldown.active=false; s.cooldown.attempt=nil; s.cooldown.endsAt=nil; s.cooldown.remaining=0; s.info.getDeflectUICooldown=function() return 1 end; s.packet(); assert(#s.calls==5,"UI cooldown must take precedence over cooldown estimates") end
+do local s=scenario(); s.cooldown.attempt=nil; s.info.getDeflectUICooldown=function() return .1 end; s.packet(); assert(#s.calls==0,"UI cooldown ending before impact must not trigger fierce") end
 do local s=scenario(); s.ball.velocity=vec(0); s.parry.getTiming=function() return {approaching=true,distance=78.5,speed=100,velocity=vec(100),parryRadius=45,noWindowParryRadius=8.5} end; s.packet(); assert(#s.calls==5,"measured current velocity must be used when snapshot velocity is stale") end
 do local s=scenario(); s.ball.targetId=7; s.step(); assert(#s.calls==0,"different target") end
 do local s=scenario(); s.ball.syncSequence=2; s.step(); assert(#s.calls==0,"stale target snapshot") end
@@ -65,7 +64,7 @@ do local s=scenario(); s.ball.position=vec(-600); s.step(); assert(#s.calls==0,"
 do local s=scenario(); s.ball.velocity=vec(-100); s.step(); assert(#s.calls==0,"ball moving away") end
 do local s=scenario(); s.ball.teleported=true; s.step(); assert(#s.calls==0,"teleport") end
 do local s=scenario(); s.ability.IsAvailable=function() return false end; s.step(); assert(#s.calls==0,"ability on cooldown") end
-do local s=scenario(); s.config.afterStop=function() s.cooldown.blocking=false end; s.step(); assert(#s.calls==4,"must recheck after stopping") end
+do local s=scenario(); s.config.afterStop=function() s.info.getDeflectUICooldown=function() return 0 end end; s.step(); assert(#s.calls==4,"must recheck after stopping") end
 do local s=scenario(); s.config.afterStop=function() s.ball.targetId=7 end; s.step(); assert(#s.calls==4,"target change must cancel ability") end
 print("AutoFierce cooldown, threat gates and stop ordering: PASS")
 '''

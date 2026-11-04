@@ -17,7 +17,8 @@ local function finite(value) return type(value) == "number" and value == value a
 local function evaluate(root, time)
 	if not Utils.isActive() or Utils.getConfigValue("AutoFierceDeflect") ~= true then return nil end
 	local cooldown = GameInfo.getDeflectCooldownState(); local attempt = cooldown and cooldown.attempt
-	if not cooldown or not cooldown.known or not cooldown.blocking then return nil end
+	local uiRemaining = GameInfo.getDeflectUICooldown()
+	if not finite(uiRemaining) or uiRemaining <= 0 then return nil end
 	local sync = GameInfo.getSyncData()
 	if type(sync) == "table" and sync.Teleported == true then return nil end
 	local snapshot = GameInfo.getSnapshot(nil, time)
@@ -44,10 +45,7 @@ local function evaluate(root, time)
 	if impact + 2 * ping + 0.1 >= FIERCE_DURATION then return nil end
 	local arrival = time + impact + 2 * ping + 0.05
 	if attempt and finite(attempt.deadline) and attempt.deadline >= arrival then return nil end
-	local cooldownPastImpact = (finite(cooldown.endsAt) and cooldown.endsAt > arrival)
-		or (finite(cooldown.remaining) and time + cooldown.remaining > arrival)
-	local expiredMiss = cooldown.active == true and attempt and attempt.expired == true
-	if not cooldownPastImpact and not expiredMiss then return nil end
+	if time + uiRemaining <= arrival then return nil end
 	local ability = GameInfo.getFierceDeflectAbility()
 	if not ability or type(ability.IsAvailable) ~= "function" or not ability:IsAvailable(false) then return nil end
 	if type(ability.IsOwnerAlive) ~= "function" or not ability:IsOwnerAlive() then return nil end
@@ -110,6 +108,7 @@ AutoFierce.__contract = {
 		},
 		GameInfo = {
 			"getDeflectCooldownState",
+			"getDeflectUICooldown",
 			"getSyncData",
 			"getSnapshot",
 			"isSnapshotValid",

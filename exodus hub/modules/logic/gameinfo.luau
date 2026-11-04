@@ -281,6 +281,17 @@ function GameInfo.getDeflectRange()
 	local player = Players and Players.LocalPlayer; return player and player:GetAttribute("DeflectRange") or nil
 end
 function GameInfo.getDeflectAbility() return locateDeflectAbility() end
+function GameInfo.getDeflectUICooldown()
+	local ability = locateDeflectAbility()
+	if not ability or type(ability.Interface) ~= "table" then return nil end
+	local duration = ability.LastCooldown
+	if type(duration) ~= "number" or duration ~= duration or duration <= 0 or duration >= math.huge then return nil end
+	local bar = ability.Interface.UIAbilityCooldown
+	if not bar then return nil end
+	local ok, scale = pcall(function() return bar.Size.Y.Scale end)
+	if not ok or type(scale) ~= "number" or scale ~= scale or scale == math.huge or scale == -math.huge then return nil end
+	return math.clamp(scale, 0, 1) * duration
+end
 function GameInfo.getDeflectServerEvents()
 	local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local remotes = ts and ts:FindFirstChild("GeneratedNetworkRemotes")
 	if not remotes then return nil end
@@ -588,6 +599,7 @@ GameInfo.__contract = {
 		"getDeflectRange",
 		"getDeflectWindow",
 		"getDeflectAbility",
+		"getDeflectUICooldown",
 		"getDeflectServerEvents",
 		"decodeDeflectServerEvent",
 		"getHeldDeflectServerCooldown",
