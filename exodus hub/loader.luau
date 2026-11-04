@@ -296,7 +296,8 @@ local function loadModule(name, relativePath, url, localRoot)
 	return nil, fetchError or "origem remota indisponível"
 end
 local function loadModules(urls, localRoot)
-	local loaded = {}; local names = {}
+	local loaded = {}
+	local names = {}
 	for _, name in ipairs(MODULE_ORDER) do
 		names[#names + 1] = name
 	end
@@ -571,7 +572,10 @@ local function waitForLocalPlayer(timeout)
 	return false, "LocalPlayer indisponível após esperar " .. tostring(timeout or 10) .. "s"
 end
 local function startInternal()
-	printStartup("Exodus: iniciando"); stopPreviousRuntime(); clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
+	printStartup("Exodus: iniciando")
+	stopPreviousRuntime()
+	clearRegistry()
+	local playerReady, playerError = waitForLocalPlayer(10)
 	if not playerReady then return false, "Loader", playerError end
 	local localRoot = findCompleteLocalRoot()
 	local version, revisionError
