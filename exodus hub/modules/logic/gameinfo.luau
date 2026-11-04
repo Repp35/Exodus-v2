@@ -296,7 +296,7 @@ local function deflectNormalizationDeadline(startedAt)
 	local predicted = locateDeflectAbility(); predicted = predicted and predicted.PredictedResetUntil
 	local deadline = startedAt + window + grace
 	if type(predicted) == "number" and predicted == predicted then deadline = math.max(deadline, predicted) end
-	return deadline + 0.10
+	return deadline + 0.15
 end
 function GameInfo.noteDeflectPress()
 	local time = os.clock(); local state = GameInfo.getDeflectCooldownState()
