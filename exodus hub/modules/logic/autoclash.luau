@@ -423,7 +423,9 @@ local function shouldActivate(snapshot, t)
 	local hitRadius = type(radiusData) == "table" and tonumber(radiusData.noWindowParryRadius) or nil
 	if not hitRadius or hitRadius ~= hitRadius or hitRadius < 0 or hitRadius == math.huge then R.lastGate = "impact_radius_unavailable"; return false end
 	local impact = math.max(0, distance - hitRadius) / closing
-	if impact > T.ACTIVATION_TTI_MAX + getPingOneWay() then R.lastGate = "impact_not_imminent"; return false end
+	local gameWindow = type(radiusData) == "table" and tonumber(radiusData.deflectWindow) or nil
+	if not gameWindow or gameWindow <= 0 or gameWindow == math.huge then R.lastGate = "game_window_unavailable"; return false end
+	if impact > gameWindow + getPingOneWay() then R.lastGate = "impact_not_imminent"; return false end
 	R.lastGate = "activation_ready"; return true
 end
 local function tryReturnActivate(snapshot, t)
