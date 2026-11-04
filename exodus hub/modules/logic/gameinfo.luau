@@ -310,8 +310,7 @@ local function sampleDeflectPress(time)
 	deflectState.lastObservedPressClock = pressAt
 	if time - pressAt > 0.5 or pressAt > time + 0.05 or not currentTargetMatches() then return end
 
-	local previous = deflectState.attempt
-	if previous and (deflectState.rawActive or (finite(ability.Cooldown) and ability.Cooldown > 0)) then return end
+	if deflectState.attempt or deflectState.fierceUsedForTarget then return end
 	local snapshot = getSnapshot(nil, time)
 	local player = Players and Players.LocalPlayer
 	local character = player and player.Character
@@ -414,6 +413,7 @@ function GameInfo.getDeflectCooldownState()
 				deflectState.active = false
 				deflectState.rawActive = false
 				deflectState.endsAt = nil
+				deflectState.lastEventAt = os.clock()
 			end)
 			if Utils and type(Utils.trackGlobal) == "function" then Utils.trackGlobal(deflectParriedConnection) end
 		end
@@ -546,25 +546,27 @@ function GameInfo.getBallSpeedLimits()
 end
 function GameInfo.getDeflectWindow(speed)
 	local minimum, maximum = GameInfo.getBallSpeedLimits()
+	local ball = gameBallModule
+	if ball and type(ball.GetCombinedSpeed) == "function" then
+		local ok, combined = pcall(ball.GetCombinedSpeed, ball)
+		if ok and type(combined) == "number" and combined == combined then speed = combined end
+	end
 	if type(speed) ~= "number" or speed ~= speed or maximum <= minimum then return nil end
 	local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
 	local window = 0.85 - 0.65 * fraction
-	local player = Players and Players.LocalPlayer
-	local ball = gameBallModule
-	local inClash = false
-	if ball and player and type(ball.IsInClash) == "function" then
-		local ok, result = pcall(ball.IsInClash, ball, player)
-		inClash = ok and result == true
-	end
-	if inClash and type(ball.GetClashMinWindow) == "function" then
+	if ball and type(ball.GetClashMinWindow) == "function" then
 		local ok, minimumWindow = pcall(ball.GetClashMinWindow, ball, speed)
 		if ok and type(minimumWindow) == "number" then window = math.max(window, minimumWindow) end
 	end
 	local range = GameInfo.getDeflectRange()
 	if type(range) == "number" then window += math.clamp((range - 8.5) / 7.5, 0, 1) * 0.12 end
-	if inClash and type(ball.GetClashWindowScale) == "function" then
-		local ok, scale = pcall(ball.GetClashWindowScale, ball)
-		if ok and type(scale) == "number" and scale > 0 then window *= scale end
+	local player = Players and Players.LocalPlayer
+	if ball and player and type(ball.IsInClash) == "function" then
+		local ok, inClash = pcall(ball.IsInClash, ball, player)
+		if ok and inClash == true and type(ball.GetClashWindowScale) == "function" then
+			local scaleOk, scale = pcall(ball.GetClashWindowScale, ball)
+			if scaleOk and type(scale) == "number" and scale > 0 then window *= scale end
+		end
 	end
 	return window
 end
