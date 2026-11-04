@@ -688,11 +688,21 @@ function AutoParry.getPressure()
 		if time < sample.at or time - sample.at > 3 then table.remove(R.pressureReturns, i)
 		else returns += 1; intervalSum += sample.interval end
 	end
+	local latest = R.pressureClicks[#R.pressureClicks]; local lastReturn = R.pressureReturns[#R.pressureReturns]
+	local recentLevel, factorDrop
+	if count >= 3 and returns >= 2 and latest and time - latest.at <= 1 and lastReturn and time - lastReturn.at <= 1 then
+		local latestRatio = math.clamp(latest.factor / latest.configured, 0, 1)
+		local previous = R.pressureClicks[count - 1]; local older = R.pressureClicks[count - 2]
+		local previousRatio = (math.clamp(previous.factor / previous.configured, 0, 1) + math.clamp(older.factor / older.configured, 0, 1)) / 2
+		recentLevel = 1 - latestRatio; factorDrop = math.max(0, previousRatio - latestRatio)
+	end
 	return {
 		samples = count, cps = count / 3, averageFactor = count > 0 and factorSum / count or nil,
 		configuredFactor = count > 0 and configuredSum / count or nil, averageSpeed = count > 0 and speedSum / count or nil,
 		returnSamples = returns, averageReturnTime = returns > 0 and intervalSum / returns or nil,
 		level = count >= 3 and returns >= 2 and math.clamp(1 - ratioSum / count, 0, 1) or nil,
+		currentFactor = latest and latest.factor or nil, currentLevel = recentLevel, factorDrop = factorDrop,
+		latestReturnTime = lastReturn and lastReturn.interval or nil,
 	}
 end
 function AutoParry.getStatus()

@@ -244,9 +244,12 @@ local function getReturnWindow(speed)
 	if AutoParry and type(AutoParry.getPressure) == "function" then
 		local ok, pressure = pcall(AutoParry.getPressure)
 		if ok and type(pressure) == "table" then
-			local level = pressure.level; local interval = pressure.averageReturnTime
+			local level = pressure.currentLevel; local interval = pressure.latestReturnTime; local drop = pressure.factorDrop
 			if type(level) == "number" and level == level and type(interval) == "number" and interval > 0 and interval <= 0.5 then
 				if level >= 0.6 then bonus = 0.5 elseif level >= 0.4 then bonus = 0.3 elseif level >= 0.2 then bonus = 0.15 end
+				if type(drop) == "number" and drop == drop then
+					if drop >= 0.5 then bonus = math.max(bonus, 0.5) elseif drop >= 0.25 then bonus = math.max(bonus, 0.3) end
+				end
 			end
 		end
 	end

@@ -53,7 +53,7 @@ clash.onBallSync({TargetPlayerID = 42})
 local status = clash.getStatus()
 assert(status.returnPending == true and status.clashPartnerId == 7,
     "return transition not armed: " .. tostring(status.lastGate))
-pressure={level=0.8, averageReturnTime=0.1}
+pressure={currentLevel=0.8, latestReturnTime=0.1}
 time += 0.05; clash.onBallSync({TargetPlayerID = 7})
 assert(clash.getStatus().returnWindowBonus == 0.5, "high pressure did not expand return window")
 time += 0.22; clash.onBallSync({TargetPlayerID = 42})

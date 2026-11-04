@@ -32,11 +32,20 @@ inject(ap,{getBallSpeedLimits=function() return 16,600 end},{})
 local elevated=window(400)
 assert(clash.getStatus().returnWindowBonus==0.5, 'late AP with fast returns should expand window')
 local elevatedBonus=clash.getStatus().returnWindowBonus
+table.clear(state.pressureClicks)
+for _,factor in ipairs({0.45,0.45,0.30}) do
+ table.insert(state.pressureClicks,{at=testTime,factor=factor,configured=0.5,speed=400})
+end
+pressure=ap.getPressure()
+assert(math.abs(pressure.factorDrop-0.3)<1e-6, 'rapid decline must be measured against previous clicks')
+window(400); assert(clash.getStatus().returnWindowBonus==0.3, 'rapid decline must increase the window immediately')
+table.insert(state.pressureClicks,{at=testTime,factor=0.5,configured=0.5,speed=400})
+window(400); assert(clash.getStatus().returnWindowBonus==0, 'a recovered click must remove the bonus immediately')
 testTime+=4
 pressure=ap.getPressure(); assert(pressure.samples==0 and pressure.level==nil, 'old data must expire')
 local baseline=window(400)
 assert(clash.getStatus().returnWindowBonus==0 and math.abs(elevated-baseline*(1+elevatedBonus))<1e-6, 'window must return to baseline')
-inject({getPressure=function() return {level=0.9,averageReturnTime=0.8} end},{getBallSpeedLimits=function() return 16,600 end},{})
+inject({getPressure=function() return {currentLevel=0.9,latestReturnTime=0.8} end},{getBallSpeedLimits=function() return 16,600 end},{})
 window(400); assert(clash.getStatus().returnWindowBonus==0, 'slow return must not trigger adaptation')
 inject({getPressure=function() error('unavailable') end},{getBallSpeedLimits=function() return 16,600 end},{})
 window(400); assert(clash.getStatus().returnWindowBonus==0, 'unavailable measurements must fail safely')
