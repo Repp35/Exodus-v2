@@ -188,11 +188,11 @@ local function btnPos()
 end
 local CLASH_SIZE = 64
 local OFFSCREEN_X = -CLASH_SIZE - 40
-local autoClashTrack, autoClashThumb, clashMiniSetVisual, spamMiniSetVisual
+local autoClashTrack, autoClashThumb
 local function paintClashBall()
 	if not clashBall or not clashBall.Parent then return end
-	twPlay(clashBall, 0.28, { BackgroundColor3 = UIState.clashBallOn and C.green or C.red }, EASE_SINE, DIR_INOUT)
-	if clashMiniSetVisual then clashMiniSetVisual(UIState.clashBallOn) end
+	twPlay(clashBall, 0.28, { BackgroundColor3 = UIState.clashBallOn and C.green or C.red }, EASE_SINE, DIR_INOUT); clashBall.Text = UIState.clashBallOn and "ON" or "OFF"
+	clashBall.TextSize = UIState.clashBallOn and 18 or 16
 end
 local function syncAutoClashToggle()
 	if not (autoClashTrack and autoClashThumb) then return end
@@ -216,7 +216,7 @@ local function showClashBall(v)
 	)
 end
 local MINI_W, MINI_H = 120, 90
-local function showMini(v)
+local function showMini(v, visBtn)
 	local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30
 	twPlay(
 		miniGui,
@@ -225,14 +225,14 @@ local function showMini(v)
 		v and EASE_BACK or EASE_OUT,
 		DIR_OUT
 	)
+	if visBtn and visBtn.Parent then visBtn.Text = v and "Mini UI: Visivel" or "Mini UI: Oculto"; twPlay(visBtn, 0.15, { BackgroundColor3 = v and Color3.fromRGB(0, 130, 65) or C.btnDark }) end
 end
 setSpam = function(v)
 	UIState.spamOn = v; Utils.setManualSpamActive(v)
 	if not miniGui or not miniGui.Parent then return end
 	local spamBtn = miniGui:FindFirstChild("SpamButton")
 	if spamBtn then
-		if spamMiniSetVisual then spamMiniSetVisual(v) end
-		twPlay(spamBtn, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT)
+		spamBtn.Text = v and "ON" or "OFF"; twPlay(spamBtn, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT)
 		twPlay(spamBtn, 0.08, { Size = UDim2.new(1, -22, 0, 44) }, EASE_SINE, DIR_OUT)
 		task.delay(0.08, function() twPlay(spamBtn, 0.28, { Size = UDim2.new(1, -16, 0, 48) }, EASE_BACK, DIR_OUT) end)
 	end
@@ -272,7 +272,7 @@ local function cleanupUI()
 	screenGui = nil; floatingButton = nil; clashBall = nil; miniGui = nil
 	configPanel = nil; particleLayer = nil; titleBar = nil; closeButton = nil
 	colLeft = nil; colRight = nil; killBtn = nil; autoClashTrack = nil
-	autoClashThumb = nil; clashMiniSetVisual = nil; spamMiniSetVisual = nil
+	autoClashThumb = nil
 	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil end
 end
 
@@ -591,13 +591,8 @@ local function createKeybindSelector(yPos, parent)
 	return nextCardY(yPos, CARD_H)
 end
 local function createSpamCard(yPos, parent)
-	local f = cardFrame(yPos, SPAM_CARD_H, parent); cardLabel("Manual Spam", f)
-	local row = inst("Frame", { Size = UDim2.new(1, -16, 0, 30), Position = UDim2.new(0, 8, 0, 24), BackgroundTransparency = 1, ZIndex = 7, Parent = f })
-	inst("TextLabel", { Size = UDim2.new(1, -60, 1, 0), BackgroundTransparency = 1, Text = "Mini UI", TextColor3 = C.text, TextSize = 12, Font = Enum.Font.GothamSemibold, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7, Parent = row })
-	local _, _, setMiniVisual = makeToggle(row, false); local miniVisible = false
-	trackConn(inst("TextButton", { Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Text = "", ZIndex = 9, Parent = row }).Activated:Connect(function()
-		miniVisible = not miniVisible; showMini(miniVisible); setMiniVisual(miniVisible)
-	end))
+	local f = cardFrame(yPos, SPAM_CARD_H, parent); cardLabel("Manual Spam", f); local visBtn = makeBtn("Mini UI: Oculto", 8, 24, COL_W - 16, 30, f, C.btnDark); visBtn.TextSize = 11
+	trackConn(visBtn.Activated:Connect(function() showMini(miniGui.Position.X.Offset > viewport().X - 50, visBtn) end))
 	local config = Utils.getConfig(); local kbBtn = makeBtn(config.SpamKeybind and config.SpamKeybind.Name or "X", 8, 64, COL_W - 16, 32, f, C.btnBlue)
 	bindKeyCapture(kbBtn, function(keyCode)
 		setConfigValue("SpamKeybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_BACK)
@@ -694,11 +689,8 @@ function ExodusUI.setup(deps)
 		ZIndex = 8,
 		Parent = screenGui,
 	})
-	corner(clashBall, 999); stroke(clashBall, Color3.new(0, 0, 0), 2); UIState.clashBallOn = config.AutoClash or false; clashBall.Text = ""
-	clashBall.BackgroundColor3 = UIState.clashBallOn and C.green or C.red
-	local clashMiniTrack, clashMiniThumb
-	clashMiniTrack, clashMiniThumb, clashMiniSetVisual = makeToggle(clashBall, UIState.clashBallOn)
-	clashMiniTrack.Position = UDim2.new(0.5, -24, 0.5, -13); clashMiniTrack.ZIndex = 9; clashMiniThumb.ZIndex = 10
+	corner(clashBall, 999); stroke(clashBall, Color3.new(0, 0, 0), 2); UIState.clashBallOn = config.AutoClash or false; clashBall.Text = UIState.clashBallOn and "ON" or "OFF"
+	clashBall.TextSize = UIState.clashBallOn and 18 or 16; clashBall.BackgroundColor3 = UIState.clashBallOn and C.green or C.red
 	UIState.btnIsDragging = makeDraggable(floatingButton, floatingButton, function()
 		setConfigValue("BtnX", floatingButton.Position.X.Offset); setConfigValue("BtnY", floatingButton.Position.Y.Offset)
 	end)
@@ -782,7 +774,7 @@ function ExodusUI.setup(deps)
 		Position = UDim2.new(0, 8, 0, 32),
 		BackgroundColor3 = C.red,
 		BorderSizePixel = 0,
-		Text = "",
+		Text = "OFF",
 		TextColor3 = Color3.new(1, 1, 1),
 		TextSize = 24,
 		Font = Enum.Font.GothamBold,
@@ -790,9 +782,6 @@ function ExodusUI.setup(deps)
 		Parent = miniGui,
 	})
 	corner(spamBtn, 10)
-	local spamMiniTrack, spamMiniThumb
-	spamMiniTrack, spamMiniThumb, spamMiniSetVisual = makeToggle(spamBtn, false)
-	spamMiniTrack.Position = UDim2.new(0.5, -24, 0.5, -13); spamMiniTrack.ZIndex = 17; spamMiniThumb.ZIndex = 18
 	trackConn(spamBtn.Activated:Connect(function() setSpam(not UIState.spamOn) end))
 	miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY)
 	makeDraggable(miniTitleBar, miniGui, function()
