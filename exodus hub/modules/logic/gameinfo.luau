@@ -282,6 +282,11 @@ function GameInfo.getHeldDeflectServerCooldown()
 	end
 	return nil
 end
+local COOLDOWN_CONFIRM_SECONDS = 0.350
+local function cooldownConfirmationDelay()
+	local ping = GameInfo.getLocalPing()
+	return COOLDOWN_CONFIRM_SECONDS + (type(ping) == "number" and ping == ping and math.max(ping, 0) or 0)
+end
 local function deflectNormalizationDeadline(startedAt)
 	local data = getDecodedSyncData(); local speed = type(data) == "table" and tonumber(data.Speed) or nil
 	local minimum, maximum = GameInfo.getBallSpeedLimits()
@@ -325,7 +330,7 @@ function GameInfo.getDeflectCooldownState()
 				if not kind then return end
 				deflectState.known = true; deflectState.lastEventAt = os.clock()
 				if kind == "started" then
-					deflectState.rawActive = true; deflectState.active = not deflectState.normalizing; deflectState.endsAt = deflectState.lastEventAt + duration
+					deflectState.rawActive = true; deflectState.active = false; deflectState.endsAt = deflectState.lastEventAt + duration
 				else
 					local wasConfirmed = deflectState.active == true
 					deflectState.rawActive = false; deflectState.active = false; deflectState.endsAt = nil
@@ -345,8 +350,13 @@ function GameInfo.getDeflectCooldownState()
 		nextHeldCooldownCheck = time + 0.05
 		local duration, receivedAt = GameInfo.getHeldDeflectServerCooldown()
 		if duration and receivedAt and receivedAt <= time and time < receivedAt + duration and receivedAt > deflectState.lastEventAt + 0.01 then
-			deflectState.known = true; deflectState.rawActive = true; deflectState.active = not deflectState.normalizing; deflectState.lastEventAt = receivedAt; deflectState.endsAt = receivedAt + duration
+			deflectState.known = true; deflectState.rawActive = true; deflectState.active = false; deflectState.lastEventAt = receivedAt; deflectState.endsAt = receivedAt + duration
 		end
+	end
+	if deflectState.rawActive and not deflectState.normalizing then
+		deflectState.active = time - deflectState.lastEventAt > cooldownConfirmationDelay()
+	elseif not deflectState.rawActive then
+		deflectState.active = false
 	end
 	return deflectState
 end
