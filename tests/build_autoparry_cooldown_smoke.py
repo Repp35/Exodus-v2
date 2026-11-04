@@ -113,7 +113,12 @@ do
  local deadline=s.info.getDeflectCooldownState().normalizingUntil
  s.cd:emit(1,SET,1.45); s.cd:emit(1,SET,0)
  s.frame(deadline-0.001); assert(s.count()==1, "early reset must not double click")
- s.frame(deadline+0.001); assert(s.count()==2, "expired normalization must permit recovery")
+ s.frame(deadline+0.001); assert(s.count()==1, "unconfirmed cooldown must not rearm the same target")
+end
+-- Pending normalization itself must not block an otherwise valid first parry.
+do
+ local s=newScenario(); s.info.noteDeflectPress(); s.frame(1.01)
+ assert(s.count()==1, "pending normalization must not block the normal AP")
 end
 -- Grace extends the variable server window and the 50 ms margin.
 do
@@ -132,6 +137,7 @@ do
  grace.cd:emit(1,SET,1.45); grace.frame(withGrace-0.001)
  assert(not grace.info.getDeflectCooldownState().active, "cooldown must remain unconfirmed until normalization")
  grace.frame(withGrace+0.001); assert(grace.info.getDeflectCooldownState().active, "persistent cooldown must be confirmed")
+ grace.cd:emit(1,STOP); grace.frame(withGrace+0.01); assert(grace.count()==2, "confirmed cooldown clearing must rearm")
 end
 -- The game's window shrinks with speed and honors its prediction deadline.
 do

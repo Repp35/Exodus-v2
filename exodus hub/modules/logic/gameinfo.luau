@@ -300,11 +300,7 @@ local function deflectNormalizationDeadline(startedAt)
 end
 function GameInfo.noteDeflectPress()
 	local time = os.clock(); local state = GameInfo.getDeflectCooldownState()
-	if state.normalizing then
-		-- A new click consumes an earlier reset; it cannot rearm the new click.
-		if state.pendingClear then state.pendingClear = false; state.normalizationStartedAt = time; state.normalizingUntil = deflectNormalizationDeadline(time) end
-		return
-	end
+	if state.normalizing then return end
 	if state.active then return end
 	state.normalizationStartedAt = time; state.normalizingUntil = deflectNormalizationDeadline(time); state.normalizing = true
 end
@@ -314,8 +310,6 @@ function GameInfo.getDeflectCooldownState()
 		deflectState.normalizingUntil = math.max(deflectState.normalizingUntil, deflectNormalizationDeadline(deflectState.normalizationStartedAt))
 		if time >= deflectState.normalizingUntil then
 			deflectState.normalizing = false; deflectState.active = deflectState.rawActive == true
-			if deflectState.pendingClear and not deflectState.rawActive then deflectState.readyRevision += 1 end
-			deflectState.pendingClear = false
 		end
 	end
 	if deflectConnection and deflectConnection.Connected == false then
@@ -331,10 +325,11 @@ function GameInfo.getDeflectCooldownState()
 				if not kind then return end
 				deflectState.known = true; deflectState.lastEventAt = os.clock()
 				if kind == "started" then
-					deflectState.rawActive = true; deflectState.active = not deflectState.normalizing; deflectState.pendingClear = false; deflectState.endsAt = deflectState.lastEventAt + duration
+					deflectState.rawActive = true; deflectState.active = not deflectState.normalizing; deflectState.endsAt = deflectState.lastEventAt + duration
 				else
+					local wasConfirmed = deflectState.active == true
 					deflectState.rawActive = false; deflectState.active = false; deflectState.endsAt = nil
-					if deflectState.normalizing then deflectState.pendingClear = true else deflectState.readyRevision += 1 end
+					if wasConfirmed then deflectState.readyRevision += 1 end
 				end
 			end)
 			if Utils and type(Utils.trackGlobal) == "function" then Utils.trackGlobal(deflectConnection) end
