@@ -20,7 +20,7 @@ local T = {
 	RETURN_WIN_LO = 0.18,
 	RETURN_WIN_MIN_FACTOR = 0.10,
 	PING_FACTOR = 0.3,
-	ACTIVATION_WINDOW_FACTOR = 1.0,
+	ACTIVATION_WINDOW_FACTOR = 0.8,
 	ACTIVATION_MIN_DOT = 0.3,
 	ACTIVATION_TTI_MAX = 0.35,
 	ACTIVATION_TTI_EMA_ALPHA = 0.4,
@@ -285,7 +285,7 @@ end
 local function queryRadius(factor)
 	local f = FN.getRadius
 	if not f then return R.parryRadius end
-	local status = f("geometry", math.min(factor, 1), R.lastSpeed)
+	local status = f("geometry", factor, R.lastSpeed, true)
 	if type(status) ~= "table" then return R.parryRadius end
 	local radius = tonumber(status.fullRadius)
 	if radius and radius == radius and radius >= 0 and radius < math.huge then return radius end
@@ -296,7 +296,7 @@ local function refreshRadiusCache(t)
 	if R.radiusCacheAt > 0 and t - R.radiusCacheAt < 1 / 60 and math.abs(R.lastSpeed - R.radiusCacheSpeed) < 2 then return end
 	local base = queryRadius(1.0)
 	if base > 0 then R.parryRadius = base; R.radiusSafety = base end
-	if not R.active then R.radiusActivation = base end
+	if not R.active then R.radiusActivation = queryRadius(T.ACTIVATION_WINDOW_FACTOR) end
 	R.radiusCacheAt = t; R.radiusCacheSpeed = R.lastSpeed
 end
 local function getActivationRadius(t)
@@ -306,7 +306,7 @@ local function getActivationRadius(t)
 		return queryRadius(T.DASH_WINDOW_FACTOR)
 	end
 	if R.radiusActivation > 0 then return R.radiusActivation end
-	return queryRadius(1.0)
+	return queryRadius(T.ACTIVATION_WINDOW_FACTOR)
 end
 
 -- activation
@@ -433,7 +433,7 @@ function Deactivation.confirm(t, reason)
 end
 function Deactivation.direction(t, snapshot, speed)
 	if isSnapshotTargeted(snapshot) then R.lastGate = "deact_direction_targeted"; return false end
-	local radius = AutoParry.getRadius("geometry", 0, speed); local pureRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil; local root = getRootPosition()
+	local radius = AutoParry.getRadius("geometry", 0, speed, true); local pureRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil; local root = getRootPosition()
 	local position = getSnapshotPosition(snapshot)
 	if not pureRadius or pureRadius ~= pureRadius or pureRadius < 0 or pureRadius == math.huge or not root or not position then
 		Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_unavailable"; return false
