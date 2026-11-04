@@ -433,23 +433,6 @@ local function tryReturnActivate(snapshot, t)
 	if not R.returnPending then R.lastGate = "act_no_return_pending"; return false end
 	return shouldActivate(snapshot, t)
 end
-local function emergencyReason(snapshot)
-	if R.lastTarget ~= R.localUserId or not isSnapshotTargeted(snapshot) or snapshot.teleported == true then return nil end
-	
-	local root, position, velocity = getRootPosition(), getSnapshotPosition(snapshot), snapshot.velocity
-	if not root or not position or typeof(velocity) ~= "Vector3" or velocity.Magnitude < 6 then return nil end
-	local dx, dy, dz = root.X - position.X, root.Y - position.Y, root.Z - position.Z
-	local distance = math.sqrt(dx * dx + dy * dy + dz * dz)
-	if distance <= 0 then return nil end
-	local closing = (velocity.X * dx + velocity.Y * dy + velocity.Z * dz) / distance
-	if closing <= 0 or closing ~= closing or closing == math.huge then return nil end
-	local radius = FN.getRadius and FN.getRadius("geometry", 0, snapshot.speed, "game")
-	local hitRadius = type(radius) == "table" and tonumber(radius.noWindowParryRadius) or nil
-	if not hitRadius or hitRadius ~= hitRadius or hitRadius < 0 or hitRadius == math.huge then return nil end
-	local impact = math.max(0, distance - hitRadius) / closing
-	if impact <= math.clamp(getPingOneWay() + 0.05, 0.05, 0.15) then return "imminent_impact" end
-	return nil
-end
 local function getActivationReason(snapshot, t)
 	if t < R.dashBonusUntil then return "anti_dash" end
 	return "predicted_impact"
@@ -671,10 +654,6 @@ local function evaluateClash(t, snapshot)
 	if not snapshotUsable then R.lastGate = "no_ball"; return end
 	updateParryState(t, snapshot)
 	if not R.active then
-		local emergency = emergencyReason(snapshot)
-		if emergency then
-			R.pullSuspension = nil; clearReturnState(); setActive(true, "emergency", snapshot, emergency); return
-		end
 		if R.recoveryUntil > 0 and t <= R.recoveryUntil and shouldActivate(snapshot, t) then
 			R.recoveryUntil = 0; clearReturnState(); setActive(true, "recovered", snapshot, "snapshot_recovered"); return
 		end
