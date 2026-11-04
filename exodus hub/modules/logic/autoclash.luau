@@ -486,9 +486,9 @@ function Deactivation.direction(t, snapshot, speed)
 	local minimum, maximum
 	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum, maximum = GameInfo.getBallSpeedLimits() end
 	local speedLimit = lerpBySpeed(speed, configuredLimit, configuredLimit * T.DEACT_DIRECTION_MAX_MIN_FACTOR, minimum or speed, maximum or speed)
-	local deadline = math.min(activationWindow * 0.90, speedLimit + pingCompensation())
+	local deadline = math.max(activationWindow * 1.25, speedLimit + pingCompensation())
 	if R.clashIntervalEma and R.clashIntervalEmaSamples >= 2 then
-		deadline = math.min(deadline, R.clashIntervalEma * 1.15 + pingCompensation())
+		deadline = math.max(deadline, R.clashIntervalEma * 1.5 + pingCompensation())
 	end
 	deadline = math.max(deadline, T.MIN_EVAL_INTERVAL * 1.5)
 	if t - R.lastDirectionSwitchAt <= deadline then return false end
