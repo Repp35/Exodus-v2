@@ -527,7 +527,7 @@ local function evaluate(s, snapshot, time)
     end
     if aimed and not s.hasActivated and not s.distantRecovery and type(autoParry.getPressure) == "function" then
         local ok, pressure = pcall(autoParry.getPressure)
-        if ok and type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= 0.2 then
+        if ok and type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= 0.6 then
             clearReturn(s)
             setActive(s, true, "ap_pressure", "auto_parry_pressure", time)
             return
