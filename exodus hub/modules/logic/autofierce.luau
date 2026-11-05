@@ -17,7 +17,7 @@ local function step()
     local target = gameInfo.getTargetId()
     if target ~= player.UserId then return end
     local cooldown = gameInfo.getDeflectCooldownState()
-    if not cooldown or not cooldown.active then
+    if not cooldown or not cooldown.rawActive then
         used = false
         return
     end
@@ -28,7 +28,8 @@ local function step()
         or not fierce:IsOwnerAlive() or not fierce:IsAvailable(false) then return end
 
     -- Validate the current target and cooldown before touching spam controllers.
-    if gameInfo.getTargetId() ~= player.UserId or gameInfo.getDeflectAbility() ~= ability then return end
+    if gameInfo.getTargetId() ~= player.UserId or gameInfo.getDeflectAbility() ~= ability
+        or not gameInfo.getDeflectCooldownState().rawActive then return end
     used = true
     fierce:ActivateAndBlock()
     utils.stopAllSpam()
