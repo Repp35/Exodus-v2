@@ -1,8 +1,6 @@
 -- [[ spam ]]
 
 local Spam = {}
-local MIN_CLICK_INTERVAL = 0.030
-local MAX_CPS = 1 / MIN_CLICK_INTERVAL
 
 local Utils, Remote
 local connection
@@ -33,7 +31,6 @@ local function setActive(value, reason)
 end
 local function requestParry()
 	local time = now()
-	if time - status.lastRequestAt < MIN_CLICK_INTERVAL then return end
 	status.lastRequestAt = time
 	local ok, result, detail = pcall(Remote.fireParry, 1)
 	if ok and result == true then status.lastError = nil; return end
@@ -64,7 +61,7 @@ local function startCpfWorker()
 			local enabled = Utils.isActive() and Utils.isSpamActive() and rate > 0
 			if enabled then
 				if not active then setActive(true, "spam_active") end
-				local interval = math.max(MIN_CLICK_INTERVAL, 1 / (mode == "CPF" and rate * 60 or rate))
+				local interval = 1 / (mode == "CPF" and rate * 60 or rate)
 				if previousMode ~= mode or previousRate ~= rate or due == nil then
 					due = now()
 					previousMode, previousRate = mode, rate
@@ -72,7 +69,7 @@ local function startCpfWorker()
 				local time = now()
 				if time >= due then
 					requestParry()
-					due = math.max(due + interval, now() + MIN_CLICK_INTERVAL)
+					due += interval
 					if due < now() then due = now() + interval end
 				end
 				task.wait(math.max(0, due - now()))
