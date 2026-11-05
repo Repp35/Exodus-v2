@@ -357,7 +357,188 @@ local function observeTarget(s, target, explicit, serverTime, time)
         s.lastGate = "target_lost"
     elseif previous > 0 and previous ~= me and target == me then
         if s.distantRecovery and previous ~= s.recoveryPartner then s.recoveryReturnedToMe = true end
-        if not gate(s) or type(data) ~= "table" then return end
+        if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.09 + ping(s, time) then
+            s.lastGate = "deact_target_return_timeout"
+            setActive(s, false, "target_return_timeout", nil, time)
+        else
+            s.clashAwayAt = nil
+        end
+        local elapsed = s.returnAt and time - s.returnAt or nil
+        if finite(serverTime) and finite(s.returnServerAt) then elapsed = serverTime - s.returnServerAt end
+        if s.returnFrom == previous and finite(elapsed) and elapsed >= 0 and elapsed <= s.returnWindow and time <= s.returnExpires then
+            s.partner, s.returnPending, s.lastGate = previous, true, "target_return"
+        else
+            clearReturn(s)
+            s.lastGate = "return_too_late"
+        end
+    elseif previous > 0 and previous ~= me and target ~= me then
+        clearReturn(s)
+        if s.distantRecovery and not s.active and target == s.recoveryPartner then
+            local window, bonus = returnAllowance(s, target, time)
+            if time < s.dashBonusUntil then window *= 1.5 end
+            s.returnFrom, s.returnAt, s.returnServerAt = target, time, serverTime
+            s.returnWindow, s.returnBonus = window, bonus
+            s.returnExpires = time + window + 2 * ping(s, time) + 1 / 30
+            s.lastGate = "recovery_partner_target"
+            return
+        end
+        if s.active and not outsideClashRadius(s, target) then
+            s.lastGate = "near_target_redirected"
+            return
+        end
+        if s.active then setActive(s, false, "target_redirected", nil, time) end
+        s.partner = -1
+        s.lastGate = "target_redirected"
+    else
+        clearReturn(s)
+        s.lastGate = target == me and "initial_me" or "initial_not_me"
+    end
+end
+local function sequenceAccepted(s, sequence)
+    if sequence == nil then return true end
+    if not finite(sequence) or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return true end
+    if s.sequence ~= nil then
+        local delta = (sequence - s.sequence) % 65536
+        if delta == 0 or delta >= 32768 then return false end
+    end
+    s.sequence = sequence
+    return true
+end
+local function snapshotCurrent(s, snapshot, time)
+    local target, sequence = id(snapshot.targetId), snapshot.syncSequence
+    if finite(sequence) and finite(s.sequence) then
+        local delta = (sequence - s.sequence) % 65536
+        if delta >= 32768 or (delta == 0 and target and s.target > 0 and target ~= s.target) then return false end
+    elseif sequence == nil and s.syncSource == "event" and target and s.target > 0 and target ~= s.target and time - s.syncAt < LIMIT.snapshotGrace then
+        return false
+    end
+    return true
+end
+local function readSnapshot(s, time)
+    local method = type(gameInfo.getSnapshotAt) == "function" and gameInfo.getSnapshotAt or function(t) return gameInfo.getSnapshot(nil, t) end
+    local ok, value = pcall(method, time)
+    if not ok then report(s, "GameInfo.getSnapshot", value, time); return nil end
+    local validOk, valid = pcall(gameInfo.isSnapshotValid, value, time)
+    if not validOk then report(s, "GameInfo.isSnapshotValid", valid, time); return nil end
+    if valid ~= true then return nil end
+    return value
+end
+local function missingSnapshot(s, time, reason)
+    if not s.missingSince then s.missingSince = time end
+    if s.active and (time < s.missingSince or time - s.missingSince >= LIMIT.snapshotGrace) then
+        setActive(s, false, reason, nil, time)
+    end
+    s.lastGate = reason
+end
+local function radiusAt(s, factor)
+    local ok, value = pcall(autoParry.getRadius, "geometry", factor, s.speed, "game")
+    if ok and type(value) == "table" and finite(value.fullRadius) and value.fullRadius >= 0 then return value.fullRadius end
+    return s.parryRadius
+end
+local function extendReturnForDash(s, time)
+    if not s.returnAt or s.returnPending then return end
+    local window, bonus = returnAllowance(s, s.returnFrom, time)
+    window *= 1.5
+    s.returnBonus = bonus
+    if window > s.returnWindow then
+        s.returnWindow = window
+        s.returnExpires = s.returnAt + window + 2 * ping(s, time) + 1 / 30
+    end
+end
+local function trackDash(s, event, time)
+    if type(event) ~= "table" or not localPlayer or event.userId == localPlayer.UserId
+        or not vector(event.position) or not vector(event.velocity) then return end
+    local own = rootPosition(s)
+    if not own then return end
+    local distance = horizontalDistance(own, event.position)
+    if distance <= 0 then return end
+    local dx, dz = own.X - event.position.X, own.Z - event.position.Z
+    local closing = (event.velocity.X * dx + event.velocity.Z * dz) / distance
+    if not finite(closing) or closing <= 0 then return end
+    local detected = finite(event.detectedAt) and event.detectedAt or time
+    s.dashEvent = event
+    s.dashData = { player = event.player, userId = event.userId, detectedAt = detected,
+        expiresAt = detected + 0.3, position = event.position, velocity = event.velocity,
+        previousPosition = event.previousPosition, dangerous = true }
+    s.dashBonusUntil = math.max(s.dashBonusUntil, detected + 0.3)
+    extendReturnForDash(s, time)
+end
+confirmInvalidTarget = function(s, time)
+    local reason = "invalid_target"
+    if s.exitReason ~= reason or time < s.exitSince or time - s.exitLastAt > LIMIT.sampleGap then
+        s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = reason, time, 1, time
+        return false
+    end
+    s.exitFrames += 1
+    s.exitLastAt = time
+    if s.exitFrames >= 2 and time - s.exitSince >= 0.05 then
+        s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = nil, 0, 0, 0
+        return true
+    end
+    return false
+end
+local function evaluate(s, snapshot, time)
+    if current ~= s or not s.bound or not gate(s) then return end
+    local prediction = geometry(s, snapshot, time)
+    if current ~= s or not s.bound then return end
+    if not prediction then
+        if s.active then s.windowPartner = s.partner; setActive(s, false, "geometry_unavailable", nil, time); s.windowPaused = true end
+        missingSnapshot(s, time, "geometry_unavailable"); return
+    end
+    s.snapshot, s.prediction, s.missingSince = snapshot, prediction, nil
+    local target, me = id(snapshot.targetId), localPlayer.UserId
+    if s.active and not prediction.imminent then
+        s.lastGate = "outside_deflect_window"
+        setActive(s, false, "outside_deflect_window", nil, time)
+        s.windowPaused, s.windowPartner = false, nil
+        s.activationLockUntil = math.max(s.activationLockUntil or 0, time + 0.05)
+        utils.stopAllSpam()
+        return
+    end
+    s.windowExitSince = nil
+    if s.windowPaused and id(snapshot.targetId) ~= localPlayer.UserId and id(snapshot.targetId) ~= s.windowPartner then
+        s.windowPaused, s.windowPartner = false, nil
+    end
+    local targeted = target and target == me or (not target and snapshot.targeted == true)
+    local window = gameInfo.getDeflectWindow(s.speed)
+    local own = rootPosition(s)
+    local distance = prediction.distance
+    local closing = own and distance > 0 and snapshot.velocity:Dot(own - snapshot.position) / distance or 0
+    local timeToRange = closing > 0 and math.max(0, (distance - (gameInfo.getDeflectAbility().DeflectDistance or 0)) / closing) or math.huge
+    local activationReady = prediction.imminent and finite(window) and timeToRange <= window * LIMIT.activationWindowFactor
+    local aimed = s.target == me and targeted and activationReady
+    if s.pull and time - s.pull.at > LIMIT.pullRecovery then s.pull = nil end
+    if s.active then
+        if target and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
+            setActive(s, false, "target_redirected", nil, time); s.lastGate = "target_redirected"; return
+        end
+        s.lastGate = targeted and "deact_targeted" or "deact_waiting_target_return"
+        return
+    end
+    if aimed and not s.hasActivated and not s.distantRecovery and type(autoParry.getPressure) == "function" then
+        local ok, pressure = pcall(autoParry.getPressure)
+        if ok and type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= 0.6 then
+            clearReturn(s)
+            setActive(s, true, "ap_pressure", "auto_parry_pressure", time)
+            return
+        end
+    end
+    if s.returnPending and aimed then
+        if not similarRecoveryDistance(s) then
+            clearReturn(s)
+            s.lastGate = "recovery_distance_changed"
+            return
+        end
+        local reason = time < s.dashBonusUntil and "anti_dash" or "predicted_impact"
+        clearReturn(s); setActive(s, true, "activated", reason, time); return
+    end
+    if not targeted then s.lastGate = "act_not_targeted"
+    elseif not s.returnPending then s.lastGate = "act_no_return_pending"
+    elseif s.target ~= me then s.lastGate = "target_not_me"
+    else s.lastGate = prediction.activationGate end
+end
+local function acceptSync(s, data, time, original)
+    if not gate(s) or type(data) ~= "table" then return end
     if current ~= s or not s.bound then return end
     local sequence = data.Sequence or data.TeleportSequence
     if sequence == nil and (original or data) == gameInfo.getSyncData() then sequence = gameInfo.getSyncSequence() end
@@ -419,16 +600,6 @@ local function updateFrame(s, time)
     end
     s.teleported = false
     local target = id(snapshot.targetId)
-    -- Evaluate the real ball trajectory every frame, without return-time delays.
-    -- A partner-targeted ball may be travelling away, but it must not keep
-    -- AutoClash firing outside our own deflection window.
-    if s.active and not withinDeflectWindow(s, snapshot) then
-        s.lastGate = "outside_deflect_window"
-        setActive(s, false, "outside_deflect_window", nil, time)
-        s.windowPaused, s.windowPartner = false, nil
-        s.activationLockUntil = math.max(s.activationLockUntil or 0, time + 0.05)
-        utils.stopAllSpam()
-    end
     local partner = s.partner > 0 and s.partner or (s.windowPartner or s.recentPartner)
     if target and target ~= localPlayer.UserId and target ~= partner and (s.active or s.windowPaused)
         and outsideClashRadius(s, target) then
