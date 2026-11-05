@@ -1,25 +1,89 @@
--- The order is also the order used by the settings panel and persistence.
-return {
-    { key = "AutoParry", label = "Auto Parry", default = true, kind = "boolean" },
-    { key = "AutoClash", label = "Auto Clash", default = true, kind = "boolean" },
-    { key = "AutoDark", label = "Auto Dark", default = false, kind = "boolean" },
-    { key = "AutoJump", label = "Auto Jump", default = false, kind = "boolean" },
-    { key = "ClashBallVisible", label = "Mini Clash", default = false, kind = "boolean" },
-    { key = "DarkBallVisible", label = "Mini Dark", default = false, kind = "boolean" },
-    { key = "JumpBallVisible", label = "Mini Jump", default = false, kind = "boolean" },
-    { key = "UpDashBallVisible", label = "Mini Up Dash", default = false, kind = "boolean" },
-    { key = "MiniSpamVisible", label = "Mini Spam", default = false, kind = "boolean" },
-    { key = "AutoParryWindowFactor", default = 0.5, kind = "factor" },
-    { key = "CPS", default = 24, kind = "cps" },
-    { key = "CPF", default = 0.36, kind = "cpf" },
-    { key = "SpamRateMode", default = "CPF", kind = "mode" },
-    { key = "Keybind", default = Enum.KeyCode.F9, kind = "key" },
-    { key = "SpamKeybind", default = Enum.KeyCode.F, kind = "key" },
-    { key = "BtnX", kind = "position" }, { key = "BtnY", kind = "position" },
-    { key = "ClashBallX", kind = "position" }, { key = "ClashBallY", kind = "position" },
-    { key = "DarkBallX", kind = "position" }, { key = "DarkBallY", kind = "position" },
-    { key = "JumpBallX", kind = "position" }, { key = "JumpBallY", kind = "position" },
-    { key = "UpDashBallX", kind = "position" }, { key = "UpDashBallY", kind = "position" },
-    { key = "MiniX", kind = "position" }, { key = "MiniY", kind = "position" },
-    { key = "PanelX", kind = "position" }, { key = "PanelY", kind = "position" },
+-- [[ uiconfig ]]
+
+local UIConfig = {}
+UIConfig.panelToggles = {
+	{
+		kind = "toggle",
+		label = "Auto Parry",
+		key = "AutoParry",
+	},
+	{
+		kind = "toggle",
+		label = "Auto Clash",
+		key = "AutoClash",
+	},
+	{
+		kind = "toggle",
+		label = "Mini Clash UI",
+		key = "ClashBallVisible",
+	},
 }
+UIConfig.panelComponents = {
+	{
+		kind = "rate_selector",
+	},
+	{
+		kind = "keybind_selector",
+	},
+	{
+		kind = "manual_spam",
+	},
+}
+UIConfig.__config = {
+	schema = {
+		AutoParry = "boolean",
+		AutoParryWindowFactor = "rate",
+		AutoClash = "boolean",
+		AutoDark = "boolean",
+		AutoJump = "boolean",
+		ClashBallVisible = "boolean",
+		MiniSpamVisible = "boolean",
+		DarkBallVisible = "boolean",
+		JumpBallVisible = "boolean",
+		UpDashBallVisible = "boolean",
+		CPS = "rate",
+		CPF = "rate",
+		SpamRateMode = "rateMode",
+		Keybind = "keyCode",
+		SpamKeybind = "keyCode",
+		BtnX = "position",
+		BtnY = "position",
+		ClashBallX = "position",
+		ClashBallY = "position",
+		DarkBallX = "position",
+		DarkBallY = "position",
+		JumpBallX = "position",
+		JumpBallY = "position",
+		UpDashBallX = "position",
+		UpDashBallY = "position",
+		MiniX = "position",
+		MiniY = "position",
+		PanelX = "position",
+		PanelY = "position",
+	},
+
+	defaults = {
+		AutoParry = true,
+		AutoParryWindowFactor = 0.5,
+		AutoClash = true,
+		AutoDark = false,
+		AutoJump = false,
+		ClashBallVisible = false,
+		MiniSpamVisible = false,
+		DarkBallVisible = false,
+		JumpBallVisible = false,
+		UpDashBallVisible = false,
+		CPS = 24,
+		CPF = 0.36,
+		SpamRateMode = "CPF",
+		Keybind = Enum.KeyCode.F9,
+		SpamKeybind = Enum.KeyCode.F,
+	},
+
+}
+UIConfig.__contract = {
+	provides = {},
+	requires = {},
+}
+
+return UIConfig

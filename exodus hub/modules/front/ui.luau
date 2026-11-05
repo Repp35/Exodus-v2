@@ -1,278 +1,1242 @@
-return function(ctx, definitions)
-    local input = ctx.services.UserInputService
-    local screen = Instance.new("ScreenGui")
-    screen.Name = "ExodusV3"
-    screen.ResetOnSpawn = false
-    screen.IgnoreGuiInset = true
-    screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    local parent
-    if type(gethui) == "function" then
-        local ok, value = pcall(gethui)
-        if ok then parent = value end
-    end
-    if not parent then parent = ctx.services.CoreGui end
-    local ok = pcall(function() screen.Parent = parent end)
-    if not ok then
-        local playerGui = ctx.player:FindFirstChildOfClass("PlayerGui")
-        assert(playerGui, "PlayerGui indisponível")
-        screen.Parent = playerGui
-    end
+-- [[ ui ]]
 
-    local colors = {
-        background = Color3.fromRGB(19, 22, 34), button = Color3.fromRGB(38, 43, 63),
-        enabled = Color3.fromRGB(24, 126, 95), accent = Color3.fromRGB(95, 119, 235),
-        text = Color3.fromRGB(240, 242, 250), muted = Color3.fromRGB(165, 172, 194),
-    }
-    local function round(object, radius)
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, radius or 7)
-        corner.Parent = object
-    end
-    local function button(parentObject, text, size)
-        local item = Instance.new("TextButton")
-        item.Size = size or UDim2.new(1, 0, 0, 31)
-        item.BackgroundColor3 = colors.button
-        item.BorderSizePixel = 0
-        item.TextColor3 = colors.text
-        item.Font = Enum.Font.GothamMedium
-        item.TextSize = 13
-        item.Text = text
-        item.AutoButtonColor = true
-        item.Parent = parentObject
-        round(item)
-        return item
-    end
-    local function enqueue(kind, fields)
-        fields = fields or {}
-        fields.kind = kind
-        ctx.utils:enqueue(fields)
-    end
-    local function draggable(handle, target, xKey, yKey)
-        local dragging, startInput, startPosition, moved, suppress = false, nil, nil, false, false
-        ctx.utils:connect(handle.InputBegan, function(event)
-            if event.UserInputType ~= Enum.UserInputType.MouseButton1 and event.UserInputType ~= Enum.UserInputType.Touch then return end
-            dragging, startInput, startPosition, moved = event, event.Position, target.AbsolutePosition, false
-        end)
-        ctx.utils:connect(input.InputChanged, function(event)
-            if not dragging then return end
-            local matches = dragging.UserInputType == Enum.UserInputType.Touch and event == dragging
-                or dragging.UserInputType == Enum.UserInputType.MouseButton1 and event.UserInputType == Enum.UserInputType.MouseMovement
-            if not matches then return end
-            local delta = event.Position - startInput
-            if delta.Magnitude >= 5 then moved = true end
-            if moved then target.Position = UDim2.fromOffset(math.floor(startPosition.X + delta.X), math.floor(startPosition.Y + delta.Y)) end
-        end)
-        ctx.utils:connect(input.InputEnded, function(event)
-            if not dragging or event ~= dragging then return end
-            dragging = nil
-            if moved then
-                suppress = true
-                enqueue("set", { key = xKey, value = target.Position.X.Offset })
-                enqueue("set", { key = yKey, value = target.Position.Y.Offset })
-            end
-        end)
-        return function()
-            if suppress then suppress = false; return true end
-            return false
-        end
-    end
+-- services
+local ExodusUI = {}
+local Utils
+local UIConfig
+local Controls: any = {}
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local Camera = workspace.CurrentCamera
+local _wait = task.wait
+local _spawn = task.spawn
 
-    local launcher = button(screen, "E", UDim2.fromOffset(48, 48))
-    launcher.Position = UDim2.fromOffset(ctx.config:get("BtnX") or 14, ctx.config:get("BtnY") or 80)
-    launcher.TextSize = 21
-    launcher.BackgroundColor3 = colors.accent
-    local launcherDragged = draggable(launcher, launcher, "BtnX", "BtnY")
-    local panel = Instance.new("Frame")
-    panel.Size = UDim2.fromOffset(310, 430)
-    panel.Position = UDim2.fromOffset(ctx.config:get("PanelX") or 70, ctx.config:get("PanelY") or 70)
-    panel.BackgroundColor3 = colors.background
-    panel.BorderSizePixel = 0
-    panel.Visible = false
-    panel.Parent = screen
-    round(panel, 10)
-    local header = button(panel, "EXODUS V3     •     arraste para mover", UDim2.new(1, -16, 0, 34))
-    header.Position = UDim2.fromOffset(8, 8)
-    header.BackgroundColor3 = colors.accent
-    draggable(header, panel, "PanelX", "PanelY")
-    ctx.utils:connect(launcher.Activated, function()
-        if not launcherDragged() then panel.Visible = not panel.Visible end
-    end)
+-- state
+local UIState = {
+	connections = {},
+	panelOpen = false,
+	spamOn = false,
+	clashBallOn = false,
+	btnIsDragging = function() return false end,
+	panelTween = nil,
+	btnTween = nil,
+	pageGeneration = 0,
+	pageTweens = {},
+}
 
-    local list = Instance.new("ScrollingFrame")
-    list.Position = UDim2.fromOffset(8, 50)
-    list.Size = UDim2.new(1, -16, 1, -58)
-    list.BackgroundTransparency = 1
-    list.BorderSizePixel = 0
-    list.ScrollBarThickness = 4
-    list.CanvasSize = UDim2.new()
-    list.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    list.Parent = panel
-    local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 5)
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Parent = list
-    local order = 0
-    local function place(object)
-        order += 1
-        object.LayoutOrder = order
-        return object
-    end
-    local function label(text)
-        local item = Instance.new("TextLabel")
-        item.Size = UDim2.new(1, 0, 0, 23)
-        item.BackgroundTransparency = 1
-        item.TextColor3 = colors.muted
-        item.TextXAlignment = Enum.TextXAlignment.Left
-        item.Font = Enum.Font.GothamBold
-        item.TextSize = 12
-        item.Text = text
-        item.Parent = list
-        return place(item)
-    end
-    local toggleButtons = {}
-    label("AUTOMAÇÕES E ATALHOS")
-    for _, entry in ipairs(definitions) do
-        if entry.kind == "boolean" then
-            local key = entry.key
-            local item = place(button(list, entry.label))
-            toggleButtons[key] = { item = item, label = entry.label }
-            ctx.utils:connect(item.Activated, function() enqueue("toggle", { key = key }) end)
-        end
-    end
-    local manual = place(button(list, "Spam manual"))
-    ctx.utils:connect(manual.Activated, function() enqueue("manualSpam") end)
-    local upDash = place(button(list, "Up Dash"))
-    ctx.utils:connect(upDash.Activated, function() enqueue("upDash") end)
+local setSpam
+local screenGui
+local floatingButton
+local clashBall
+local darkBall
+local jumpBall
+local upDashBall
+local miniGui
+local configPanel
+local particleLayer
+local titleBar
+local closeButton
+local colLeft
+local colRight
+local killBtn
+local flowingTweens = {}
 
-    label("AJUSTES")
-    local mode = place(button(list, "Taxa: CPF"))
-    ctx.utils:connect(mode.Activated, function() enqueue("mode") end)
-    local fields = {}
-    local function field(key, title, multiplier)
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 31)
-        row.BackgroundColor3 = colors.button
-        row.BorderSizePixel = 0
-        row.Parent = list
-        round(row)
-        place(row)
-        local caption = Instance.new("TextLabel")
-        caption.Size = UDim2.new(0.6, -6, 1, 0)
-        caption.Position = UDim2.fromOffset(8, 0)
-        caption.BackgroundTransparency = 1
-        caption.TextColor3 = colors.text
-        caption.TextXAlignment = Enum.TextXAlignment.Left
-        caption.Font = Enum.Font.GothamMedium
-        caption.TextSize = 12
-        caption.Text = title
-        caption.Parent = row
-        local box = Instance.new("TextBox")
-        box.Size = UDim2.new(0.4, -12, 1, -6)
-        box.Position = UDim2.new(0.6, 4, 0, 3)
-        box.BackgroundColor3 = colors.background
-        box.TextColor3 = colors.text
-        box.Font = Enum.Font.Gotham
-        box.TextSize = 12
-        box.ClearTextOnFocus = false
-        box.Parent = row
-        round(box, 4)
-        fields[key] = { box = box, multiplier = multiplier }
-        ctx.utils:connect(box.FocusLost, function()
-            local value = tonumber(box.Text)
-            if value then enqueue("set", { key = key, value = value / multiplier }) end
-            ctx.state.uiDirty = true
-        end)
-    end
-    field("AutoParryWindowFactor", "Janela do parry (%)", 100)
-    field("CPS", "Cliques por segundo (0–120)", 1)
-    field("CPF", "Cliques/frame, base 60 FPS", 1)
-    local binding
-    local panicKey = place(button(list, "Tecla de emergência"))
-    local spamKey = place(button(list, "Tecla do spam"))
-    ctx.utils:connect(panicKey.Activated, function() binding = "Keybind"; ctx.state.uiDirty = true end)
-    ctx.utils:connect(spamKey.Activated, function() binding = "SpamKeybind"; ctx.state.uiDirty = true end)
+-- palette
+local C = {
+	bg = Color3.fromRGB(8, 8, 22),
+	header = Color3.fromRGB(14, 14, 34),
+	card = Color3.fromRGB(20, 20, 44),
+	accent = Color3.fromRGB(99, 102, 241),
+	accentPink = Color3.fromRGB(236, 72, 153),
+	green = Color3.fromRGB(34, 197, 94),
+	red = Color3.fromRGB(239, 68, 68),
+	redDark = Color3.fromRGB(153, 27, 27),
+	text = Color3.fromRGB(240, 240, 255),
+	subtext = Color3.fromRGB(140, 140, 200),
+	border = Color3.fromRGB(55, 55, 100),
+	btnBlue = Color3.fromRGB(45, 55, 130),
+	btnDark = Color3.fromRGB(30, 30, 65),
+	toggleOn = Color3.fromRGB(139, 92, 246),
+	toggleOff = Color3.fromRGB(45, 45, 80),
+	darkOn = Color3.fromRGB(151, 66, 221),
+	darkOff = Color3.fromRGB(52, 34, 87),
+	jumpOn = Color3.fromRGB(16, 154, 201),
+	jumpOff = Color3.fromRGB(24, 72, 105),
+	upDash = Color3.fromRGB(226, 135, 36),
+	hold = Color3.fromRGB(236, 72, 153),
+	inputBg = Color3.fromRGB(16, 16, 38),
+}
 
-    label("UTILIDADES")
-    local antiAfk = place(button(list, "Anti AFK"))
-    ctx.utils:connect(antiAfk.Activated, function() enqueue("antiAfk") end)
-    local spinButtons = {}
-    for _, choice in ipairs({ { "Espada", "SwordCrate" }, { "Emote", "EmoteCrate" }, { "Explosão", "FinisherCrate" } }) do
-        local crate = choice[2]
-        local item = place(button(list, "Auto Spin: " .. choice[1]))
-        spinButtons[#spinButtons + 1] = { item = item, label = choice[1], crate = crate }
-        ctx.utils:connect(item.Activated, function() enqueue("spin", { crate = crate }) end)
-    end
-    local panic = place(button(list, "Parar spam / emergência"))
-    ctx.utils:connect(panic.Activated, function() enqueue("panic") end)
-    local close = place(button(list, "Fechar Exodus"))
-    ctx.utils:connect(close.Activated, function() enqueue("stop") end)
-    local status = label("Pronto")
-    status.TextWrapped = true
-    status.Size = UDim2.new(1, -4, 0, 45)
+local GRAD = {
+	Color3.fromRGB(56, 189, 248),
+	Color3.fromRGB(139, 92, 246),
+	Color3.fromRGB(236, 72, 153),
+}
 
-    local minis = {}
-    local function mini(title, visibilityKey, action, xKey, yKey, defaultX, defaultY)
-        local item = button(screen, title, UDim2.fromOffset(66, 42))
-        item.Position = UDim2.fromOffset(ctx.config:get(xKey) or defaultX, ctx.config:get(yKey) or defaultY)
-        item.TextSize = 11
-        local dragged = draggable(item, item, xKey, yKey)
-        ctx.utils:connect(item.Activated, function() if not dragged() then action() end end)
-        minis[#minis + 1] = { item = item, title = title, visibility = visibilityKey }
-    end
-    mini("CLASH", "ClashBallVisible", function() enqueue("toggle", { key = "AutoClash" }) end, "ClashBallX", "ClashBallY", 14, 160)
-    mini("DARK", "DarkBallVisible", function() enqueue("toggle", { key = "AutoDark" }) end, "DarkBallX", "DarkBallY", 14, 210)
-    mini("JUMP", "JumpBallVisible", function() enqueue("toggle", { key = "AutoJump" }) end, "JumpBallX", "JumpBallY", 14, 260)
-    mini("UP DASH", "UpDashBallVisible", function() enqueue("upDash") end, "UpDashBallX", "UpDashBallY", 14, 310)
-    mini("SPAM", "MiniSpamVisible", function() enqueue("manualSpam") end, "MiniX", "MiniY", 14, 360)
+local EASE_OUT, EASE_SINE = Enum.EasingStyle.Cubic, Enum.EasingStyle.Sine
+local DIR_OUT, DIR_IN, DIR_INOUT = Enum.EasingDirection.Out, Enum.EasingDirection.In, Enum.EasingDirection.InOut
 
-    ctx.utils:connect(input.InputBegan, function(event, processed)
-        if binding then
-            if event.UserInputType == Enum.UserInputType.Keyboard and event.KeyCode ~= Enum.KeyCode.Unknown then
-                enqueue("set", { key = binding, value = event.KeyCode })
-                binding = nil
-                ctx.state.uiDirty = true
-            end
-            return
-        end
-        if processed or input:GetFocusedTextBox() then return end
-        if event.KeyCode == ctx.config:get("Keybind") then enqueue("panic")
-        elseif event.KeyCode == ctx.config:get("SpamKeybind") then enqueue("manualSpam") end
-    end)
-
-    local ui = {}
-    function ui:refresh()
-        for key, entry in pairs(toggleButtons) do
-            local enabled = ctx.config:get(key)
-            entry.item.Text = entry.label .. (enabled and "  •  ON" or "  •  OFF")
-            entry.item.BackgroundColor3 = enabled and colors.enabled or colors.button
-        end
-        manual.Text = "Spam manual  •  " .. (ctx.state.manualSpam and "ON" or "OFF")
-        manual.BackgroundColor3 = ctx.state.manualSpam and colors.enabled or colors.button
-        mode.Text = "Taxa do spam: " .. ctx.config:get("SpamRateMode")
-        for key, fieldInfo in pairs(fields) do
-            if not fieldInfo.box:IsFocused() then fieldInfo.box.Text = tostring(ctx.config:get(key) * fieldInfo.multiplier) end
-        end
-        panicKey.Text = binding == "Keybind" and "Pressione a tecla de emergência..." or "Emergência: " .. ctx.config:get("Keybind").Name
-        spamKey.Text = binding == "SpamKeybind" and "Pressione a tecla do spam..." or "Spam: " .. ctx.config:get("SpamKeybind").Name
-        antiAfk.Text = "Anti AFK  •  " .. (ctx.state.antiAfk and "ON" or "OFF")
-        antiAfk.BackgroundColor3 = ctx.state.antiAfk and colors.enabled or colors.button
-        for _, entry in ipairs(spinButtons) do
-            local enabled = ctx.state.spin == entry.crate
-            entry.item.Text = "Auto Spin: " .. entry.label .. (enabled and "  •  ON" or "  •  OFF")
-            entry.item.BackgroundColor3 = enabled and colors.enabled or colors.button
-        end
-        for _, entry in ipairs(minis) do
-            local item = entry.item
-            item.Visible = ctx.config:get(entry.visibility) == true
-            local enabled = entry.title == "CLASH" and ctx.config:get("AutoClash")
-                or entry.title == "DARK" and ctx.config:get("AutoDark")
-                or entry.title == "JUMP" and ctx.config:get("AutoJump")
-                or entry.title == "SPAM" and ctx.state.manualSpam
-            item.BackgroundColor3 = enabled and colors.enabled or colors.button
-            item.Text = entry.title .. (entry.title ~= "UP DASH" and (enabled and "\nON" or "\nOFF") or "")
-        end
-        status.Text = ctx.state.error and ("Último erro: " .. ctx.state.error) or (ctx.state.status or "Iniciando")
-    end
-    function ui:destroy() screen:Destroy() end
-    return ui
+-- helpers
+local function inst(cls, props, parent)
+	local o = Instance.new(cls)
+	if props then
+		for k, v in pairs(props) do
+			o[k] = v
+		end
+	end
+	if parent then o.Parent = parent end
+	return o
 end
+local function corner(obj, r) return inst("UICorner", { CornerRadius = UDim.new(0, r) }, obj) end
+local function stroke(obj, col, th) return inst("UIStroke", { Color = col, Thickness = th or 1 }, obj) end
+
+-- animation
+local function attachFlow(s)
+	local g = inst("UIGradient", { Rotation = 0 }, s)
+	g.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, GRAD[1]),
+		ColorSequenceKeypoint.new(0.5, GRAD[2]),
+		ColorSequenceKeypoint.new(1, GRAD[3]),
+	})
+	return g
+end
+local function twPlay(obj, t, props, style, dir)
+	if not obj or obj.Parent == nil then return nil end
+	local ok, tween = pcall(function() return TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props) end)
+	if not ok or not tween then return nil end
+	tween:Play(); return tween
+end
+
+-- safety
+local function safeCancel(t)
+	if t then pcall(function() t:Cancel() end) end
+end
+
+-- layout
+local function viewport()
+	local currentCamera = workspace.CurrentCamera or Camera; return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
+end
+local function setConfigValue(key, value) return Utils.setConfig({ [key] = value }) end
+
+-- connections
+local function trackConn(c)
+	if c and type(c.Disconnect) == "function" then UIState.connections[#UIState.connections + 1] = c end
+	return c
+end
+local function safe(fn, ...) return pcall(fn, ...) end
+local function untrackConn(c)
+	for i = #UIState.connections, 1, -1 do
+		if UIState.connections[i] == c then table.remove(UIState.connections, i); return end
+	end
+end
+local function safeDisconnect(c)
+	if c then safe(function() c:Disconnect() end) end
+end
+local function disconnectUIConnections()
+	for i = #UIState.connections, 1, -1 do
+		safeDisconnect(UIState.connections[i]); UIState.connections[i] = nil
+	end
+end
+local function isKey(input, keyCode) return input and keyCode and input.KeyCode == keyCode end
+
+-- input
+local function bindInput()
+	trackConn(UIS.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then return end
+		local config = Utils.getConfig() or {}; local panicKey = config.Keybind; local spamKey = config.SpamKeybind
+		if isKey(input, panicKey) then
+			setSpam(false)
+			if type(Controls.onPanic) == "function" then safe(Controls.onPanic) end
+		elseif isKey(input, spamKey) then
+			setSpam(not UIState.spamOn)
+		end
+	end))
+end
+
+-- drag
+local function makeDraggable(handle, target, onDragEnd, disableOnMobile)
+	local dragInput, dragOffX, dragOffY = nil, 0, 0; local state, wasDragged, startX, startY = "Idle", false, 0, 0; local THRESH_SQ = 100
+	trackConn(handle.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if disableOnMobile and isMobileDevice() then return end
+		if state ~= "Idle" then return end
+		state, wasDragged, dragInput = "Pressed", false, input; local abs = target.AbsolutePosition; dragOffX, dragOffY = input.Position.X - abs.X, input.Position.Y - abs.Y
+		startX, startY = input.Position.X, input.Position.Y
+	end))
+	trackConn(UIS.InputChanged:Connect(function(input)
+		if state == "Idle" or not dragInput then return end
+		local isMouseDrag = dragInput.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseMovement
+		local isTouchDrag = dragInput.UserInputType == Enum.UserInputType.Touch and input == dragInput
+		if not isMouseDrag and not isTouchDrag then return end
+		local dx, dy = input.Position.X - startX, input.Position.Y - startY
+		if state == "Pressed" and (dx * dx + dy * dy) >= THRESH_SQ then state, wasDragged = "Dragging", true end
+		if state == "Dragging" then
+			local vp, sz = viewport(), target.AbsoluteSize
+			target.Position = UDim2.new(0, math.clamp(input.Position.X - dragOffX, 0, vp.X - sz.X), 0, math.clamp(input.Position.Y - dragOffY, 0, vp.Y - sz.Y))
+		end
+	end))
+	trackConn(UIS.InputEnded:Connect(function(input)
+		if input ~= dragInput or state == "Idle" then return end
+		state, dragInput = "Idle", nil
+		if wasDragged and onDragEnd then safe(onDragEnd) end
+		wasDragged = false
+	end))
+	return function() return state == "Dragging" end
+end
+
+-- effects
+local function registerFlow(obj)
+	local gradient = attachFlow(obj); local tween = TweenService:Create(gradient, TweenInfo.new(12, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1), { Rotation = 360 })
+	flowingTweens[#flowingTweens + 1] = tween; tween:Play()
+end
+local BTN_SIZE = 56
+local function btnPos()
+	local config = Utils.getConfig(); local x, y = config.BtnX, config.BtnY
+	if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
+	return UDim2.new(1, -70, 0.5, -28)
+end
+local CLASH_SIZE = 64
+local OFFSCREEN_X = -CLASH_SIZE - 40
+local autoClashTrack, autoClashThumb, autoDarkSetVisual, autoJumpSetVisual
+local function paintClashBall()
+	if not clashBall or not clashBall.Parent then return end
+	twPlay(clashBall, 0.28, { BackgroundColor3 = UIState.clashBallOn and C.green or C.red }, EASE_SINE, DIR_INOUT); clashBall.Text = UIState.clashBallOn and "ON" or "OFF"
+	clashBall.TextSize = UIState.clashBallOn and 18 or 16
+end
+local function syncAutoClashToggle()
+	if not (autoClashTrack and autoClashThumb) then return end
+	local v = UIState.clashBallOn; twPlay(autoClashTrack, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT)
+	twPlay(autoClashThumb, 0.32, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_OUT, DIR_OUT)
+end
+local function setClashBall(v, silent)
+	UIState.clashBallOn = v; setConfigValue("AutoClash", v)
+	if silent then return end
+	paintClashBall(); twPlay(clashBall, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
+	task.delay(0.08, function() twPlay(clashBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
+end
+local function showClashBall(v)
+	setConfigValue("ClashBallVisible", v); local config = Utils.getConfig(); local clashX = config.ClashBallX or 14; local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
+	twPlay(clashBall, (v and 0.22) or 0.18, { Position = v and UDim2.new(0, clashX, 0, clashY) or UDim2.new(0, OFFSCREEN_X, 0, clashY) }, EASE_OUT, DIR_OUT)
+end
+local function paintDarkBall(v)
+	if not darkBall or not darkBall.Parent then return end
+	twPlay(darkBall, 0.28, { BackgroundColor3 = v and C.darkOn or C.darkOff }, EASE_SINE, DIR_INOUT); darkBall.Text = v and "ON" or "OFF"; darkBall.TextSize = v and 18 or 16
+end
+local function showDarkBall(v)
+	setConfigValue("DarkBallVisible", v); local config = Utils.getConfig(); local x = config.DarkBallX or 14; local y = config.DarkBallY or (viewport().Y / 2 + CLASH_SIZE / 2 + 8)
+	twPlay(darkBall, v and 0.22 or 0.18, { Position = v and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
+end
+local function setDarkBall(v)
+	if not setConfigValue("AutoDark", v) then return end
+	if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
+	paintDarkBall(v)
+	if autoDarkSetVisual then autoDarkSetVisual(v) end
+	twPlay(darkBall, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
+	task.delay(0.08, function() twPlay(darkBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
+end
+local function showMovementBall(ball, visible, visibleKey, xKey, yKey, yOffset)
+	setConfigValue(visibleKey, visible); local config = Utils.getConfig(); local x = config[xKey] or (CLASH_SIZE + 22); local y = config[yKey] or (viewport().Y / 2 + yOffset)
+	twPlay(ball, visible and 0.22 or 0.18, { Position = visible and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
+end
+local function showJumpBall(v) showMovementBall(jumpBall, v, "JumpBallVisible", "JumpBallX", "JumpBallY", -CLASH_SIZE / 2) end
+local function showUpDashBall(v) showMovementBall(upDashBall, v, "UpDashBallVisible", "UpDashBallX", "UpDashBallY", CLASH_SIZE / 2 + 8) end
+local function paintJumpBall(v)
+	if autoJumpSetVisual then autoJumpSetVisual(v) end
+	if jumpBall and jumpBall.Parent then jumpBall.Text = v and "JUMP\nON" or "JUMP\nOFF"; twPlay(jumpBall, 0.2, { BackgroundColor3 = v and C.jumpOn or C.jumpOff }, EASE_SINE, DIR_INOUT) end
+end
+local function setJumpBall(v)
+	if not setConfigValue("AutoJump", v) then return end
+	if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
+	paintJumpBall(v)
+end
+local MINI_W, MINI_H = 120, 90
+local function showMini(v, visBtn)
+	setConfigValue("MiniSpamVisible", v); local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2)
+	local MINI_OFF_X = viewport().X + 30; twPlay(miniGui, (v and 0.22) or 0.18, { Position = v and UDim2.new(0, miniX, 0, miniY) or UDim2.new(0, MINI_OFF_X, 0, miniY) }, EASE_OUT, DIR_OUT)
+	if visBtn and visBtn.Parent then visBtn.Text = v and "Mini UI: Visivel" or "Mini UI: Oculto"; twPlay(visBtn, 0.15, { BackgroundColor3 = v and Color3.fromRGB(0, 130, 65) or C.btnDark }) end
+end
+setSpam = function(v)
+	UIState.spamOn = v; Utils.setManualSpamActive(v)
+	if not miniGui or not miniGui.Parent then return end
+	local spamBtn = miniGui:FindFirstChild("SpamButton")
+	if spamBtn then
+		spamBtn.Text = v and "ON" or "OFF"; twPlay(spamBtn, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT)
+		twPlay(spamBtn, 0.08, { Size = UDim2.new(1, -22, 0, 44) }, EASE_SINE, DIR_OUT)
+		task.delay(0.08, function() twPlay(spamBtn, 0.28, { Size = UDim2.new(1, -16, 0, 48) }, EASE_OUT, DIR_OUT) end)
+	end
+end
+local PW, PH = 540, 380
+local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
+local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 52, 68, 118
+local CONTENT_H = PH - TITLE_H - 60
+local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
+local function nextCardY(yPos, cardHeight) return yPos + cardHeight + CARD_GAP end
+
+-- panel
+local function panelPos()
+	local config = Utils.getConfig(); local x, y = config.PanelX, config.PanelY
+	if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
+	return UDim2.new(0.5, -PW / 2, 0.5, -PH / 2)
+end
+local PARTICLE_COLORS = {
+	Color3.fromRGB(85, 90, 140),
+	Color3.fromRGB(110, 95, 150),
+	Color3.fromRGB(150, 95, 130),
+	Color3.fromRGB(95, 130, 165),
+}
+
+-- cleanup
+local function cleanupUI()
+	safeCancel(UIState.panelTween); safeCancel(UIState.btnTween); disconnectUIConnections(); UIState.connections = {}
+	UIState.pageGeneration += 1
+	for _, tween in ipairs(UIState.pageTweens) do
+		safeCancel(tween)
+	end
+	UIState.pageTweens = {}; UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false
+	if Utils then Utils.setManualSpamActive(false) end
+	UIState.panelTween = nil; UIState.btnTween = nil
+	UIState.btnIsDragging = function() return false end
+	for i = #flowingTweens, 1, -1 do
+		safeCancel(flowingTweens[i]); flowingTweens[i] = nil
+	end
+	local current = screenGui
+	if current then pcall(function() current:Destroy() end) end
+	screenGui = nil; floatingButton = nil; clashBall = nil; darkBall = nil
+	jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil
+	particleLayer = nil; titleBar = nil; closeButton = nil; colLeft = nil
+	colRight = nil; killBtn = nil; autoClashTrack = nil; autoClashThumb = nil
+	autoDarkSetVisual = nil; autoJumpSetVisual = nil
+	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil end
+end
+
+-- particles
+local function spawnParticle()
+	if not particleLayer or not particleLayer.Parent then return end
+	local isFar = math.random() < 0.6; local size = isFar and math.random(2, 3) or math.random(4, 6); local startTrans = isFar and 0.5 or 0.2
+	local color = PARTICLE_COLORS[math.random(1, #PARTICLE_COLORS)]
+	local dot = inst("Frame", {
+		Size = UDim2.new(0, size, 0, size),
+		Position = UDim2.new(math.random(), 0, 1, 0),
+		BackgroundColor3 = color,
+		BackgroundTransparency = startTrans,
+		ZIndex = 4,
+		Parent = particleLayer,
+	})
+	corner(dot, 999); local dur = isFar and math.random(5, 9) or math.random(3, 5); local endX = math.clamp(dot.Position.X.Scale + (math.random() - 0.5) * 0.15, 0, 1)
+	twPlay(dot, 0.6, { BackgroundTransparency = math.max(startTrans - 0.1, 0.05) }, EASE_SINE, DIR_OUT)
+	twPlay(dot, dur, { Position = UDim2.new(endX, 0, -0.1, 0), BackgroundTransparency = 1 }, EASE_SINE, DIR_INOUT)
+	task.delay(dur + 0.2, function()
+		if dot.Parent then dot:Destroy() end
+	end)
+end
+
+-- cards
+local function cardFrame(yPos, h, parent)
+	local f = inst("Frame", {
+		Size = UDim2.new(1, 0, 0, h),
+		Position = UDim2.new(0, 0, 0, yPos),
+		BackgroundColor3 = C.card,
+		BackgroundTransparency = 0.1,
+		ZIndex = 6,
+		Parent = parent,
+	})
+	corner(f, 12); local s = stroke(f, C.border, 1)
+	trackConn(f.MouseEnter:Connect(function()
+		twPlay(s, 0.22, { Color = C.accent }, EASE_SINE, DIR_INOUT); twPlay(f, 0.22, { BackgroundColor3 = Color3.fromRGB(24, 24, 50) }, EASE_SINE, DIR_INOUT)
+	end))
+	trackConn(f.MouseLeave:Connect(function()
+		twPlay(s, 0.25, { Color = C.border }, EASE_SINE, DIR_INOUT); twPlay(f, 0.25, { BackgroundColor3 = C.card }, EASE_SINE, DIR_INOUT)
+	end))
+	return f
+end
+local function cardLabel(text, parent)
+	inst("TextLabel", {
+		Size = UDim2.new(1, -10, 0, 16),
+		Position = UDim2.new(0, 10, 0, 5),
+		BackgroundTransparency = 1,
+		Text = text,
+		TextColor3 = C.accent,
+		TextSize = 10,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 7,
+		Parent = parent,
+	})
+end
+local function makeBtn(text, x, y, w, h, parent, bg)
+	local b = inst("TextButton", {
+		Size = UDim2.new(0, w, 0, h),
+		Position = UDim2.new(0, x, 0, y),
+		BackgroundColor3 = bg or C.btnBlue,
+		BackgroundTransparency = 0.1,
+		Text = text,
+		TextColor3 = C.text,
+		TextSize = 13,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = parent,
+	})
+	corner(b, 8); return b
+end
+local function makeToggle(trackParent, initial)
+	local track = inst("Frame", {
+		Size = UDim2.new(0, 48, 0, 26),
+		Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -13),
+		BackgroundColor3 = initial and C.toggleOn or C.toggleOff,
+		BackgroundTransparency = 0.1,
+		ZIndex = 7,
+		Parent = trackParent,
+	})
+	corner(track, 999)
+	local thumb = inst("Frame", {
+		Size = UDim2.new(0, 20, 0, 20),
+		Position = initial and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10),
+		BackgroundColor3 = Color3.new(1, 1, 1),
+		ZIndex = 8,
+		Parent = track,
+	})
+	corner(thumb, 999)
+	local function setVisual(v)
+		twPlay(track, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT)
+		twPlay(thumb, 0.25, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_SINE, DIR_INOUT)
+	end
+	return track, thumb, setVisual
+end
+
+-- keybind
+local function bindKeyCapture(btn, onPicked)
+	local listening = false
+	trackConn(btn.Activated:Connect(function()
+		if listening then return end
+		listening = true; btn.Text = "..."; twPlay(btn, 0.1, { BackgroundColor3 = Color3.fromRGB(80, 85, 160) })
+		local conn
+		conn = trackConn(UIS.InputBegan:Connect(function(input, gpe)
+			if gpe then return end
+			if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+			safe(onPicked, input.KeyCode); listening = false; safeDisconnect(conn); untrackConn(conn)
+		end))
+	end))
+end
+
+-- cards
+local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
+	local f = cardFrame(yPos, CARD_H, parent)
+	inst("TextLabel", {
+		Size = UDim2.new(0.55, 0, 1, 0),
+		Position = UDim2.new(0, 14, 0, 0),
+		BackgroundTransparency = 1,
+		Text = labelText,
+		TextColor3 = C.text,
+		TextSize = labelText == "Auto Deflexo Feroz" and 11 or 14,
+		Font = Enum.Font.GothamSemibold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 7,
+		Parent = f,
+	})
+	local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
+	if configKey == "AutoClash" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
+	if configKey == "AutoDark" then autoDarkSetVisual = setVisual end
+	if configKey == "AutoJump" then autoJumpSetVisual = setVisual end
+	trackConn(inst("TextButton", {
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundTransparency = 1,
+		Text = "",
+		ZIndex = 9,
+		Parent = f,
+	}).Activated:Connect(function()
+		local current = Utils.getConfig(); local state = not (configKey and current[configKey] == true)
+		if not configKey or setConfigValue(configKey, state) then
+			setVisual(state)
+			if onAfter then onAfter(state) end
+		end
+	end))
+	return nextCardY(yPos, CARD_H)
+end
+local function createActionToggleCard(labelText, yPos, parent, onToggle)
+	local f = cardFrame(yPos, CARD_H, parent); cardLabel(labelText, f); local _, _, setVisual = makeToggle(f, false)
+	trackConn(inst("TextButton", {
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundTransparency = 1,
+		Text = "",
+		ZIndex = 9,
+		Parent = f,
+	}).Activated:Connect(onToggle))
+	return setVisual
+end
+local function createParryTimingCard(yPos, parent)
+	local f = cardFrame(yPos, CARD_H, parent)
+	inst("TextLabel", {
+		Size = UDim2.new(1, -100, 1, 0),
+		Position = UDim2.new(0, 14, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "Antecipação AP (%)",
+		TextColor3 = C.text,
+		TextSize = 13,
+		Font = Enum.Font.GothamSemibold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 7,
+		Parent = f,
+	})
+	local config = Utils.getConfig(); local initial = tonumber(config.AutoParryWindowFactor) or 0.5
+	local input = inst("TextBox", {
+		Size = UDim2.new(0, 62, 0, 30),
+		Position = UDim2.new(1, -74, 0.5, -15),
+		BackgroundColor3 = C.inputBg,
+		BackgroundTransparency = 0.1,
+		Text = tostring(math.clamp(initial, 0, 1) * 100),
+		ClearTextOnFocus = false,
+		TextColor3 = C.text,
+		TextSize = 13,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = f,
+	})
+	corner(input, 8); stroke(input, C.border, 1)
+	trackConn(input.FocusLost:Connect(function()
+		local value = tonumber(input.Text)
+		if not value or value ~= value or value == math.huge or value == -math.huge then value = (tonumber(Utils.getConfig().AutoParryWindowFactor) or 0.5) * 100 end
+		value = math.clamp(value, 0, 100); setConfigValue("AutoParryWindowFactor", value / 100); input.Text = tostring(value)
+	end))
+	return nextCardY(yPos, CARD_H)
+end
+local function createRateSelector(yPos, parent)
+	local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig(); config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.3917)
+	config.SpamRateMode = config.SpamRateMode == "CPF" and "CPF" or "CPS"
+	Utils.setConfig({
+		CPS = config.CPS,
+		CPF = config.CPF,
+		SpamRateMode = config.SpamRateMode,
+	})
+	cardLabel("Taxa do Spam", f); local currentMode = config.SpamRateMode
+	local modeTrack = inst("Frame", {
+		Size = UDim2.new(0, 116, 0, 28),
+		Position = UDim2.new(0, 12, 0, 32),
+		BackgroundColor3 = C.inputBg,
+		BackgroundTransparency = 0.05,
+		BorderSizePixel = 0,
+		ZIndex = 7,
+		Parent = f,
+	})
+	corner(modeTrack, 999); stroke(modeTrack, C.border, 1)
+	local modeThumb = inst("Frame", {
+		Size = UDim2.new(0, 54, 0, 24),
+		Position = currentMode == "CPS" and UDim2.new(0, 2, 0.5, -12) or UDim2.new(0, 60, 0.5, -12),
+		BackgroundColor3 = currentMode == "CPS" and C.accent or C.accentPink,
+		BorderSizePixel = 0,
+		ZIndex = 8,
+		Parent = modeTrack,
+	})
+	corner(modeThumb, 999); stroke(modeThumb, C.text, 1); local modeButtons = {}
+	for index, mode in ipairs({ "CPS", "CPF" }) do
+		local button = inst("TextButton", {
+			Size = UDim2.new(0, 58, 1, 0),
+			Position = UDim2.new(0, (index - 1) * 58, 0, 0),
+			BackgroundTransparency = 1,
+			Text = mode,
+			TextColor3 = mode == currentMode and C.text or C.subtext,
+			TextSize = 12,
+			Font = Enum.Font.GothamBold,
+			ZIndex = 9,
+			Parent = modeTrack,
+		})
+		modeButtons[mode] = button
+	end
+	local inputBox = inst("TextBox", {
+		Size = UDim2.new(0, 62, 0, 30),
+		Position = UDim2.new(1, -74, 0, 31),
+		BackgroundColor3 = C.inputBg,
+		BackgroundTransparency = 0.1,
+		Text = tostring(config[currentMode]),
+		PlaceholderText = "Taxa",
+		ClearTextOnFocus = false,
+		TextColor3 = C.text,
+		TextSize = 13,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = f,
+	})
+	corner(inputBox, 8); local inputStroke = stroke(inputBox, C.border, 1)
+	local function paintRateMode(animated)
+		local isCPS = currentMode == "CPS"; local targetPosition = isCPS and UDim2.new(0, 2, 0.5, -12) or UDim2.new(0, 60, 0.5, -12); local duration = animated and 0.32 or 0
+		twPlay(modeThumb, duration, {
+			Position = targetPosition,
+			BackgroundColor3 = isCPS and C.accent or C.accentPink,
+		}, EASE_OUT, DIR_OUT)
+		for mode, button in pairs(modeButtons) do
+			twPlay(button, animated and 0.2 or 0, {
+				TextColor3 = mode == currentMode and C.text or C.subtext,
+			}, EASE_SINE, DIR_INOUT)
+		end
+	end
+	local function selectRateMode(mode)
+		if mode ~= "CPS" and mode ~= "CPF" or currentMode == mode then return end
+		currentMode = mode; config.SpamRateMode = mode; inputBox.Text = tostring(config[mode]); setConfigValue("SpamRateMode", mode)
+		paintRateMode(true)
+	end
+	for mode, button in pairs(modeButtons) do
+		trackConn(button.Activated:Connect(function() selectRateMode(mode) end))
+	end
+	trackConn(inputBox.Focused:Connect(function() twPlay(inputStroke, 0.15, { Color = C.accent }) end))
+	trackConn(inputBox.FocusLost:Connect(function()
+		twPlay(inputStroke, 0.15, { Color = C.border }); local value = tonumber(inputBox.Text); local key = currentMode; local fallback = config[key]
+		local normalized = Utils.normalizeSpamRate(value, fallback); setConfigValue(key, normalized); inputBox.Text = tostring(normalized)
+	end))
+	return nextCardY(yPos, RATE_CARD_H)
+end
+local function createKeybindSelector(yPos, parent)
+	local f = cardFrame(yPos, CARD_H, parent)
+	inst("TextLabel", {
+		Size = UDim2.new(0.55, 0, 1, 0),
+		Position = UDim2.new(0, 14, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "Tecla de Atalho",
+		TextColor3 = C.text,
+		TextSize = 14,
+		Font = Enum.Font.GothamSemibold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 7,
+		Parent = f,
+	})
+	local config = Utils.getConfig(); local kbBtn = makeBtn(config.Keybind and config.Keybind.Name or "V", 0, 0, 88, 30, f, C.btnBlue); kbBtn.Position = UDim2.new(1, -100, 0.5, -15)
+	bindKeyCapture(kbBtn, function(keyCode)
+		setConfigValue("Keybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_OUT)
+	end)
+	return nextCardY(yPos, CARD_H)
+end
+local function createSpamCard(yPos, parent)
+	local f = cardFrame(yPos, SPAM_CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true
+	local visBtn = makeBtn(visible and "Mini UI: Visivel" or "Mini UI: Oculto", 8, 24, COL_W - 16, 30, f, visible and Color3.fromRGB(0, 130, 65) or C.btnDark); visBtn.TextSize = 11
+	trackConn(visBtn.Activated:Connect(function() showMini(Utils.getConfigValue("MiniSpamVisible") ~= true, visBtn) end))
+	local config = Utils.getConfig(); local kbBtn = makeBtn(config.SpamKeybind and config.SpamKeybind.Name or "X", 8, 64, COL_W - 16, 32, f, C.btnBlue)
+	bindKeyCapture(kbBtn, function(keyCode)
+		setConfigValue("SpamKeybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_OUT)
+	end)
+	return nextCardY(yPos, SPAM_CARD_H)
+end
+local function togglePanel()
+	if not configPanel or not configPanel.Parent or not floatingButton or not floatingButton.Parent then return end
+	UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
+	if UIState.panelOpen then
+		if not configPanel.Visible then configPanel.GroupTransparency = 1; configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97) end
+		configPanel.Visible = true; UIState.panelTween = twPlay(configPanel, 0.28, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
+		UIState.btnTween = twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN)
+	else
+		UIState.panelTween = twPlay(configPanel, 0.22, { Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97), GroupTransparency = 1 }, EASE_OUT, DIR_IN)
+		UIState.btnTween =
+			twPlay(floatingButton, 0.22, { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE) }, EASE_OUT, DIR_OUT)
+		if UIState.panelTween then
+			local conn
+			conn = trackConn(UIState.panelTween.Completed:Connect(function()
+				if not UIState.panelOpen then configPanel.Visible = false; configPanel.Size = UDim2.new(0, PW, 0, PH); configPanel.GroupTransparency = 0 end
+				safeDisconnect(conn); untrackConn(conn)
+			end))
+		else
+			configPanel.Visible = false; configPanel.Size = UDim2.new(0, PW, 0, PH); configPanel.GroupTransparency = 0
+		end
+	end
+end
+
+-- setup
+function ExodusUI.setup(deps)
+	if
+		type(deps) ~= "table"
+		or type(deps.Utils) ~= "table"
+		or type(deps.Utils.getConfig) ~= "function"
+		or type(deps.Utils.setConfig) ~= "function"
+		or type(deps.Utils.normalizeSpamRate) ~= "function"
+		or type(deps.Utils.isManualSpamActive) ~= "function"
+		or type(deps.Utils.setManualSpamActive) ~= "function"
+		or type(deps.Controls) ~= "table"
+		or type(deps.Utils.stop) ~= "function"
+		or type(deps.Utils.name) ~= "function"
+		or type(deps.Utils.version) ~= "function"
+		or type(deps.Utils.author) ~= "function"
+		or type(deps.UIConfig) ~= "table"
+		or type(deps.UIConfig.panelToggles) ~= "table"
+		or type(deps.UIConfig.panelComponents) ~= "table"
+	then
+		return false, "dependência ausente: Utils, Controls ou UIConfig"
+	end
+	Utils = deps.Utils; UIConfig = deps.UIConfig; Controls = type(deps.Controls) == "table" and deps.Controls or {}
+	if type(_G.ExodusUICleanup) == "function" then
+		pcall(_G.ExodusUICleanup)
+	else
+		local old = CoreGui:FindFirstChild("ExodusUISystem")
+		if old then old:Destroy() end
+	end
+	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.panelTween = nil
+	UIState.btnTween = nil; _G.ExodusUICleanup = cleanupUI
+	screenGui = inst("ScreenGui", {
+		Name = "ExodusUISystem",
+		ResetOnSpawn = false,
+		IgnoreGuiInset = true,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		Parent = CoreGui,
+	})
+	bindInput()
+	floatingButton = inst("TextButton", {
+		Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE),
+		Position = btnPos(),
+		BackgroundColor3 = C.header,
+		BackgroundTransparency = 1,
+		Text = "E",
+		TextColor3 = C.text,
+		TextTransparency = 1,
+		TextSize = 26,
+		Font = Enum.Font.GothamBold,
+		Active = true,
+		ZIndex = 10,
+		Parent = screenGui,
+	})
+	corner(floatingButton, 999); local floatingStroke = stroke(floatingButton, C.accent, 2); floatingStroke.Transparency = 1; registerFlow(floatingStroke)
+	task.defer(function()
+		if not floatingButton or not floatingButton.Parent then return end
+		twPlay(floatingButton, 0.38, { BackgroundTransparency = 0.1, TextTransparency = 0 }, EASE_OUT, DIR_OUT); twPlay(floatingStroke, 0.42, { Transparency = 0 }, EASE_OUT, DIR_OUT)
+	end)
+	local config = Utils.getConfig(); local clashX = config.ClashBallX or 14; local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
+	clashBall = inst("TextButton", {
+		Name = "ExodusClashBall",
+		Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
+		Position = UDim2.new(0, OFFSCREEN_X, 0.5, -CLASH_SIZE / 2),
+		BackgroundColor3 = C.red,
+		Text = "OFF",
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = 16,
+		Font = Enum.Font.GothamBold,
+		Active = true,
+		ZIndex = 8,
+		Parent = screenGui,
+	})
+	corner(clashBall, 999); stroke(clashBall, Color3.new(0, 0, 0), 2); UIState.clashBallOn = config.AutoClash or false; clashBall.Text = UIState.clashBallOn and "ON" or "OFF"
+	clashBall.TextSize = UIState.clashBallOn and 18 or 16; clashBall.BackgroundColor3 = UIState.clashBallOn and C.green or C.red
+	UIState.btnIsDragging = makeDraggable(floatingButton, floatingButton, function()
+		setConfigValue("BtnX", floatingButton.Position.X.Offset); setConfigValue("BtnY", floatingButton.Position.Y.Offset)
+	end)
+	trackConn(floatingButton.Activated:Connect(function()
+		if UIState.btnIsDragging() then return end
+		togglePanel()
+	end))
+	makeDraggable(clashBall, clashBall, function()
+		setConfigValue("ClashBallX", clashBall.Position.X.Offset); setConfigValue("ClashBallY", clashBall.Position.Y.Offset)
+	end)
+	trackConn(clashBall.Activated:Connect(function()
+		setClashBall(not UIState.clashBallOn); syncAutoClashToggle()
+	end))
+	local darkX = config.DarkBallX or 14; local darkY = config.DarkBallY or (viewport().Y / 2 + CLASH_SIZE / 2 + 8)
+	darkBall = inst("TextButton", {
+		Name = "ExodusDarkBall",
+		Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
+		Position = UDim2.new(0, OFFSCREEN_X, 0, darkY),
+		BackgroundColor3 = config.AutoDark and C.darkOn or C.darkOff,
+		Text = config.AutoDark and "ON" or "OFF",
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = config.AutoDark and 18 or 16,
+		Font = Enum.Font.GothamBold,
+		Active = true,
+		ZIndex = 8,
+		Parent = screenGui,
+	})
+	corner(darkBall, 999); stroke(darkBall, Color3.new(0, 0, 0), 2)
+	local isDarkDragging = makeDraggable(darkBall, darkBall, function()
+		setConfigValue("DarkBallX", darkBall.Position.X.Offset); setConfigValue("DarkBallY", darkBall.Position.Y.Offset)
+	end)
+	trackConn(darkBall.Activated:Connect(function()
+		if isDarkDragging() then return end
+		setDarkBall(Utils.getConfigValue("AutoDark") ~= true)
+	end))
+	local function createMovementBall(name, text, color, xKey, yKey, yOffset, onClick)
+		local x = config[xKey] or (CLASH_SIZE + 22); local y = config[yKey] or (viewport().Y / 2 + yOffset)
+		local ball = inst("TextButton", {
+			Name = name,
+			Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
+			Position = UDim2.new(0, OFFSCREEN_X, 0, y),
+			BackgroundColor3 = color,
+			Text = text,
+			TextColor3 = Color3.new(1, 1, 1),
+			TextSize = 15,
+			Font = Enum.Font.GothamBold,
+			Active = true,
+			ZIndex = 8,
+			Parent = screenGui,
+		})
+		corner(ball, 999); stroke(ball, Color3.new(0, 0, 0), 2)
+		local dragging = makeDraggable(ball, ball, function()
+			setConfigValue(xKey, ball.Position.X.Offset); setConfigValue(yKey, ball.Position.Y.Offset)
+		end)
+		trackConn(ball.Activated:Connect(function()
+			if not dragging() then onClick(ball) end
+		end))
+		return ball, x, y
+	end
+	local jumpX, jumpY, upDashX, upDashY
+	jumpBall, jumpX, jumpY = createMovementBall(
+		"ExodusJumpBall",
+		config.AutoJump and "JUMP\nON" or "JUMP\nOFF",
+		config.AutoJump and C.jumpOn or C.jumpOff,
+		"JumpBallX",
+		"JumpBallY",
+		-CLASH_SIZE / 2,
+		function() setJumpBall(Utils.getConfigValue("AutoJump") ~= true) end
+	)
+	upDashBall, upDashX, upDashY = createMovementBall(
+		"ExodusUpDashBall",
+		"DASH\n↑",
+		C.upDash,
+		"UpDashBallX",
+		"UpDashBallY",
+		CLASH_SIZE / 2 + 8,
+		function(ball)
+			if type(Controls.onUpDash) == "function" then Controls.onUpDash() end
+			twPlay(ball, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
+			task.delay(0.08, function() twPlay(ball, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
+		end
+	)
+	local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30
+	miniGui = inst("Frame", {
+		Name = "ExodusSpamMini",
+		Size = UDim2.new(0, MINI_W, 0, MINI_H),
+		BackgroundColor3 = C.header,
+		BorderSizePixel = 0,
+		ZIndex = 15,
+		Parent = screenGui,
+	})
+	corner(miniGui, 14)
+	corner(
+		inst("Frame", {
+			Size = UDim2.new(1, 8, 1, 8),
+			Position = UDim2.new(0, -4, 0, -4),
+			BackgroundColor3 = C.accent,
+			BackgroundTransparency = 0.92,
+			BorderSizePixel = 0,
+			ZIndex = 14,
+			Parent = miniGui,
+		}),
+		18
+	)
+	registerFlow(stroke(miniGui, C.accent, 1.5))
+	local miniTitleBar = inst("Frame", {
+		Size = UDim2.new(1, 0, 0, 26),
+		BackgroundColor3 = Color3.fromRGB(20, 20, 46),
+		BackgroundTransparency = 0.05,
+		BorderSizePixel = 0,
+		ZIndex = 16,
+		Parent = miniGui,
+	})
+	corner(miniTitleBar, 14)
+	inst("Frame", {
+		Size = UDim2.new(1, 0, 0, 12),
+		Position = UDim2.new(0, 0, 1, -12),
+		BackgroundColor3 = Color3.fromRGB(20, 20, 46),
+		BackgroundTransparency = 0.05,
+		BorderSizePixel = 0,
+		ZIndex = 16,
+		Parent = miniTitleBar,
+	})
+	corner(
+		inst("Frame", {
+			Size = UDim2.new(0.5, 0, 0, 2),
+			Position = UDim2.new(0.25, 0, 0, 0),
+			BackgroundColor3 = C.accentPink,
+			BorderSizePixel = 0,
+			ZIndex = 17,
+			Parent = miniTitleBar,
+		}),
+		1
+	)
+	inst("TextLabel", {
+		Size = UDim2.new(1, -16, 1, 0),
+		Position = UDim2.new(0, 8, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "Spam",
+		TextColor3 = C.subtext,
+		TextScaled = true,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 17,
+		Parent = miniTitleBar,
+	})
+	local spamBtn = inst("TextButton", {
+		Name = "SpamButton",
+		Size = UDim2.new(1, -16, 0, 48),
+		Position = UDim2.new(0, 8, 0, 32),
+		BackgroundColor3 = C.red,
+		BorderSizePixel = 0,
+		Text = "OFF",
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = 24,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 16,
+		Parent = miniGui,
+	})
+	corner(spamBtn, 10)
+	trackConn(spamBtn.Activated:Connect(function() setSpam(not UIState.spamOn) end))
+	miniGui.Position = UDim2.new(0, config.MiniSpamVisible and (config.MiniX or (viewport().X - MINI_W - 14)) or MINI_OFF_X, 0, miniY)
+	makeDraggable(miniTitleBar, miniGui, function()
+		setConfigValue("MiniX", miniGui.Position.X.Offset); setConfigValue("MiniY", miniGui.Position.Y.Offset)
+	end)
+	configPanel = inst("CanvasGroup", {
+		Name = "ExodusPanel",
+		Size = UDim2.new(0, PW, 0, PH),
+		Position = panelPos(),
+		BackgroundColor3 = C.bg,
+		BackgroundTransparency = 0.08,
+		GroupTransparency = 0,
+		Visible = false,
+		ZIndex = 5,
+		ClipsDescendants = true,
+		Parent = screenGui,
+	})
+	corner(configPanel, 16); stroke(configPanel, C.accent, 1.5)
+	particleLayer = inst("Frame", {
+		Name = "ParticleLayer",
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundTransparency = 1,
+		ZIndex = 4,
+		ClipsDescendants = true,
+		Parent = configPanel,
+	})
+	_spawn(function()
+		while configPanel and configPanel.Parent do
+			_wait(math.random() * 0.6 + 0.15)
+			if configPanel and configPanel.Parent and configPanel.Visible then spawnParticle() end
+		end
+	end)
+	titleBar = inst("Frame", {
+		Size = UDim2.new(1, 0, 0, TITLE_H),
+		BackgroundColor3 = C.header,
+		Active = true,
+		ZIndex = 6,
+		Parent = configPanel,
+	})
+	corner(titleBar, 16)
+	makeDraggable(titleBar, configPanel, function()
+		setConfigValue("PanelX", configPanel.Position.X.Offset); setConfigValue("PanelY", configPanel.Position.Y.Offset)
+	end)
+	local titleGroup = inst("Frame", {
+		Size = UDim2.new(0, 280, 1, 0),
+		Position = UDim2.new(0.5, -140, 0, 0),
+		BackgroundTransparency = 1,
+		ZIndex = 7,
+		Parent = titleBar,
+	})
+	inst("TextLabel", {
+		Size = UDim2.new(1, -58, 1, 0),
+		Position = UDim2.new(0, 0, 0, 0),
+		BackgroundTransparency = 1,
+		Text = ("%s - v%s"):format(Utils.name(), Utils.version()),
+		TextColor3 = C.text,
+		TextSize = 16,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Right,
+		ZIndex = 7,
+		Parent = titleGroup,
+	})
+	inst("TextLabel", {
+		Size = UDim2.new(0, 58, 1, 0),
+		Position = UDim2.new(1, -58, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "  " .. Utils.author(),
+		TextColor3 = C.subtext,
+		TextTransparency = 0.35,
+		TextSize = 10,
+		Font = Enum.Font.Gotham,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 7,
+		Parent = titleGroup,
+	})
+	closeButton = inst("TextButton", {
+		Size = UDim2.new(0, 30, 0, 30),
+		Position = UDim2.new(1, -PAD - 30, 0.5, -15),
+		BackgroundColor3 = C.red,
+		BackgroundTransparency = 0.3,
+		Text = "X",
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = titleBar,
+	})
+	corner(closeButton, 8)
+	trackConn(closeButton.MouseEnter:Connect(function() twPlay(closeButton, 0.12, { BackgroundTransparency = 0 }) end))
+	trackConn(closeButton.MouseLeave:Connect(function() twPlay(closeButton, 0.12, { BackgroundTransparency = 0.3 }) end))
+	trackConn(closeButton.Activated:Connect(togglePanel)); local pageGroups = {}
+	for index = 1, 4 do
+		pageGroups[index] = inst("CanvasGroup", {
+			Name = "Page" .. index,
+			Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
+			Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
+			BackgroundTransparency = 1,
+			GroupTransparency = index == 1 and 0 or 1,
+			Visible = index == 1,
+			ClipsDescendants = true,
+			ZIndex = 6,
+			Parent = configPanel,
+		})
+	end
+	colLeft = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, 0, 0, 0),
+		BackgroundTransparency = 1,
+		ZIndex = 6,
+		Parent = pageGroups[1],
+	})
+	colRight = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, COL_W + GAP, 0, 0),
+		BackgroundTransparency = 1,
+		ZIndex = 6,
+		Parent = pageGroups[1],
+	})
+	killBtn = inst("TextButton", {
+		Size = UDim2.new(0, 124, 0, 26),
+		Position = UDim2.new(0.5, -62, 1, -PAD - 26),
+		BackgroundColor3 = C.redDark,
+		BackgroundTransparency = 0.15,
+		Text = "Fechar Script",
+		TextColor3 = Color3.fromRGB(255, 200, 200),
+		TextSize = 11,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = configPanel,
+	})
+	corner(killBtn, 6)
+	trackConn(killBtn.Activated:Connect(function() Utils.stop() end))
+	local yL = 4
+	local toggleCallbacks = {
+		AutoClash = function(value)
+			setClashBall(value, true); paintClashBall()
+		end,
+		ClashBallVisible = showClashBall,
+	}
+
+	for _, definition in ipairs(UIConfig.panelToggles) do
+		if definition.kind == "toggle" then yL = createToggleCard(definition.label, definition.key, yL, colLeft, toggleCallbacks[definition.key]) end
+	end
+	local yR = 4
+	local components = {
+		rate_selector = createRateSelector,
+		keybind_selector = createKeybindSelector,
+		manual_spam = createSpamCard,
+	}
+
+	for _, definition in ipairs(UIConfig.panelComponents) do
+		local createComponent = components[definition.kind]
+		if createComponent then yR = createComponent(yR, colRight) end
+	end
+	local settingsLeft = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, 0, 0, 0),
+		BackgroundTransparency = 1,
+		Visible = true,
+		ZIndex = 6,
+		Parent = pageGroups[2],
+	})
+	local settingsRight = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, COL_W + GAP, 0, 0),
+		BackgroundTransparency = 1,
+		Visible = true,
+		ZIndex = 6,
+		Parent = pageGroups[2],
+	})
+	local utilities = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, 0, 0, 0),
+		BackgroundTransparency = 1,
+		Visible = true,
+		ZIndex = 6,
+		Parent = pageGroups[3],
+	})
+	local autosLeft = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, 0, 0, 0),
+		BackgroundTransparency = 1,
+		ZIndex = 6,
+		Parent = pageGroups[4],
+	})
+	local autosRight = inst("Frame", {
+		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
+		Position = UDim2.new(0, COL_W + GAP, 0, 0),
+		BackgroundTransparency = 1,
+		Visible = true,
+		ZIndex = 6,
+		Parent = pageGroups[4],
+	})
+	local darkYPos = createToggleCard("Auto Dark", "AutoDark", 4, autosLeft, function(value)
+		paintDarkBall(value)
+		if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
+	end)
+	createToggleCard("Mini Dark UI", "DarkBallVisible", darkYPos, autosLeft, showDarkBall)
+	local jumpYPos = createToggleCard("Auto Jump", "AutoJump", 4, autosRight, function(value)
+		paintJumpBall(value)
+		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
+	end)
+	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall)
+	createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); createParryTimingCard(4, settingsLeft)
+	local antiConnection
+	local antiGeneration = 0
+	local paintAnti
+	paintAnti = createActionToggleCard("Anti AFK", 0, utilities, function()
+		if antiConnection then
+			antiGeneration += 1; antiConnection:Disconnect(); untrackConn(antiConnection); antiConnection = nil
+			paintAnti(false); return
+		end
+		local player = Utils.getLocalPlayer(); local ok, virtualUser = pcall(game.GetService, game, "VirtualUser")
+		if not player then Utils.recordError("AntiAFK", "Jogador indisponível"); return end
+		local function pulse()
+			local inputOk, err = pcall(function()
+				if not ok or not virtualUser then error("VirtualUser indisponível") end
+				virtualUser:CaptureController(); virtualUser:ClickButton2(Vector2.new(0, 0))
+			end)
+			if not inputOk then
+				local fallback, fallbackErr = pcall(function()
+					local vim = game:GetService("VirtualInputManager"); vim:SendMouseButtonEvent(0, 0, 1, true, game, 0); vim:SendMouseButtonEvent(0, 0, 1, false, game, 0)
+				end)
+				if not fallback then Utils.recordError("AntiAFK", tostring(err) .. " | " .. tostring(fallbackErr)) end
+			end
+		end
+		antiConnection = trackConn(player.Idled:Connect(pulse)); antiGeneration += 1; local generation = antiGeneration
+		task.spawn(function()
+			while generation == antiGeneration and screenGui and screenGui.Parent and Utils.isActive() do
+				task.wait(20)
+				if generation == antiGeneration and screenGui and screenGui.Parent and Utils.isActive() then pulse() end
+			end
+		end)
+		paintAnti(true)
+	end)
+	local spinActive, spinGeneration, spinButtons = nil, 0, {}; local spinModes = { { "Espada", "SwordCrate" }, { "Emote", "EmoteCrate" }, { "Explosão", "FinisherCrate" } }
+	local function paintSpin()
+		for _, mode in ipairs(spinModes) do
+			if spinButtons[mode[2]] then spinButtons[mode[2]](spinActive == mode[2]) end
+		end
+	end
+	for index, mode in ipairs(spinModes) do
+		local crate = mode[2]
+		spinButtons[crate] = createActionToggleCard(mode[1], CARD_H + 8 + (index - 1) * (CARD_H + 8), utilities, function()
+			spinGeneration += 1
+			if spinActive == crate then spinActive = nil else spinActive = crate end
+			paintSpin()
+			if not spinActive then return end
+			local generation = spinGeneration
+			task.spawn(function()
+				local ok, network = pcall(
+					function()
+						return require(game:GetService("ReplicatedStorage"):WaitForChild("TS"):WaitForChild("Network"):WaitForChild("Network")).Network.new()
+					end
+				)
+				if generation ~= spinGeneration or spinActive ~= crate then return end
+				if not ok then spinActive = nil; paintSpin(); Utils.recordError("AutoSpin", tostring(network)); return end
+				while generation == spinGeneration and spinActive == crate and screenGui and screenGui.Parent and Utils.isActive() do
+					local checked, owned = pcall(network.CSendFunction, network, 4.702176977990345e76, crate)
+					if generation ~= spinGeneration or spinActive ~= crate then break end
+					if not checked then spinActive = nil; paintSpin(); Utils.recordError("AutoSpin", tostring(owned)); break end
+					local sent, err = pcall(network.CSendEvent, network, owned == true and 1.796923298985336e75 or 1.0038569313364564e77, crate)
+					if not sent then spinActive = nil; paintSpin(); Utils.recordError("AutoSpin", tostring(err)); break end
+					task.wait(0.3)
+				end
+			end)
+		end)
+	end
+	local page = 1
+	local pageInputShield = inst("TextButton", {
+		Name = "PageInputShield",
+		Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
+		Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
+		BackgroundTransparency = 1,
+		Text = "",
+		AutoButtonColor = false,
+		Visible = false,
+		ZIndex = 20,
+		Parent = configPanel,
+	})
+	local previous = inst("TextButton", {
+		Name = "PreviousPage",
+		Size = UDim2.new(0, 32, 0, 26),
+		Position = UDim2.new(0, PAD, 1, -PAD - 26),
+		BackgroundColor3 = C.btnDark,
+		Text = "‹",
+		TextColor3 = C.text,
+		TextSize = 20,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = configPanel,
+	})
+	local pageLabel = inst("TextLabel", {
+		Name = "PageLabel",
+		Size = UDim2.new(0, 108, 0, 26),
+		Position = UDim2.new(0, PAD + 34, 1, -PAD - 26),
+		BackgroundTransparency = 1,
+		Text = "1/4 Principal",
+		TextColor3 = C.text,
+		TextSize = 10,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = configPanel,
+	})
+	local nextPage = inst("TextButton", {
+		Name = "NextPage",
+		Size = UDim2.new(0, 32, 0, 26),
+		Position = UDim2.new(0, PAD + 144, 1, -PAD - 26),
+		BackgroundColor3 = C.btnDark,
+		Text = "›",
+		TextColor3 = C.text,
+		TextSize = 20,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = configPanel,
+	})
+	corner(previous, 6); corner(nextPage, 6); local pageNames = { "Principal", "Ajustes", "Utilidades", "Automáticos" }
+	local function updateNavigation()
+		pageLabel.Text = tostring(page) .. "/" .. tostring(#pageGroups) .. " " .. pageNames[page]; previous.TextTransparency = page == 1 and 0.65 or 0
+		nextPage.TextTransparency = page == #pageGroups and 0.65 or 0
+	end
+	updateNavigation()
+	local function changePage(direction)
+		local target = page + direction
+		if target < 1 or target > #pageGroups then return end
+		page = target; UIState.pageGeneration += 1; local generation = UIState.pageGeneration
+		for _, tween in ipairs(UIState.pageTweens) do
+			safeCancel(tween)
+		end
+		UIState.pageTweens = {}; pageInputShield.Visible = true; updateNavigation()
+		local incoming
+		for index, group in ipairs(pageGroups) do
+			if index == page then
+				if not group.Visible then group.Position = UDim2.new(0, PAD + 20 * direction, 0, TITLE_H + PAD); group.GroupTransparency = 1; group.Visible = true end
+				incoming = twPlay(group, 0.28, { Position = UDim2.new(0, PAD, 0, TITLE_H + PAD), GroupTransparency = 0 }, EASE_OUT, DIR_INOUT)
+				if incoming then UIState.pageTweens[#UIState.pageTweens + 1] = incoming end
+			elseif group.Visible then
+				local outgoing =
+					twPlay(group, 0.28, { Position = UDim2.new(0, PAD - 20 * direction, 0, TITLE_H + PAD), GroupTransparency = 1 }, EASE_OUT, DIR_INOUT)
+				if outgoing then UIState.pageTweens[#UIState.pageTweens + 1] = outgoing end
+			end
+		end
+		local conn
+		local function finish()
+			if conn then safeDisconnect(conn); untrackConn(conn); conn = nil end
+			if generation ~= UIState.pageGeneration or not pageInputShield.Parent then return end
+			for index, group in ipairs(pageGroups) do
+				group.Visible = index == page; group.GroupTransparency = index == page and 0 or 1; group.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
+			end
+			UIState.pageTweens = {}; pageInputShield.Visible = false
+		end
+		if incoming then conn = trackConn(incoming.Completed:Connect(finish)); task.delay(0.5, finish) else finish() end
+	end
+	trackConn(previous.Activated:Connect(function() changePage(-1) end))
+	trackConn(nextPage.Activated:Connect(function() changePage(1) end))
+	if config.ClashBallVisible then clashBall.Position = UDim2.new(0, clashX, 0, clashY) end
+	if config.DarkBallVisible then darkBall.Position = UDim2.new(0, darkX, 0, darkY) end
+	if config.JumpBallVisible then jumpBall.Position = UDim2.new(0, jumpX, 0, jumpY) end
+	if config.UpDashBallVisible then upDashBall.Position = UDim2.new(0, upDashX, 0, upDashY) end
+	if type(Utils.observeSpam) == "function" then trackConn(Utils.observeSpam(function() setSpam(Utils.isManualSpamActive()) end)) end
+	if type(Utils.observeConfig) == "function" then
+		trackConn(Utils.observeConfig(function(changes)
+			if changes.AutoClash ~= nil then UIState.clashBallOn = changes.AutoClash == true; paintClashBall(); syncAutoClashToggle() end
+		end))
+	end
+	setSpam(Utils.isManualSpamActive()); return true
+end
+ExodusUI.__contract = { requires = {}, provides = { "setup" } }
+
+return ExodusUI
