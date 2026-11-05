@@ -487,7 +487,9 @@ local function evaluate(s, snapshot, time)
     end
     s.snapshot, s.prediction, s.missingSince = snapshot, prediction, nil
     local target, me = id(snapshot.targetId), localPlayer.UserId
-    if s.active and not prediction.imminent then
+    -- The ball alternates between us and the clash partner. An opponent-targeted
+    -- frame is not a failed local deflect window and must not stop spam.
+    if s.active and target == me and not prediction.imminent then
         s.lastGate = "outside_deflect_window"
         setActive(s, false, "outside_deflect_window", nil, time)
         s.windowPaused, s.windowPartner = false, nil
