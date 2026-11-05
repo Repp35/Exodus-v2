@@ -49,7 +49,7 @@ local function makeState()
     return {
         generation = nextGeneration, phase = "detached", reason = "initial", bound = false, active = false,
         root = nil, character = nil, connections = {}, darkConnections = {}, queue = {}, queueHead = 1, draining = false,
-        target = -1, sequence = nil, syncAt = 0, syncSource = nil, teleported = false,
+        target = -1, manualTarget = -1, manualPartner = -1, sequence = nil, syncAt = 0, syncSource = nil, teleported = false,
         partner = -1, recentPartner = -1, recentDistance = 0, resetToken = targetResetToken,
         returnToken = returnToken, returnFrom = -1, returnAt = nil, returnServerAt = nil, returnWindow = 0,
         returnBonus = 0, returnExpires = 0, returnPending = false,
@@ -730,6 +730,23 @@ function AutoClash.onBallSync(data)
     if not s or type(data) ~= "table" then return end
     local copy = table.clone(data)
     local target = id(copy.TargetPlayerID) or id(copy.HighlightTargetPlayerID) or id(gameInfo.getTargetId())
+    if utils.isManualSpamActive() then
+        if target then
+            local previous = s.manualTarget
+            local me = localPlayer.UserId
+            if s.manualPartner > 0 and previous == s.manualPartner and target ~= me and target ~= s.manualPartner
+                and outsideClashRadius(s, target) then
+                utils.setManualSpamActive(false)
+                s.lastGate = "manual_partner_target_redirected"
+                s.manualPartner = -1
+            elseif previous == me and target ~= me then
+                s.manualPartner = target
+            end
+            s.manualTarget = target
+        end
+    else
+        s.manualTarget, s.manualPartner = -1, -1
+    end
     if s.active and s.target == s.partner and s.partner > 0 and target and target ~= localPlayer.UserId and target ~= s.partner then
         local now = clock()
         s.target = target
