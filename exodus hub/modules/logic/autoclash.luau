@@ -466,6 +466,12 @@ local function evaluate(s, snapshot, time)
     if current ~= s or not s.bound then return end
     if not prediction then missingSnapshot(s, time, "geometry_unavailable"); return end
     s.snapshot, s.prediction, s.missingSince = snapshot, prediction, nil
+    if s.active and s.parryRadius > 0 and prediction.distance > s.parryRadius then
+        s.lastGate = "ball_outside_clash_radius"
+        setActive(s, false, "ball_outside_clash_radius", nil, time)
+        clearReturn(s)
+        return
+    end
     local target, me = id(snapshot.targetId), localPlayer.UserId
     local targeted = target and target == me or (not target and snapshot.targeted == true)
     local aimed = s.target == me and targeted and prediction.imminent
