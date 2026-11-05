@@ -57,45 +57,16 @@ local function sync()
     running, currentMode, currentRate = true, mode, rate
     transition(true, "spam_active")
     task.spawn(function()
-        local interval = 1 / rate
+        local interval = 1 / (mode == "CPF" and rate * 60 or rate)
         local due = os.clock()
-        local frameConnection
-        if mode == "CPF" then
-            local runService = game:GetService("RunService")
-            local credit = 0
-            local lastFrame = os.clock()
-            frameConnection = runService.Heartbeat:Connect(function()
-                if token ~= generation or not boundUtils.isActive() or not boundUtils.isSpamActive() then return end
-                local now = os.clock()
-                local dt = math.max(now - lastFrame, 0.000001)
-                lastFrame = now
-                status.cpfFps = 1 / dt
-                credit += rate
-                local clicks = math.floor(credit)
-                credit -= clicks
-                status.cpfClicks = clicks
-                for _ = 1, clicks do
-                    if token ~= generation or not boundUtils.isSpamActive() then break end
-                    request(boundUtils, boundRemote, token)
-                end
-            end)
-        else
-            while token == generation and boundUtils.isActive() and boundUtils.isSpamActive() do
-                local now = os.clock()
-                if now >= due then
-                    request(boundUtils, boundRemote, token)
-                    -- Do not burst missed clicks: the game rejects presses
-                    -- within 30 ms and excessive bursts can cause cooldown.
-                    due = math.max(due + interval, now + math.min(interval, 0.03))
-                end
-                if token == generation then task.wait(math.max(0, due - os.clock())) end
+        while token == generation and boundUtils.isActive() and boundUtils.isSpamActive() do
+            local time = os.clock()
+            if time >= due then
+                local pending = math.floor((time - due) / interval) + 1
+                request(boundUtils, boundRemote, token)
+                due += pending * interval
             end
-        end
-        if mode == "CPF" then
-            while token == generation and boundUtils.isActive() and boundUtils.isSpamActive() do
-                task.wait(0.1)
-            end
-            if frameConnection then frameConnection:Disconnect() end
+            if token == generation then task.wait(math.max(0, due - os.clock())) end
         end
         if token == generation then cancel("spam_disabled") end
     end)
@@ -141,7 +112,7 @@ function Spam.getStatus()
         lastError = status.lastError,
         cpfFps = status.cpfFps,
         cpfClicks = status.cpfClicks,
-        cpfCompensation = true,
+        cpfCompensation = false,
     }
 end
 Spam.__contract = {
