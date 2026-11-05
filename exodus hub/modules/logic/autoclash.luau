@@ -16,7 +16,7 @@ local LIMIT = {
     frame = 1 / 60,
     proximityClashAge = 3,
     proximityCooldown = 0.5,
-    proximityRadiusFactor = 0.5,
+    proximityRadiusFactor = 1.0,
 }
 
 local function finite(value)
