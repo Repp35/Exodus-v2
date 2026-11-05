@@ -267,7 +267,7 @@ local function returnAllowance(s, partner, time)
         local ok, pressure = pcall(autoParry.getPressure)
         if ok and type(pressure) == "table" and finite(pressure.currentLevel) and finite(pressure.latestReturnTime)
             and pressure.latestReturnTime > 0 and pressure.latestReturnTime <= 0.5 then
-            if pressure.currentLevel >= 0.6 then bonus = 0.5 elseif pressure.currentLevel >= 0.4 then bonus = 0.3 elseif pressure.currentLevel >= 0.2 then bonus = 0.15 end
+            if pressure.currentLevel >= 0.8 then bonus = 0.5 elseif pressure.currentLevel >= 0.4 then bonus = 0.3 elseif pressure.currentLevel >= 0.2 then bonus = 0.15 end
             local drop = pressure.factorDrop
             if finite(drop) then
                 if drop >= 0.5 then bonus = math.max(bonus, 0.5) elseif drop >= 0.25 then bonus = math.max(bonus, 0.3) end
