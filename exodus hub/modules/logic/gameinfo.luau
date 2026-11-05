@@ -62,11 +62,7 @@ local deflectState = {
 	known = false,
 	active = false,
 	rawActive = false,
-
-
-
 	lastEventAt = -math.huge,
-
 }
 
 local deflectConnection
@@ -254,17 +250,14 @@ function GameInfo.setup(deps)
 	if not Players then return false, "dependência ausente: Players" end
 	if not Workspace then return false, "dependência ausente: Workspace" end
 	cachedBall = nil; ballWatcherReady = false; ballSearchComplete = false; nextBallSearch = 0
-	nextSpeedRead = 0; speedLimitMin, speedLimitMax = 16, 600; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil; lastPacket = nil
-	clientAbilitiesModule = nil; clientAbilities = nil; sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil
+	nextSpeedRead = 0; speedLimitMin, speedLimitMax = 16, 600; ballReplicatorModule = nil; gameBallModule = nil
+	lastSyncData = nil; lastPacket = nil; clientAbilitiesModule = nil; clientAbilities = nil
+	sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil
 	deflectState = {
 		known = false,
 		active = false,
 		rawActive = false,
-
-
-
 		lastEventAt = -math.huge,
-
 	}
 
 	nextDeflectSignalCheck = 0; nextHeldCooldownCheck = 0; deflectMissingAt = nil; nextDeflectWarning = 0
@@ -356,8 +349,7 @@ function GameInfo.getDeflectCooldownState()
 		local signals = GameInfo.getDeflectServerEvents()
 		if signals and signals.parried then
 			deflectParriedConnection = signals.parried:Connect(function()
-				deflectState.active = false; deflectState.rawActive = false; deflectState.endsAt = nil
-				deflectState.lastEventAt = os.clock()
+				deflectState.active = false; deflectState.rawActive = false; deflectState.endsAt = nil; deflectState.lastEventAt = os.clock()
 			end)
 			if Utils and type(Utils.trackGlobal) == "function" then Utils.trackGlobal(deflectParriedConnection) end
 		end
@@ -373,10 +365,7 @@ function GameInfo.getDeflectCooldownState()
 	if localCooldown then deflectState.known = true end
 	local remaining = localCooldown and ability.Cooldown or 0
 	if deflectState.rawActive and finite(deflectState.endsAt) then remaining = math.max(remaining, deflectState.endsAt - time) end
-	deflectState.remaining = math.max(0, remaining)
-	deflectState.active = cooldownRunning
-	deflectState.blocking = cooldownRunning
-	return deflectState
+	deflectState.remaining = math.max(0, remaining); deflectState.active = cooldownRunning; deflectState.blocking = cooldownRunning; return deflectState
 end
 function GameInfo.getDashAbility()
 	locateDeflectAbility(); local ability = clientAbilities and clientAbilities.Abilities[2]

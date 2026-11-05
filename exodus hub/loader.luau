@@ -472,8 +472,7 @@ local function bindRuntime(loaded, log)
 						local forward = not lastClashPacketSequence or (sequence - lastClashPacketSequence) % 65536
 						local currentDelta = type(current) == "number" and (sequence - current) % 65536 or 0
 						if (forward == true or (forward > 0 and forward < 32768)) and currentDelta < 32768 then
-							lastClashPacketSequence = sequence
-							packet.Source = "packet"
+							lastClashPacketSequence = sequence; packet.Source = "packet"
 							if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
 							if not packet.Teleported then
 								for _, name in ipairs({ "autoclash", "autoparry" }) do
