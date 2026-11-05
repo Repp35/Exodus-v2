@@ -15,6 +15,7 @@ local gameInfo={getTargetId=function() return -1 end,getSyncData=function() retu
 local function outsideClashRadius(_,target) return distant end
 local function setActive(s,active) s.active=active; if not active then s.partner=-1 end end
 local function clearReturn(s) s.returnPending=false end
+local function rememberDistantRecovery() end
 local function clock() return 1 end
 local function dispatch() return true end
 '''

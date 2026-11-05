@@ -21,8 +21,8 @@ local s=current
 local ball={targetId=42}
 evaluate(s,ball,0); evaluate(s,ball,.049); assert(s.active, 'grace must keep clash active')
 evaluate(s,ball,.051); assert(not s.active and s.windowPaused and s.windowPartner==7, 'persistent exit must stop')
-inside=true; evaluate(s,ball,1); assert(s.active and not s.windowPaused and s.partner==7, 'return into window must resume with same partner')
-inside=false; s.partner=7; evaluate(s,ball,2); inside=true; evaluate(s,ball,2.02); assert(s.active, 'reentry resets grace')
+inside=true; evaluate(s,ball,1); assert(not s.active and s.windowPaused, 'window return alone must not resume')
+s.active=true; s.windowPaused=false; s.partner=7; inside=false; evaluate(s,ball,2); inside=true; evaluate(s,ball,2.02); assert(s.active, 'reentry resets grace')
 inside=false; evaluate(s,ball,2.03); evaluate(s,ball,2.081); assert(not s.active, 'second sustained exit must stop')
 ball.targetId=8; evaluate(s,ball,3); assert(not s.windowPaused and not s.active, 'redirect must clear rearm')
 print('Auto Clash window transitions: PASS')

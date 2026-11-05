@@ -8,16 +8,12 @@ local targetResetToken, returnToken = 0, 0
 local LIMIT = {
     snapshotGrace = 0.20,
     windowExitGrace = 0.05,
-    recovery = 1.0,
     pullRecovery = 2.0,
     returnSlow = 0.15,
     returnFast = 0.015,
     sampleGap = 0.10,
     minimumSpeed = 6,
     frame = 1 / 60,
-    proximityClashAge = 3,
-    proximityCooldown = 0.5,
-    proximityRadiusFactor = 1.0,
 }
 
 local function finite(value)
@@ -52,14 +48,15 @@ local function makeState()
         root = nil, character = nil, connections = {}, darkConnections = {}, queue = {}, queueHead = 1, draining = false,
         target = -1, manualTarget = -1, manualPartner = -1, sequence = nil, syncAt = 0, syncSource = nil, teleported = false,
         partner = -1, recentPartner = -1, recentDistance = 0, resetToken = targetResetToken,
+        distantRecovery = false, recoveryPartner = nil, recoveryDistance = nil,
         returnToken = returnToken, returnFrom = -1, returnAt = nil, returnServerAt = nil, returnWindow = 0,
         returnBonus = 0, returnExpires = 0, returnPending = false,
         lastSwitchAt = 0, lastSwitchServerAt = nil, intervalMs = 0, intervalAverage = nil, intervalSamples = 0,
         ping = 0, pingAt = -math.huge, speed = 0, parryRadius = 0, activationRadius = 0,
         radiusAt = 0, radiusSpeed = -1, snapshot = nil, prediction = nil,
-        missingSince = nil, recoveryUntil = 0, pull = nil, pullEvent = nil,
+        missingSince = nil, pull = nil, pullEvent = nil,
         dashEvent = nil, dashData = nil, dashBonusUntil = 0, dashLockUntil = 0, activationLockUntil = 0,
-        exitReason = nil, exitSince = 0, exitFrames = 0, exitLastAt = 0, clashAwayAt = nil, clashStartedAt = nil, proximityReadyUntil = 0, proximityCooldownUntil = 0,
+        exitReason = nil, exitSince = 0, exitFrames = 0, exitLastAt = 0, clashAwayAt = nil, clashStartedAt = nil,
         ownDashPending = false, ownDashFrames = 0, ownDashDistance = nil, ownDashAt = 0, ownDashEventAt = 0,
         activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 },
         lastGate = "none", errors = {},
@@ -110,7 +107,7 @@ local function clearExchange(s)
     s.target, s.partner, s.recentPartner, s.recentDistance = -1, -1, -1, 0
     s.lastSwitchAt, s.lastSwitchServerAt, s.intervalMs, s.intervalAverage, s.intervalSamples = 0, nil, 0, nil, 0
     s.dashEvent, s.dashData, s.dashBonusUntil, s.dashLockUntil = nil, nil, 0, 0
-    s.recoveryUntil = 0
+    s.distantRecovery, s.recoveryPartner, s.recoveryDistance = false, nil, nil
     s.windowPaused, s.windowPartner, s.windowOutsideSince = false, nil, nil
     s.activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 }
     targetResetToken += 1
@@ -130,14 +127,17 @@ local function setActive(s, enabled, reason, detail, time)
     end
     if enabled then
         s.clashStartedAt = time
-        s.proximityReadyUntil = 0
     else
-        s.proximityReadyUntil = s.clashStartedAt and time - s.clashStartedAt >= LIMIT.proximityClashAge and time + LIMIT.proximityCooldown + 0.5 or 0
-        s.proximityCooldownUntil = time + LIMIT.proximityCooldown
         s.clashStartedAt = nil
     end
     s.active = enabled
     s.windowOutsideSince = nil
+    if enabled then
+        s.windowPaused, s.windowPartner = false, nil
+        s.distantRecovery, s.recoveryPartner, s.recoveryDistance = false, nil, nil
+    else
+        clearReturn(s)
+    end
     s.clashAwayAt = enabled and (s.target > 0 and s.target ~= localPlayer.UserId and time or nil) or nil
     clearExit(s)
     if enabled then
@@ -176,14 +176,6 @@ local function gate(s)
     s.lastGate = reason
     return false
 end
-local function proximityEligible(s, userId, time)
-    if time < s.proximityCooldownUntil or time > s.proximityReadyUntil then return false end
-    local player, root = playerRoot(userId)
-    local humanoid = player and player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-    local own = rootPosition(s)
-    return humanoid ~= nil and humanoid.Health > 0 and root ~= nil and own ~= nil
-        and s.parryRadius > 0 and (own - root.Position).Magnitude < s.parryRadius * LIMIT.proximityRadiusFactor
-end
 local function outsideClashRadius(s, userId)
     local _, root = playerRoot(userId)
     local own = rootPosition(s)
@@ -197,12 +189,22 @@ local function outsideClashRadius(s, userId)
     if not finite(window) or window <= 0 then return true end
     return (own - root.Position).Magnitude > range + speed * window
 end
-local function closePartner(s, userId)
-    if not userId or userId <= 0 or userId == localPlayer.UserId then return false end
-    local _, root = playerRoot(userId)
+local function rememberDistantRecovery(s, partner)
+    if not partner or partner <= 0 then partner = s.recentPartner end
     local own = rootPosition(s)
-    if not root or not own or not vector(root.Position) or s.parryRadius <= 0 then return false end
-    return (own - root.Position).Magnitude <= math.max(s.parryRadius, s.recentDistance + 2)
+    local _, root = playerRoot(partner)
+    local distance = not s.active and s.recentPartner == partner and s.recentDistance > 0 and s.recentDistance
+        or (own and root and vector(root.Position) and (own - root.Position).Magnitude or nil)
+    s.distantRecovery, s.recoveryPartner, s.recoveryDistance = true, partner, distance
+end
+local function similarRecoveryDistance(s)
+    if not s.distantRecovery then return true end
+    if not s.recoveryPartner or s.partner ~= s.recoveryPartner or not finite(s.recoveryDistance) then return false end
+    local own = rootPosition(s)
+    local _, root = playerRoot(s.recoveryPartner)
+    if not own or not root or not vector(root.Position) then return false end
+    local currentDistance = (own - root.Position).Magnitude
+    return math.abs(currentDistance - s.recoveryDistance) <= math.max(2, s.recoveryDistance * 0.25)
 end
 local function withinDeflectWindow(s, snapshot)
     local root = rootPosition(s)
@@ -329,7 +331,6 @@ local function observeTarget(s, target, explicit, serverTime, time)
     if s.pull then
         if (target == me or target == s.pull.partner) and target ~= s.pull.lastTarget then s.pull.switched = true end
         s.pull.lastTarget = target
-        return "pull"
     end
     if previous == me and target ~= me then
         if s.active then s.clashAwayAt = s.clashAwayAt or time end
@@ -361,6 +362,15 @@ local function observeTarget(s, target, explicit, serverTime, time)
         end
     elseif previous > 0 and previous ~= me and target ~= me then
         clearReturn(s)
+        if s.distantRecovery and not s.active and target == s.recoveryPartner then
+            local window, bonus = returnAllowance(s, target, time)
+            if time < s.dashBonusUntil then window *= 10 end
+            s.returnFrom, s.returnAt, s.returnServerAt = target, time, serverTime
+            s.returnWindow, s.returnBonus = window, bonus
+            s.returnExpires = time + window + 2 * ping(s, time) + 1 / 30
+            s.lastGate = "recovery_partner_target"
+            return
+        end
         if s.active and not outsideClashRadius(s, target) then
             s.lastGate = "near_target_redirected"
             return
@@ -405,7 +415,6 @@ end
 local function missingSnapshot(s, time, reason)
     if not s.missingSince then s.missingSince = time end
     if s.active and (time < s.missingSince or time - s.missingSince >= LIMIT.snapshotGrace) then
-        s.recoveryUntil = time + LIMIT.recovery
         setActive(s, false, reason, nil, time)
     end
     s.lastGate = reason
@@ -484,43 +493,9 @@ local function evaluate(s, snapshot, time)
     if s.windowPaused and id(snapshot.targetId) ~= localPlayer.UserId and id(snapshot.targetId) ~= s.windowPartner then
         s.windowPaused, s.windowPartner = false, nil
     end
-    if not s.active and s.windowPaused and prediction.imminent then
-        s.partner = s.windowPartner or s.partner
-        s.windowPaused, s.windowPartner = false, nil
-        setActive(s, true, "window_return", "deflect_window", time)
-        return
-    end
     local targeted = target and target == me or (not target and snapshot.targeted == true)
     local aimed = s.target == me and targeted and prediction.imminent
-    if not s.active and prediction.imminent and s.recentPartner > 0 and (target == s.recentPartner or targeted) and proximityEligible(s, s.recentPartner, time)
-        and prediction.distance < prediction.parryRadius * LIMIT.proximityRadiusFactor then
-        s.partner = s.recentPartner
-        setActive(s, true, "known_clash_return", "near_partner_target_switch", time)
-        return
-    end
-    if not s.active and s.recoveryUntil > 0 and time <= s.recoveryUntil and aimed then
-        s.recoveryUntil = 0; clearReturn(s); setActive(s, true, "recovered", "snapshot_recovered", time); return
-    end
-    if s.pull then
-        local pull = s.pull
-        if time - pull.at > LIMIT.pullRecovery then s.pull = nil
-        elseif prediction.imminent and pull.partner > 0 and proximityEligible(s, pull.partner, time) and (target == pull.partner or targeted)
-            and prediction.distance < prediction.parryRadius * LIMIT.proximityRadiusFactor then
-            s.pull, s.partner, s.recentPartner = nil, pull.partner, pull.partner
-            setActive(s, true, "pull_partner_return", "near_partner_target_switch", time)
-            return
-        else
-            local own = rootPosition(s)
-            local _, opponent = playerRoot(pull.partner)
-            local inRange = own and opponent and vector(opponent.Position) and s.parryRadius > 0
-                and prediction.distance <= s.parryRadius and (own - opponent.Position).Magnitude <= s.parryRadius
-            if inRange and pull.switched and aimed then
-                s.pull, s.partner = nil, pull.partner
-                setActive(s, true, "pull_return", "pull_return", time)
-            else s.lastGate = "pull_suspended" end
-            return
-        end
-    end
+    if s.pull and time - s.pull.at > LIMIT.pullRecovery then s.pull = nil end
     if s.active then
         if target and target ~= me and not s.clashAwayAt then s.clashAwayAt = time end
         if target == me then s.clashAwayAt = nil end
@@ -536,6 +511,11 @@ local function evaluate(s, snapshot, time)
         return
     end
     if s.returnPending and aimed then
+        if not similarRecoveryDistance(s) then
+            clearReturn(s)
+            s.lastGate = "recovery_distance_changed"
+            return
+        end
         local reason = time < s.dashBonusUntil and "anti_dash" or "predicted_impact"
         clearReturn(s); setActive(s, true, "activated", reason, time); return
     end
@@ -614,6 +594,7 @@ local function updateFrame(s, time)
     local partner = s.partner > 0 and s.partner or (s.windowPartner or s.recentPartner)
     if target and target ~= localPlayer.UserId and target ~= partner and (s.active or s.windowPaused)
         and outsideClashRadius(s, target) then
+        rememberDistantRecovery(s, partner)
         if s.active then setActive(s, false, "distant_target_redirected", nil, time) end
         s.windowPaused, s.windowPartner, s.partner, s.recentPartner = false, nil, -1, -1
         clearReturn(s)
@@ -777,6 +758,7 @@ function AutoClash.onBallSync(data)
     if target and target ~= me and target ~= partner
         and (manual or s.active or s.windowPaused)
         and outsideClashRadius(s, target) then
+        if not manual then rememberDistantRecovery(s, partner) end
         if s.active then setActive(s, false, "distant_target_redirected", nil, clock()) end
         s.windowPaused, s.windowPartner, s.partner, s.recentPartner = false, nil, -1, -1
         s.manualPartner, s.manualTarget, s.target = -1, target, target
