@@ -179,7 +179,6 @@ function Utils.stop()
     if saveDirty then flushSave() end
     state.lifecycle.stoppedAt = os.clock()
     _G.ExodusOnBurst = function() end
-    if type(modules.antitamper) == "table" and type(modules.antitamper.teardown) == "function" then pcall(modules.antitamper.teardown) end
     if type(_G.ExodusUICleanup) == "function" then pcall(_G.ExodusUICleanup) end
     disconnectAll(state.characterConnections)
     disconnectAll(state.globalConnections)

@@ -24,7 +24,6 @@ local MODULE_MANIFEST = {
 	{ name = "config", path = "modules/front/config.luau" },
 	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
 	{ name = "utils", path = "modules/logic/utils.luau" },
-	{ name = "antitamper", path = "modules/security/antitamper.luau" },
 	{ name = "gameinfo", path = "modules/logic/gameinfo.luau" },
 	{ name = "autodark", path = "modules/logic/autodark.luau" },
 	{ name = "movement", path = "modules/logic/movement.luau" },
@@ -219,7 +218,7 @@ local function clearRegistry()
 end
 local function stopPreviousRuntime()
 	if type(Modules.remote) == "table" and type(Modules.remote.stopMaintenance) == "function" then pcall(Modules.remote.stopMaintenance) end
-	for _, name in ipairs({ "character", "autofierce", "spam", "autoclash", "autodark", "movement", "dash", "autoparry", "antitamper" }) do
+	for _, name in ipairs({ "character", "autofierce", "spam", "autoclash", "autodark", "movement", "dash", "autoparry" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
 			if type(module.teardown) == "function" then pcall(module.teardown) elseif type(module.resetState) == "function" then pcall(module.resetState) end
