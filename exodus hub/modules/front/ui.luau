@@ -500,28 +500,6 @@ local function createParryTimingCard(yPos, parent)
 	end))
 	return nextCardY(yPos, CARD_H)
 end
-local function createClashTimingCard(label, key, fallback, yPos, parent)
-	local f = cardFrame(yPos, CARD_H, parent); cardLabel(label, f)
-	local input = inst("TextBox", {
-		Size = UDim2.new(0, 62, 0, 30),
-		Position = UDim2.new(1, -74, 0.5, -15),
-		BackgroundColor3 = C.inputBg,
-		Text = tostring(Utils.getConfigValue(key) or fallback),
-		ClearTextOnFocus = false,
-		TextColor3 = C.text,
-		TextSize = 13,
-		Font = Enum.Font.GothamBold,
-		ZIndex = 7,
-		Parent = f,
-	})
-	corner(input, 8); stroke(input, C.border, 1)
-	trackConn(input.FocusLost:Connect(function()
-		local value = tonumber(input.Text)
-		if not value or value ~= value or value == math.huge or value == -math.huge then value = tonumber(Utils.getConfigValue(key)) or fallback end
-		value = math.clamp(value, 0, 400); setConfigValue(key, value); input.Text = tostring(value)
-	end))
-	return nextCardY(yPos, CARD_H)
-end
 local function createRateSelector(yPos, parent)
 	local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig(); config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.3917)
 	config.SpamRateMode = config.SpamRateMode == "CPF" and "CPF" or "CPS"
@@ -1096,8 +1074,6 @@ function ExodusUI.setup(deps)
 	end)
 	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall)
 	createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); createParryTimingCard(4, settingsLeft)
-	local clashY = createClashTimingCard("Ativação AC (ms)", "AutoClashActivationMs", 180, 4, settingsRight)
-	createClashTimingCard("Desativação AC (ms)", "AutoClashDeactivationMs", 130, clashY, settingsRight)
 	local antiConnection
 	local antiGeneration = 0
 	local paintAnti
