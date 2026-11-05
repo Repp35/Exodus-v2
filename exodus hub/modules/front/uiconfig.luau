@@ -36,9 +36,6 @@ UIConfig.__config = {
 		AutoClash = "boolean",
 		AutoDark = "boolean",
 		AutoJump = "boolean",
-
-		AutoClashActivationMs = "delayMs",
-		AutoClashDeactivationMs = "delayMs",
 		ClashBallVisible = "boolean",
 		MiniSpamVisible = "boolean",
 		DarkBallVisible = "boolean",
@@ -71,9 +68,6 @@ UIConfig.__config = {
 		AutoClash = true,
 		AutoDark = false,
 		AutoJump = false,
-
-		AutoClashActivationMs = 180,
-		AutoClashDeactivationMs = 130,
 		ClashBallVisible = false,
 		MiniSpamVisible = false,
 		DarkBallVisible = false,
