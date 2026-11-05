@@ -24,7 +24,7 @@ local status = {
 	cpfCompensation = false,
 }
 
-local function now() return Utils and Utils.now() or os.clock() end
+local function now() return os.clock() end
 local function setActive(value, reason)
 	if active == value then return end
 	generation += 1; active = value; phase = 0; lastMode, lastRate = nil, nil
@@ -43,73 +43,51 @@ local function requestParry()
 		if type(Utils.recordError) == "function" then Utils.recordError("Spam", message) end
 	end
 end
-local function sendScheduled(expectedGeneration)
-	if expectedGeneration == generation and Utils and Remote and Utils.isActive() and Utils.isSpamActive() then requestParry() end
+local function readRate()
+	local config = Utils.getConfig()
+	local mode = type(Utils.getConfigValue) == "function" and Utils.getConfigValue("SpamRateMode") or config.SpamRateMode
+	local key = mode == "CPF" and "CPF" or "CPS"
+	local rate = tonumber(type(Utils.getConfigValue) == "function" and Utils.getConfigValue(key) or config[key]) or 0
+	if rate ~= rate or rate == math.huge or rate <= 0 then return key, 0 end
+	return key, rate
 end
-local function tick(dt)
-	if type(dt) ~= "number" or dt ~= dt or dt <= 0 or dt == math.huge then return end
-	local selectedMode = type(Utils.getConfigValue) == "function" and Utils.getConfigValue("SpamRateMode") or Utils.getConfig().SpamRateMode
-	if selectedMode == "CPF" then return end
-	if not Utils.isActive() or not Utils.isSpamActive() then setActive(false, "spam_disabled"); return end
-	if not active then setActive(true, "spam_active") end
-	local rate
-	if type(Utils.getConfigValue) == "function" then rate = tonumber(Utils.getConfigValue("CPS")) or 0 else rate = tonumber(Utils.getConfig().CPS) or 0 end
-	if rate ~= rate or rate == math.huge or rate < 0 then rate = 0 end
-	rate = math.min(rate, MAX_CPS)
-	if lastMode ~= "CPS" or rate ~= lastRate then generation += 1; phase = 0; lastMode, lastRate = "CPS", rate end
-	local clicks = 0
-	if rate > 0 then phase += rate * dt; clicks = math.floor(phase + 1e-9); phase -= clicks end
-	status.cpfFps, status.cpfClicks = 0, 0
-	local currentGeneration = generation
-	if clicks > 0 then
-		requestParry()
-		if clicks > 1 and currentGeneration == generation and Utils and Remote and Utils.isActive() and Utils.isSpamActive() then
-			local spacing = dt / clicks
-			for index = 2, clicks do
-				task.delay(spacing * (index - 1), sendScheduled, currentGeneration)
-			end
-		end
-	end
-end
+
 local function startCpfWorker()
 	if cpfWorkerRunning then return end
-	cpfWorkerRunning = true; workerGeneration += 1; local worker = workerGeneration
-	local due, previousRate
+	cpfWorkerRunning = true
+	workerGeneration += 1
+	local worker = workerGeneration
 	task.spawn(function()
+		local due, previousMode, previousRate
 		while worker == workerGeneration do
-			local mode, rate
-			if type(Utils.getConfigValue) == "function" then mode = Utils.getConfigValue("SpamRateMode"); rate = tonumber(Utils.getConfigValue("CPF"))
-			else local config = Utils.getConfig(); mode = config.SpamRateMode; rate = tonumber(config.CPF) end
-			if mode == "CPF" and Utils.isActive() and Utils.isSpamActive() and rate and rate == rate and rate > 0 and rate < math.huge then
+			local mode, rate = readRate()
+			local enabled = Utils.isActive() and Utils.isSpamActive() and rate > 0
+			if enabled then
 				if not active then setActive(true, "spam_active") end
-				if lastMode ~= "CPF" or lastRate ~= rate then generation += 1; phase = 0; lastMode, lastRate = "CPF", rate; due, previousRate = nil, nil end
-				local time = now(); local interval = math.max(MIN_CLICK_INTERVAL, 1 / (rate * 60))
-				if previousRate ~= rate or due == nil then due = time + interval; previousRate = rate end
-				if time >= due then
-					requestParry(); due += interval
-					if due <= time then due = time + interval end
+				local interval = math.max(MIN_CLICK_INTERVAL, 1 / (mode == "CPF" and rate * 60 or rate))
+				if previousMode ~= mode or previousRate ~= rate or due == nil then
+					due = now()
+					previousMode, previousRate = mode, rate
 				end
+				local time = now()
+				if time >= due then
+					requestParry()
+					due = math.max(due + interval, now() + MIN_CLICK_INTERVAL)
+					if due < now() then due = now() + interval end
+				end
+				task.wait(math.max(0, due - now()))
 			else
-				due, previousRate = nil, nil
-				if mode == "CPF" then setActive(false, "spam_disabled") end
+				due, previousMode, previousRate = nil, nil, nil
+				if active then setActive(false, "spam_disabled") end
+				task.wait(0.01)
 			end
-			if due then task.wait(math.max(0, due - now())) else task.wait() end
 		end
 		if worker == workerGeneration then cpfWorkerRunning = false end
 	end)
 end
+
 local function syncCpfWorker()
-	if not Utils then return end
-	local mode, rate
-	if type(Utils.getConfigValue) == "function" then mode = Utils.getConfigValue("SpamRateMode"); rate = tonumber(Utils.getConfigValue("CPF"))
-	else local config = Utils.getConfig(); mode = config.SpamRateMode; rate = tonumber(config.CPF) end
-	if mode == "CPF" and rate and rate == rate and rate > 0 and rate < math.huge and Utils.isActive() and Utils.isSpamActive() then
-		if cpfWorkerRunning and cpfWorkerRate ~= rate then workerGeneration += 1; cpfWorkerRunning = false end
-		cpfWorkerRate = rate; startCpfWorker()
-	else
-		if cpfWorkerRunning then workerGeneration += 1; cpfWorkerRunning = false end
-		if mode == "CPF" and (not Utils.isActive() or not Utils.isSpamActive()) then setActive(false, "spam_disabled") end
-	end
+	if Utils and not cpfWorkerRunning then startCpfWorker() end
 end
 function Spam.setup(deps)
 	if
@@ -125,17 +103,9 @@ function Spam.setup(deps)
 	then
 		return false, "dependência ausente: Remote ou Utils"
 	end
-	Spam.teardown(); Utils, Remote = deps.Utils, deps.Remote; local runService = Utils.getRunService(); local signal = runService and (runService.RenderStepped or runService.Heartbeat)
-	if not signal then return false, "RunService indisponível" end
-	connection = signal:Connect(tick)
-	if type(Utils.trackGlobal) == "function" then Utils.trackGlobal(connection) end
-	if type(Utils.observeSpam) == "function" then
-		spamObserver = Utils.observeSpam(syncCpfWorker)
-		if type(Utils.trackGlobal) == "function" then Utils.trackGlobal(spamObserver) end
-		syncCpfWorker()
-	else
-		startCpfWorker()
-	end
+	Spam.teardown()
+	Utils, Remote = deps.Utils, deps.Remote
+	startCpfWorker()
 	return true
 end
 function Spam.resetState()
