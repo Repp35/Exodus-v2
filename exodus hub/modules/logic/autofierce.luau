@@ -12,7 +12,7 @@ end
 
 local function getWindow(ability, player)
     if type(ability.GetDeflectionWindow) == "function" then
-        local ok, value = pcall(ability.GetDeflectionWindow, ability, player)
+        local ok, value = pcall(ability.GetDeflectionWindow, player)
         if ok and finite(value) and value > 0 then return value end
     end
     local sync = gameInfo.getSyncData()
@@ -66,15 +66,20 @@ local function step()
         or type(fierce.IsOwnerAlive) ~= "function"
         or not fierce:IsOwnerAlive() or not fierce:IsAvailable(false) then return end
 
-    utils.stopAllSpam()
-    spam.resetState()
-    autoClash.stopSpam()
-    if gameInfo.getTargetId() ~= player.UserId or gameInfo.getDeflectAbility() ~= ability
+    if gameInfo.getDeflectAbility() ~= ability
         or not finite(ability.Cooldown) or ability.Cooldown <= 0
         or (finite(ability.PredictedResetUntil) and os.clock() < ability.PredictedResetUntil)
         or not fierce:IsOwnerAlive() or not fierce:IsAvailable(false) then return end
     used = true
-    fierce:ActivateAndBlock()
+    local ok, result = pcall(fierce.ActivateAndBlock, fierce)
+    if not ok or result == false then
+        used = false
+        utils.recordError("AutoFierce", tostring(ok and "Fierce recusado" or result))
+        return
+    end
+    utils.stopAllSpam()
+    spam.resetState()
+    autoClash.stopSpam()
 end
 
 function AutoFierce.setup(deps)
