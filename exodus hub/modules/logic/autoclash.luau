@@ -180,6 +180,12 @@ local function proximityEligible(s, userId, time)
     return humanoid ~= nil and humanoid.Health > 0 and root ~= nil and own ~= nil
         and s.parryRadius > 0 and (own - root.Position).Magnitude < s.parryRadius * LIMIT.proximityRadiusFactor
 end
+local function outsideClashRadius(s, userId)
+    local _, root = playerRoot(userId)
+    local own = rootPosition(s)
+    return not root or not own or not vector(root.Position) or s.parryRadius <= 0
+        or (own - root.Position).Magnitude > s.parryRadius * LIMIT.proximityRadiusFactor
+end
 local function closePartner(s, userId)
     if not userId or userId <= 0 or userId == localPlayer.UserId then return false end
     local _, root = playerRoot(userId)
@@ -296,6 +302,12 @@ local function observeTarget(s, target, explicit, serverTime, time)
     if target == previous then return end
     updateSwitch(s, previous, target, time, serverTime)
     s.target = target
+    if s.active and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
+        s.lastGate = "target_outside_clash_radius"
+        setActive(s, false, "target_outside_clash_radius", nil, time)
+        clearReturn(s)
+        return
+    end
     if s.pull then
         if (target == me or target == s.pull.partner) and target ~= s.pull.lastTarget then s.pull.switched = true end
         s.pull.lastTarget = target
@@ -303,7 +315,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
     end
     if previous == me and target ~= me then
         if s.active then s.clashAwayAt = s.clashAwayAt or time end
-        if s.active and s.partner > 0 and target ~= s.partner and not closePartner(s, target) then setActive(s, false, "target_redirected", nil, time) end
+        if s.active and s.partner > 0 and target ~= s.partner and outsideClashRadius(s, target) then setActive(s, false, "target_redirected", nil, time) end
         local window, bonus = returnAllowance(s, target, time)
         if current ~= s or not s.bound then return end
         if time < s.dashBonusUntil then window *= 10 end
@@ -494,7 +506,7 @@ local function evaluate(s, snapshot, time)
             setActive(s, false, "target_return_timeout", nil, time)
             return
         end
-        if target and target ~= me and target ~= s.partner and not closePartner(s, target) then
+        if target and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
             setActive(s, false, "target_redirected", nil, time); s.lastGate = "target_redirected"; return
         end
         s.lastGate = targeted and "deact_targeted" or "deact_waiting_target_return"
