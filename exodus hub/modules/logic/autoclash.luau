@@ -217,7 +217,6 @@ local function withinDeflectWindow(s, snapshot)
     local sync = gameInfo.getSyncData()
     local window = gameInfo.getDeflectWindow(sync and sync.Speed or speed)
     if not finite(window) or window <= 0 then return false end
-    if clock() < s.dashBonusUntil then window *= 1.5 end
     if distance <= range then return true end
     local closing = snapshot.velocity:Dot(root - snapshot.position) / distance
     return finite(closing) and closing > 0 and (distance - range) / closing <= window

@@ -25,7 +25,7 @@ local gameInfo={getDeflectAbility=function() return ability end, getSyncData=fun
 '''
 post = r'''
 assert(not withinDeflectWindow(state,ball), "ball reaches range after window")
-state.dashBonusUntil=2; assert(withinDeflectWindow(state,ball), 'approaching dash must extend the deflect window')
+state.dashBonusUntil=2; assert(not withinDeflectWindow(state,ball), 'dash must keep the game deflect window at 1x')
 state.dashBonusUntil=0; ball.position=v(-39); assert(withinDeflectWindow(state,ball), "ball reaches range during window")
 ball.velocity=v(-100); assert(not withinDeflectWindow(state,ball), "ball moving away")
 ball.position=v(-5); assert(withinDeflectWindow(state,ball), "ball in range")
