@@ -12,7 +12,7 @@ end
 
 local function getWindow(ability, player)
     if type(ability.GetDeflectionWindow) == "function" then
-        local ok, value = pcall(ability.GetDeflectionWindow, player)
+        local ok, value = pcall(ability.GetDeflectionWindow, ability, player)
         if ok and finite(value) and value > 0 then return value end
     end
     local sync = gameInfo.getSyncData()
