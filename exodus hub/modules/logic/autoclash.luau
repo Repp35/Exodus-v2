@@ -463,7 +463,7 @@ local function evaluate(s, snapshot, time)
         end
     end
     if s.active then
-        if s.clashAwayAt and time - s.clashAwayAt > 0.20 then
+        if s.clashAwayAt and time - s.clashAwayAt > 0.10 + ping(s, time) then
             s.lastGate = "deact_target_return_timeout"
             setActive(s, false, "target_return_timeout", nil, time)
             return
@@ -525,7 +525,7 @@ local function acceptSync(s, data, time, original)
     end
 end
 local function updateFrame(s, time)
-    if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.20 then
+    if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.10 + ping(s, time) then
         s.lastGate = "deact_target_return_timeout"
         setActive(s, false, "target_return_timeout", nil, time)
     end
