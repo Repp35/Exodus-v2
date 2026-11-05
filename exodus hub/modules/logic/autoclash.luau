@@ -586,6 +586,12 @@ local function updateFrame(s, time)
     s.teleported = false
     if not snapshotCurrent(s, snapshot, time) then missingSnapshot(s, time, "snapshot_stale"); return end
     local target = id(snapshot.targetId)
+    if s.active and target and target ~= localPlayer.UserId and target ~= s.partner and outsideClashRadius(s, target) then
+        s.lastGate = "target_outside_clash_radius"
+        setActive(s, false, "target_outside_clash_radius", nil, time)
+        clearReturn(s)
+        return
+    end
     if target ~= id(s.target) then
         local sequence = snapshot.syncSequence
         if type(sequence) == "number" or (s.sequence == nil and (s.syncSource ~= "event" or time - s.syncAt >= 0.1)) then
