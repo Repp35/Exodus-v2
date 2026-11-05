@@ -14,7 +14,6 @@ local LIMIT = {
     minimumSpeed = 6,
     frame = 1 / 60,
     activationWindowFactor = 0.75,
-    deactivationWindowFactor = 0.40,
 }
 
 local function finite(value)
@@ -485,17 +484,11 @@ local function evaluate(s, snapshot, time)
     end
     s.snapshot, s.prediction, s.missingSince = snapshot, prediction, nil
     local target, me = id(snapshot.targetId), localPlayer.UserId
-    local nearbyTarget = target and target ~= me and not outsideClashRadius(s, target)
-    if s.active and not prediction.imminent and not nearbyTarget then
-        s.windowExitSince = s.windowExitSince or time
-        local window = gameInfo.getDeflectWindow(s.speed)
-        local delay = finite(window) and math.max(0, window * LIMIT.deactivationWindowFactor) or 0
-        if time - s.windowExitSince >= delay then
-            s.lastGate = "outside_deflect_window"
-            s.windowPartner = s.partner
-            setActive(s, false, "outside_deflect_window", nil, time)
-            s.windowPaused = true
-        end
+    if s.active and not prediction.imminent then
+        s.lastGate = "outside_deflect_window"
+        s.windowPartner = s.partner
+        setActive(s, false, "outside_deflect_window", nil, time)
+        s.windowPaused = true
         return
     end
     s.windowExitSince = nil
