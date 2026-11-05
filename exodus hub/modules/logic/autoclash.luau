@@ -13,6 +13,8 @@ local LIMIT = {
     sampleGap = 0.10,
     minimumSpeed = 6,
     frame = 1 / 60,
+    activationWindowFactor = 0.75,
+    deactivationWindowFactor = 0.60,
 }
 
 local function finite(value)
@@ -56,6 +58,7 @@ local function makeState()
         missingSince = nil, pull = nil, pullEvent = nil,
         dashEvent = nil, dashData = nil, dashBonusUntil = 0, dashLockUntil = 0, activationLockUntil = 0,
         exitReason = nil, exitSince = 0, exitFrames = 0, exitLastAt = 0, clashAwayAt = nil, clashStartedAt = nil,
+        windowExitSince = nil,
         ownDashPending = false, ownDashFrames = 0, ownDashDistance = nil, ownDashAt = 0, ownDashEventAt = 0,
         activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 },
         lastGate = "none", errors = {},
@@ -100,6 +103,7 @@ end
 local function clearExit(s)
     s.activationLockUntil, s.dashLockUntil = 0, 0
     s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = nil, 0, 0, 0
+    s.windowExitSince = nil
     s.ownDashPending, s.ownDashFrames, s.ownDashDistance, s.ownDashAt, s.ownDashEventAt = false, 0, nil, 0, 0
 end
 local function clearExchange(s)
@@ -483,17 +487,29 @@ local function evaluate(s, snapshot, time)
     local target, me = id(snapshot.targetId), localPlayer.UserId
     local nearbyTarget = target and target ~= me and not outsideClashRadius(s, target)
     if s.active and not prediction.imminent and not nearbyTarget then
-        s.lastGate = "outside_deflect_window"
-        s.windowPartner = s.partner
-        setActive(s, false, "outside_deflect_window", nil, time)
-        s.windowPaused = true
+        s.windowExitSince = s.windowExitSince or time
+        local window = gameInfo.getDeflectWindow(s.speed)
+        local delay = finite(window) and math.max(0, window * LIMIT.deactivationWindowFactor) or 0
+        if time - s.windowExitSince >= delay then
+            s.lastGate = "outside_deflect_window"
+            s.windowPartner = s.partner
+            setActive(s, false, "outside_deflect_window", nil, time)
+            s.windowPaused = true
+        end
         return
     end
+    s.windowExitSince = nil
     if s.windowPaused and id(snapshot.targetId) ~= localPlayer.UserId and id(snapshot.targetId) ~= s.windowPartner then
         s.windowPaused, s.windowPartner = false, nil
     end
     local targeted = target and target == me or (not target and snapshot.targeted == true)
-    local aimed = s.target == me and targeted and prediction.imminent
+    local window = gameInfo.getDeflectWindow(s.speed)
+    local own = rootPosition(s)
+    local distance = prediction.distance
+    local closing = own and distance > 0 and snapshot.velocity:Dot(own - snapshot.position) / distance or 0
+    local timeToRange = closing > 0 and math.max(0, (distance - (gameInfo.getDeflectAbility().DeflectDistance or 0)) / closing) or math.huge
+    local activationReady = prediction.imminent and finite(window) and timeToRange <= window * LIMIT.activationWindowFactor
+    local aimed = s.target == me and targeted and activationReady
     if s.pull and time - s.pull.at > LIMIT.pullRecovery then s.pull = nil end
     if s.active then
         if target and target ~= me and not s.clashAwayAt then s.clashAwayAt = time end
