@@ -30,7 +30,9 @@ local function imminent(ability, player, now)
     if not finite(range) or range <= 0 then return false end
     if distance <= range then return true end
     local closing = snapshot.velocity:Dot(delta) / math.max(distance, 0.001)
-    return closing > 0 and (distance - range) / closing <= 0.15
+    if closing <= 0 then return false end
+    local window = getWindow(ability, player)
+    return finite(window) and window > 0 and (distance - range) / closing <= window
 end
 
 local function step()
