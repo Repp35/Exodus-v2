@@ -1,577 +1,368 @@
--- [[ gameinfo ]]
-
 local GameInfo = {}
-export type BallSnapshot = {
-	schema: number,
-	generatedAt: number,
-	valid: boolean,
-	ball: BasePart,
-	ballValid: boolean,
-	position: Vector3,
-	velocity: Vector3,
-	speed: number,
-	syncSpeed: number?,
-	realPosition: Vector3?,
-	targetId: number,
-	targeted: boolean,
-	teleported: boolean,
-	grace: boolean,
-	oldGrace: boolean,
-	syncAt: number,
-	syncSequence: number?,
-}
-export type BallSync = {
-	Sequence: number?,
-	ServerTime: number?,
-	TeleportSequence: number?,
-	Teleported: boolean?,
-	Grace: boolean?,
-	OldGrace: boolean?,
-	TargetPlayerID: number?,
-	HighlightTargetPlayerID: number?,
-	PossessorId: number?,
-	RealPosition: Vector3?,
-	Speed: number?,
-}
+local utils, players, world
+local ball, searchAt, watching = nil, 0, false
+local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
+local lastSync, packet, packetAt = nil, nil, 0
+local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
+local minimumSpeed, maximumSpeed, speedAt = 16, 600, 0
+local errors, cooldownConnection, parriedConnection = {}, nil, nil
+local cooldown, signalAt, heldAt, missingAt, warningAt
 
--- tuning
-local T = {
-	SNAPSHOT_SCHEMA = 2,
-}
-
--- state
-local Utils
-local Players
-local Workspace
-local cachedBall
-local ballWatcherReady = false
-local ballSearchComplete = false
-local nextBallSearch = 0
-local ballReplicatorModule
-local gameBallModule
-local speedLimitMin, speedLimitMax = 16, 600
-local nextSpeedRead = 0
-local lastSyncData
-local lastPacket
-local lastPacketAt = 0
-local clientAbilitiesModule
-local clientAbilities
-local sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt
-local lastModuleError = {}
-local deflectState = {
-	known = false,
-	active = false,
-	rawActive = false,
-
-
-
-	lastEventAt = -math.huge,
-
-}
-
-local deflectConnection
-local deflectParriedConnection
-local nextDeflectSignalCheck = 0
-local nextHeldCooldownCheck = 0
-local deflectMissingAt, nextDeflectWarning = nil, 0
-local function reportModuleError(name, message)
-	local time = os.clock()
-	if lastModuleError[name] and time - lastModuleError[name] < 2 then return end
-	lastModuleError[name] = time; local detail = name .. ": " .. tostring(message)
-	if Utils and type(Utils.recordError) == "function" then Utils.recordError("GameInfo", detail) else warn("[GameInfo] " .. detail) end
+local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
+local function child(parent, name) return parent and parent:FindFirstChild(name) end
+local function report(name, message)
+    local time = os.clock()
+    if errors[name] and time - errors[name] < 2 then return end
+    errors[name] = time
+    local detail = name .. ": " .. tostring(message)
+    if utils and type(utils.recordError) == "function" then utils.recordError("GameInfo", detail) else warn("[GameInfo] " .. detail) end
 end
-
--- helpers
-local function now() return Utils.now() end
-local function findGameBall()
-	local ball = Workspace:FindFirstChild("GameBall") or Workspace:FindFirstChild("GameBall", true)
-	if typeof(ball) == "Instance" and ball:IsA("BasePart") then return ball end
-	return nil
+local function load(module, name)
+    if not module or not module:IsA("ModuleScript") then return nil end
+    local ok, result = pcall(require, module)
+    if not ok or type(result) ~= "table" then report(name, ok and "módulo não retornou tabela" or result); return nil end
+    return result
+end
+local function storage() return utils and utils.getReplicatedStorage() end
+local function ts() return child(storage(), "TS") end
+local function getAbilities()
+    local module = child(ts(), "ClientAbilities")
+    if abilityScript ~= module then abilityScript, abilities = module, nil end
+    if not abilities and module then
+        local value = load(module, "ClientAbilities")
+        if value and type(value.Abilities) == "table" then abilities = value.Abilities
+        elseif value then report("ClientAbilities", "Abilities ausente ou inválido") end
+    end
+    return abilities
+end
+local function getAbility(index, method)
+    local list = getAbilities()
+    local ability = list and list[index]
+    if type(ability) == "table" and type(ability[method]) == "function" then return ability end
+    return nil
+end
+local function getReplicator()
+    local folder = child(ts(), "BallReplicator")
+    local module = folder and (folder:IsA("ModuleScript") and folder or child(folder, "BallReplicator"))
+    if module ~= replicatorScript then replicatorScript, replicator = module, nil end
+    if not replicator and module then
+        local value = load(module, "BallReplicator")
+        if value then
+            if type(value.BallReplicator) == "table" then replicator = value.BallReplicator
+            elseif value.syncData ~= nil then replicator = value end
+        end
+    end
+    return replicator
+end
+local function syncData()
+    local provider = getReplicator()
+    if packet and os.clock() - packetAt > 0.5 then packet = nil end
+    if packet then
+        local sequence = provider and provider.hasState == true and provider.lastSeq
+        if type(sequence) ~= "number" or (packet.Sequence ~= sequence and (packet.Sequence - sequence) % 65536 < 32768) then return packet end
+        packet = nil
+    end
+    local data = provider and provider.hasState == true and provider.syncData or lastSync
+    if type(data) ~= "table" then data = provider and provider.syncData end
+    return type(data) == "table" and data or nil
+end
+local function targetNumber(value)
+    if typeof(value) == "Instance" and value:IsA("Player") then return value.UserId end
+    if type(value) == "string" then value = tonumber(value) end
+    return finite(value) and value > 0 and value or nil
+end
+local function targetId(data)
+    local target = type(data) == "table" and (targetNumber(data.TargetPlayerID) or targetNumber(data.HighlightTargetPlayerID))
+    if target then return target end
+    if type(data) == "table" and data.Targeted == true and players.LocalPlayer then return players.LocalPlayer.UserId end
+    local ok, value = pcall(world.GetAttribute, world, "GameBallTarget")
+    return ok and targetNumber(value) or -1
+end
+local function findBall()
+    local candidate = world:FindFirstChild("GameBall") or world:FindFirstChild("GameBall", true)
+    if candidate and candidate:IsA("BasePart") then return candidate end
+    return nil
 end
 local function getBall()
-	if cachedBall and cachedBall.Parent then return cachedBall end
-	if ballWatcherReady and ballSearchComplete and os.clock() < nextBallSearch then return nil end
-	cachedBall = findGameBall(); ballSearchComplete = true; nextBallSearch = os.clock() + 0.5; return cachedBall
+    if ball and ball.Parent then return ball end
+    if watching and os.clock() < searchAt then return nil end
+    ball, searchAt = findBall(), os.clock() + 0.5
+    return ball
 end
-local function getBallReplicator()
-	if ballReplicatorModule then return ballReplicatorModule end
-	ballReplicatorModule = nil; local replicatedStorage = Utils.getReplicatedStorage()
-	if not replicatedStorage then return nil end
-	local ts = replicatedStorage:FindFirstChild("TS")
-	if not ts then return nil end
-	local folder = ts:FindFirstChild("BallReplicator")
-	if not folder then return nil end
-	local candidate = folder:IsA("ModuleScript") and folder or folder:FindFirstChild("BallReplicator")
-	if not candidate or not candidate:IsA("ModuleScript") then return nil end
-	local ok, result = pcall(require, candidate)
-	if not ok or type(result) ~= "table" then reportModuleError("BallReplicator", ok and "módulo não retornou tabela" or result); return nil end
-	if type(result.BallReplicator) == "table" then
-		ballReplicatorModule = result.BallReplicator
-	elseif result.syncData ~= nil then
-		ballReplicatorModule = result
-	else
-		return nil
-	end
-	return ballReplicatorModule
-end
-local function getDecodedSyncData()
-	local provider = getBallReplicator()
-	if lastPacket and os.clock() - lastPacketAt > 0.5 then lastPacket = nil end
-	if lastPacket then
-		local sequence = provider and provider.hasState == true and provider.lastSeq
-		if type(sequence) ~= "number" or (lastPacket.Sequence - sequence) % 65536 < 32768 and lastPacket.Sequence ~= sequence then return lastPacket end
-		lastPacket = nil
-	end
-	local data = provider and provider.hasState == true and provider.syncData or lastSyncData
-	if type(data) ~= "table" then data = provider and provider.syncData or nil end
-	if type(data) ~= "table" then return nil end
-	return data
-end
-local function normalizeTargetId(value)
-	if typeof(value) == "Instance" and value:IsA("Player") then return tonumber(value.UserId) end
-	if type(value) == "number" and value > 0 then return value end
-	if type(value) == "string" then
-		local n = tonumber(value)
-		if n and n > 0 then return n end
-	end
-	return nil
-end
-local function resolveTargetId(data)
-	local syncTarget = type(data) == "table" and (normalizeTargetId(data.TargetPlayerID) or normalizeTargetId(data.HighlightTargetPlayerID))
-	if syncTarget then return syncTarget end
-	if type(data) == "table" and data.Targeted == true and Players and Players.LocalPlayer then return Players.LocalPlayer.UserId end
-	local attributeOk, attributeValue = pcall(function() return Workspace:GetAttribute("GameBallTarget") end)
-	if attributeOk and attributeValue ~= nil then
-		local attributeTarget = normalizeTargetId(attributeValue)
-		if attributeTarget then return attributeTarget end
-	end
-	return -1
-end
-local function locateDeflectAbility()
-	if clientAbilitiesModule and clientAbilitiesModule.Parent and clientAbilities then
-		local ability = clientAbilities.Abilities[1]
-		if type(ability) == "table" and type(ability.Deflect) == "function" then return ability end
-		return nil
-	end
-	local replicatedStorage = Utils.getReplicatedStorage()
-	if not replicatedStorage then return nil end
-	local ts = replicatedStorage:FindFirstChild("TS")
-	if not ts then return nil end
-	local clientModule = ts:FindFirstChild("ClientAbilities")
-	if not clientModule or not clientModule:IsA("ModuleScript") then return nil end
-	if clientAbilitiesModule ~= clientModule then
-		local ok, client = pcall(require, clientModule)
-		if not ok or type(client) ~= "table" or type(client.Abilities) ~= "table" then
-			reportModuleError("ClientAbilities", ok and "Abilities ausente ou inválido" or client); clientAbilitiesModule, clientAbilities = nil, nil; return nil
-		end
-		clientAbilitiesModule, clientAbilities = clientModule, client
-	end
-	local ability = clientAbilities.Abilities[1]
-	if type(ability) == "table" and type(ability.Deflect) == "function" then return ability end
-	return nil
-end
-local function getDeflectCooldown()
-	local ability = locateDeflectAbility()
-	if not ability then return nil end
-	local cooldown = ability.Cooldown
-	if type(cooldown) == "number" and cooldown == cooldown and cooldown < math.huge then return cooldown end
-	return nil
-end
-local function getSnapshot(_, time, frameTime): BallSnapshot?
-	time = type(time) == "number" and time or now(); local ball = getBall()
-	if not ball then return nil end
-	local position = ball.Position; local velocity = ball.AssemblyLinearVelocity; local syncData = getDecodedSyncData()
-	if sampledBall ~= ball or (syncData and syncData.Teleported == true) then
-		sampledBall, sampledPosition, sampledAt = ball, position, time; sampledVelocity, movedAt = Vector3.zero, nil
-	elseif sampledPosition and sampledAt and time - sampledAt >= 1 / 240 then
-		local elapsed = time - sampledAt; local displacement = position - sampledPosition
-		if displacement.Magnitude > 0.001 then
-			local measured = displacement / elapsed; local expected = syncData and tonumber(syncData.Speed)
-			if elapsed <= 0.25 and (not expected or expected <= 0 or measured.Magnitude <= expected * 2.5 + 30) then sampledVelocity, movedAt = measured, time
-			else sampledVelocity, movedAt = Vector3.zero, nil end
-		elseif movedAt and time - movedAt > 0.10 then
-			sampledVelocity = Vector3.zero
-		end
-		sampledPosition, sampledAt = position, time
-	end
-	if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = sampledVelocity or Vector3.zero end
-	local speed = 0
-	if typeof(velocity) == "Vector3" then speed = velocity.Magnitude end
-	local targetId = resolveTargetId(syncData); local localPlayer = Players and Players.LocalPlayer; local teleported, grace, oldGrace = false, false, false; local provider = getBallReplicator()
-	if syncData then teleported = syncData.Teleported == true; grace = syncData.Grace == true; oldGrace = syncData.OldGrace == true end
-	return {
-		schema = T.SNAPSHOT_SCHEMA,
-		generatedAt = time,
-		valid = true,
-		ball = ball,
-		ballValid = true,
-		position = position,
-		velocity = velocity,
-		speed = speed,
-		syncSpeed = syncData and syncData.Speed or nil,
-		realPosition = syncData and syncData.RealPosition or nil,
-		targetId = targetId,
-		targeted = localPlayer ~= nil and targetId == localPlayer.UserId,
-		teleported = teleported,
-		grace = grace,
-		oldGrace = oldGrace,
-		syncAt = time,
-		syncSequence = lastPacket and syncData == lastPacket and lastPacket.Sequence or (provider and provider.hasState == true and provider.lastSeq or nil),
-	}
-end
-local function installBallWatcher(trackConnection)
-	if type(trackConnection) ~= "function" then return false, "trackConnection invalido" end
-	trackConnection((Workspace.DescendantAdded or Workspace.ChildAdded):Connect(function(child)
-		if child.Name == "GameBall" and child:IsA("BasePart") then cachedBall = child end
-	end))
-	trackConnection((Workspace.DescendantRemoving or Workspace.ChildRemoved):Connect(function(child)
-		if cachedBall == child then cachedBall = nil; ballSearchComplete = false end
-	end))
-	cachedBall = findGameBall(); ballSearchComplete = true; ballWatcherReady = true; nextBallSearch = os.clock() + 0.5
-	return true
+local function disconnect(connection)
+    if connection then
+        if utils and type(utils.untrackGlobal) == "function" then utils.untrackGlobal(connection) end
+        connection:Disconnect()
+    end
 end
 function GameInfo.setup(deps)
-	if
-		type(deps) ~= "table"
-		or type(deps.Utils) ~= "table"
-		or type(deps.Utils.now) ~= "function"
-		or type(deps.Utils.apiVersion) ~= "function"
-		or type(deps.Utils.getPlayers) ~= "function"
-		or type(deps.Utils.getReplicatedStorage) ~= "function"
-		or type(deps.Utils.getWorkspace) ~= "function"
-	then
-		return false, "dependência ausente: Utils"
-	end
-	if deflectConnection then
-		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(deflectConnection) end
-		deflectConnection:Disconnect(); deflectConnection = nil
-	end
-	if deflectParriedConnection then
-		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(deflectParriedConnection) end
-		deflectParriedConnection:Disconnect(); deflectParriedConnection = nil
-	end
-	Utils = deps.Utils; Players = Utils.getPlayers(); Workspace = Utils.getWorkspace()
-	if not Players then return false, "dependência ausente: Players" end
-	if not Workspace then return false, "dependência ausente: Workspace" end
-	cachedBall = nil; ballWatcherReady = false; ballSearchComplete = false; nextBallSearch = 0
-	nextSpeedRead = 0; speedLimitMin, speedLimitMax = 16, 600; ballReplicatorModule = nil; gameBallModule = nil; lastSyncData = nil; lastPacket = nil
-	clientAbilitiesModule = nil; clientAbilities = nil; sampledBall, sampledPosition, sampledAt, sampledVelocity, movedAt = nil, nil, nil, nil, nil
-	deflectState = {
-		known = false,
-		active = false,
-		rawActive = false,
-
-
-
-		lastEventAt = -math.huge,
-
-	}
-
-	nextDeflectSignalCheck = 0; nextHeldCooldownCheck = 0; deflectMissingAt = nil; nextDeflectWarning = 0
-	GameInfo.getDeflectCooldownState(); return true
+    if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
+    disconnect(cooldownConnection); disconnect(parriedConnection)
+    cooldownConnection, parriedConnection = nil, nil
+    utils = deps.Utils
+    players, world = utils.getPlayers(), utils.getWorkspace()
+    if not players or not world then return false, "dependência ausente: Players ou Workspace" end
+    ball, searchAt, watching = nil, 0, false
+    abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil
+    lastSync, packet, packetAt = nil, nil, 0
+    sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil
+    minimumSpeed, maximumSpeed, speedAt = 16, 600, 0
+    errors = {}
+    cooldown = { known = false, active = false, rawActive = false, lastEventAt = -math.huge }
+    signalAt, heldAt, missingAt, warningAt = 0, 0, nil, 0
+    GameInfo.getDeflectCooldownState()
+    return true
 end
 function GameInfo.getBall() return getBall() end
-function GameInfo.getBallPosition(ball) return ball.Position end
-function GameInfo.getBallVelocity(ball) return ball.AssemblyLinearVelocity end
+function GameInfo.getBallPosition(value) return value.Position end
+function GameInfo.getBallVelocity(value) return value.AssemblyLinearVelocity end
 function GameInfo.getRootPosition(root) return root.Position end
-function GameInfo.getLocalPing()
-	local player = Players and Players.LocalPlayer; return player and player:GetNetworkPing() or nil
-end
-function GameInfo.getDeflectRange()
-	local player = Players and Players.LocalPlayer; return player and player:GetAttribute("DeflectRange") or nil
-end
-function GameInfo.getDeflectAbility() return locateDeflectAbility() end
+function GameInfo.getLocalPing() return players.LocalPlayer and players.LocalPlayer:GetNetworkPing() or nil end
+function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
+function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
+function GameInfo.getDashAbility() return getAbility(2, "Dash") end
+function GameInfo.getDarkSealAbility() return getAbility(20, "SendEvent") end
 function GameInfo.getDeflectUICooldown()
-	local ability = locateDeflectAbility()
-	if not ability or type(ability.Interface) ~= "table" then return nil end
-	local duration = ability.LastCooldown
-	if type(duration) ~= "number" or duration ~= duration or duration <= 0 or duration >= math.huge then return nil end
-	local bar = ability.Interface.UIAbilityCooldown
-	if not bar then return nil end
-	local ok, scale = pcall(function() return bar.Size.Y.Scale end)
-	if not ok or type(scale) ~= "number" or scale ~= scale or scale == math.huge or scale == -math.huge then return nil end
-	return math.clamp(scale, 0, 1) * duration
+    local ability = GameInfo.getDeflectAbility()
+    if not ability or type(ability.Interface) ~= "table" or not finite(ability.LastCooldown) or ability.LastCooldown <= 0 then return nil end
+    local bar = ability.Interface.UIAbilityCooldown
+    if not bar then return nil end
+    local ok, scale = pcall(function() return bar.Size.Y.Scale end)
+    return ok and finite(scale) and math.clamp(scale, 0, 1) * ability.LastCooldown or nil
+end
+local function generatedRemote(id)
+    local remotes = child(ts(), "GeneratedNetworkRemotes")
+    local remote = child(remotes, "RE_" .. tostring(id))
+    return remote and remote:IsA("RemoteEvent") and remote or nil
 end
 function GameInfo.getDeflectServerEvents()
-	local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local remotes = ts and ts:FindFirstChild("GeneratedNetworkRemotes")
-	if not remotes then return nil end
-	local cooldown = remotes:FindFirstChild("RE_" .. tostring(5.520474058077904e76)); local parried = remotes:FindFirstChild("RE_" .. tostring(9.611859444202098e76))
-	if not cooldown or not cooldown:IsA("RemoteEvent") then return nil end
-	return { cooldown = cooldown.OnClientEvent, parried = parried and parried:IsA("RemoteEvent") and parried.OnClientEvent or nil }
+    local first, second = generatedRemote(5.520474058077904e76), generatedRemote(9.611859444202098e76)
+    if not first then return nil end
+    return { cooldown = first.OnClientEvent, parried = second and second.OnClientEvent or nil }
 end
 function GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
-	if abilityId ~= 1 then return nil end
-	if eventId == 5.93848805167512e76 and type(value) == "number" and value == value and value > -math.huge and value < math.huge then
-		if value > 0 then return "started", value end
-		return "reset", 0
-	end
-	if eventId == 6.60750295352893e76 then return "stopped", 0 end
-	return nil
+    if abilityId ~= 1 then return nil end
+    if eventId == 5.93848805167512e76 and finite(value) then return value > 0 and "started" or "reset", math.max(value, 0) end
+    if eventId == 6.60750295352893e76 then return "stopped", 0 end
+    return nil
 end
 function GameInfo.getHeldDeflectServerCooldown()
-	local ability = locateDeflectAbility()
-	if not ability then return nil end
-	local duration, receivedAt = ability.HeldServerCooldown, ability.HeldServerCooldownAt
-	if
-		type(duration) == "number"
-		and duration > 0
-		and duration < math.huge
-		and type(receivedAt) == "number"
-		and receivedAt == receivedAt
-		and receivedAt > -math.huge
-		and receivedAt < math.huge
-	then
-		return duration, receivedAt
-	end
-	return nil
+    local ability = GameInfo.getDeflectAbility()
+    if not ability then return nil end
+    local duration, received = ability.HeldServerCooldown, ability.HeldServerCooldownAt
+    if finite(duration) and duration > 0 and finite(received) then return duration, received end
+    return nil
 end
-local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 function GameInfo.getDeflectCooldownState()
-	local time = os.clock()
-	if deflectConnection and deflectConnection.Connected == false then
-		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(deflectConnection) end
-		deflectConnection = nil; deflectState.rawActive = false; deflectState.endsAt = nil; nextDeflectSignalCheck = 0
-	end
-	if deflectParriedConnection and deflectParriedConnection.Connected == false then
-		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(deflectParriedConnection) end
-		deflectParriedConnection = nil
-	end
-	if not deflectConnection and time >= nextDeflectSignalCheck then
-		nextDeflectSignalCheck = time + 0.5; local signals = GameInfo.getDeflectServerEvents()
-		if signals and signals.cooldown then
-			deflectConnection = signals.cooldown:Connect(function(abilityId, eventId, value)
-				local kind, duration = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
-				if not kind then return end
-				deflectState.known = true; deflectState.lastEventAt = os.clock()
-				if kind == "started" then deflectState.rawActive = true; deflectState.endsAt = deflectState.lastEventAt + duration else deflectState.rawActive = false; deflectState.endsAt = nil end
-			end)
-			if Utils and type(Utils.trackGlobal) == "function" then Utils.trackGlobal(deflectConnection) end
-			deflectMissingAt = nil
-		else
-			if not deflectMissingAt then deflectMissingAt = time end
-			if time - deflectMissingAt >= 3 and time >= nextDeflectWarning then nextDeflectWarning = time + 10; reportModuleError("DeflectCooldown", "evento de cooldown do servidor indisponível") end
-		end
-	end
-	if deflectConnection and not deflectParriedConnection then
-		local signals = GameInfo.getDeflectServerEvents()
-		if signals and signals.parried then
-			deflectParriedConnection = signals.parried:Connect(function()
-				deflectState.active = false; deflectState.rawActive = false; deflectState.endsAt = nil
-				deflectState.lastEventAt = os.clock()
-			end)
-			if Utils and type(Utils.trackGlobal) == "function" then Utils.trackGlobal(deflectParriedConnection) end
-		end
-	end
-	if not deflectState.rawActive and time >= nextHeldCooldownCheck then
-		nextHeldCooldownCheck = time + 0.05; local duration, receivedAt = GameInfo.getHeldDeflectServerCooldown()
-		if duration and receivedAt and receivedAt <= time and time < receivedAt + duration and receivedAt > deflectState.lastEventAt + 0.01 then
-			deflectState.known = true; deflectState.rawActive = true; deflectState.lastEventAt = receivedAt; deflectState.endsAt = receivedAt + duration
-		end
-	end
-	if deflectState.rawActive and finite(deflectState.endsAt) and time >= deflectState.endsAt then deflectState.rawActive = false; deflectState.endsAt = nil end
-	local ability = locateDeflectAbility(); local localCooldown = ability and finite(ability.Cooldown) and ability.Cooldown > 0; local cooldownRunning = deflectState.rawActive or localCooldown == true
-	if localCooldown then deflectState.known = true end
-	local remaining = localCooldown and ability.Cooldown or 0
-	if deflectState.rawActive and finite(deflectState.endsAt) then remaining = math.max(remaining, deflectState.endsAt - time) end
-	deflectState.remaining = math.max(0, remaining)
-	deflectState.active = cooldownRunning
-	deflectState.blocking = cooldownRunning
-	return deflectState
+    local time = os.clock()
+    if cooldownConnection and cooldownConnection.Connected == false then
+        disconnect(cooldownConnection); cooldownConnection = nil
+        cooldown.rawActive, cooldown.endsAt, signalAt = false, nil, 0
+    end
+    if parriedConnection and parriedConnection.Connected == false then disconnect(parriedConnection); parriedConnection = nil end
+    if not cooldownConnection and time >= signalAt then
+        signalAt = time + 0.5
+        local signals = GameInfo.getDeflectServerEvents()
+        if signals and signals.cooldown then
+            cooldownConnection = signals.cooldown:Connect(function(abilityId, eventId, value)
+                local kind, duration = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
+                if not kind then return end
+                cooldown.known, cooldown.lastEventAt = true, os.clock()
+                cooldown.rawActive = kind == "started"
+                cooldown.endsAt = cooldown.rawActive and cooldown.lastEventAt + duration or nil
+            end)
+            utils.trackGlobal(cooldownConnection)
+            missingAt = nil
+        else
+            missingAt = missingAt or time
+            if time - missingAt >= 3 and time >= warningAt then warningAt = time + 10; report("DeflectCooldown", "evento de cooldown do servidor indisponível") end
+        end
+    end
+    if cooldownConnection and not parriedConnection then
+        local signals = GameInfo.getDeflectServerEvents()
+        if signals and signals.parried then
+            parriedConnection = signals.parried:Connect(function()
+                cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt = false, false, nil, os.clock()
+            end)
+            utils.trackGlobal(parriedConnection)
+        end
+    end
+    if not cooldown.rawActive and time >= heldAt then
+        heldAt = time + 0.05
+        local duration, received = GameInfo.getHeldDeflectServerCooldown()
+        if duration and received and received <= time and time < received + duration and received > cooldown.lastEventAt + 0.01 then
+            cooldown.known, cooldown.rawActive, cooldown.lastEventAt, cooldown.endsAt = true, true, received, received + duration
+        end
+    end
+    if cooldown.rawActive and finite(cooldown.endsAt) and time >= cooldown.endsAt then cooldown.rawActive, cooldown.endsAt = false, nil end
+    local ability = GameInfo.getDeflectAbility()
+    local localCooldown = ability and finite(ability.Cooldown) and ability.Cooldown > 0
+    if localCooldown then cooldown.known = true end
+    local remaining = localCooldown and ability.Cooldown or 0
+    if cooldown.rawActive and finite(cooldown.endsAt) then remaining = math.max(remaining, cooldown.endsAt - time) end
+    cooldown.remaining = math.max(0, remaining)
+    cooldown.active = cooldown.rawActive or localCooldown == true
+    cooldown.blocking = cooldown.active
+    return cooldown
 end
-function GameInfo.getDashAbility()
-	locateDeflectAbility(); local ability = clientAbilities and clientAbilities.Abilities[2]
-	if type(ability) == "table" and type(ability.Dash) == "function" then return ability end
-	return nil
-end
-function GameInfo.getDarkSealAbility()
-	locateDeflectAbility(); local ability = clientAbilities and clientAbilities.Abilities[20]
-	if type(ability) == "table" and type(ability.SendEvent) == "function" then return ability end
-	return nil
-end
-function GameInfo.getSnapshot(lastTarget, time, frameTime): BallSnapshot? return getSnapshot(lastTarget, time, frameTime) end
-function GameInfo.getSnapshotAt(time: number?): BallSnapshot? return getSnapshot(nil, time) end
-function GameInfo.getSyncData() return getDecodedSyncData() end
+function GameInfo.getSyncData() return syncData() end
 function GameInfo.getSyncSequence()
-	local sync = getDecodedSyncData()
-	if sync and sync == lastPacket then return lastPacket.Sequence end
-	local provider = getBallReplicator(); return provider and provider.hasState == true and provider.lastSeq or nil
+    local current = syncData()
+    if packet and current == packet then return packet.Sequence end
+    local provider = getReplicator()
+    return provider and provider.hasState == true and provider.lastSeq or nil
 end
-function GameInfo.applyPacket(packet)
-	if type(packet) ~= "table" then return false end
-	local sequence = packet.Sequence
-	if type(sequence) ~= "number" or sequence ~= sequence or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return false end
-	local current = GameInfo.getSyncSequence()
-	if type(current) == "number" then
-		local delta = (sequence - current) % 65536
-		if delta == 0 or delta >= 32768 then return false end
-	end
-	lastPacket = packet; lastPacketAt = os.clock(); return true
+function GameInfo.applyPacket(value)
+    if type(value) ~= "table" then return false end
+    local sequence = value.Sequence
+    if not finite(sequence) or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return false end
+    local previous = GameInfo.getSyncSequence()
+    if type(previous) == "number" then
+        local delta = (sequence - previous) % 65536
+        if delta == 0 or delta >= 32768 then return false end
+    end
+    packet, packetAt = table.clone(value), os.clock()
+    return true
 end
-function GameInfo.decodeBallPacket(packet): BallSync?
-	local provider = getBallReplicator()
-	if not provider or type(provider.Decode) ~= "function" then return nil end
-	local decoded = provider:Decode(packet)
-	if type(decoded) ~= "table" then return nil end
-	return {
-		Sequence = decoded.seq,
-		ServerTime = decoded.serverTime,
-		TeleportSequence = decoded.seq,
-		Teleported = decoded.teleported,
-		Grace = decoded.grace,
-		OldGrace = decoded.oldGrace,
-		TargetPlayerID = decoded.targetId,
-		HighlightTargetPlayerID = decoded.highlightId,
-		PossessorId = decoded.possessed and decoded.possessorId or 0,
-		RealPosition = decoded.position,
-		Speed = decoded.speed,
-	}
+function GameInfo.decodeBallPacket(value)
+    local provider = getReplicator()
+    if not provider or type(provider.Decode) ~= "function" then return nil end
+    local decoded = provider:Decode(value)
+    if type(decoded) ~= "table" then return nil end
+    return { Sequence = decoded.seq, ServerTime = decoded.serverTime, TeleportSequence = decoded.seq,
+        Teleported = decoded.teleported, Grace = decoded.grace, OldGrace = decoded.oldGrace,
+        TargetPlayerID = decoded.targetId, HighlightTargetPlayerID = decoded.highlightId,
+        PossessorId = decoded.possessed and decoded.possessorId or 0, RealPosition = decoded.position, Speed = decoded.speed }
 end
-function GameInfo.getTargetId() return resolveTargetId(getDecodedSyncData()) end
+function GameInfo.getTargetId() return targetId(syncData()) end
+local function snapshot(time)
+    local currentBall = getBall()
+    if not currentBall then return nil end
+    time = type(time) == "number" and time or utils.now()
+    local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData()
+    if sampledBall ~= currentBall or (sync and sync.Teleported == true) then
+        sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = currentBall, position, time, Vector3.zero, nil
+    elseif sampledPosition and sampledAt and time - sampledAt >= 1 / 240 then
+        local elapsed = time - sampledAt
+        local displacement = position - sampledPosition
+        if displacement.Magnitude > 0.001 then
+            local measured, expected = displacement / elapsed, sync and tonumber(sync.Speed)
+            if elapsed <= 0.25 and (not expected or expected <= 0 or measured.Magnitude <= expected * 2.5 + 30) then
+                measuredVelocity, movedAt = measured, time
+            else measuredVelocity, movedAt = Vector3.zero, nil end
+        elseif movedAt and time - movedAt > 0.1 then measuredVelocity = Vector3.zero end
+        sampledPosition, sampledAt = position, time
+    end
+    if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
+    local target, provider = targetId(sync), getReplicator()
+    return {
+        schema = 2, generatedAt = time, valid = true, ball = currentBall, ballValid = true,
+        position = position, velocity = velocity, speed = velocity.Magnitude,
+        syncSpeed = sync and sync.Speed or nil, realPosition = sync and sync.RealPosition or nil,
+        targetId = target, targeted = players.LocalPlayer ~= nil and target == players.LocalPlayer.UserId,
+        teleported = sync and sync.Teleported == true or false, grace = sync and sync.Grace == true or false,
+        oldGrace = sync and sync.OldGrace == true or false, syncAt = time,
+        syncSequence = packet and sync == packet and packet.Sequence or (provider and provider.hasState == true and provider.lastSeq or nil),
+    }
+end
+function GameInfo.getSnapshot(_, time) return snapshot(time) end
+function GameInfo.getSnapshotAt(time) return snapshot(time) end
+function GameInfo.isSnapshotValid(value)
+    return type(value) == "table" and typeof(value.ball) == "Instance" and value.ball:IsA("BasePart")
+        and typeof(value.position) == "Vector3" and typeof(value.velocity) == "Vector3"
+        and finite(value.speed) and value.speed >= 0 and type(value.targetId) == "number" and type(value.targeted) == "boolean"
+end
+function GameInfo.applySync(value)
+    if type(value) == "table" and type(value.syncData) == "table" then value = value.syncData end
+    if type(value) ~= "table" then local provider = getReplicator(); value = provider and provider.syncData end
+    if type(value) ~= "table" then return nil end
+    lastSync = value
+    return value
+end
+function GameInfo.installBallWatcher(track)
+    if type(track) ~= "function" then return false, "trackConnection invalido" end
+    track((world.DescendantAdded or world.ChildAdded):Connect(function(item)
+        if item.Name == "GameBall" and item:IsA("BasePart") then ball = item end
+    end))
+    track((world.DescendantRemoving or world.ChildRemoved):Connect(function(item)
+        if ball == item then ball, searchAt = nil, 0 end
+    end))
+    ball, watching, searchAt = findBall(), true, os.clock() + 0.5
+    return true
+end
 function GameInfo.getBallSpeedLimits()
-	local time = os.clock()
-	if time < nextSpeedRead then return speedLimitMin, speedLimitMax end
-	nextSpeedRead = time + 0.5
-	if not gameBallModule then
-		local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local gameplay = ts and ts:FindFirstChild("Gameplay")
-		local module = gameplay and gameplay:FindFirstChild("GameBall")
-		if not module or not module:IsA("ModuleScript") then reportModuleError("GameBall", "módulo de velocidade indisponível; usando últimos limites conhecidos"); return speedLimitMin, speedLimitMax end
-		local ok, result = pcall(require, module)
-		if not ok then reportModuleError("GameBall", result); return speedLimitMin, speedLimitMax end
-		gameBallModule = type(result) == "table" and result.GameBall or nil
-	end
-	local ball = gameBallModule
-	if type(ball) ~= "table" or type(ball.GetBaseSpeed) ~= "function" or type(ball.GetMaxSpeed) ~= "function" then
-		reportModuleError("GameBall", "API de velocidade indisponível"); gameBallModule = nil; return speedLimitMin, speedLimitMax
-	end
-	local ok, minimum, maximum = pcall(function() return ball:GetBaseSpeed(), ball:GetMaxSpeed() end)
-	if
-		not ok
-		or type(minimum) ~= "number"
-		or type(maximum) ~= "number"
-		or minimum ~= minimum
-		or maximum ~= maximum
-		or minimum <= 0
-		or maximum <= minimum
-		or maximum == math.huge
-	then
-		reportModuleError("GameBall", ok and "limites de velocidade inválidos" or minimum); return speedLimitMin, speedLimitMax
-	end
-	speedLimitMin, speedLimitMax = minimum, maximum; return minimum, maximum
+    local time = os.clock()
+    if time < speedAt then return minimumSpeed, maximumSpeed end
+    speedAt = time + 0.5
+    local module = child(child(ts(), "Gameplay"), "GameBall")
+    if module ~= gameBallScript then gameBallScript, gameBall = module, nil end
+    if not gameBall then
+        local value = load(module, "GameBall")
+        gameBall = value and value.GameBall
+    end
+    if type(gameBall) ~= "table" or type(gameBall.GetBaseSpeed) ~= "function" or type(gameBall.GetMaxSpeed) ~= "function" then
+        report("GameBall", "API de velocidade indisponível; usando últimos limites conhecidos")
+        return minimumSpeed, maximumSpeed
+    end
+    local ok, low, high = pcall(function() return gameBall:GetBaseSpeed(), gameBall:GetMaxSpeed() end)
+    if ok and finite(low) and finite(high) and low > 0 and high > low then minimumSpeed, maximumSpeed = low, high
+    else report("GameBall", ok and "limites de velocidade inválidos" or low) end
+    return minimumSpeed, maximumSpeed
 end
 function GameInfo.getDeflectWindow(speed)
-	local minimum, maximum = GameInfo.getBallSpeedLimits(); local ball = gameBallModule; local sync = getDecodedSyncData()
-	if (type(speed) ~= "number" or speed ~= speed) and type(sync) == "table" and type(sync.Speed) == "number" and sync.Speed == sync.Speed then speed = sync.Speed end
-	if type(speed) ~= "number" or speed ~= speed or maximum <= minimum then return nil end
-	local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local window = 0.85 - 0.65 * fraction
-	if ball and type(ball.GetClashMinWindow) == "function" then
-		local ok, minimumWindow = pcall(ball.GetClashMinWindow, ball, speed)
-		if ok and type(minimumWindow) == "number" then window = math.max(window, minimumWindow) end
-	end
-	local range = GameInfo.getDeflectRange()
-	if type(range) == "number" then window += math.clamp((range - 8.5) / 7.5, 0, 1) * 0.12 end
-	local player = Players and Players.LocalPlayer
-	if ball and player and type(ball.IsInClash) == "function" then
-		local ok, inClash = pcall(ball.IsInClash, ball, player)
-		if ok and inClash == true and type(ball.GetClashWindowScale) == "function" then
-			local scaleOk, scale = pcall(ball.GetClashWindowScale, ball)
-			if scaleOk and type(scale) == "number" and scale > 0 then window *= scale end
-		end
-	end
-	return window
+    local low, high = GameInfo.getBallSpeedLimits()
+    local sync = syncData()
+    if not finite(speed) and sync and finite(sync.Speed) then speed = sync.Speed end
+    if not finite(speed) or high <= low then return nil end
+    local window = 0.85 - 0.65 * math.clamp((speed - low) / (high - low), 0, 1)
+    if gameBall and type(gameBall.GetClashMinWindow) == "function" then
+        local ok, minimum = pcall(gameBall.GetClashMinWindow, gameBall, speed)
+        if ok and finite(minimum) then window = math.max(window, minimum) end
+    end
+    local range = GameInfo.getDeflectRange()
+    if finite(range) then window += math.clamp((range - 8.5) / 7.5, 0, 1) * 0.12 end
+    local player = players.LocalPlayer
+    if gameBall and player and type(gameBall.IsInClash) == "function" and type(gameBall.GetClashWindowScale) == "function" then
+        local ok, active = pcall(gameBall.IsInClash, gameBall, player)
+        if ok and active == true then
+            local scaleOk, scale = pcall(gameBall.GetClashWindowScale, gameBall)
+            if scaleOk and finite(scale) and scale > 0 then window *= scale end
+        end
+    end
+    return window
 end
-function GameInfo.getHaunterRemote()
-	local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local remotes = ts and ts:FindFirstChild("GeneratedNetworkRemotes")
-	local remote = remotes and remotes:FindFirstChild("RE_" .. tostring(9.150098456648103e76))
-	if remote and remote:IsA("RemoteEvent") then return remote end
-	return nil
-end
-function GameInfo.getManifestRemote()
-	local storage = Utils and Utils.getReplicatedStorage(); local ts = storage and storage:FindFirstChild("TS"); local remotes = ts and ts:FindFirstChild("GeneratedNetworkRemotes")
-	local remote = remotes and remotes:FindFirstChild("RE_" .. tostring(9.318024238496386e76))
-	if remote and remote:IsA("RemoteEvent") then return remote end
-	return nil
-end
+function GameInfo.getHaunterRemote() return generatedRemote(9.150098456648103e76) end
+function GameInfo.getManifestRemote() return generatedRemote(9.318024238496386e76) end
 function GameInfo.getClashContext()
-	local player = Players and Players.LocalPlayer
-	if not player or not Workspace then return nil end
-	local lastAt = Workspace:GetAttribute("LastParryAt"); local by = Workspace:GetAttribute("LastParryBy"); local target = Workspace:GetAttribute("LastParryTarget")
-	if type(lastAt) ~= "number" or type(by) ~= "number" or type(target) ~= "number" then return nil end
-	local partnerId = by == player.UserId and target or (target == player.UserId and by or nil)
-	if not partnerId or partnerId <= 0 or partnerId == player.UserId then return nil end
-	local age = Workspace:GetServerTimeNow() - lastAt; local currentTarget = Workspace:GetAttribute("GameBallTarget")
-	if age < 0 or (age > 1 and (age > 2.5 or currentTarget ~= target)) then return nil end
-	local partner = Players:GetPlayerByUserId(partnerId); local ownRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	local partnerRoot = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
-	if not ownRoot or not partnerRoot or (ownRoot.Position - partnerRoot.Position).Magnitude > 35 then return nil end
-	return { partnerId = partnerId, lastParryAt = lastAt, age = age }
+    local player = players.LocalPlayer
+    if not player then return nil end
+    local lastAt, by, target = world:GetAttribute("LastParryAt"), world:GetAttribute("LastParryBy"), world:GetAttribute("LastParryTarget")
+    if type(lastAt) ~= "number" or type(by) ~= "number" or type(target) ~= "number" then return nil end
+    local partnerId = by == player.UserId and target or (target == player.UserId and by or nil)
+    if not partnerId or partnerId <= 0 or partnerId == player.UserId then return nil end
+    local age, currentTarget = world:GetServerTimeNow() - lastAt, world:GetAttribute("GameBallTarget")
+    if age < 0 or (age > 1 and (age > 2.5 or currentTarget ~= target)) then return nil end
+    local partner = players:GetPlayerByUserId(partnerId)
+    local ownRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    local partnerRoot = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
+    if not ownRoot or not partnerRoot or (ownRoot.Position - partnerRoot.Position).Magnitude > 35 then return nil end
+    return { partnerId = partnerId, lastParryAt = lastAt, age = age }
 end
-function GameInfo.isSnapshotValid(snapshot)
-	return type(snapshot) == "table"
-		and typeof(snapshot.ball) == "Instance"
-		and snapshot.ball:IsA("BasePart")
-		and typeof(snapshot.position) == "Vector3"
-		and typeof(snapshot.velocity) == "Vector3"
-		and type(snapshot.speed) == "number"
-		and snapshot.speed == snapshot.speed
-		and snapshot.speed >= 0
-		and snapshot.speed < math.huge
-		and type(snapshot.targetId) == "number"
-		and type(snapshot.targeted) == "boolean"
+function GameInfo.getDeflectCD()
+    local ability = GameInfo.getDeflectAbility()
+    return ability and finite(ability.Cooldown) and ability.Cooldown or nil
 end
-function GameInfo.applySync(data)
-	if type(data) == "table" and type(data.syncData) == "table" then data = data.syncData end
-	if type(data) ~= "table" then local provider = getBallReplicator(); data = provider and provider.syncData or nil end
-	if type(data) ~= "table" then return nil end
-	lastSyncData = data; return data
-end
-function GameInfo.installBallWatcher(trackConnection) return installBallWatcher(trackConnection) end
-function GameInfo.getDeflectCD() return getDeflectCooldown() end
 function GameInfo.getStatus()
-	local snapshot = getSnapshot(nil, now())
-	return {
-		schema = Utils.apiVersion(),
-		generatedAt = now(),
-		available = type(snapshot) == "table",
-		targetId = snapshot and snapshot.targetId or -1,
-		targeted = snapshot and snapshot.targeted == true or false,
-		speed = snapshot and snapshot.speed or 0,
-	}
+    local value = snapshot(utils.now())
+    return { schema = utils.apiVersion(), generatedAt = utils.now(), available = value ~= nil,
+        targetId = value and value.targetId or -1, targeted = value and value.targeted or false, speed = value and value.speed or 0 }
 end
 GameInfo.__contract = {
-	requiresMethods = { Utils = { "now", "apiVersion", "getPlayers", "getReplicatedStorage", "getWorkspace" } },
-	provides = {
-		"setup",
-		"getBall",
-		"getBallPosition",
-		"getBallVelocity",
-		"getRootPosition",
-		"getLocalPing",
-		"getDeflectRange",
-		"getDeflectWindow",
-		"getDeflectAbility",
-		"getDeflectServerEvents",
-		"decodeDeflectServerEvent",
-		"getHeldDeflectServerCooldown",
-		"getDeflectCooldownState",
-		"getDashAbility",
-		"getDarkSealAbility",
-		"getBallSpeedLimits",
-		"getDeflectCD",
-		"getSnapshot",
-		"getSnapshotAt",
-		"isSnapshotValid",
-		"getSyncData",
-		"getSyncSequence",
-		"decodeBallPacket",
-		"getTargetId",
-		"applySync",
-		"installBallWatcher",
-	},
-
-	requires = {
-		Utils = "utils",
-	},
-
+    requires = { Utils = "utils" },
+    requiresMethods = { Utils = { "now", "apiVersion", "getPlayers", "getReplicatedStorage", "getWorkspace" } },
+    provides = { "setup", "getBall", "getBallPosition", "getBallVelocity", "getRootPosition", "getLocalPing", "getDeflectRange", "getDeflectWindow",
+        "getDeflectAbility", "getDeflectServerEvents", "decodeDeflectServerEvent", "getHeldDeflectServerCooldown", "getDeflectCooldownState",
+        "getDashAbility", "getDarkSealAbility", "getBallSpeedLimits", "getDeflectCD", "getSnapshot", "getSnapshotAt", "isSnapshotValid",
+        "getSyncData", "getSyncSequence", "decodeBallPacket", "getTargetId", "applySync", "installBallWatcher" },
 }
-
 return GameInfo

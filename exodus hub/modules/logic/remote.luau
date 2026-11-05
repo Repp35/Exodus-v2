@@ -1,332 +1,222 @@
--- [[ remote ]]
-
--- state
 local Remote = {}
-local Utils
-local GameInfo
-local ballSyncConnection
-local ballSyncRemote
-local parryInitialized = false
-local maintenanceGeneration = 0
-local parryRemoteSource
-local remoteState = "uninitialized"
-local captureEnabled = false
-local loggedParryMethods = {}
-local HttpService = game:GetService("HttpService")
-local T = {
-	STORAGE_SCHEMA = 1,
-	STORAGE_FILE = "deflect_remotes.json",
-	MAX_CAPTURED_REMOTES = 128,
-}
+local utils, gameInfo, syncConnection, syncRemote
+local maintenance = 0
+local initialized, source, state, logged, parryBusy = false, nil, "uninitialized", false, false
+local captureEnabled, captured = false, setmetatable({}, { __mode = "k" })
+local http = game:GetService("HttpService")
+local storage = { initialized = false, available = false, blocked = false, queued = false, path = "deflect_remotes.json", captures = {}, lastWriteAt = 0, lastError = nil }
 
-local Storage = {
-	initialized = false,
-	available = false,
-	writeBlocked = false,
-	flushQueued = false,
-	path = T.STORAGE_FILE,
-	captures = {},
-	lastWriteAt = 0,
-	lastError = nil,
-}
-
-local CapturedRemotes = setmetatable({}, { __mode = "k" })
-local function reportStorageError(message) Storage.lastError = tostring(message) end
-local function safeInstanceInfo(instance)
-	if typeof(instance) ~= "Instance" then return nil end
-	local info = {}
-	local okName, name = pcall(function() return instance.Name end)
-	local okClass, className = pcall(function() return instance.ClassName end)
-	local okFullName, fullName = pcall(function() return instance:GetFullName() end)
-	if okName then info.name = name end
-	if okClass then info.className = className end
-	if okFullName then info.fullName = fullName end
-	return info
+local function info(instance)
+    if typeof(instance) ~= "Instance" then return nil end
+    local ok, result = pcall(function() return { name = instance.Name, className = instance.ClassName, fullName = instance:GetFullName() } end)
+    return ok and result or nil
 end
-local function safeValue(value, depth)
-	depth = depth or 0
-	if value == nil then return nil end
-	if type(value) == "boolean" or type(value) == "string" then return value end
-	if type(value) == "number" then
-		if value == value and value < math.huge and value > -math.huge then return value end
-		return tostring(value)
-	end
-	if depth >= 3 then return tostring(value) end
-	local valueType = typeof(value)
-	if valueType == "Vector3" then return { type = valueType, x = value.X, y = value.Y, z = value.Z } end
-	if valueType == "Color3" then return { type = valueType, r = value.R, g = value.G, b = value.B } end
-	if valueType == "CFrame" then return { type = valueType, components = { value:GetComponents() } } end
-	if valueType == "EnumItem" then return { type = valueType, enumType = tostring(value.EnumType), name = value.Name, value = value.Value } end
-	if valueType == "Instance" then return safeInstanceInfo(value) end
-	if type(value) == "table" then
-		local result = {}
-		for key, item in pairs(value) do
-			local safeKey = type(key) == "string" and key or tostring(key); result[safeKey] = safeValue(item, depth + 1)
-		end
-		return result
-	end
-	return tostring(value)
+local function jsonValue(value, depth)
+    local kind = typeof(value)
+    if value == nil or kind == "string" or kind == "boolean" then return value end
+    if kind == "number" then
+        if value == value and value > -math.huge and value < math.huge then return value end
+        return tostring(value)
+    end
+    if depth >= 3 then return tostring(value) end
+    if kind == "Instance" then return info(value) end
+    if kind == "Vector3" then return { type = kind, x = value.X, y = value.Y, z = value.Z } end
+    if kind == "Color3" then return { type = kind, r = value.R, g = value.G, b = value.B } end
+    if kind == "CFrame" then return { type = kind, components = { value:GetComponents() } } end
+    if kind == "EnumItem" then return { type = kind, enumType = tostring(value.EnumType), name = value.Name, value = value.Value } end
+    if type(value) == "table" then
+        local result = {}
+        for key, item in pairs(value) do result[type(key) == "string" and key or tostring(key)] = jsonValue(item, depth + 1) end
+        return result
+    end
+    return tostring(value)
 end
-local function safeAttributes(remote)
-	local ok, attributes = pcall(function() return remote:GetAttributes() end)
-	if not ok or type(attributes) ~= "table" then return {} end
-	return safeValue(attributes) or {}
-end
-local function safeAncestry(remote)
-	local ancestry = {}; local current = remote
-	for _ = 1, 64 do
-		local info = safeInstanceInfo(current)
-		if not info then break end
-		table.insert(ancestry, 1, info)
-		local ok, parent = pcall(function() return current.Parent end)
-		if not ok then break end
-		current = parent
-	end
-	return ancestry
-end
-local function emptyStorageDocument()
-	return {
-		schema = T.STORAGE_SCHEMA,
-		hub = "Exodus Hub",
-		file = T.STORAGE_FILE,
-		captures = {},
-	}
-end
-local function writeStorage()
-	if not Storage.available or Storage.writeBlocked then return false end
-	local document = emptyStorageDocument(); document.captures = Storage.captures; local encodeOk, body = pcall(HttpService.JSONEncode, HttpService, document)
-	if not encodeOk or type(body) ~= "string" then Storage.writeBlocked = true; reportStorageError("falha ao codificar " .. Storage.path); return false end
-	local writeOk, writeResult = pcall(writefile, Storage.path, body)
-	if not writeOk or writeResult == false then Storage.writeBlocked = true; reportStorageError(writeResult or ("falha ao gravar " .. Storage.path)); return false end
-	Storage.lastWriteAt = os.time(); Storage.lastError = nil; return true
+local function save()
+    if not storage.available or storage.blocked then return end
+    local ok, body = pcall(http.JSONEncode, http, { schema = 1, hub = "Exodus Hub", file = "deflect_remotes.json", captures = storage.captures })
+    if not ok then storage.blocked = true; storage.lastError = tostring(body); return end
+    local written, result = pcall(writefile, storage.path, body)
+    if not written or result == false then storage.blocked = true; storage.lastError = tostring(result); return end
+    storage.lastWriteAt, storage.lastError = os.time(), nil
 end
 local function initializeStorage()
-	if Storage.initialized then return Storage.available end
-	Storage.initialized = true; local folderOk, folderPath = Utils.ensureDataFolder()
-	if not folderOk then Storage.initialized = false; reportStorageError(folderPath); return false end
-	Storage.path = folderPath .. "/" .. T.STORAGE_FILE
-	if type(isfile) ~= "function" or type(readfile) ~= "function" or type(writefile) ~= "function" then
-		Storage.initialized = false; reportStorageError("APIs de arquivo do executor indisponíveis"); return false
-	end
-	local fileOk, fileExists = pcall(isfile, Storage.path)
-	if not fileOk then Storage.initialized = false; reportStorageError(fileExists); return false end
-	local body = ""
-	if fileExists then
-		local readOk
-		readOk, body = pcall(readfile, Storage.path)
-		if not readOk then Storage.initialized = false; reportStorageError(body); return false end
-		if body ~= "" then
-			local decodeOk, document = pcall(HttpService.JSONDecode, HttpService, body)
-			if not decodeOk or type(document) ~= "table" or document.schema ~= T.STORAGE_SCHEMA or type(document.captures) ~= "table" then
-				reportStorageError(Storage.path .. " possui JSON inválido ou schema incompatível"); return false
-			end
-			local firstCapture = math.max(1, #document.captures - T.MAX_CAPTURED_REMOTES + 1)
-			for index = firstCapture, #document.captures do
-				local capture = document.captures[index]
-				if type(capture) == "table" then Storage.captures[#Storage.captures + 1] = capture end
-			end
-		end
-	end
-	Storage.available = true
-	if not fileExists or body == "" then writeStorage() end
-	return true
+    if storage.initialized then return storage.available end
+    storage.initialized = true
+    local folderOk, folder = utils.ensureDataFolder()
+    if not folderOk then storage.initialized = false; storage.lastError = tostring(folder); return false end
+    storage.path = folder .. "/deflect_remotes.json"
+    if type(isfile) ~= "function" or type(readfile) ~= "function" or type(writefile) ~= "function" then
+        storage.initialized = false; storage.lastError = "APIs de arquivo do executor indisponíveis"; return false
+    end
+    local ok, exists = pcall(isfile, storage.path)
+    if not ok then storage.initialized = false; storage.lastError = tostring(exists); return false end
+    local body = ""
+    if exists then
+        local readOk
+        readOk, body = pcall(readfile, storage.path)
+        if not readOk then storage.initialized = false; storage.lastError = tostring(body); return false end
+        if body ~= "" then
+            local decoded, document = pcall(http.JSONDecode, http, body)
+            if not decoded or type(document) ~= "table" or document.schema ~= 1 or type(document.captures) ~= "table" then
+                storage.lastError = storage.path .. " possui JSON inválido ou schema incompatível"; return false
+            end
+            for index = math.max(1, #document.captures - 127), #document.captures do
+                if type(document.captures[index]) == "table" then table.insert(storage.captures, document.captures[index]) end
+            end
+        end
+    end
+    storage.available = true
+    if not exists or body == "" then save() end
+    return true
 end
-local function queueStorageWrite()
-	if not initializeStorage() or Storage.writeBlocked or Storage.flushQueued then return end
-	Storage.flushQueued = true
-	task.spawn(function()
-		writeStorage(); Storage.flushQueued = false
-	end)
+local function queueSave()
+    if storage.queued or storage.blocked then return end
+    storage.queued = true
+    task.defer(function() storage.queued = false; save() end)
 end
-local function captureRemote(remote)
-	if not captureEnabled then return end
-	if CapturedRemotes[remote] then return end
-	CapturedRemotes[remote] = true
-	task.spawn(function()
-		local ok, errorMessage = pcall(function()
-			if not initializeStorage() then return end
-			local parent
-			local parentOk = pcall(function() parent = remote.Parent end)
-			local remoteInfo = safeInstanceInfo(remote)
-			if not remoteInfo then return end
-			local capture = {
-				id = #Storage.captures + 1,
-				capturedAt = os.time(),
-				source = "phantomballz",
-				name = remoteInfo.name,
-				className = remoteInfo.className,
-				fullName = remoteInfo.fullName,
-				parent = parentOk and safeInstanceInfo(parent) or nil,
-				ancestry = safeAncestry(remote),
-				attributes = safeAttributes(remote),
-				requirements = {
-					className = "RemoteEvent",
-					methods = { "FireServer" },
-					source = "ReplicatedStorage.TouchTap",
-					resolution = {
-						"getconnections",
-						"getfenv",
-						"debug.getupvalues",
-					},
-					globalKey = "did2",
-					upvalueKey = "did",
-					owner = "LocalPlayer",
-					baseDistance = 8.5,
-					payloadFlags = { 1, 2 },
-				},
-			}
-
-			if #Storage.captures >= T.MAX_CAPTURED_REMOTES then table.remove(Storage.captures, 1) end
-			Storage.captures[#Storage.captures + 1] = capture; queueStorageWrite()
-		end)
-		if not ok then reportStorageError(errorMessage) end
-	end)
+function Remote.capture(instance)
+    if not captureEnabled or typeof(instance) ~= "Instance" or captured[instance] or not utils then return false end
+    captured[instance] = true
+    local ok, err = pcall(function()
+        if not initializeStorage() then return end
+        local description = info(instance)
+        if not description then return end
+        local ancestry, current = {}, instance
+        for _ = 1, 64 do
+            local item = info(current)
+            if not item then break end
+            table.insert(ancestry, 1, item)
+            current = current.Parent
+        end
+        local attributesOk, attributes = pcall(instance.GetAttributes, instance)
+        local capture = {
+            id = #storage.captures + 1, capturedAt = os.time(), source = "phantomballz",
+            name = description.name, className = description.className, fullName = description.fullName,
+            parent = info(instance.Parent), ancestry = ancestry, attributes = attributesOk and jsonValue(attributes, 0) or {},
+            requirements = { className = "RemoteEvent", methods = { "FireServer" }, source = "ReplicatedStorage.TouchTap",
+                resolution = { "getconnections", "getfenv", "debug.getupvalues" }, globalKey = "did2", upvalueKey = "did",
+                owner = "LocalPlayer", baseDistance = 8.5, payloadFlags = { 1, 2 } },
+        }
+        if #storage.captures >= 128 then table.remove(storage.captures, 1) end
+        table.insert(storage.captures, capture)
+        queueSave()
+    end)
+    if not ok then storage.lastError = tostring(err); return false end
+    return true
 end
-local function getStorageStatus()
-	return {
-		schema = T.STORAGE_SCHEMA,
-		enabled = captureEnabled == true,
-		available = captureEnabled == true and Storage.available == true or false,
-		path = captureEnabled == true and Storage.path or nil,
-		captures = captureEnabled == true and #Storage.captures or 0,
-		lastWriteAt = captureEnabled == true and Storage.lastWriteAt or 0,
-		lastError = captureEnabled == true and Storage.lastError or nil,
-	}
+local function alive(instance)
+    return typeof(instance) == "Instance" and instance:IsA("RemoteEvent") and instance.Parent ~= nil
 end
-
--- remote validation (ball synchronization only)
-local function isAlive(remote)
-	return remote and typeof(remote) == "Instance" and remote:IsA("RemoteEvent") and remote.Parent ~= nil
+local function disconnectSync()
+    if syncConnection then
+        if utils then utils.untrackGlobal(syncConnection) end
+        syncConnection:Disconnect()
+    end
+    syncConnection, syncRemote = nil, nil
 end
-
--- deflect ability
-local function getDeflectAbility()
-	return GameInfo and GameInfo.getDeflectAbility() or nil
+local function findSync()
+    local replicated = utils.getReplicatedStorage()
+    if not replicated then return nil end
+    local remotes = replicated:FindFirstChild("Remotes")
+    local candidate = remotes and remotes:FindFirstChild("BallSyncData")
+    if alive(candidate) then return candidate end
+    candidate = replicated:FindFirstChild("BallSyncData")
+    if alive(candidate) then return candidate end
+    candidate = replicated:FindFirstChild("BallSyncData", true)
+    if alive(candidate) then return candidate end
+    return nil
 end
-local function logParryMethod(method, message)
-	if loggedParryMethods[method] then return end
-	loggedParryMethods[method] = true
-	print("[Exodus Remote] " .. message)
-end
-local function deflectTrace(message)
-	if type(debug) == "table" and type(debug.traceback) == "function" then
-		return debug.traceback(tostring(message), 2)
-	end
-	return tostring(message)
-end
-
--- setup
 function Remote.setup(deps)
-	if
-		type(deps) ~= "table"
-		or not deps.Utils
-		or type(deps.GameInfo) ~= "table"
-		or type(deps.GameInfo.getDeflectAbility) ~= "function"
-	then
-		return false, "dependência ausente: Utils ou API de Deflect do GameInfo"
-	end
-	Utils = deps.Utils; GameInfo = deps.GameInfo; captureEnabled = deps.captureDiagnostics == true; remoteState = "deflect_only"
-	table.clear(loggedParryMethods); return true
+    if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table"
+        or type(deps.GameInfo.getDeflectAbility) ~= "function" then return false, "dependência ausente: Utils ou API de Deflect do GameInfo" end
+    Remote.stopMaintenance()
+    utils, gameInfo = deps.Utils, deps.GameInfo
+    captureEnabled, state, logged, initialized, source = deps.captureDiagnostics == true, "deflect_only", false, false, nil
+    return true
 end
-
--- parry
-function Remote.fireParry(_flag)
-	local ability = getDeflectAbility()
-	if ability then
-		local ok, result = xpcall(ability.Deflect, deflectTrace, ability)
-		if not ok then remoteState = "deflect_error"; return false, result end
-		if result == false then remoteState = "deflect_ignored"; return false, "Deflect recusou a chamada" end
-		remoteState = "deflect"; parryRemoteSource = "ClientAbilities.Abilities[1]:Deflect"
-		if not loggedParryMethods.deflect then logParryMethod("deflect", "Deflect() chamado") end
-		return true
-	end
-	remoteState = "unavailable"; parryInitialized = false; parryRemoteSource = nil; return false, "Deflect indisponível"
+function Remote.fireParry(_flag, guard)
+    if parryBusy then return false, "Deflect em andamento" end
+    parryBusy = true
+    local resolved, ability = pcall(function() return gameInfo and gameInfo.getDeflectAbility() end)
+    if not resolved then parryBusy = false; state = "deflect_error"; return false, tostring(ability) end
+    if not ability then parryBusy = false; state, initialized, source = "unavailable", false, nil; return false, "Deflect indisponível" end
+    local guardOk, allowed = pcall(function()
+        return (not utils or utils.isActive()) and (type(guard) ~= "function" or guard())
+    end)
+    if not guardOk or not allowed then
+        parryBusy = false
+        return false, "Deflect cancelado"
+    end
+    local ok, result = xpcall(ability.Deflect, function(err)
+        if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(tostring(err), 2) end
+        return tostring(err)
+    end, ability)
+    parryBusy = false
+    if not ok then state = "deflect_error"; return false, result end
+    if result == false then state = "deflect_ignored"; return false, "Deflect recusou a chamada" end
+    state, source = "deflect", "ClientAbilities.Abilities[1]:Deflect"
+    if not logged then logged = true; print("[Exodus Remote] Deflect() chamado") end
+    return true
 end
-function Remote.initParry()
-	parryInitialized = getDeflectAbility() ~= nil; return parryInitialized
-end
-function Remote.usesGameDeflect() return getDeflectAbility() ~= nil end
-function Remote.getRemote() return getDeflectAbility() end
+function Remote.initParry() initialized = gameInfo and gameInfo.getDeflectAbility() ~= nil or false; return initialized end
+function Remote.usesGameDeflect() return gameInfo ~= nil and gameInfo.getDeflectAbility() ~= nil end
+function Remote.getRemote() return gameInfo and gameInfo.getDeflectAbility() or nil end
 function Remote.getStatus()
-	return {
-		schema = Utils.apiVersion(),
-		state = remoteState,
-		method = getDeflectAbility() and "Deflect" or "unavailable",
-		initialized = parryInitialized == true,
-		source = parryRemoteSource,
-		hasBallSync = ballSyncConnection ~= nil and ballSyncConnection.Connected == true and ballSyncRemote ~= nil,
-		storage = getStorageStatus(),
-	}
-end
-local function locateBallSync()
-	local replicatedStorage = Utils.getReplicatedStorage()
-	if not replicatedStorage then return nil end
-	local remotes = replicatedStorage:FindFirstChild("Remotes")
-	local candidates = {
-		remotes and remotes:FindFirstChild("BallSyncData"),
-		replicatedStorage:FindFirstChild("BallSyncData"),
-		replicatedStorage:FindFirstChild("BallSyncData", true),
-	}
-
-	for _, candidate in pairs(candidates) do
-		if candidate and candidate:IsA("RemoteEvent") then return candidate end
-	end
-	return nil
-end
-local function disconnectBallSync()
-	if ballSyncConnection then
-		pcall(function() ballSyncConnection:Disconnect() end)
-		if Utils and Utils.untrackGlobal then Utils.untrackGlobal(ballSyncConnection) end
-	end
-	ballSyncConnection = nil; ballSyncRemote = nil
+    return {
+        schema = utils.apiVersion(), state = state, method = Remote.getRemote() and "Deflect" or "unavailable",
+        initialized = initialized, source = source,
+        hasBallSync = syncConnection ~= nil and syncConnection.Connected == true and syncRemote ~= nil,
+        storage = { schema = 1, enabled = captureEnabled, available = captureEnabled and storage.available or false,
+            path = captureEnabled and storage.path or nil, captures = captureEnabled and #storage.captures or 0,
+            lastWriteAt = captureEnabled and storage.lastWriteAt or 0, lastError = captureEnabled and storage.lastError or nil },
+    }
 end
 function Remote.bindBallSync(handler)
-	if type(handler) ~= "function" then return false end
-	local candidate = locateBallSync()
-	if not candidate then
-		if ballSyncRemote and not isAlive(ballSyncRemote) then disconnectBallSync() end
-		return ballSyncConnection ~= nil and ballSyncConnection.Connected
-	end
-	if ballSyncConnection and ballSyncConnection.Connected and ballSyncRemote == candidate then return true end
-	disconnectBallSync()
-	local ok, connection = pcall(function() return candidate.OnClientEvent:Connect(handler) end)
-	if not ok or not connection then ballSyncConnection = nil; ballSyncRemote = nil; return false end
-	ballSyncConnection = connection; ballSyncRemote = candidate
-	if Utils then Utils.trackGlobal(ballSyncConnection) end
-	return true
+    if type(handler) ~= "function" then return false end
+    local candidate = findSync()
+    if not candidate then
+        if syncRemote and not alive(syncRemote) then disconnectSync() end
+        return syncConnection ~= nil and syncConnection.Connected
+    end
+    if syncConnection and syncConnection.Connected and syncRemote == candidate then return true end
+    disconnectSync()
+    local ok, connection = pcall(function() return candidate.OnClientEvent:Connect(handler) end)
+    if not ok or not connection then return false end
+    syncConnection, syncRemote = connection, candidate
+    utils.trackGlobal(connection)
+    return true
 end
-
--- maintenance
 function Remote.startMaintenance(options)
-	options = type(options) == "table" and options or {}; local onBallSync = options.onBallSync; local isActive = options.isActive
-	if type(isActive) ~= "function" then return false end
-	maintenanceGeneration = maintenanceGeneration + 1; local currentGeneration = maintenanceGeneration
-	task.spawn(function()
-		while currentGeneration == maintenanceGeneration do
-			local activeOk, active = pcall(isActive)
-			if not activeOk or active ~= true then break end
-			local remoteOk, remote = pcall(Remote.getRemote)
-			if not remoteOk then remote = nil end
-			if remote then pcall(Remote.initParry) else parryInitialized = false end
-			if type(onBallSync) == "function" then pcall(Remote.bindBallSync, onBallSync) end
-			task.wait(remote and 3 or 1)
-		end
-	end)
-	return true
+    if type(options) ~= "table" or type(options.isActive) ~= "function" then return false end
+    maintenance += 1
+    local current = maintenance
+    task.spawn(function()
+        while current == maintenance do
+            local activeOk, active = pcall(options.isActive)
+            if current ~= maintenance or not activeOk or active ~= true then break end
+            local ok, ability = pcall(Remote.getRemote)
+            if not ok then ability = nil end
+            if current ~= maintenance then break end
+            local stillOk, stillActive = pcall(options.isActive)
+            if current ~= maintenance or not stillOk or stillActive ~= true then break end
+            if ability then pcall(Remote.initParry) else initialized = false end
+            if current ~= maintenance then break end
+            stillOk, stillActive = pcall(options.isActive)
+            if current ~= maintenance or not stillOk or stillActive ~= true then break end
+            if type(options.onBallSync) == "function" then pcall(Remote.bindBallSync, options.onBallSync) end
+            task.wait(ability and 3 or 1)
+        end
+    end)
+    return true
 end
 function Remote.stopMaintenance()
-	maintenanceGeneration = maintenanceGeneration + 1; disconnectBallSync()
+    maintenance += 1
+    disconnectSync()
 end
 Remote.__contract = {
-	requiresMethods = {
-		Utils = { "getReplicatedStorage", "trackGlobal", "untrackGlobal", "apiVersion" },
-		GameInfo = { "getDeflectAbility" },
-	},
-
-	provides = { "setup", "getRemote", "initParry", "fireParry", "bindBallSync", "startMaintenance", "stopMaintenance" },
-	requires = { Utils = "utils", GameInfo = "gameinfo" },
-	ballSync = true,
-	remoteResolution = "Deflect",
+    requires = { Utils = "utils", GameInfo = "gameinfo" },
+    requiresMethods = { Utils = { "getReplicatedStorage", "trackGlobal", "untrackGlobal", "apiVersion" }, GameInfo = { "getDeflectAbility" } },
+    provides = { "setup", "getRemote", "initParry", "fireParry", "bindBallSync", "startMaintenance", "stopMaintenance" },
+    ballSync = true, remoteResolution = "Deflect",
 }
-
 return Remote

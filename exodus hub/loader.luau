@@ -442,6 +442,11 @@ local function bindRuntime(loaded, log)
 			} end
 		end
 	end
+	local syncPriority = { autoclash = 1, autoparry = 2 }
+	table.sort(ballSyncSubscribers, function(a, b)
+		local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3
+		return left == right and a.name < b.name or left < right
+	end)
 	local function callSync(name, handler, data)
 		local ok, result, detail = pcall(handler, data)
 		if not ok or result == false then

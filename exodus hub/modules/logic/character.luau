@@ -1,256 +1,172 @@
--- [[ character ]]
-
 local Character = {}
-type UtilsModule = {
-	getLocalPlayer: () -> Player?,
-	isActive: () -> boolean,
-	apiVersion: () -> any,
-	trackGlobal: (RBXScriptConnection) -> (),
-	untrackGlobal: (RBXScriptConnection) -> (),
-	trackCharacter: (RBXScriptConnection) -> (),
-	disconnectCharacterConnections: () -> (),
-	setManualSpamActive: (boolean) -> (),
-	setAutoSpamActive: (boolean) -> (),
-	recordTransition: (string, string, string, string?) -> (),
-	recordError: (string, string) -> (),
-}
-type SpamModule = {
-	resetState: () -> (),
-}
-type CharacterBind = {
-	name: string?,
-	bind: (Model) -> boolean,
-	detach: () -> (),
-}
-local Utils: UtilsModule?
-local Spam: SpamModule?
-local characterBinds: { CharacterBind } = {}
-local boundBinds: { CharacterBind } = {}
+local utils, spam, binds = nil, nil, {}
+local added, removing, currentLife
+local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
 
--- state
-local generation = 0
-local phase = "stopped"
-local activeCharacter: Model?
-local characterAddedConnection: RBXScriptConnection?
-local characterRemovingConnection: RBXScriptConnection?
-
--- helpers
-local function setPhase(nextPhase: string, reason: string?)
-	if phase == nextPhase then return end
-	local previous = phase; phase = nextPhase
-	if Utils and type(Utils.recordTransition) == "function" then pcall(Utils.recordTransition, "Character", previous, nextPhase, reason) end
+local function setPhase(nextPhase, reason)
+    if phase == nextPhase then return end
+    local previous = phase
+    phase = nextPhase
+    if utils then utils.recordTransition("Character", previous, nextPhase, reason) end
 end
-local function isGenerationCurrent(currentGeneration: number): boolean return currentGeneration == generation end
-local function isCharacterValid(character: Model, currentGeneration: number): boolean
-	if not isGenerationCurrent(currentGeneration) then return false end
-	if activeCharacter ~= character then return false end
-	if not character.Parent then return false end
-	if not Utils or not Utils.isActive() then return false end
-	return true
+local function detach(entry)
+    if entry and type(entry.detach) == "function" then pcall(entry.detach) end
 end
-local function detachBind(entry: CharacterBind)
-	if type(entry.detach) ~= "function" then return end
-	pcall(entry.detach)
+local function detachBound(life)
+    if not life then return end
+    for i = #life.bound, 1, -1 do
+        detach(life.bound[i])
+        life.bound[i] = nil
+    end
 end
-local function detachBoundBinds()
-	for index = #boundBinds, 1, -1 do
-		local entry = boundBinds[index]; boundBinds[index] = nil
-		if entry then detachBind(entry) end
-	end
+local function clearLife()
+    local life = currentLife
+    currentLife = nil
+    detachBound(life)
+    if utils then
+        utils.disconnectCharacterConnections()
+        utils.setManualSpamActive(false)
+        utils.setAutoSpamActive(false)
+    end
+    if spam then spam.resetState() end
 end
-local function resetModules()
-	if Spam and type(Spam.resetState) == "function" then pcall(Spam.resetState) end
-	if Utils then pcall(Utils.setManualSpamActive, false); pcall(Utils.setAutoSpamActive, false) end
+local function valid(life)
+    return currentLife == life and utils ~= nil and utils.isActive() and life.character.Parent ~= nil
 end
-local function disconnectCharacterRuntime()
-	detachBoundBinds()
-	if Utils and type(Utils.disconnectCharacterConnections) == "function" then pcall(Utils.disconnectCharacterConnections) end
-	resetModules(); activeCharacter = nil
+local function startWorker()
+    if workerRunning then return end
+    workerRunning = true
+    task.spawn(function()
+        while currentLife and not currentLife.attempted do
+            local life = currentLife
+            life.attempted = true
+            setPhase("binding", "character_bind_start")
+            local root = life.character:FindFirstChild("HumanoidRootPart")
+            local deadline = os.clock() + 10
+            while valid(life) and not root and os.clock() < deadline do
+                task.wait()
+                root = life.character:FindFirstChild("HumanoidRootPart")
+            end
+            if valid(life) and root and root.Parent and root:IsA("BasePart") then
+                local failed = false
+                for index, entry in ipairs(binds) do
+                    if not valid(life) then break end
+                    local ok, result, detail = pcall(entry.bind, life.character)
+                    if not valid(life) then
+                        detach(entry)
+                        break
+                    end
+                    if not ok or result ~= true then
+                        local message = ("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(ok and detail or result))
+                        utils.recordError("Character", message)
+                        detach(entry)
+                        detachBound(life)
+                        utils.disconnectCharacterConnections()
+                        utils.setManualSpamActive(false)
+                        utils.setAutoSpamActive(false)
+                        if spam then spam.resetState() end
+                        currentLife = nil
+                        setPhase("invalid", "bind_failed")
+                        failed = true
+                        break
+                    end
+                    life.bound[#life.bound + 1] = entry
+                end
+                if not failed and valid(life) then setPhase("bound", "character_bound") end
+            elseif valid(life) then
+                clearLife()
+                setPhase("invalid", "root_unavailable")
+            end
+        end
+        workerRunning = false
+        if currentLife and not currentLife.attempted then startWorker() end
+    end)
 end
-local function disconnectGlobalConnection(connection: RBXScriptConnection?, untrack: ((RBXScriptConnection) -> ())?): nil
-	if not connection then return nil end
-	if untrack then pcall(untrack, connection) end
-	pcall(connection.Disconnect, connection); return nil
+local function setupCharacter(character)
+    if not character or not utils then return end
+    generation += 1
+    clearLife()
+    local life = { character = character, bound = {}, attempted = false, humanoids = {} }
+    currentLife = life
+    local function deactivate(reason)
+        if currentLife ~= life then return end
+        generation += 1
+        setPhase("cleaning", reason)
+        clearLife()
+        setPhase("stopped", "character_cleaned")
+    end
+    utils.trackCharacter(character.AncestryChanged:Connect(function(_, parent)
+        if not parent then deactivate("character_removed") end
+    end))
+    local function watchHumanoid(humanoid)
+        if currentLife ~= life or life.humanoids[humanoid] then return end
+        life.humanoids[humanoid] = true
+        utils.trackCharacter(humanoid.Died:Connect(function() deactivate("character_died") end))
+    end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if humanoid then watchHumanoid(humanoid) end
+    utils.trackCharacter(character.ChildAdded:Connect(function(child)
+        if child:IsA("Humanoid") then watchHumanoid(child) end
+    end))
+    startWorker()
 end
-local function rollbackFailedBind(failedEntry: CharacterBind?)
-	if failedEntry then detachBind(failedEntry) end
-	detachBoundBinds()
-	if Utils then pcall(Utils.disconnectCharacterConnections) end
-	resetModules(); activeCharacter = nil
-end
-local function bind(character: Model, currentGeneration: number)
-	if not isGenerationCurrent(currentGeneration) then return end
-	setPhase("binding", "character_bind_start")
-	if not isCharacterValid(character, currentGeneration) then setPhase("stopped", "bind_cancelled"); return end
-	local root = character:WaitForChild("HumanoidRootPart", 10)
-	if not isCharacterValid(character, currentGeneration) then return end
-	if not root or not root.Parent or not root:IsA("BasePart") then
-		rollbackFailedBind(nil)
-		if isGenerationCurrent(currentGeneration) then setPhase("invalid", "root_unavailable") end
-		return
-	end
-	local successfullyBound = 0
-	for index, entry in ipairs(characterBinds) do
-		if not isCharacterValid(character, currentGeneration) then detachBoundBinds(); return end
-		local ok, result, detail = xpcall(entry.bind, function(err) return debug.traceback(tostring(err), 2) end, character)
-		if not ok then
-			local message = ("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(result))
-			if Utils and type(Utils.recordError) == "function" then Utils.recordError("Character", message) end
-			rollbackFailedBind(entry)
-			if isGenerationCurrent(currentGeneration) then setPhase("invalid", "bind_failed") end
-			return
-		end
-		if not isGenerationCurrent(currentGeneration) then detachBind(entry); detachBoundBinds(); return end
-		if result ~= true then
-			local message = ("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(detail or result))
-			if Utils and type(Utils.recordError) == "function" then Utils.recordError("Character", message) end
-			rollbackFailedBind(entry)
-			if isGenerationCurrent(currentGeneration) then setPhase("invalid", "bind_failed") end
-			return
-		end
-		table.insert(boundBinds, entry); successfullyBound = successfullyBound + 1
-	end
-	if not isCharacterValid(character, currentGeneration) then detachBoundBinds(); return end
-	if successfullyBound ~= #characterBinds then
-		rollbackFailedBind(nil)
-		if isGenerationCurrent(currentGeneration) then setPhase("invalid", "bind_count_mismatch") end
-		return
-	end
-	setPhase("bound", "character_bound")
-end
-local function setupCharacter(character: Model?)
-	if not character or not Utils then return end
-	generation = generation + 1; local currentGeneration = generation; disconnectCharacterRuntime(); activeCharacter = character
-	local deactivated = false
-	local function deactivate(reason: string)
-		if deactivated then return end
-		if currentGeneration ~= generation then return end
-		deactivated = true; generation = generation + 1; setPhase("cleaning", reason); disconnectCharacterRuntime()
-		setPhase("stopped", "character_cleaned")
-	end
-	Utils.trackCharacter(character.AncestryChanged:Connect(function(_, parent)
-		if not parent then deactivate("character_removed") end
-	end))
-	local function connectHumanoid(humanoid: Humanoid)
-		if currentGeneration ~= generation then return end
-		if not humanoid.Parent then return end
-		Utils.trackCharacter(humanoid.Died:Connect(function() deactivate("character_died") end))
-	end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		connectHumanoid(humanoid)
-	else
-		Utils.trackCharacter(character.ChildAdded:Connect(function(child)
-			if currentGeneration ~= generation then return end
-			if child:IsA("Humanoid") then connectHumanoid(child) end
-		end))
-	end
-	task.defer(bind, character, currentGeneration)
-end
-local function validateDependencies(deps: any): (boolean, string?)
-	if type(deps) ~= "table" then return false, "dependência ausente: deps" end
-	local missing = {}
-	local requiredUtils = {
-		"getLocalPlayer",
-		"isActive",
-		"apiVersion",
-		"trackGlobal",
-		"untrackGlobal",
-		"trackCharacter",
-		"disconnectCharacterConnections",
-		"setManualSpamActive",
-		"setAutoSpamActive",
-		"recordTransition",
-	}
-
-	if type(deps.Utils) ~= "table" then
-		table.insert(missing, "Utils")
-	else
-		for _, name in ipairs(requiredUtils) do
-			if type(deps.Utils[name]) ~= "function" then table.insert(missing, "Utils." .. name) end
-		end
-	end
-	if type(deps.Spam) ~= "table" then table.insert(missing, "Spam") elseif type(deps.Spam.resetState) ~= "function" then table.insert(missing, "Spam.resetState") end
-	if type(deps.characterBinds) ~= "table" then
-		table.insert(missing, "characterBinds")
-	else
-		for index, entry in ipairs(deps.characterBinds) do
-			if type(entry) ~= "table" then return false, ("characterBinds[%d] inválido"):format(index) end
-			if type(entry.bind) ~= "function" then return false, ("characterBinds[%d].bind ausente"):format(index) end
-			if type(entry.detach) ~= "function" then return false, ("characterBinds[%d].detach ausente"):format(index) end
-		end
-	end
-	if #missing > 0 then return false, "dependência ausente: " .. table.concat(missing, ", ") end
-	return true
-end
-
--- setup
 function Character.getStatus()
-	return {
-		schema = Utils and Utils.apiVersion() or nil,
-		phase = phase,
-		generation = generation,
-	}
+    return { schema = utils and utils.apiVersion() or nil, phase = phase, generation = generation }
 end
-function Character.setup(deps: any)
-	local valid, validationError = validateDependencies(deps)
-	if not valid then return false, validationError end
-	generation = generation + 1
-	if Utils then
-		characterAddedConnection = disconnectGlobalConnection(characterAddedConnection, Utils.untrackGlobal)
-		characterRemovingConnection = disconnectGlobalConnection(characterRemovingConnection, Utils.untrackGlobal); disconnectCharacterRuntime()
-	else
-		characterAddedConnection = disconnectGlobalConnection(characterAddedConnection); characterRemovingConnection = disconnectGlobalConnection(characterRemovingConnection)
-	end
-	local boundUtils: UtilsModule = deps.Utils; Utils = boundUtils; Spam = deps.Spam :: SpamModule; characterBinds = deps.characterBinds :: { CharacterBind }
-	local player = boundUtils.getLocalPlayer()
-	if not player then setPhase("invalid", "player_unavailable"); return false, "Players.LocalPlayer indisponível" end
-	setPhase("ready", "character_controller_ready")
-	characterAddedConnection = player.CharacterAdded:Connect(function(character) setupCharacter(character) end)
-	characterRemovingConnection = player.CharacterRemoving:Connect(function(character)
-		if character ~= activeCharacter then return end
-		local currentGeneration = generation; generation = generation + 1; setPhase("cleaning", "character_removing")
-		if currentGeneration <= generation then disconnectCharacterRuntime() end
-		setPhase("stopped", "character_removed")
-	end)
-	boundUtils.trackGlobal(characterAddedConnection); boundUtils.trackGlobal(characterRemovingConnection); local currentCharacter = player.Character
-	if currentCharacter then setupCharacter(currentCharacter) end
-	return true
+function Character.setup(deps)
+    if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.Spam) ~= "table"
+        or type(deps.Spam.resetState) ~= "function" or type(deps.characterBinds) ~= "table" then
+        return false, "dependência ausente: Utils, Spam ou characterBinds"
+    end
+    for index, entry in ipairs(deps.characterBinds) do
+        if type(entry) ~= "table" or type(entry.bind) ~= "function" or type(entry.detach) ~= "function" then
+            return false, ("characterBinds[%d] inválido"):format(index)
+        end
+    end
+    Character.teardown()
+    utils, spam, binds = deps.Utils, deps.Spam, deps.characterBinds
+    local player = utils.getLocalPlayer()
+    if not player then setPhase("invalid", "player_unavailable"); return false, "Players.LocalPlayer indisponível" end
+    setPhase("ready", "character_controller_ready")
+    local owner = setupEpoch
+    added = player.CharacterAdded:Connect(function(character)
+        if owner == setupEpoch then setupCharacter(character) end
+    end)
+    removing = player.CharacterRemoving:Connect(function(character)
+        if owner ~= setupEpoch then return end
+        if currentLife and currentLife.character == character then
+            generation += 1
+            setPhase("cleaning", "character_removing")
+            clearLife()
+            setPhase("stopped", "character_removed")
+        end
+    end)
+    utils.trackGlobal(added)
+    utils.trackGlobal(removing)
+    if player.Character then setupCharacter(player.Character) end
+    return true
 end
 function Character.teardown()
-	generation = generation + 1
-	if Utils then
-		characterAddedConnection = disconnectGlobalConnection(characterAddedConnection, Utils.untrackGlobal)
-		characterRemovingConnection = disconnectGlobalConnection(characterRemovingConnection, Utils.untrackGlobal); setPhase("cleaning", "character_controller_teardown"); disconnectCharacterRuntime()
-	else
-		characterAddedConnection = disconnectGlobalConnection(characterAddedConnection); characterRemovingConnection = disconnectGlobalConnection(characterRemovingConnection)
-	end
-	setPhase("stopped", "character_controller_stopped"); Utils = nil; Spam = nil; characterBinds = {}
-	boundBinds = {}; activeCharacter = nil
+    generation += 1
+    setupEpoch += 1
+    if utils then
+        if added then utils.untrackGlobal(added); added:Disconnect() end
+        if removing then utils.untrackGlobal(removing); removing:Disconnect() end
+        setPhase("cleaning", "character_controller_teardown")
+        clearLife()
+    else
+        if added then added:Disconnect() end
+        if removing then removing:Disconnect() end
+    end
+    setPhase("stopped", "character_controller_stopped")
+    added, removing, utils, spam, binds = nil, nil, nil, nil, {}
 end
 Character.__contract = {
-	requiresMethods = {
-		Utils = {
-			"getLocalPlayer",
-			"isActive",
-			"apiVersion",
-			"trackGlobal",
-			"untrackGlobal",
-			"trackCharacter",
-			"disconnectCharacterConnections",
-			"setManualSpamActive",
-			"setAutoSpamActive",
-			"recordTransition",
-		},
-		Spam = { "resetState" },
-	},
-
-	provides = { "setup", "teardown" },
-	requires = {
-		Spam = "spam",
-		Utils = "utils",
-	},
-
+    requires = { Spam = "spam", Utils = "utils" },
+    requiresMethods = {
+        Utils = { "getLocalPlayer", "isActive", "apiVersion", "trackGlobal", "untrackGlobal", "trackCharacter", "disconnectCharacterConnections", "setManualSpamActive", "setAutoSpamActive", "recordTransition", "recordError" },
+        Spam = { "resetState" },
+    },
+    provides = { "setup", "teardown", "getStatus" },
 }
-
 return Character

@@ -1,292 +1,163 @@
--- [[ dash ]]
-
--- tuning
 local Dash = {}
-export type DashEvent = {
-	player: Player,
-	userId: number,
-	detectedAt: number,
-	position: Vector3?,
-	velocity: Vector3?,
-	previousPosition: Vector3?,
-}
-local Utils
-local onDetected
-local T = {
-	DETECT_WINDOW = 0.25,
-	ANIMATION_SCAN_INTERVAL = 1 / 30,
-	VELOCITY_SCAN_INTERVAL = 1 / 30,
-	CLEAN_INTERVAL = 0.10,
-	VELOCITY_MIN_SPEED = 80,
-	VELOCITY_MIN_INCREASE = 15,
-}
-
-local R = {
-	players = nil,
-	playerList = {},
-	playerIndex = {},
-
-	-- lifecycle
-	generation = 0,
-
-	-- timers
-	lastScanAt = 0,
-	lastVelocityScanAt = 0,
-	lastCleanAt = 0,
-
-	-- connections
-	connections = {},
-	playerConnections = {},
-	characterConnections = {},
-	cooldown = {},
-	trackSnapshot = {},
-	hookedAnimator = {},
-	previousSpeed = {},
-	lastPosition = {},
-	lastPositionAt = {},
-
-	-- cache
-	animationMatchCache = setmetatable({}, {
-		__mode = "k",
-	}),
-}
+local utils, players, onDetected
+local playerConnections, records, order = {}, {}, {}
+local lastScan, generation = 0, 0
+local MIN_SPEED, MIN_INCREASE, DETECT_WINDOW = 80, 15, 0.25
 
 local function now()
-	if Utils then
-		local getNow = Utils.now
-		if type(getNow) == "function" then
-			local ok, value = pcall(getNow)
-			if ok and type(value) == "number" then return value end
-		end
-	end
-	return os.clock()
+    if utils and type(utils.now) == "function" then
+        local ok, value = pcall(utils.now)
+        if ok and type(value) == "number" then return value end
+    end
+    return os.clock()
 end
-local function horizontalSpeed(velocity)
-	if typeof(velocity) ~= "Vector3" then return 0 end
-	local x = velocity.X; local z = velocity.Z; return math.sqrt(x * x + z * z)
+local function horizontal(vector)
+    if typeof(vector) ~= "Vector3" then return 0 end
+    return math.sqrt(vector.X * vector.X + vector.Z * vector.Z)
 end
-local function disconnectList(list)
-	if not list then return end
-	for i = #list, 1, -1 do
-		local connection = list[i]; list[i] = nil
-		if connection then pcall(connection.Disconnect, connection) end
-	end
+local function disconnect(connection)
+    if connection then connection:Disconnect() end
 end
-local function disconnectPlayerConnections(player)
-	local characterConnections = R.characterConnections[player]
-	if characterConnections then disconnectList(characterConnections); R.characterConnections[player] = nil end
-	local playerConnections = R.playerConnections[player]
-	if playerConnections then disconnectList(playerConnections); R.playerConnections[player] = nil end
+local function rootOf(player)
+    local character = player and player.Character
+    return character and character:FindFirstChild("HumanoidRootPart")
 end
-local function addCharacterConnection(player, connection)
-	if not connection then return end
-	local list = R.characterConnections[player]
-	if not list then list = {}; R.characterConnections[player] = list end
-	list[#list + 1] = connection
+local function dashAnimation(track)
+    if not track or not track:IsA("AnimationTrack") or not track.Animation then return false end
+    local animation = track.Animation
+    return string.find(string.lower(animation.Name or ""), "dash", 1, true) ~= nil
+        or string.find(string.lower(animation.AnimationId or ""), "dash", 1, true) ~= nil
 end
-local function addPlayerConnection(player, connection)
-	if not connection then return end
-	local list = R.playerConnections[player]
-	if not list then list = {}; R.playerConnections[player] = list end
-	list[#list + 1] = connection
+local function register(player, record, position, velocity, time)
+    if not player.Parent or records[player] ~= record then return end
+    if record.lastDetection and time - record.lastDetection < DETECT_WINDOW then return end
+    local root = rootOf(player)
+    position = typeof(position) == "Vector3" and position or (root and root.Position)
+    velocity = typeof(velocity) == "Vector3" and velocity or (root and root.AssemblyLinearVelocity)
+    if horizontal(velocity) < MIN_SPEED then return end
+    record.lastDetection = time
+    local previous = record.position
+    if typeof(position) == "Vector3" then record.position = position end
+    if onDetected then
+        onDetected({ player = player, userId = player.UserId, detectedAt = time, position = position, velocity = velocity, previousPosition = previous })
+    end
 end
-local function isDashTrack(track)
-	if not track or not track:IsA("AnimationTrack") then return false end
-	local animation = track.Animation
-	if not animation then return false end
-	local cached = R.animationMatchCache[animation]
-	if cached ~= nil then return cached end
-	local name = string.lower(animation.Name or ""); local id = string.lower(animation.AnimationId or ""); local result = name:find("dash", 1, true) ~= nil or id:find("dash", 1, true) ~= nil
-	R.animationMatchCache[animation] = result; return result
+local function resetCharacter(record, character)
+    disconnect(record.animationConnection)
+    record.character, record.animator, record.animationConnection = character, nil, nil
+    record.speed, record.position, record.positionAt, record.lastDetection = nil, nil, nil, nil
 end
-local function cleanCooldowns(t)
-	for player, lastDetected in pairs(R.cooldown) do
-		if not player.Parent or t - lastDetected > T.DETECT_WINDOW then R.cooldown[player] = nil end
-	end
-end
-local function register(player, position, velocity)
-	if not player or not player.Parent then return end
-	local t = now(); local lastDetected = R.cooldown[player]
-	if lastDetected and (t - lastDetected) < T.DETECT_WINDOW then return end
-	local character = player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
-	if typeof(position) ~= "Vector3" and root then position = root.Position end
-	if typeof(velocity) ~= "Vector3" and root then velocity = root.AssemblyLinearVelocity end
-	if horizontalSpeed(velocity) < T.VELOCITY_MIN_SPEED then return end
-	R.cooldown[player] = t; local previousPosition = R.lastPosition[player]
-	local event: DashEvent = {
-		player = player,
-		userId = player.UserId,
-		detectedAt = t,
-		position = position,
-		velocity = velocity,
-		previousPosition = previousPosition,
-	}
-	if typeof(position) == "Vector3" then R.lastPosition[player] = position end
-	if type(onDetected) == "function" then onDetected(event) end
-end
-local function hookAnimator(animator, player, character, generation)
-	if not animator or not player or generation ~= R.generation or not player.Parent or player.Character ~= character then return end
-	R.hookedAnimator[player] = animator
-	addCharacterConnection(
-		player,
-		animator.AnimationPlayed:Connect(function(track)
-			if generation ~= R.generation or not player.Parent or player.Character ~= character then return end
-			if isDashTrack(track) then register(player) end
-		end)
-	)
-	local snapshot = R.trackSnapshot[player]
-	if not snapshot then snapshot = {}; R.trackSnapshot[player] = snapshot else table.clear(snapshot) end
-	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-		snapshot[track] = true
-	end
-end
-local function attachCharacter(character, player, generation)
-	if generation ~= R.generation or not character or not player or not player.Parent or player.Character ~= character then return end
-	local oldCharacterConnections = R.characterConnections[player]; R.hookedAnimator[player] = nil
-	if oldCharacterConnections then disconnectList(oldCharacterConnections); R.characterConnections[player] = nil end
-	local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 3)
-	if generation ~= R.generation or not player.Parent or player.Character ~= character or not humanoid then return end
-	local animator = humanoid:FindFirstChildOfClass("Animator") or humanoid:WaitForChild("Animator", 3)
-	local root = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 3)
-	if generation ~= R.generation or not player.Parent or player.Character ~= character or not root then return end
-	if animator then hookAnimator(animator, player, character, generation) end
-	R.previousSpeed[player] = horizontalSpeed(root.AssemblyLinearVelocity); R.lastPosition[player] = root.Position
-end
-local function scanTracks()
-	for i = 1, #R.playerList do
-		local player = R.playerList[i]
-		if player and player.Parent then
-			local character = player.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-			if animator and R.hookedAnimator[player] ~= animator then
-				local currentTracks = animator:GetPlayingAnimationTracks(); local snapshot = R.trackSnapshot[player]
-				if not snapshot then snapshot = {}; R.trackSnapshot[player] = snapshot end
-				for _, track in ipairs(currentTracks) do
-					if not snapshot[track] and isDashTrack(track) then register(player) end
-				end
-				table.clear(snapshot)
-				for _, track in ipairs(currentTracks) do
-					snapshot[track] = true
-				end
-			end
-		end
-	end
-end
-local function scanVelocity(t)
-	for i = 1, #R.playerList do
-		local player = R.playerList[i]
-		if player and player.Parent then
-			local character = player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
-			if root then
-				local velocity = root.AssemblyLinearVelocity; local previousPosition = R.lastPosition[player]; local previousAt = R.lastPositionAt[player]
-				if previousPosition and previousAt and t > previousAt and t - previousAt <= 0.15 then
-					local measured = (root.Position - previousPosition) / (t - previousAt); local measuredSpeed = horizontalSpeed(measured)
-					if measuredSpeed > horizontalSpeed(velocity) and measuredSpeed < 400 then velocity = measured end
-				end
-				local speed = horizontalSpeed(velocity); local previousSpeed = R.previousSpeed[player]
-				if previousSpeed == nil then
-					R.previousSpeed[player] = speed
-				else
-					if speed >= T.VELOCITY_MIN_SPEED and (previousSpeed < T.VELOCITY_MIN_SPEED or speed - previousSpeed >= T.VELOCITY_MIN_INCREASE) then register(player, root.Position, velocity) end
-					R.previousSpeed[player] = speed
-				end
-				R.lastPosition[player] = root.Position; R.lastPositionAt[player] = t
-			end
-		end
-	end
+local function observeCharacter(player, record, time)
+    local character = player.Character
+    if record.character ~= character then resetCharacter(record, character) end
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+    if animator ~= record.animator then
+        disconnect(record.animationConnection)
+        record.animator = animator
+        record.animationConnection = nil
+        if animator then
+            local capturedGeneration = generation
+            record.animationConnection = animator.AnimationPlayed:Connect(function(track)
+                if capturedGeneration == generation and player.Character == record.character and dashAnimation(track) then
+                    register(player, record, nil, nil, now())
+                end
+            end)
+            for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+                if dashAnimation(track) then register(player, record, nil, nil, time) end
+            end
+        end
+    end
+    local root = rootOf(player)
+    if not root then record.speed, record.position, record.positionAt = nil, nil, nil; return end
+    local position, velocity = root.Position, root.AssemblyLinearVelocity
+    if record.position and record.positionAt and time > record.positionAt and time - record.positionAt <= 0.15 then
+        local measured = (position - record.position) / (time - record.positionAt)
+        if horizontal(measured) > horizontal(velocity) and horizontal(measured) < 400 then velocity = measured end
+    end
+    local speed, previous = horizontal(velocity), record.speed
+    if previous and speed >= MIN_SPEED and (previous < MIN_SPEED or speed - previous >= MIN_INCREASE) then
+        register(player, record, position, velocity, time)
+    end
+    record.speed, record.position, record.positionAt = speed, position, time
 end
 local function addPlayer(player)
-	if not player or not player.Parent then return end
-	if R.playerIndex[player] then return end
-	local index = #R.playerList + 1; R.playerList[index] = player; R.playerIndex[player] = index; R.trackSnapshot[player] = {}
-	R.previousSpeed[player] = nil; R.lastPosition[player] = nil; R.lastPositionAt[player] = nil; local generation = R.generation
-	if player.Character then task.spawn(attachCharacter, player.Character, player, generation) end
-	addPlayerConnection(
-		player,
-		player.CharacterAdded:Connect(function(character)
-			if generation ~= R.generation or not R.playerIndex[player] then return end
-			R.previousSpeed[player] = nil; R.lastPosition[player] = nil; R.lastPositionAt[player] = nil
-			R.cooldown[player] = nil; R.hookedAnimator[player] = nil; table.clear(R.trackSnapshot[player])
-			task.spawn(attachCharacter, character, player, generation)
-		end)
-	)
+    if records[player] then return end
+    local record = { character = nil }
+    records[player] = record
+    table.insert(order, player)
+    table.sort(order, function(a, b) return a.UserId < b.UserId end)
+    playerConnections[player] = player.CharacterAdded:Connect(function(character)
+        if records[player] == record then resetCharacter(record, character) end
+    end)
 end
 local function removePlayer(player)
-	if not player then return end
-	disconnectPlayerConnections(player); local index = R.playerIndex[player]
-	if index then
-		local lastIndex = #R.playerList; local lastPlayer = R.playerList[lastIndex]
-		if index ~= lastIndex then R.playerList[index] = lastPlayer; R.playerIndex[lastPlayer] = index end
-		R.playerList[lastIndex] = nil; R.playerIndex[player] = nil
-	end
-	R.cooldown[player] = nil; R.trackSnapshot[player] = nil; R.hookedAnimator[player] = nil; R.previousSpeed[player] = nil
-	R.lastPosition[player] = nil; R.lastPositionAt[player] = nil
+    local record = records[player]
+    if not record then return end
+    records[player] = nil
+    disconnect(record.animationConnection)
+    disconnect(playerConnections[player])
+    playerConnections[player] = nil
+    local index = table.find(order, player)
+    if index then table.remove(order, index) end
 end
-
--- setup
 function Dash.setup(deps)
-	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.Utils.getPlayers) ~= "function" then return false, "dependência ausente: Utils" end
-	Dash.resetState(); Utils = deps.Utils; local okPlayers, players = pcall(Utils.getPlayers)
-	if not okPlayers or not players then Utils = nil; return false, "Players indisponível" end
-	R.players = players; local generation = R.generation
-	for _, player in ipairs(players:GetPlayers()) do
-		addPlayer(player)
-	end
-	R.connections[#R.connections + 1] = players.PlayerAdded:Connect(function(player)
-		if generation == R.generation then addPlayer(player) end
-	end)
-	R.connections[#R.connections + 1] = players.PlayerRemoving:Connect(function(player)
-		if generation == R.generation then removePlayer(player) end
-	end)
-	return true
+    if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.Utils.getPlayers) ~= "function" then
+        return false, "dependência ausente: Utils"
+    end
+    Dash.resetState()
+    utils = deps.Utils
+    players = utils.getPlayers()
+    if not players then utils = nil; return false, "Players indisponível" end
+    local capturedGeneration = generation
+    playerConnections.added = players.PlayerAdded:Connect(function(player)
+        if capturedGeneration == generation then addPlayer(player) end
+    end)
+    playerConnections.removing = players.PlayerRemoving:Connect(function(player)
+        if capturedGeneration == generation then removePlayer(player) end
+    end)
+    for _, player in ipairs(players:GetPlayers()) do addPlayer(player) end
+    return true
 end
-
--- api
-function Dash.setHandler(handler: ((DashEvent) -> ())?)
-	onDetected = type(handler) == "function" and handler or nil; return true
+function Dash.setHandler(handler)
+    onDetected = type(handler) == "function" and handler or nil
+    return true
 end
-function Dash.tick(t)
-	if not R.players then return end
-	if type(t) ~= "number" then t = now() end
-	if t - R.lastCleanAt >= T.CLEAN_INTERVAL then R.lastCleanAt = t; cleanCooldowns(t) end
-	if t - R.lastScanAt >= T.ANIMATION_SCAN_INTERVAL then R.lastScanAt = t; scanTracks() end
-	if t - R.lastVelocityScanAt >= T.VELOCITY_SCAN_INTERVAL then R.lastVelocityScanAt = t; scanVelocity(t) end
+function Dash.tick(time)
+    if not players then return end
+    if type(time) ~= "number" then time = now() end
+    if time >= lastScan and time - lastScan < 1 / 30 then return end
+    lastScan = time
+    for _, player in ipairs(order) do
+        local record = records[player]
+        if record and player.Parent then observeCharacter(player, record, time) end
+    end
 end
 function Dash.resetState()
-	R.generation += 1; disconnectList(R.connections)
-	for player, connections in pairs(R.characterConnections) do
-		disconnectList(connections); R.characterConnections[player] = nil
-	end
-	for player, connections in pairs(R.playerConnections) do
-		disconnectList(connections); R.playerConnections[player] = nil
-	end
-	table.clear(R.playerList); table.clear(R.playerIndex); table.clear(R.cooldown); table.clear(R.trackSnapshot)
-	table.clear(R.hookedAnimator); table.clear(R.previousSpeed); table.clear(R.lastPosition); table.clear(R.lastPositionAt)
-	table.clear(R.animationMatchCache); R.players = nil; R.lastScanAt = 0; R.lastVelocityScanAt = 0
-	R.lastCleanAt = 0
+    generation += 1
+    disconnect(playerConnections.added)
+    disconnect(playerConnections.removing)
+    for _, player in ipairs(order) do
+        local record = records[player]
+        if record then disconnect(record.animationConnection) end
+        disconnect(playerConnections[player])
+    end
+    table.clear(playerConnections)
+    table.clear(records)
+    table.clear(order)
+    players, lastScan = nil, 0
 end
 function Dash.teardown()
-	Dash.resetState(); Utils = nil; onDetected = nil
+    Dash.resetState()
+    utils, onDetected = nil, nil
 end
 function Dash.getStatus()
-	local schema = 1
-	if Utils and type(Utils.apiVersion) == "function" then
-		local ok, version = pcall(Utils.apiVersion)
-		if ok and type(version) == "number" then schema = version end
-	end
-	return {
-		schema = schema,
-		players = R.players ~= nil,
-		detecting = R.players ~= nil,
-		playerCount = #R.playerList,
-	}
+    return { schema = utils and utils.apiVersion and utils.apiVersion() or 1, players = players ~= nil, detecting = players ~= nil, playerCount = #order }
 end
 Dash.__contract = {
-	requiresMethods = { Utils = { "getPlayers" } },
-	provides = { "setup", "setHandler", "tick", "teardown" },
-	requires = {
-		Utils = "utils",
-	},
-
+    requires = { Utils = "utils" },
+    requiresMethods = { Utils = { "getPlayers" } },
+    provides = { "setup", "setHandler", "tick", "teardown" },
 }
-
 return Dash

@@ -1,150 +1,129 @@
--- [[ spam ]]
-
 local Spam = {}
+local utils, remote, spamObserver, configObserver
+local generation, running, inFlight = 0, false, false
+local currentMode, currentRate
+local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge, cpfFps = 0, cpfClicks = 0 }
 
-local Utils, Remote
-local connection
-local spamObserver
-local generation = 0
-local workerGeneration = 0
-local cpfWorkerRunning = false
-local cpfWorkerRate
-local active = false
-local phase = 0
-local lastMode, lastRate
-local status = {
-	phase = "stopped",
-	lastRequestAt = 0,
-	lastError = nil,
-	lastErrorAt = -math.huge,
-	cpfFps = 0,
-	cpfClicks = 0,
-	cpfCompensation = false,
-}
-
-local function now() return os.clock() end
-local function setActive(value, reason)
-	if active == value then return end
-	generation += 1; active = value; phase = 0; lastMode, lastRate = nil, nil
-	status.phase = value and "running" or "stopped"
-	if Utils and type(Utils.recordTransition) == "function" then Utils.recordTransition("Spam", value and "stopped" or "running", status.phase, reason) end
-end
-local function requestParry()
-	local time = now()
-	status.lastRequestAt = time
-	local ok, result, detail = pcall(Remote.fireParry, 1)
-	if ok and result == true then status.lastError = nil; return end
-	local message = tostring(ok and (detail or "Remote.fireParry indisponível") or result); status.lastError = message
-	if time - status.lastErrorAt >= 1 then
-		status.lastErrorAt = time
-		if type(Utils.recordError) == "function" then Utils.recordError("Spam", message) end
-	end
-end
 local function readRate()
-	local config = Utils.getConfig()
-	local mode = type(Utils.getConfigValue) == "function" and Utils.getConfigValue("SpamRateMode") or config.SpamRateMode
-	local key = mode == "CPF" and "CPF" or "CPS"
-	local rate = tonumber(type(Utils.getConfigValue) == "function" and Utils.getConfigValue(key) or config[key]) or 0
-	if rate ~= rate or rate == math.huge or rate <= 0 then return key, 0 end
-	return key, rate
+    local config = utils.getConfig()
+    local mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"
+    local rate = tonumber(config[mode]) or 0
+    if rate ~= rate or rate <= 0 or rate == math.huge then return mode, 0 end
+    if mode == "CPF" and rate * 60 == math.huge then return mode, 0 end
+    return mode, rate
 end
-
-local function startCpfWorker()
-	if cpfWorkerRunning then return end
-	cpfWorkerRunning = true
-	workerGeneration += 1
-	local worker = workerGeneration
-	task.spawn(function()
-		local due, previousMode, previousRate
-		while worker == workerGeneration do
-			local mode, rate = readRate()
-			local enabled = Utils.isActive() and Utils.isSpamActive() and rate > 0
-			if enabled then
-				if not active then setActive(true, "spam_active") end
-				local interval = 1 / (mode == "CPF" and rate * 60 or rate)
-				if previousMode ~= mode or previousRate ~= rate or due == nil then
-					due = now()
-					previousMode, previousRate = mode, rate
-				end
-				local time = now()
-				if time >= due then
-					local pending = math.floor((time - due) / interval) + 1
-					local burst = math.min(pending, 4)
-					for _ = 1, burst do
-						if worker ~= workerGeneration or not Utils.isActive() or not Utils.isSpamActive() then break end
-						requestParry()
-					end
-					due += pending * interval
-				end
-				task.wait(math.max(0, due - now()))
-			else
-				due, previousMode, previousRate = nil, nil, nil
-				if active then setActive(false, "spam_disabled") end
-				task.wait(0.01)
-			end
-		end
-		if worker == workerGeneration then cpfWorkerRunning = false end
-	end)
+local function transition(active, reason)
+    local phase = active and "running" or "stopped"
+    if status.phase == phase then return end
+    local previous = status.phase
+    status.phase = phase
+    if utils and type(utils.recordTransition) == "function" then utils.recordTransition("Spam", previous, phase, reason) end
 end
-
-local function syncCpfWorker()
-	if Utils and not cpfWorkerRunning then startCpfWorker() end
+local function cancel(reason)
+    generation += 1
+    running, currentMode, currentRate = false, nil, nil
+    transition(false, reason)
+end
+local function request(boundUtils, boundRemote, token)
+    if inFlight then return end
+    inFlight = true
+    status.lastRequestAt = os.clock()
+    local ok, result, detail = pcall(boundRemote.fireParry, 1, function()
+        return token == generation and boundUtils.isActive() and boundUtils.isSpamActive()
+    end)
+    inFlight = false
+    if token ~= generation or utils ~= boundUtils then return end
+    if ok and result == true then status.lastError = nil; return end
+    local message = tostring(ok and (detail or "Remote.fireParry indisponível") or result)
+    status.lastError = message
+    local time = os.clock()
+    if time - status.lastErrorAt >= 1 then
+        status.lastErrorAt = time
+        if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
+    end
+end
+local function sync()
+    if not utils or not remote then return end
+    local mode, rate = readRate()
+    local enabled = utils.isActive() and utils.isSpamActive() and rate > 0
+    if not enabled then
+        if running then cancel("spam_disabled") end
+        return
+    end
+    if running and currentMode == mode and currentRate == rate then return end
+    if running then cancel("rate_changed") end
+    generation += 1
+    local token, boundUtils, boundRemote = generation, utils, remote
+    running, currentMode, currentRate = true, mode, rate
+    transition(true, "spam_active")
+    task.spawn(function()
+        local interval = 1 / (mode == "CPF" and rate * 60 or rate)
+        local due = os.clock()
+        while token == generation and boundUtils.isActive() and boundUtils.isSpamActive() do
+            local time = os.clock()
+            if time >= due then
+                local pending = math.floor((time - due) / interval) + 1
+                for _ = 1, math.min(pending, 4) do
+                    if token ~= generation or not boundUtils.isActive() or not boundUtils.isSpamActive() then break end
+                    request(boundUtils, boundRemote, token)
+                end
+                due += pending * interval
+            end
+            if token == generation then task.wait(math.max(0, due - os.clock())) end
+        end
+        if token == generation then cancel("spam_disabled") end
+    end)
 end
 function Spam.setup(deps)
-	if
-		type(deps) ~= "table"
-		or type(deps.Utils) ~= "table"
-		or type(deps.Remote) ~= "table"
-		or type(deps.Remote.fireParry) ~= "function"
-		or type(deps.Utils.getRunService) ~= "function"
-		or type(deps.Utils.getConfig) ~= "function"
-		or type(deps.Utils.isActive) ~= "function"
-		or type(deps.Utils.isSpamActive) ~= "function"
-		or type(deps.Utils.now) ~= "function"
-	then
-		return false, "dependência ausente: Remote ou Utils"
-	end
-	Spam.teardown()
-	Utils, Remote = deps.Utils, deps.Remote
-	startCpfWorker()
-	return true
+    if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.Remote) ~= "table"
+        or type(deps.Remote.fireParry) ~= "function" or type(deps.Utils.getConfig) ~= "function"
+        or type(deps.Utils.isActive) ~= "function" or type(deps.Utils.isSpamActive) ~= "function"
+        or type(deps.Utils.observeSpam) ~= "function" or type(deps.Utils.observeConfig) ~= "function" then
+        return false, "dependência ausente: Remote ou Utils"
+    end
+    Spam.teardown()
+    utils, remote = deps.Utils, deps.Remote
+    spamObserver = utils.observeSpam(sync)
+    configObserver = utils.observeConfig(function(changes)
+        if changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil then sync() end
+    end)
+    utils.trackGlobal(spamObserver)
+    utils.trackGlobal(configObserver)
+    sync()
+    return true
 end
 function Spam.resetState()
-	generation += 1; setActive(false, "reset"); phase = 0; lastMode, lastRate = nil, nil
-	status.phase = "stopped"; status.lastError = nil; status.lastErrorAt = -math.huge
-	status.cpfFps, status.cpfClicks = 0, 0
+    cancel("reset")
+    status.lastError, status.lastErrorAt = nil, -math.huge
+    status.cpfFps, status.cpfClicks = 0, 0
+    local token = generation
+    task.defer(function() if token == generation then sync() end end)
 end
 function Spam.teardown()
-	workerGeneration += 1; cpfWorkerRunning = false; cpfWorkerRate = nil
-	if spamObserver then
-		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(spamObserver) end
-		spamObserver:Disconnect(); spamObserver = nil
-	end
-	if connection then
-		if Utils and type(Utils.untrackGlobal) == "function" then Utils.untrackGlobal(connection) end
-		connection:Disconnect(); connection = nil
-	end
-	Spam.resetState(); Utils, Remote = nil, nil
+    cancel("teardown")
+    if utils then
+        if spamObserver then utils.untrackGlobal(spamObserver); spamObserver:Disconnect() end
+        if configObserver then utils.untrackGlobal(configObserver); configObserver:Disconnect() end
+    end
+    spamObserver, configObserver, utils, remote = nil, nil, nil, nil
 end
 function Spam.getStatus()
-	return {
-		schema = Utils and type(Utils.apiVersion) == "function" and Utils.apiVersion() or 1,
-		phase = status.phase,
-		lastRequestAt = status.lastRequestAt,
-		lastError = status.lastError,
-		cpfFps = status.cpfFps,
-		cpfClicks = status.cpfClicks,
-		cpfCompensation = false,
-	}
+    return {
+        schema = utils and utils.apiVersion() or 1,
+        phase = status.phase,
+        lastRequestAt = status.lastRequestAt,
+        lastError = status.lastError,
+        cpfFps = status.cpfFps,
+        cpfClicks = status.cpfClicks,
+        cpfCompensation = false,
+    }
 end
 Spam.__contract = {
-	requiresMethods = {
-		Remote = { "fireParry" },
-		Utils = { "getRunService", "getConfig", "isActive", "isSpamActive", "now" },
-	},
-
-	provides = { "setup", "resetState", "teardown", "getStatus" },
-	requires = { Remote = "remote", Utils = "utils" },
+    requires = { Remote = "remote", Utils = "utils" },
+    requiresMethods = {
+        Remote = { "fireParry" },
+        Utils = { "getConfig", "isActive", "isSpamActive", "observeSpam", "observeConfig", "trackGlobal", "untrackGlobal" },
+    },
+    provides = { "setup", "resetState", "teardown", "getStatus" },
 }
-
 return Spam
