@@ -1,85 +1,80 @@
 local AutoFierce = {}
 local utils, gameInfo, autoClash, spam, connection
-local trackedAbility, startedAt, deadline, used, lastElapsed, lastDuration, confirmationWindow
+local trackedAbility, startedAt, deadline, lastCooldown, used
+
+local function finite(n)
+    return type(n) == "number" and n == n and n > -math.huge and n < math.huge
+end
 
 local function reset()
-    trackedAbility, startedAt, deadline, used, lastElapsed, lastDuration, confirmationWindow = nil, nil, nil, false, nil, nil, nil
+    trackedAbility, startedAt, deadline, lastCooldown, used = nil, nil, nil, nil, false
 end
-local function finite(value)
-    return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+
+local function getWindow(ability, player)
+    if type(ability.GetDeflectionWindow) == "function" then
+        local ok, value = pcall(ability.GetDeflectionWindow, ability, player)
+        if ok and finite(value) and value > 0 then return value end
+    end
+    local sync = gameInfo.getSyncData()
+    return gameInfo.getDeflectWindow(sync and sync.Speed)
 end
+
+local function imminent(ability, player, now)
+    local snapshot = gameInfo.getSnapshotAt(now)
+    if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported or snapshot.targetId ~= player.UserId then return false end
+    local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+    local delta = root.Position - snapshot.position
+    local distance = delta.Magnitude
+    local range = player:GetAttribute("DeflectRange") or ability.DeflectDistance
+    if not finite(range) or range <= 0 then return false end
+    if distance <= range then return true end
+    local closing = snapshot.velocity:Dot(delta) / math.max(distance, 0.001)
+    return closing > 0 and (distance - range) / closing <= 0.15
+end
+
 local function step()
     if not utils.isActive() or utils.getConfigValue("AutoFierceDeflect") ~= true then reset(); return end
     local ability = gameInfo.getDeflectAbility()
-    if not ability or not finite(ability.Cooldown) or ability.Cooldown <= 0 then reset(); return end
-    local duration = ability.LastCooldown
-    if not finite(duration) or duration <= 0 or ability.Cooldown > duration then reset(); return end
-    local elapsed = duration - ability.Cooldown
+    local cd = ability and ability.Cooldown
+    if not finite(cd) or cd <= 0 then reset(); return end
     local now = os.clock()
-    if ability ~= trackedAbility or not startedAt or (lastDuration and duration ~= lastDuration)
-        or (lastElapsed and elapsed + 0.0001 < lastElapsed) then
-        trackedAbility, startedAt, deadline, used, confirmationWindow = ability, now, nil, false, nil
-    end
-    lastElapsed, lastDuration = elapsed, duration
-    if used then return end
-    if not deadline then
-        local sync = gameInfo.getSyncData()
-        local window = gameInfo.getDeflectWindow(sync and sync.Speed)
-        if not finite(window) or window <= 0 then return end
-        confirmationWindow, deadline = window, startedAt + window
-    end
-    if finite(ability.PredictedResetUntil) then deadline = math.max(deadline, ability.PredictedResetUntil) end
-    if now < deadline or elapsed < confirmationWindow then return end
-    local cooldown = gameInfo.getDeflectCooldownState()
-    if not cooldown or cooldown.rawActive ~= true or not finite(cooldown.endsAt)
-        or cooldown.endsAt <= now then return end
-    local snapshot = gameInfo.getSnapshotAt(now)
-    if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported
-        or not snapshot.targeted or not snapshot.position or not snapshot.velocity then return end
-    local character = utils.getLocalPlayer() and utils.getLocalPlayer().Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local delta = root.Position - snapshot.position
-    local distance = delta.Magnitude
-    local range = ability.DeflectDistance
-    if not finite(range) or range <= 0 then return end
-    local closing = distance > 0 and snapshot.velocity:Dot(delta) / distance or 0
-    if distance > range and (closing <= 0 or (distance - range) / closing > 0.15) then return end
-    local cooldown = gameInfo.getDeflectCooldownState()
-    if not cooldown or cooldown.rawActive ~= true or not finite(cooldown.endsAt)
-        or cooldown.endsAt <= now then return end
-    local snapshot = gameInfo.getSnapshotAt(now)
-    if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported
-        or not snapshot.targeted or not snapshot.position or not snapshot.velocity then return end
-    local character = utils.getLocalPlayer() and utils.getLocalPlayer().Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local delta = root.Position - snapshot.position
-    local distance = delta.Magnitude
-    local range = ability.DeflectDistance
-    if not finite(range) or range <= 0 then return end
-    local closing = distance > 0 and snapshot.velocity:Dot(delta) / distance or 0
-    if distance > range and (closing <= 0 or (distance - range) / closing > 0.15) then return end
     local player = utils.getLocalPlayer()
-    if not player or gameInfo.getTargetId() ~= player.UserId then return end
+    if not player then reset(); return end
+
+    -- Deflect() starts a local cooldown; OnParried() clears it.
+    -- The same deflection window used by the game decides when an unreset
+    -- local cooldown can be treated as a missed parry.
+    if ability ~= trackedAbility or not startedAt or (lastCooldown and cd > lastCooldown + 0.03) then
+        local window = getWindow(ability, player)
+        if not finite(window) or window <= 0 then reset(); return end
+        trackedAbility, startedAt, deadline, used = ability, now, now + window, false
+    end
+    lastCooldown = cd
+    if used then return end
+    if finite(ability.PredictedResetUntil) and now < ability.PredictedResetUntil then return end
+    if now < deadline then return end
+
+    -- A successful parry cancels the local cooldown; a pending predicted
+    -- reset or a new cooldown cycle must not trigger Fierce.
+    if gameInfo.getDeflectAbility() ~= ability or not finite(ability.Cooldown)
+        or ability.Cooldown <= 0 or not imminent(ability, player, now) then return end
     local fierce = gameInfo.getFierceDeflectAbility()
-    if not fierce or type(fierce.IsAvailable) ~= "function" or type(fierce.IsOwnerAlive) ~= "function"
+    if not fierce or type(fierce.IsAvailable) ~= "function"
+        or type(fierce.IsOwnerAlive) ~= "function"
         or not fierce:IsOwnerAlive() or not fierce:IsAvailable(false) then return end
+
     utils.stopAllSpam()
     spam.resetState()
     autoClash.stopSpam()
-    -- Stopping other controllers can change the current target or cooldown.
-    if not utils.isActive() or utils.getConfigValue("AutoFierceDeflect") ~= true
-        or gameInfo.getTargetId() ~= player.UserId or gameInfo.getDeflectAbility() ~= ability
+    if gameInfo.getTargetId() ~= player.UserId or gameInfo.getDeflectAbility() ~= ability
         or not finite(ability.Cooldown) or ability.Cooldown <= 0
-        or not finite(ability.LastCooldown) or ability.LastCooldown ~= duration
-        or ability.LastCooldown - ability.Cooldown < confirmationWindow
-        or gameInfo.getDeflectCooldownState().rawActive ~= true
-        or gameInfo.getDeflectCooldownState().rawActive ~= true
-        or gameInfo.getFierceDeflectAbility() ~= fierce or not fierce:IsOwnerAlive() or not fierce:IsAvailable(false) then return end
+        or (finite(ability.PredictedResetUntil) and os.clock() < ability.PredictedResetUntil)
+        or not fierce:IsOwnerAlive() or not fierce:IsAvailable(false) then return end
     used = true
     fierce:ActivateAndBlock()
 end
+
 function AutoFierce.setup(deps)
     AutoFierce.teardown()
     utils, gameInfo, autoClash, spam = deps.Utils, deps.GameInfo, deps.AutoClash, deps.Spam
@@ -92,6 +87,7 @@ function AutoFierce.setup(deps)
     utils.trackGlobal(connection)
     return true
 end
+
 function AutoFierce.teardown()
     if connection then
         if utils then utils.untrackGlobal(connection) end
@@ -101,11 +97,12 @@ function AutoFierce.teardown()
     reset()
     utils, gameInfo, autoClash, spam = nil, nil, nil, nil
 end
+
 AutoFierce.__contract = {
     requires = { Utils = "utils", GameInfo = "gameinfo", AutoClash = "autoclash", Spam = "spam" },
     requiresMethods = {
         Utils = { "isActive", "getConfigValue", "getLocalPlayer", "getRunService", "stopAllSpam", "trackGlobal", "untrackGlobal", "recordError" },
-        GameInfo = { "getDeflectAbility", "getFierceDeflectAbility", "getDeflectWindow", "getSyncData", "getTargetId", "getDeflectCooldownState", "getSnapshotAt", "isSnapshotValid", "getDeflectCooldownState", "getSnapshotAt", "isSnapshotValid" },
+        GameInfo = { "getDeflectAbility", "getFierceDeflectAbility", "getDeflectWindow", "getSyncData", "getTargetId", "getSnapshotAt", "isSnapshotValid" },
         AutoClash = { "stopSpam" }, Spam = { "resetState" },
     },
     provides = { "setup", "teardown" },
