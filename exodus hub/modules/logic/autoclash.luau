@@ -576,34 +576,10 @@ local function acceptSync(s, data, time, original)
     local explicit = data.TargetPlayerID ~= nil or data.HighlightTargetPlayerID ~= nil
     if not target and not explicit then target = id(gameInfo.getTargetId()) end
     local previous = s.target
-    local fastRecovery = s.distantRecovery and not s.active and s.recoveryReturnedToMe
-        and previous == localPlayer.UserId and target == s.recoveryPartner
     local outcome = observeTarget(s, target, explicit, tonumber(data.ServerTime), time)
     if current ~= s or not s.bound then return end
     if outcome == "pull" then return end
     if not target then return end
-    if fastRecovery then
-        local currentSpeed = tonumber(data.Speed)
-        local snapshot = readSnapshot(s, time)
-        local own = rootPosition(s)
-        local _, partnerRoot = playerRoot(target)
-        local ability = gameInfo.getDeflectAbility()
-        local range = ability and ability.DeflectDistance
-        local window = finite(currentSpeed) and gameInfo.getDeflectWindow(currentSpeed) or nil
-        if snapshot and not snapshot.teleported and snapshotCurrent(s, snapshot, time)
-            and id(snapshot.targetId) == target and finite(s.recoverySpeed) and finite(currentSpeed)
-            and currentSpeed > s.recoverySpeed and own and partnerRoot and vector(partnerRoot.Position)
-            and finite(range) and range > 0 and finite(window) and window > 0
-            and (own - partnerRoot.Position).Magnitude <= range + currentSpeed * window then
-            local prediction = geometry(s, snapshot, time)
-            if current == s and s.bound and prediction then
-                s.snapshot, s.prediction, s.partner = snapshot, prediction, target
-                clearReturn(s)
-                setActive(s, true, "recovery_partner_pass", "faster_partner_return", time, true)
-                return
-            end
-        end
-    end
     local sameTarget = target ~= nil and target == previous
     local evaluateEvent = not sameTarget and data.Source ~= "snapshot" and (s.returnPending or (target == localPlayer.UserId and data.Source == "packet"))
         or sameTarget and not s.active and target == localPlayer.UserId and data.Source == "packet"
