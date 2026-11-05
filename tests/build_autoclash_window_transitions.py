@@ -4,7 +4,7 @@ import sys
 root, output = Path(sys.argv[1]), Path(sys.argv[2])
 s = (root / 'exodus hub/modules/logic/autoclash.luau').read_text()
 start = s.index('local function evaluate(s, snapshot, time)')
-source = s[start:s.index('    local target, me = id(snapshot.targetId), localPlayer.UserId', start)] + 'end\n'
+source = s[start:s.index('    local targeted = target and target == me', start)] + 'end\n'
 pre = r'''
 local current={bound=true,active=true,partner=7}
 local localPlayer={UserId=42}
@@ -12,6 +12,7 @@ local inside=false
 local function id(v) return v end
 local function gate() return true end
 local function geometry() return {imminent=inside} end
+local function outsideClashRadius() return true end
 local function setActive(s, active) s.active=active; if not active then s.partner=-1 end end
 '''
 post = r'''

@@ -339,16 +339,11 @@ local function observeTarget(s, target, explicit, serverTime, time)
         s.returnExpires, s.returnPending = time + window + 2 * ping(s, time) + 1 / 30, false
         returnToken += 1
         s.returnToken = returnToken
-        if s.active or s.recentPartner == -1 then s.partner = target end
+        if s.partner <= 0 and (s.active or s.recentPartner == -1) then s.partner = target end
         s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = nil, 0, 0, 0
         s.lastGate = "target_lost"
     elseif previous > 0 and previous ~= me and target == me then
-        if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.10 + ping(s, time) then
-            s.lastGate = "deact_target_return_timeout"
-            setActive(s, false, "target_return_timeout", nil, time)
-        else
-            s.clashAwayAt = nil
-        end
+        s.clashAwayAt = nil
         local elapsed = s.returnAt and time - s.returnAt or nil
         if finite(serverTime) and finite(s.returnServerAt) then elapsed = serverTime - s.returnServerAt end
         if s.returnFrom == previous and finite(elapsed) and elapsed >= 0 and elapsed <= s.returnWindow and time <= s.returnExpires then
@@ -359,6 +354,10 @@ local function observeTarget(s, target, explicit, serverTime, time)
         end
     elseif previous > 0 and previous ~= me and target ~= me then
         clearReturn(s)
+        if s.active and not outsideClashRadius(s, target) then
+            s.lastGate = "near_target_redirected"
+            return
+        end
         if s.active then setActive(s, false, "target_redirected", nil, time) end
         s.partner = -1
         s.lastGate = "target_redirected"
@@ -485,7 +484,9 @@ local function evaluate(s, snapshot, time)
         missingSnapshot(s, time, "geometry_unavailable"); return
     end
     s.snapshot, s.prediction, s.missingSince = snapshot, prediction, nil
-    if s.active and not prediction.imminent then
+    local target, me = id(snapshot.targetId), localPlayer.UserId
+    local nearbyTarget = target and target ~= me and not outsideClashRadius(s, target)
+    if s.active and not prediction.imminent and not nearbyTarget then
         s.lastGate = "outside_deflect_window"
         s.windowPartner = s.partner
         setActive(s, false, "outside_deflect_window", nil, time)
@@ -501,7 +502,6 @@ local function evaluate(s, snapshot, time)
         setActive(s, true, "window_return", "deflect_window", time)
         return
     end
-    local target, me = id(snapshot.targetId), localPlayer.UserId
     local targeted = target and target == me or (not target and snapshot.targeted == true)
     local aimed = s.target == me and targeted and prediction.imminent
     if not s.active and prediction.imminent and s.recentPartner > 0 and (target == s.recentPartner or targeted) and proximityEligible(s, s.recentPartner, time)
@@ -536,11 +536,6 @@ local function evaluate(s, snapshot, time)
     if s.active then
         if target and target ~= me and not s.clashAwayAt then s.clashAwayAt = time end
         if target == me then s.clashAwayAt = nil end
-        if s.clashAwayAt and time - s.clashAwayAt > 0.10 + ping(s, time) then
-            s.lastGate = "deact_target_return_timeout"
-            setActive(s, false, "target_return_timeout", nil, time)
-            return
-        end
         if target and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
             setActive(s, false, "target_redirected", nil, time); s.lastGate = "target_redirected"; return
         end
@@ -598,10 +593,6 @@ local function acceptSync(s, data, time, original)
     end
 end
 local function updateFrame(s, time)
-    if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.10 + ping(s, time) then
-        s.lastGate = "deact_target_return_timeout"
-        setActive(s, false, "target_return_timeout", nil, time)
-    end
     if not gate(s) or not s.root or not s.root.Parent or not s.character.Parent then return end
     if not s.returnPending and s.returnExpires > 0 and time >= s.returnExpires then clearReturn(s) end
     local snapshot = readSnapshot(s, time)
