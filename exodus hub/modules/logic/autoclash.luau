@@ -55,7 +55,7 @@ local function makeState()
         radiusAt = 0, radiusSpeed = -1, snapshot = nil, prediction = nil,
         missingSince = nil, recoveryUntil = 0, pull = nil, pullEvent = nil,
         dashEvent = nil, dashData = nil, dashBonusUntil = 0, dashLockUntil = 0, activationLockUntil = 0,
-        exitReason = nil, exitSince = 0, exitFrames = 0, exitLastAt = 0,
+        exitReason = nil, exitSince = 0, exitFrames = 0, exitLastAt = 0, clashAwayAt = nil,
         ownDashPending = false, ownDashFrames = 0, ownDashDistance = nil, ownDashAt = 0, ownDashEventAt = 0,
         activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 },
         lastGate = "none", errors = {},
@@ -123,6 +123,7 @@ local function setActive(s, enabled, reason, detail, time)
         if root and own and vector(root.Position) then s.recentDistance = (own - root.Position).Magnitude end
     end
     s.active = enabled
+    s.clashAwayAt = nil
     clearExit(s)
     if enabled then
         local prediction = s.prediction
@@ -282,6 +283,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
         return "pull"
     end
     if previous == me and target ~= me then
+        if s.active then s.clashAwayAt = time end
         if s.active and s.partner > 0 and target ~= s.partner and not closePartner(s, target) then setActive(s, false, "target_redirected", nil, time) end
         local window, bonus = returnAllowance(s, target, time)
         if current ~= s or not s.bound then return end
@@ -294,6 +296,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
         s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = nil, 0, 0, 0
         s.lastGate = "target_lost"
     elseif previous > 0 and previous ~= me and target == me then
+        s.clashAwayAt = nil
         local elapsed = s.returnAt and time - s.returnAt or nil
         if finite(serverTime) and finite(s.returnServerAt) then elapsed = serverTime - s.returnServerAt end
         if s.returnFrom == previous and finite(elapsed) and elapsed >= 0 and elapsed <= s.returnWindow and time <= s.returnExpires then
@@ -460,16 +463,15 @@ local function evaluate(s, snapshot, time)
         end
     end
     if s.active then
+        if s.clashAwayAt and time - s.clashAwayAt > 0.20 then
+            s.lastGate = "deact_target_return_timeout"
+            setActive(s, false, "target_return_timeout", nil, time)
+            return
+        end
         if target and target ~= me and target ~= s.partner and not closePartner(s, target) then
             setActive(s, false, "target_redirected", nil, time); s.lastGate = "target_redirected"; return
         end
-        if targeted then s.lastGate = "deact_targeted"; return end
-        if prediction.speed <= 0 then s.lastGate = "deact_tti_unavailable"; return end
-        if not prediction.valid then s.lastGate = "deact_window_unavailable"; return end
-        if math.max(prediction.distance - prediction.radius, 0) / prediction.speed > math.max(prediction.window - 0.20, 0) then
-            s.lastGate = "deact_tti_outside_window"
-            setActive(s, false, "target_deactivated", nil, time)
-        else s.lastGate = "deact_tti_inside_window" end
+        s.lastGate = targeted and "deact_targeted" or "deact_waiting_target_return"
         return
     end
     if s.returnPending and aimed then
@@ -523,6 +525,10 @@ local function acceptSync(s, data, time, original)
     end
 end
 local function updateFrame(s, time)
+    if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.20 then
+        s.lastGate = "deact_target_return_timeout"
+        setActive(s, false, "target_return_timeout", nil, time)
+    end
     if not gate(s) or not s.root or not s.root.Parent or not s.character.Parent then return end
     if not s.returnPending and s.returnExpires > 0 and time >= s.returnExpires then clearReturn(s) end
     local snapshot = readSnapshot(s, time)
