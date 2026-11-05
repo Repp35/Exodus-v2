@@ -110,6 +110,7 @@ local function clearExchange(s)
     s.lastSwitchAt, s.lastSwitchServerAt, s.intervalMs, s.intervalAverage, s.intervalSamples = 0, nil, 0, nil, 0
     s.dashEvent, s.dashData, s.dashBonusUntil, s.dashLockUntil = nil, nil, 0, 0
     s.recoveryUntil = 0
+    s.windowPaused, s.windowPartner = false, nil
     s.activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 }
     targetResetToken += 1
     s.resetToken = targetResetToken
@@ -118,6 +119,7 @@ end
 local function setActive(s, enabled, reason, detail, time)
     if current ~= s or not s.bound then return end
     enabled = enabled == true
+    if enabled and (not s.prediction or not s.prediction.imminent) then return end
     if s.active == enabled then return end
     if not enabled and s.partner > 0 then
         s.recentPartner = s.partner
@@ -183,8 +185,15 @@ end
 local function outsideClashRadius(s, userId)
     local _, root = playerRoot(userId)
     local own = rootPosition(s)
-    return not root or not own or not vector(root.Position) or s.parryRadius <= 0
-        or (own - root.Position).Magnitude > s.parryRadius * LIMIT.proximityRadiusFactor
+    local ability = gameInfo.getDeflectAbility()
+    local sync = gameInfo.getSyncData()
+    local speed = sync and tonumber(sync.Speed) or s.speed
+    local range = ability and ability.DeflectDistance
+    if not root or not own or not vector(root.Position) or not finite(range) or range <= 0
+        or not finite(speed) or speed < 0 then return true end
+    local window = gameInfo.getDeflectWindow(speed)
+    if not finite(window) or window <= 0 then return true end
+    return (own - root.Position).Magnitude > range + speed * window
 end
 local function closePartner(s, userId)
     if not userId or userId <= 0 or userId == localPlayer.UserId then return false end
@@ -192,6 +201,23 @@ local function closePartner(s, userId)
     local own = rootPosition(s)
     if not root or not own or not vector(root.Position) or s.parryRadius <= 0 then return false end
     return (own - root.Position).Magnitude <= math.max(s.parryRadius, s.recentDistance + 2)
+end
+local function withinDeflectWindow(s, snapshot)
+    local root = rootPosition(s)
+    local ability = gameInfo.getDeflectAbility()
+    if not root or not snapshot or not ability or not localPlayer or id(snapshot.targetId) ~= localPlayer.UserId
+        or snapshot.teleported == true or not vector(snapshot.position) or not vector(snapshot.velocity) then return false end
+    local distance = (root - snapshot.position).Magnitude
+    local range = ability.DeflectDistance
+    if not finite(distance) or not finite(range) or range <= 0 then return false end
+    local speed = snapshot.velocity.Magnitude
+    if not finite(speed) then return false end
+    local sync = gameInfo.getSyncData()
+    local window = gameInfo.getDeflectWindow(sync and sync.Speed or speed)
+    if not finite(window) or window <= 0 then return false end
+    if distance <= range then return true end
+    local closing = snapshot.velocity:Dot(root - snapshot.position) / distance
+    return finite(closing) and closing > 0 and (distance - range) / closing <= window
 end
 local function geometry(s, snapshot, time)
     local own = rootPosition(s)
@@ -210,29 +236,12 @@ local function geometry(s, snapshot, time)
         end
         s.radiusAt, s.radiusSpeed = time, speed
     end
-    local baseOk, info = pcall(autoParry.getRadius, "geometry", 0, speed, "game")
-    if current ~= s or not s.bound then return nil end
-    local valid = baseOk and type(info) == "table" and finite(info.noWindowParryRadius) and info.noWindowParryRadius >= 0
-        and finite(info.deflectWindow) and info.deflectWindow > 0
-    local offset = own - position
-    local distance = offset.Magnitude
-    local closing = distance > 0 and velocity:Dot(offset) / distance or velocity.Magnitude
-    local hitRadius = valid and info.noWindowParryRadius or nil
-    local window = valid and info.deflectWindow or nil
-    local impact = valid and closing > 0 and math.max(distance - hitRadius, 0) / closing or math.huge
-    local lead = valid and window + ping(s, time) or nil
-    local alignment = velocity.Magnitude > 0 and closing / velocity.Magnitude or 0
+    local distance = (own - position).Magnitude
+    local insideWindow = withinDeflectWindow(s, snapshot)
     s.speed = speed
-    local activationGate = s.parryRadius <= 0 and "no_effective_radius"
-        or velocity.Magnitude < LIMIT.minimumSpeed and "ball_speed_invalid"
-        or (closing <= 0 or alignment < 0.3) and "ball_not_approaching"
-        or not valid and "game_window_unavailable"
-        or impact > lead and "impact_not_imminent"
-        or "activation_ready"
-    return { position = position, velocity = velocity, distance = distance, speed = speed, closing = closing,
-        impact = impact, radius = hitRadius, parryRadius = s.parryRadius, valid = valid,
-        window = window, lead = lead, activationGate = activationGate,
-        imminent = valid and s.parryRadius > 0 and velocity.Magnitude >= LIMIT.minimumSpeed and closing > 0 and alignment >= 0.3 and impact <= lead or false }
+    return { position = position, velocity = velocity, distance = distance, speed = speed,
+        parryRadius = s.parryRadius, activationGate = insideWindow and "activation_ready" or "outside_deflect_window",
+        imminent = insideWindow }
 end
 local function returnAllowance(s, partner, time)
     local latency = ping(s, time)
@@ -299,7 +308,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
         return
     end
     local previous = s.target
-    if s.active and previous == s.partner and target ~= me and target ~= s.partner then
+    if s.active and previous == s.partner and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
         s.target = target
         s.lastGate = "partner_target_redirected"
         setActive(s, false, "partner_target_redirected", nil, time)
@@ -309,7 +318,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
     if target == previous then return end
     updateSwitch(s, previous, target, time, serverTime)
     s.target = target
-    if s.active and target ~= me and outsideClashRadius(s, target) then
+    if s.active and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
         s.lastGate = "target_outside_clash_radius"
         setActive(s, false, "target_outside_clash_radius", nil, time)
         clearReturn(s)
@@ -471,18 +480,31 @@ local function evaluate(s, snapshot, time)
     if current ~= s or not s.bound or not gate(s) then return end
     local prediction = geometry(s, snapshot, time)
     if current ~= s or not s.bound then return end
-    if not prediction then missingSnapshot(s, time, "geometry_unavailable"); return end
+    if not prediction then
+        if s.active then s.windowPartner = s.partner; setActive(s, false, "geometry_unavailable", nil, time); s.windowPaused = true end
+        missingSnapshot(s, time, "geometry_unavailable"); return
+    end
     s.snapshot, s.prediction, s.missingSince = snapshot, prediction, nil
-    if s.active and s.parryRadius > 0 and prediction.distance > s.parryRadius then
-        s.lastGate = "ball_outside_clash_radius"
-        setActive(s, false, "ball_outside_clash_radius", nil, time)
-        clearReturn(s)
+    if s.active and not prediction.imminent then
+        s.lastGate = "outside_deflect_window"
+        s.windowPartner = s.partner
+        setActive(s, false, "outside_deflect_window", nil, time)
+        s.windowPaused = true
+        return
+    end
+    if s.windowPaused and id(snapshot.targetId) ~= localPlayer.UserId and id(snapshot.targetId) ~= s.windowPartner then
+        s.windowPaused, s.windowPartner = false, nil
+    end
+    if not s.active and s.windowPaused and prediction.imminent then
+        s.partner = s.windowPartner or s.partner
+        s.windowPaused, s.windowPartner = false, nil
+        setActive(s, true, "window_return", "deflect_window", time)
         return
     end
     local target, me = id(snapshot.targetId), localPlayer.UserId
     local targeted = target and target == me or (not target and snapshot.targeted == true)
     local aimed = s.target == me and targeted and prediction.imminent
-    if not s.active and s.recentPartner > 0 and (target == s.recentPartner or targeted) and proximityEligible(s, s.recentPartner, time)
+    if not s.active and prediction.imminent and s.recentPartner > 0 and (target == s.recentPartner or targeted) and proximityEligible(s, s.recentPartner, time)
         and prediction.distance < prediction.parryRadius * LIMIT.proximityRadiusFactor then
         s.partner = s.recentPartner
         setActive(s, true, "known_clash_return", "near_partner_target_switch", time)
@@ -494,7 +516,7 @@ local function evaluate(s, snapshot, time)
     if s.pull then
         local pull = s.pull
         if time - pull.at > LIMIT.pullRecovery then s.pull = nil
-        elseif pull.partner > 0 and proximityEligible(s, pull.partner, time) and (target == pull.partner or targeted)
+        elseif prediction.imminent and pull.partner > 0 and proximityEligible(s, pull.partner, time) and (target == pull.partner or targeted)
             and prediction.distance < prediction.parryRadius * LIMIT.proximityRadiusFactor then
             s.pull, s.partner, s.recentPartner = nil, pull.partner, pull.partner
             setActive(s, true, "pull_partner_return", "near_partner_target_switch", time)
@@ -519,7 +541,7 @@ local function evaluate(s, snapshot, time)
             setActive(s, false, "target_return_timeout", nil, time)
             return
         end
-        if target and target ~= me and outsideClashRadius(s, target) then
+        if target and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
             setActive(s, false, "target_redirected", nil, time); s.lastGate = "target_redirected"; return
         end
         s.lastGate = targeted and "deact_targeted" or "deact_waiting_target_return"
@@ -584,7 +606,10 @@ local function updateFrame(s, time)
     if not s.returnPending and s.returnExpires > 0 and time >= s.returnExpires then clearReturn(s) end
     local snapshot = readSnapshot(s, time)
     if current ~= s or not s.bound then return end
-    if not snapshot then missingSnapshot(s, time, "snapshot_missing"); return end
+    if not snapshot then
+        if s.active then s.windowPartner = s.partner; setActive(s, false, "snapshot_missing", nil, time); s.windowPaused = true end
+        missingSnapshot(s, time, "snapshot_missing"); return
+    end
     s.dashOwner = coroutine.running()
     local dashOk, dashError = pcall(dash.tick, time)
     s.dashOwner = nil
@@ -592,19 +617,23 @@ local function updateFrame(s, time)
     if current ~= s or not s.bound then return end
     confirmDash(s, time)
     if snapshot.teleported then
+        if s.active then s.windowPartner = s.partner; setActive(s, false, "teleported", nil, time); s.windowPaused = true end
         if not s.teleported then acceptSync(s, { Sequence = snapshot.syncSequence, Teleported = true, Source = "snapshot" }, time) end
         s.lastGate = "teleported"
         return
     end
     s.teleported = false
     local target = id(snapshot.targetId)
-    if s.active and target and target ~= localPlayer.UserId and outsideClashRadius(s, target) then
+    if s.active and target and target ~= localPlayer.UserId and target ~= s.partner and outsideClashRadius(s, target) then
         s.lastGate = "target_outside_clash_radius"
         setActive(s, false, "target_outside_clash_radius", nil, time)
         clearReturn(s)
         return
     end
-    if not snapshotCurrent(s, snapshot, time) then missingSnapshot(s, time, "snapshot_stale"); return end
+    if not snapshotCurrent(s, snapshot, time) then
+        if s.active then s.windowPartner = s.partner; setActive(s, false, "snapshot_stale", nil, time); s.windowPaused = true end
+        missingSnapshot(s, time, "snapshot_stale"); return
+    end
     if target ~= id(s.target) then
         local sequence = snapshot.syncSequence
         if type(sequence) == "number" or (s.sequence == nil and (s.syncSource ~= "event" or time - s.syncAt >= 0.1)) then
@@ -729,36 +758,50 @@ function AutoClash.onBallSync(data)
     local s = current
     if not s or type(data) ~= "table" then return end
     local copy = table.clone(data)
+    local sequence = copy.Sequence or copy.TeleportSequence
+    local manualSequence = utils.isManualSpamActive()
+    if manualSequence and not s.wasManual then
+        s.manualSequence = nil
+        if s.target > 0 then s.manualTarget = s.target end
+        if s.partner > 0 then s.manualPartner = s.partner end
+    end
+    s.wasManual = manualSequence
+    local lastSequence
+    if manualSequence then lastSequence = s.manualSequence else lastSequence = s.sequence end
+    if sequence ~= nil then
+        if not finite(sequence) or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return end
+        if finite(lastSequence) and (sequence - lastSequence) % 65536 >= 32768 then return end
+        if manualSequence then s.manualSequence = sequence end
+    end
     local target = id(copy.TargetPlayerID) or id(copy.HighlightTargetPlayerID) or id(gameInfo.getTargetId())
-    if utils.isManualSpamActive() then
-        if target then
-            local previous = s.manualTarget
-            local me = localPlayer.UserId
-            if s.manualPartner > 0 and previous == s.manualPartner and target ~= me and target ~= s.manualPartner
-                and outsideClashRadius(s, target) then
-                utils.setManualSpamActive(false)
-                s.lastGate = "manual_partner_target_redirected"
-                s.manualPartner = -1
-            elseif previous == me and target ~= me then
-                s.manualPartner = target
-            end
-            s.manualTarget = target
+    local lastTarget = manualSequence and s.manualTarget or s.target
+    if sequence ~= nil and lastSequence == sequence and target and lastTarget > 0 and target ~= lastTarget then return end
+    local me = localPlayer.UserId
+    local manual = utils.isManualSpamActive()
+    local previous = manual and s.manualTarget or s.target
+    local partner = manual and s.manualPartner or (s.partner > 0 and s.partner or s.windowPartner or s.recentPartner)
+    if manual and (not partner or partner <= 0) then
+        partner = s.partner > 0 and s.partner or (s.windowPartner or s.recentPartner)
+    end
+    if target and target ~= me and target ~= partner and previous ~= target
+        and (previous == me or (partner and partner > 0 and previous == partner))
+        and outsideClashRadius(s, target) then
+        if s.active then setActive(s, false, "distant_target_redirected", nil, clock()) end
+        s.windowPaused, s.windowPartner, s.partner, s.recentPartner = false, nil, -1, -1
+        s.manualPartner, s.manualTarget, s.target = -1, target, target
+        clearReturn(s)
+        s.lastGate = "distant_target_redirected"
+        utils.stopAllSpam()
+    elseif manual and target then
+        if not partner or partner <= 0 then
+            if previous == me and target ~= me then s.manualPartner = target
+            elseif previous <= 0 and target ~= me and not outsideClashRadius(s, target) then s.manualPartner = target end
+        else
+            s.manualPartner = partner
         end
-    else
-        s.manualTarget, s.manualPartner = -1, -1
-    end
-    if s.active and s.target == s.partner and s.partner > 0 and target and target ~= localPlayer.UserId and target ~= s.partner then
-        local now = clock()
-        s.target = target
-        s.lastGate = "partner_target_redirected"
-        setActive(s, false, "partner_target_redirected", nil, now)
-        clearReturn(s)
-    end
-    if s.active and target and target ~= localPlayer.UserId and outsideClashRadius(s, target) then
-        local now = clock()
-        s.lastGate = "target_outside_clash_radius"
-        setActive(s, false, "target_outside_clash_radius", nil, now)
-        clearReturn(s)
+        s.manualTarget = target
+    elseif not manual then
+        s.manualTarget, s.manualPartner, s.manualSequence = -1, -1, nil
     end
     if copy.Sequence == nil and copy.TeleportSequence == nil and data == gameInfo.getSyncData() then
         copy.Sequence = gameInfo.getSyncSequence()
@@ -770,6 +813,7 @@ function AutoClash.getPullEvent() return state.pullEvent end
 function AutoClash.stopSpam()
     local s = current
     if not s then return end
+    s.windowPaused, s.windowPartner = false, nil
     setActive(s, false, "stop_spam", nil, clock())
     clearReturn(s)
     s.lastGate = "stop_spam"
@@ -814,7 +858,7 @@ AutoClash.__contract = {
     requires = { AutoParry = "autoparry", Dash = "dash", GameInfo = "gameinfo", Utils = "utils" },
     requiresMethods = {
         AutoParry = { "getRadius", "getStatus" }, Dash = { "setHandler", "tick" },
-        GameInfo = { "getSnapshot", "isSnapshotValid", "getBallSpeedLimits", "getSyncData", "getSyncSequence", "getTargetId", "getLocalPing" },
+        GameInfo = { "getSnapshot", "isSnapshotValid", "getDeflectAbility", "getDeflectWindow", "getBallSpeedLimits", "getSyncData", "getSyncSequence", "getTargetId", "getLocalPing" },
         Utils = { "now", "getConfig", "getConfigValue", "getRunService", "getPlayers", "recordTransition", "recordError", "setAutoSpamActive", "stopAllSpam", "trackCharacter", "untrackCharacter", "isActive", "isManualSpamActive", "getLocalPlayer", "apiVersion" },
     },
     provides = { "setup", "bindCharacter", "detachCharacter", "onBallSync", "getStatus", "getTargetSwitch", "getDashData", "getPullEvent", "stopSpam" },

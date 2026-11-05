@@ -63,10 +63,7 @@ local function sync()
             local time = os.clock()
             if time >= due then
                 local pending = math.floor((time - due) / interval) + 1
-                for _ = 1, math.min(pending, 4) do
-                    if token ~= generation or not boundUtils.isActive() or not boundUtils.isSpamActive() then break end
-                    request(boundUtils, boundRemote, token)
-                end
+                request(boundUtils, boundRemote, token)
                 due += pending * interval
             end
             if token == generation then task.wait(math.max(0, due - os.clock())) end

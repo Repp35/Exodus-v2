@@ -316,19 +316,21 @@ function GameInfo.getDeflectWindow(speed)
     if not finite(speed) and sync and finite(sync.Speed) then speed = sync.Speed end
     if not finite(speed) or high <= low then return nil end
     local window = 0.85 - 0.65 * math.clamp((speed - low) / (high - low), 0, 1)
-    if gameBall and type(gameBall.GetClashMinWindow) == "function" then
+    local player = players.LocalPlayer
+    local inClash = false
+    if gameBall and player and type(gameBall.IsInClash) == "function" then
+        local ok, active = pcall(gameBall.IsInClash, gameBall, player)
+        inClash = ok and active == true
+    end
+    if inClash and type(gameBall.GetClashMinWindow) == "function" then
         local ok, minimum = pcall(gameBall.GetClashMinWindow, gameBall, speed)
         if ok and finite(minimum) then window = math.max(window, minimum) end
     end
     local range = GameInfo.getDeflectRange()
     if finite(range) then window += math.clamp((range - 8.5) / 7.5, 0, 1) * 0.12 end
-    local player = players.LocalPlayer
-    if gameBall and player and type(gameBall.IsInClash) == "function" and type(gameBall.GetClashWindowScale) == "function" then
-        local ok, active = pcall(gameBall.IsInClash, gameBall, player)
-        if ok and active == true then
-            local scaleOk, scale = pcall(gameBall.GetClashWindowScale, gameBall)
-            if scaleOk and finite(scale) and scale > 0 then window *= scale end
-        end
+    if inClash and type(gameBall.GetClashWindowScale) == "function" then
+        local ok, scale = pcall(gameBall.GetClashWindowScale, gameBall)
+        if ok and finite(scale) and scale > 0 then window *= scale end
     end
     return window
 end
