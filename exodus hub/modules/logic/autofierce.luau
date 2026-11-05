@@ -30,6 +30,21 @@ local function step()
     end
     if finite(ability.PredictedResetUntil) then deadline = math.max(deadline, ability.PredictedResetUntil) end
     if now < deadline or elapsed < confirmationWindow then return end
+    local cooldown = gameInfo.getDeflectCooldownState()
+    if not cooldown or cooldown.rawActive ~= true or not finite(cooldown.endsAt)
+        or cooldown.endsAt <= now then return end
+    local snapshot = gameInfo.getSnapshotAt(now)
+    if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported
+        or not snapshot.targeted or not snapshot.position or not snapshot.velocity then return end
+    local character = utils.getLocalPlayer() and utils.getLocalPlayer().Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    local delta = root.Position - snapshot.position
+    local distance = delta.Magnitude
+    local range = ability.DeflectDistance
+    if not finite(range) or range <= 0 then return end
+    local closing = distance > 0 and snapshot.velocity:Dot(delta) / distance or 0
+    if distance > range and (closing <= 0 or (distance - range) / closing > 0.15) then return end
     local player = utils.getLocalPlayer()
     if not player or gameInfo.getTargetId() ~= player.UserId then return end
     local fierce = gameInfo.getFierceDeflectAbility()
@@ -44,6 +59,7 @@ local function step()
         or not finite(ability.Cooldown) or ability.Cooldown <= 0
         or not finite(ability.LastCooldown) or ability.LastCooldown ~= duration
         or ability.LastCooldown - ability.Cooldown < confirmationWindow
+        or gameInfo.getDeflectCooldownState().rawActive ~= true
         or gameInfo.getFierceDeflectAbility() ~= fierce or not fierce:IsOwnerAlive() or not fierce:IsAvailable(false) then return end
     used = true
     fierce:ActivateAndBlock()
@@ -73,7 +89,7 @@ AutoFierce.__contract = {
     requires = { Utils = "utils", GameInfo = "gameinfo", AutoClash = "autoclash", Spam = "spam" },
     requiresMethods = {
         Utils = { "isActive", "getConfigValue", "getLocalPlayer", "getRunService", "stopAllSpam", "trackGlobal", "untrackGlobal", "recordError" },
-        GameInfo = { "getDeflectAbility", "getFierceDeflectAbility", "getDeflectWindow", "getSyncData", "getTargetId" },
+        GameInfo = { "getDeflectAbility", "getFierceDeflectAbility", "getDeflectWindow", "getSyncData", "getTargetId", "getDeflectCooldownState", "getSnapshotAt", "isSnapshotValid" },
         AutoClash = { "stopSpam" }, Spam = { "resetState" },
     },
     provides = { "setup", "teardown" },
