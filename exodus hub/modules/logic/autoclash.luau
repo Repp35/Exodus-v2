@@ -43,7 +43,7 @@ local function playerRoot(userId)
 end
 local function makeState()
     return {
-        generation = nextGeneration, phase = "detached", reason = "initial", bound = false, active = false,
+        generation = nextGeneration, phase = "detached", reason = "initial", bound = false, active = false, hasActivated = false,
         root = nil, character = nil, connections = {}, darkConnections = {}, queue = {}, queueHead = 1, draining = false,
         target = -1, manualTarget = -1, manualPartner = -1, sequence = nil, syncAt = 0, syncSource = nil, teleported = false,
         partner = -1, recentPartner = -1, recentDistance = 0, resetToken = targetResetToken,
@@ -126,6 +126,7 @@ local function setActive(s, enabled, reason, detail, time, recoveryValidated)
         if root and own and vector(root.Position) then s.recentDistance = (own - root.Position).Magnitude end
     end
     if enabled then
+        s.hasActivated = true
         s.clashStartedAt = time
     else
         s.clashStartedAt = nil
@@ -507,6 +508,14 @@ local function evaluate(s, snapshot, time)
         end
         s.lastGate = targeted and "deact_targeted" or "deact_waiting_target_return"
         return
+    end
+    if aimed and not s.hasActivated and not s.distantRecovery and type(autoParry.getPressure) == "function" then
+        local ok, pressure = pcall(autoParry.getPressure)
+        if ok and type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= 0.2 then
+            clearReturn(s)
+            setActive(s, true, "ap_pressure", "auto_parry_pressure", time)
+            return
+        end
     end
     if s.returnPending and aimed then
         if not similarRecoveryDistance(s) then

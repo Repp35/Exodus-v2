@@ -37,7 +37,9 @@ local utils={now=function() return t end,getPlayers=function() return players en
  getConfigValue=function(k) return k=='AutoClash' end,setAutoSpamActive=function(x) active=x end,
  stopAllSpam=function() active=false; manual=false end,recordTransition=function() end,recordError=function(_,e) error(e) end,
  trackCharacter=function() end,untrackCharacter=function() end,apiVersion=function() return 1 end}
-local parry={getRadius=function(_,factor) return {fullRadius=10+100*.3*(factor or 1)} end}
+local pressureLevel
+local parry={getRadius=function(_,factor) return {fullRadius=10+100*.3*(factor or 1)} end,
+ getPressure=function() return {currentLevel=pressureLevel} end}
 local dashHandler
 local dash={setHandler=function(fn) dashHandler=fn end,tick=function() end}
 local f=module
@@ -97,6 +99,12 @@ prepareFastRecovery(); snapshot.syncSpeed=120; snapshot.speed=120; snapshot.velo
 assert(not clash.isActive(), 'partner outside window must not activate at partner pass')
 prepareFastRecovery(); snapshot.syncSpeed=120; snapshot.speed=120; snapshot.velocity=v(120); thirdRoot.Position=v(10); event(9,.01)
 assert(not clash.isActive(), 'another nearby player must not activate recovery')
+clash.detachCharacter(); seq=0; target=42; t=1; snapshot.syncSequence=nil; snapshot.position=v(-20)
+snapshot.syncSpeed=100; snapshot.speed=100; snapshot.velocity=v(100); assert(clash.bindCharacter(character))
+pressureLevel=.19; event(42,0); frame(.01); assert(not clash.isActive(), 'low pressure must not activate')
+pressureLevel=.2; frame(.01); assert(clash.isActive() and active, 'minimal high AP pressure should activate without a return gate')
+snapshot.position=v(-100); frame(.01); assert(not clash.isActive() and not active, 'out of window must stop')
+snapshot.position=v(-20); frame(.01); assert(not clash.isActive(), 'pressure must not rearm a stopped clash')
 clash.teardown()
 print('Auto Clash runtime: PASS')
 '''

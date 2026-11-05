@@ -302,11 +302,14 @@ function AutoParry.getPressure()
     end
     local latest, lastReturn = state.clicks[#state.clicks], state.returns[#state.returns]
     local currentLevel, factorDrop
-    if count >= 3 and returns >= 2 and latest and time - latest.at <= 1 and lastReturn and time - lastReturn.at <= 1 then
+    if latest and time >= latest.at and time - latest.at <= 1 and finite(latest.configured) and latest.configured > 0 then
         local ratio = math.clamp(latest.factor / latest.configured, 0, 1)
-        local previous, older = state.clicks[count - 1], state.clicks[count - 2]
-        local earlier = (math.clamp(previous.factor / previous.configured, 0, 1) + math.clamp(older.factor / older.configured, 0, 1)) / 2
-        currentLevel, factorDrop = 1 - ratio, math.max(0, earlier - ratio)
+        currentLevel = 1 - ratio
+        if count >= 3 then
+            local previous, older = state.clicks[count - 1], state.clicks[count - 2]
+            local earlier = (math.clamp(previous.factor / previous.configured, 0, 1) + math.clamp(older.factor / older.configured, 0, 1)) / 2
+            factorDrop = math.max(0, earlier - ratio)
+        end
     end
     return { samples = count, cps = count / 3, averageFactor = count > 0 and factors / count or nil,
         configuredFactor = count > 0 and configured / count or nil, averageSpeed = count > 0 and speeds / count or nil,

@@ -152,7 +152,7 @@ function Remote.fireParry(_flag, guard)
         return tostring(err)
     end, ability)
     parryBusy = false
-    if not ok then state = "deflect_error"; return false, result end
+    if not ok then state = "deflect_error"; return false, "Deflect do jogo: " .. tostring(result) end
     if result == false then state = "deflect_ignored"; return false, "Deflect recusou a chamada" end
     state, source = "deflect", "ClientAbilities.Abilities[1]:Deflect"
     if not logged then logged = true; print("[Exodus Remote] Deflect() chamado") end
