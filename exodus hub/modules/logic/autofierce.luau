@@ -38,36 +38,26 @@ end
 local function step()
     if not utils.isActive() or utils.getConfigValue("AutoFierceDeflect") ~= true then reset(); return end
     local ability = gameInfo.getDeflectAbility()
-    local cd = ability and ability.Cooldown
-    if not finite(cd) or cd <= 0 then reset(); return end
     local now = os.clock()
     local player = utils.getLocalPlayer()
-    if not player then reset(); return end
-
-    -- Deflect() starts a local cooldown; OnParried() clears it.
-    -- The same deflection window used by the game decides when an unreset
-    -- local cooldown can be treated as a missed parry.
-    if ability ~= trackedAbility or not startedAt or (lastCooldown and cd > lastCooldown + 0.03) then
-        local window = getWindow(ability, player)
-        if not finite(window) or window <= 0 then reset(); return end
-        trackedAbility, startedAt, deadline, used = ability, now, now + window, false
-    end
-    lastCooldown = cd
-    if used then return end
+    if not ability or not player then reset(); return end
+    local cooldown = gameInfo.getDeflectCooldownState()
+    if not cooldown or cooldown.rawActive ~= true or not finite(cooldown.endsAt)
+        or cooldown.endsAt <= now then reset(); return end
     if finite(ability.PredictedResetUntil) and now < ability.PredictedResetUntil then return end
-    if now < deadline then return end
-
-    -- A successful parry cancels the local cooldown; a pending predicted
-    -- reset or a new cooldown cycle must not trigger Fierce.
-    if gameInfo.getDeflectAbility() ~= ability or not finite(ability.Cooldown)
-        or ability.Cooldown <= 0 or not imminent(ability, player, now) then return end
+    if finite(ability.HeldServerCooldown) and ability.HeldServerCooldown > 0 then return end
+    if used and startedAt == cooldown.lastEventAt then return end
+    if startedAt ~= cooldown.lastEventAt then
+        startedAt, used = cooldown.lastEventAt, false
+    end
+    if not imminent(ability, player, now) then return end
     local fierce = gameInfo.getFierceDeflectAbility()
     if not fierce or type(fierce.IsAvailable) ~= "function"
         or type(fierce.IsOwnerAlive) ~= "function"
         or not fierce:IsOwnerAlive() or not fierce:IsAvailable(false) then return end
 
     if gameInfo.getDeflectAbility() ~= ability
-        or not finite(ability.Cooldown) or ability.Cooldown <= 0
+        or not gameInfo.getDeflectCooldownState().rawActive
         or (finite(ability.PredictedResetUntil) and os.clock() < ability.PredictedResetUntil)
         or not fierce:IsOwnerAlive() or not fierce:IsAvailable(false) then return end
     used = true
