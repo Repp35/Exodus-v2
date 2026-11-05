@@ -466,7 +466,7 @@ local function evaluate(s, snapshot, time)
         if targeted then s.lastGate = "deact_targeted"; return end
         if prediction.speed <= 0 then s.lastGate = "deact_tti_unavailable"; return end
         if not prediction.valid then s.lastGate = "deact_window_unavailable"; return end
-        if math.max(prediction.distance - prediction.radius, 0) / prediction.speed > math.max(prediction.window - 0.05, 0) then
+        if math.max(prediction.distance - prediction.radius, 0) / prediction.speed > prediction.window then
             s.lastGate = "deact_tti_outside_window"
             setActive(s, false, "target_deactivated", nil, time)
         else s.lastGate = "deact_tti_inside_window" end
