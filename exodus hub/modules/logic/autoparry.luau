@@ -155,18 +155,14 @@ local function invalidateLife()
 end
 local function observeTarget(targetId)
 	if not R.player or not isFiniteNumber(targetId) or targetId <= 0 then return end
-	if targetId ~= R.player.UserId then
-		if not R.targetAwaySeen then R.pressureAwayTarget = targetId; R.pressureAwayAt = clock()
-		elseif R.pressureAwayTarget ~= targetId then R.pressureAwayTarget = nil; R.pressureAwayAt = nil end
+	local me = R.player.UserId
+	if targetId ~= me then
 		R.targetAwaySeen = true
 	elseif R.targetAwaySeen then
-		local time = clock(); local elapsed = R.pressureAwayAt and time - R.pressureAwayAt
-		if R.pressureAwayTarget and elapsed and elapsed > 0 and elapsed <= 3 then
-			table.insert(R.pressureReturns, {at = time, interval = elapsed})
-			if #R.pressureReturns > 32 then table.remove(R.pressureReturns, 1) end
-		end
-		R.pressureAwayTarget = nil; R.pressureAwayAt = nil
-		R.targetAwaySeen = false; R.firedForTarget = false; R.targetCycle += 1
+		R.targetAwaySeen = false
+		R.firedForTarget = false
+		R.armed = true
+		R.targetCycle += 1
 	end
 end
 local function getResilienceBonus(time)
@@ -302,20 +298,14 @@ local function leaveTeleportLock(time)
 	return true
 end
 local function getRemoteParry(ball)
-	local time = clock()
-	if isTeleportLocked() then return false end
-	if not isValidBall(ball) then return false end
-	if R.lastBall ~= ball then return false end
-	if not R.lastApproaching then return false end
-	if not isFiniteNumber(R.lastSpeed) or R.lastSpeed < minimumBallSpeed() then return false end
-	local liveVelocity = getCurrentVelocity(ball); local syncData = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
-	if type(syncData) == "table" and syncData.Teleported == true then return false end
-	if not isPlausibleVelocity(liveVelocity, syncData) or liveVelocity.Magnitude < minimumBallSpeed() then return false end
 	if not Remote or type(Remote.fireParry) ~= "function" then return false end
-	local fireOk, result, detail = pcall(Remote.fireParry, 1)
-	if not fireOk or result == false then
-		local message = fireOk and (detail or "envio de defesa indisponível") or result
-		if Utils and type(Utils.recordError) == "function" and time - R.lastErrorAt >= 1 then R.lastErrorAt = time; Utils.recordError("AutoParry", tostring(message)) end
+	local ok, result, detail = pcall(Remote.fireParry, 1)
+	if not ok or result == false then
+		local time = clock()
+		if Utils and type(Utils.recordError) == "function" and time - R.lastErrorAt >= 1 then
+			R.lastErrorAt = time
+			Utils.recordError("AutoParry", tostring(ok and (detail or "remote indisponivel") or result))
+		end
 		return false
 	end
 	return true
@@ -363,111 +353,57 @@ local function updateVelocity(ball, position, time, dt, syncData, requireMovemen
 	R.lastPosition = position; R.lastPositionAt = time; return true
 end
 local function requestParry(ball, reason)
-	local cycle = R.targetCycle; local time = clock(); local previouslyFired = R.firedForTarget; R.armed = false
-	local speed, distance, lead, factor = R.lastSpeed, R.lastDistance, R.lastLeadTime, getWindowFactor()
-	local baseRadius = T.BASE_RADIUS + getResilienceBonus(time)
-	R.firedForTarget = true; local cooldown = GameInfo.getDeflectCooldownState()
-	if R.targetCycle ~= cycle or R.targetAwaySeen or R.teleported then R.firedForTarget = previouslyFired; R.armed = not previouslyFired; return false end
-	if
-		(cooldown and (cooldown.active or cooldown.blocking))
-		or (reason == "parry_requested" and (isSpamActive() or not isSystemActive() or not isAutoParryEnabled()))
-	then
-		R.firedForTarget = previouslyFired; R.armed = not previouslyFired; return false
-	end
-	R.lastFireRevision = cooldown and cooldown.readyRevision or 0; R.lastFireAt = time
+	if R.firedForTarget or not R.player or R.lastTarget ~= R.player.UserId then return false end
+	R.firedForTarget = true
+	R.armed = false
+	R.lastFireAt = clock()
 	if getRemoteParry(ball) then
-		if isFiniteNumber(speed) and speed > 0 and isFiniteNumber(distance) and isFiniteNumber(lead) and lead > 0 and factor > 0 then
-			local actual = math.max(0, (distance - baseRadius) / (speed * lead))
-			table.insert(R.pressureClicks, {at = time, factor = actual, configured = factor, speed = speed})
-			if #R.pressureClicks > 32 then table.remove(R.pressureClicks, 1) end
-		end
-		setPhase("fired", reason); return true
+		setPhase("fired", reason)
+		return true
 	end
-	if R.targetCycle == cycle then R.firedForTarget = false; R.armed = true end
+	R.firedForTarget = false
+	R.armed = true
 	return false
 end
 local function onHeartbeat(character, root, dt, generation)
 	if generation ~= R.generation or not R.alive or not R.bound then return end
 	if not character.Parent or not root.Parent then return end
-	local time = clock(); samplePing(time); local cooldown = GameInfo.getDeflectCooldownState(); local syncData = GameInfo and GameInfo.getSyncData and GameInfo.getSyncData()
-	if type(syncData) == "table" and syncData.Teleported == true then
-		if not R.teleported then enterTeleportLock(time) end
-	elseif R.teleported and type(syncData) == "table" then
-		leaveTeleportLock(time)
-	end
-	if R.teleported then clearBallState(); setPhase("waiting", "teleport_lock"); return end
-	if not isAutoParryEnabled() then setPhase("waiting", "auto_parry_disabled"); return end
-	if isSpamActive() then
-		local _, _, spamSnapshot = readFrameState(time)
-		if spamSnapshot then
-			local targetId = tonumber(spamSnapshot.targetId)
-			if targetId and targetId > 0 then
-				local sequence = spamSnapshot.syncSequence
-				local fresh = true
-				if type(sequence) == "number" and type(R.lastSyncSequence) == "number" then
-					local delta = (sequence - R.lastSyncSequence) % 65536
-					fresh = delta < 32768 and (delta ~= 0 or R.lastTarget == targetId)
-				end
-				if fresh then
-					if R.player and R.lastTarget == R.player.UserId and targetId ~= R.player.UserId then
-						R.firedForTarget = true
-						R.armed = false
-					end
-					observeTarget(targetId)
-					R.lastTarget = targetId
-					if type(sequence) == "number" then R.lastSyncSequence = sequence end
-				end
-			end
-		end
-		clearBallState(); setPhase("waiting", "spam_active"); return
-	end
-	if not isSystemActive() then setPhase("waiting", "system_inactive"); return end
+	local time = clock()
+	if not isAutoParryEnabled() or not isSystemActive() then return end
 	local ball, targeted, snapshot = readFrameState(time)
-	if snapshot and R.lastSyncSequence ~= nil then
-		local sequence = snapshot.syncSequence; local targetId = tonumber(snapshot.targetId)
-		if type(sequence) == "number" then
-			local delta = (sequence - R.lastSyncSequence) % 65536
-			if delta > 32768 or (delta == 0 and R.lastTarget > 0 and targetId and targetId ~= R.lastTarget) then setPhase("waiting", "snapshot_older_than_target"); return end
-		elseif R.lastTarget > 0 and targetId and targetId ~= R.lastTarget then
-			setPhase("waiting", "snapshot_older_than_target"); return
-		end
+	local targetId = snapshot and tonumber(snapshot.targetId) or tonumber(GameInfo.getTargetId())
+	if targetId and targetId > 0 then
+		observeTarget(targetId)
+		R.lastTarget = targetId
 	end
-	if snapshot and type(snapshot.syncSequence) == "number" then
-		if R.lastSyncSequence == nil or snapshot.syncSequence ~= R.lastSyncSequence then R.lastTarget = tonumber(snapshot.targetId) or -1 end
-		R.lastSyncSequence = snapshot.syncSequence
+	if isSpamActive() then
+		setPhase("waiting", "spam_active")
+		return
 	end
-	if not isValidBall(ball) then R.armed = not R.firedForTarget; clearBallState(); setPhase("waiting", "ball_or_target_invalid"); return end
-	if snapshot then observeTarget(tonumber(snapshot.targetId)) end
-	if not targeted then
-		R.armed = not R.firedForTarget; R.targeted = false; R.lastApproaching = false; local positionOk, position = pcall(GameInfo.getBallPosition, ball)
-		if not positionOk or not isValidVector3(position) or not updateVelocity(ball, position, time, dt, syncData) then clearBallState() end
-		setPhase("waiting", "ball_or_target_invalid"); return
+	if not targeted or not ball or not snapshot or not R.player or targetId ~= R.player.UserId then
+		setPhase("waiting", "not_target")
+		return
 	end
-	local positionOk, position = pcall(function() return GameInfo.getBallPosition(ball) end)
-	if not positionOk or not isValidVector3(position) then setPhase("waiting", "ball_position_unavailable"); return end
-	if not updateVelocity(ball, position, time, dt, syncData, not R.lastTargeted) then setPhase("waiting", "ball_speed_outlier"); return end
-	local rootPositionOk, rootPosition = pcall(function() return GameInfo.getRootPosition(root) end)
-	if not rootPositionOk or not isValidVector3(rootPosition) then setPhase("waiting", "root_position_unavailable"); return end
-	local delta = rootPosition - position; local distance = delta.Magnitude; local speed = R.velocity.Magnitude
-	local approaching = speed >= minimumBallSpeed() and distance > 0 and R.velocity:Dot(delta) > 0
-	if not R.lastTargeted and not R.firedForTarget then R.armed = true end
-	R.lastTargeted = targeted; R.targeted = targeted; local resilienceBonus = getResilienceBonus(time)
-	local parryRadius, leadTime = computeParryRadius(speed, R.ping, resilienceBonus, getWindowFactor()); R.lastDistance = distance; R.lastSpeed = speed; R.lastLeadTime = leadTime
-	R.lastApproaching = approaching; R.targetId = tonumber(snapshot and snapshot.targetId) or -1; R.targetKnown = snapshot ~= nil and snapshot.targetId ~= nil
-	if speed < minimumBallSpeed() then
-		if not R.firedForTarget then R.armed = true end
-		setPhase("waiting", "ball_speed_invalid"); return
+	if R.firedForTarget then
+		setPhase("waiting", "target_already_parried")
+		return
 	end
-	if not approaching then
-		if not R.firedForTarget then R.armed = true end
-		setPhase("waiting", "ball_not_approaching"); return
+	local position = snapshot.position
+	local velocity = snapshot.velocity
+	if not isValidVector3(position) then position = GameInfo.getBallPosition(ball) end
+	if not isValidVector3(velocity) then velocity = GameInfo.getBallVelocity(ball) end
+	if not isValidVector3(position) or not isValidVector3(velocity) then return end
+	local rootPosition = GameInfo.getRootPosition(root)
+	if not isValidVector3(rootPosition) then return end
+	local speed = velocity.Magnitude
+	local radius = computeParryRadius(speed, R.ping, getResilienceBonus(time), getWindowFactor())
+	R.lastBall = ball
+	R.lastSpeed = speed
+	R.lastDistance = (rootPosition - position).Magnitude
+	R.lastApproaching = velocity:Dot(rootPosition - position) > 0
+	if R.lastDistance <= radius then
+		requestParry(ball, "parry_requested")
 	end
-	if distance > parryRadius then setPhase("waiting", "outside_radius"); return end
-	if cooldown and (cooldown.active or cooldown.blocking) then setPhase("waiting", "deflect_cooldown"); return end
-	if R.firedForTarget then setPhase("waiting", "target_already_parried"); return end
-	if isSpamActive() or not isSystemActive() or not isAutoParryEnabled() then clearBallState(); setPhase("waiting", "parry_gate_changed"); return end
-	if R.lastSyncSequence ~= nil and R.lastTarget > 0 and R.player and R.lastTarget ~= R.player.UserId then setPhase("waiting", "target_changed"); return end
-	if R.armed then requestParry(ball, "parry_requested") end
 end
 local function detachCharacterInternal(reason)
 	R.generation += 1; disconnectConnections(); invalidateLife(); R.root = nil; R.character = nil
