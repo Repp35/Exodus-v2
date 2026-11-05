@@ -7,6 +7,7 @@ local targetResetToken, returnToken = 0, 0
 -- Decision thresholds are kept separate from the event-processing machinery.
 local LIMIT = {
     snapshotGrace = 0.20,
+    windowExitGrace = 0.05,
     recovery = 1.0,
     pullRecovery = 2.0,
     returnSlow = 0.15,
@@ -110,7 +111,7 @@ local function clearExchange(s)
     s.lastSwitchAt, s.lastSwitchServerAt, s.intervalMs, s.intervalAverage, s.intervalSamples = 0, nil, 0, nil, 0
     s.dashEvent, s.dashData, s.dashBonusUntil, s.dashLockUntil = nil, nil, 0, 0
     s.recoveryUntil = 0
-    s.windowPaused, s.windowPartner = false, nil
+    s.windowPaused, s.windowPartner, s.windowOutsideSince = false, nil, nil
     s.activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 }
     targetResetToken += 1
     s.resetToken = targetResetToken
@@ -136,6 +137,7 @@ local function setActive(s, enabled, reason, detail, time)
         s.clashStartedAt = nil
     end
     s.active = enabled
+    s.windowOutsideSince = nil
     s.clashAwayAt = enabled and (s.target > 0 and s.target ~= localPlayer.UserId and time or nil) or nil
     clearExit(s)
     if enabled then
@@ -492,12 +494,18 @@ local function evaluate(s, snapshot, time)
     local target, me = id(snapshot.targetId), localPlayer.UserId
     local nearbyTarget = target and target ~= me and not outsideClashRadius(s, target)
     if s.active and not prediction.imminent and not nearbyTarget then
+        if not s.windowOutsideSince or time < s.windowOutsideSince then s.windowOutsideSince = time end
+        if time - s.windowOutsideSince < LIMIT.windowExitGrace then
+            s.lastGate = "outside_deflect_window_grace"
+            return
+        end
         s.lastGate = "outside_deflect_window"
         s.windowPartner = s.partner
         setActive(s, false, "outside_deflect_window", nil, time)
         s.windowPaused = true
         return
     end
+    s.windowOutsideSince = nil
     if s.windowPaused and id(snapshot.targetId) ~= localPlayer.UserId and id(snapshot.targetId) ~= s.windowPartner then
         s.windowPaused, s.windowPartner = false, nil
     end

@@ -51,7 +51,8 @@ end
 local function frame(dt) t+=dt; heartbeat() end
 event(42,0); event(7,.01); event(42,.1)
 assert(clash.isActive() and active,'valid target return should activate')
-snapshot.position=v(-60); frame(.01); assert(not clash.isActive() and not active,'exit window should stop')
+snapshot.position=v(-60); frame(.01); assert(clash.isActive() and active,'brief exit should use grace')
+frame(.051); assert(not clash.isActive() and not active,'persistent exit should stop')
 snapshot.position=v(-20); frame(.01); assert(clash.isActive() and active,'window return should resume')
 event(7,.01); frame(.02); assert(clash.isActive() and active,'nearby partner must keep spam during a target switch')
 event(42,.01); assert(clash.isActive() and active,'return from partner should keep clash')
