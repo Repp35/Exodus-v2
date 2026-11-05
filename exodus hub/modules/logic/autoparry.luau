@@ -151,7 +151,7 @@ local function tick(character, root, generation)
     observeTarget(value.targetId, time)
     if utils.isSpamActive() then phase("waiting", "spam_active"); return end
     if state.teleported or value.teleported then phase("waiting", "teleport_lock"); return end
-    if not value.targeted or not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
+    if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
     if state.fired then phase("waiting", "target_already_parried"); return end
     local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
     if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
