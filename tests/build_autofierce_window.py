@@ -9,7 +9,7 @@ post = r'''
 end
 local api, step = module()
 local enabled, target, fired, stops, speed = true, 42, 0, 0, 100
-local deflect = {Cooldown=0}
+local deflect = {Cooldown=0,LastCooldown=1.5}
 local fierce = {IsOwnerAlive=function() return true end, IsAvailable=function(_, ignoreMode) assert(ignoreMode == false); return true end,
     ActivateAndBlock=function() fired += 1 end}
 local heartbeat = {Connect=function(_, f) return {Disconnect=function() end} end}
@@ -29,6 +29,11 @@ fierce.IsAvailable=function(_, mode) assert(mode==false); return true end; tick(
 deflect.Cooldown=0; tick(3); deflect.Cooldown=1; deflect.PredictedResetUntil=4; tick(3.1); tick(3.99); assert(fired==1, "pending prediction")
 tick(4.01); assert(fired==2, "persistent cooldown")
 enabled=false; tick(5); enabled=true; deflect.PredictedResetUntil=nil; tick(6); tick(6.2); assert(fired==2, "toggle resets observation")
+deflect.Cooldown=0; tick(6.21)
+deflect.LastCooldown=1; deflect.Cooldown=.95; tick(7)
+deflect.Cooldown=.90; tick(7.4); assert(fired==2, "repeated local cooldowns must not be counted as continuous")
+deflect.Cooldown=.99; tick(7.41)
+deflect.Cooldown=.65; tick(7.72); assert(fired==3, "only a cooldown that individually survives its window may activate")
 api.teardown()
 print("Auto Fierce window: PASS")
 '''

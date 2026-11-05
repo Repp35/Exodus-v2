@@ -1,9 +1,9 @@
 local AutoFierce = {}
 local utils, gameInfo, autoClash, spam, connection
-local trackedAbility, startedAt, deadline, used
+local trackedAbility, startedAt, deadline, used, lastElapsed, lastDuration, confirmationWindow
 
 local function reset()
-    trackedAbility, startedAt, deadline, used = nil, nil, nil, false
+    trackedAbility, startedAt, deadline, used, lastElapsed, lastDuration, confirmationWindow = nil, nil, nil, false, nil, nil, nil
 end
 local function finite(value)
     return type(value) == "number" and value == value and value > -math.huge and value < math.huge
@@ -12,19 +12,24 @@ local function step()
     if not utils.isActive() or utils.getConfigValue("AutoFierceDeflect") ~= true then reset(); return end
     local ability = gameInfo.getDeflectAbility()
     if not ability or not finite(ability.Cooldown) or ability.Cooldown <= 0 then reset(); return end
+    local duration = ability.LastCooldown
+    if not finite(duration) or duration <= 0 or ability.Cooldown > duration then reset(); return end
+    local elapsed = duration - ability.Cooldown
     local now = os.clock()
-    if ability ~= trackedAbility or not startedAt then
-        trackedAbility, startedAt, deadline, used = ability, now, nil, false
+    if ability ~= trackedAbility or not startedAt or (lastDuration and duration ~= lastDuration)
+        or (lastElapsed and elapsed + 0.0001 < lastElapsed) then
+        trackedAbility, startedAt, deadline, used, confirmationWindow = ability, now, nil, false, nil
     end
+    lastElapsed, lastDuration = elapsed, duration
     if used then return end
     if not deadline then
         local sync = gameInfo.getSyncData()
         local window = gameInfo.getDeflectWindow(sync and sync.Speed)
         if not finite(window) or window <= 0 then return end
-        deadline = startedAt + window
+        confirmationWindow, deadline = window, startedAt + window
     end
     if finite(ability.PredictedResetUntil) then deadline = math.max(deadline, ability.PredictedResetUntil) end
-    if now < deadline then return end
+    if now < deadline or elapsed < confirmationWindow then return end
     local player = utils.getLocalPlayer()
     if not player or gameInfo.getTargetId() ~= player.UserId then return end
     local fierce = gameInfo.getFierceDeflectAbility()
@@ -37,6 +42,8 @@ local function step()
     if not utils.isActive() or utils.getConfigValue("AutoFierceDeflect") ~= true
         or gameInfo.getTargetId() ~= player.UserId or gameInfo.getDeflectAbility() ~= ability
         or not finite(ability.Cooldown) or ability.Cooldown <= 0
+        or not finite(ability.LastCooldown) or ability.LastCooldown ~= duration
+        or ability.LastCooldown - ability.Cooldown < confirmationWindow
         or gameInfo.getFierceDeflectAbility() ~= fierce or not fierce:IsOwnerAlive() or not fierce:IsAvailable(false) then return end
     used = true
     fierce:ActivateAndBlock()
