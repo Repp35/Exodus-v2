@@ -653,7 +653,7 @@ local function reactivateKnownClash(t, snapshot)
 	if R.active or not snapshot or not snapshot.ball or not snapshot.ball.Parent then return false end
 	local partner = R.recentClashPartner
 	local target = normalizeTarget(snapshot.targetId)
-	if partner == -1 or target ~= partner or not isCloseClashPartner(partner) then return false end
+	if partner == -1 or (target ~= partner and target ~= R.localUserId) or not isCloseClashPartner(partner) then return false end
 	local position = getSnapshotPosition(snapshot)
 	local root = getRootPosition()
 	if not position or not root or R.parryRadius <= 0 then return false end
