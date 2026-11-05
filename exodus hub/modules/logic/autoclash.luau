@@ -345,7 +345,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
         if s.active and s.partner > 0 and target ~= s.partner and outsideClashRadius(s, target) then setActive(s, false, "target_redirected", nil, time) end
         local window, bonus = returnAllowance(s, target, time)
         if current ~= s or not s.bound then return end
-        if time < s.dashBonusUntil then window *= 10 end
+        if time < s.dashBonusUntil then window *= 1.5 end
         s.returnFrom, s.returnAt, s.returnServerAt, s.returnWindow, s.returnBonus = target, time, serverTime, window, bonus
         s.returnExpires, s.returnPending = time + window + 2 * ping(s, time) + 1 / 30, false
         returnToken += 1
@@ -373,7 +373,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
         clearReturn(s)
         if s.distantRecovery and not s.active and target == s.recoveryPartner then
             local window, bonus = returnAllowance(s, target, time)
-            if time < s.dashBonusUntil then window *= 10 end
+            if time < s.dashBonusUntil then window *= 1.5 end
             s.returnFrom, s.returnAt, s.returnServerAt = target, time, serverTime
             s.returnWindow, s.returnBonus = window, bonus
             s.returnExpires = time + window + 2 * ping(s, time) + 1 / 30
@@ -436,7 +436,7 @@ end
 local function extendReturnForDash(s, time)
     if not s.returnAt or s.returnPending then return end
     local window, bonus = returnAllowance(s, s.returnFrom, time)
-    window *= 10
+    window *= 1.5
     s.returnBonus = bonus
     if window > s.returnWindow then
         s.returnWindow = window
@@ -456,9 +456,9 @@ local function trackDash(s, event, time)
     local detected = finite(event.detectedAt) and event.detectedAt or time
     s.dashEvent = event
     s.dashData = { player = event.player, userId = event.userId, detectedAt = detected,
-        expiresAt = detected + 0.7, position = event.position, velocity = event.velocity,
+        expiresAt = detected + 0.3, position = event.position, velocity = event.velocity,
         previousPosition = event.previousPosition, dangerous = true }
-    s.dashBonusUntil = math.max(s.dashBonusUntil, detected + 0.7)
+    s.dashBonusUntil = math.max(s.dashBonusUntil, detected + 0.3)
     extendReturnForDash(s, time)
 end
 confirmInvalidTarget = function(s, time)
