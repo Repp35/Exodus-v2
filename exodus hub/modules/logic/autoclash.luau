@@ -228,7 +228,9 @@ local function withinDeflectWindow(s, snapshot)
     if not finite(window) or window <= 0 then return false end
     if distance <= range then return true end
     local closing = snapshot.velocity:Dot(root - snapshot.position) / distance
-    return finite(closing) and closing > 0 and (distance - range) / closing <= window
+    if not finite(closing) or closing <= 0 then return false end
+    local tti = (distance - range) / closing
+    return finite(tti) and tti >= 0 and tti <= window
 end
 local function geometry(s, snapshot, time)
     local own = rootPosition(s)
