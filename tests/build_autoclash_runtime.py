@@ -38,12 +38,17 @@ local utils={now=function() return t end,getPlayers=function() return players en
  stopAllSpam=function() active=false; manual=false end,recordTransition=function() end,recordError=function(_,e) error(e) end,
  trackCharacter=function() end,untrackCharacter=function() end,apiVersion=function() return 1 end}
 local parry={getRadius=function(_,factor) return {fullRadius=10+100*.3*(factor or 1)} end}
-local dash={setHandler=function() end,tick=function() end}
+local dashHandler
+local dash={setHandler=function(fn) dashHandler=fn end,tick=function() end}
 local f=module
 setfenv(f,setmetatable({typeof=typeof},{__index=getfenv()}))
 local clash=f()
 assert(clash.setup({Utils=utils,GameInfo=info,AutoParry=parry,Dash=dash}))
 assert(clash.bindCharacter(character))
+dashHandler({userId=7,player=enemy,position=v(10),velocity=v(120),detectedAt=t})
+assert(clash.getStatus().dashBonusUntil==0 and not clash.isActive(),'dash away must not extend windows or activate')
+dashHandler({userId=7,player=enemy,position=v(10),velocity=v(-120),detectedAt=t})
+assert(clash.getStatus().dashBonusUntil>t and not clash.isActive(),'approaching dash must extend windows without activating')
 local function event(id, dt)
  t+=dt; seq+=1; target=id; snapshot.targetId=id; snapshot.targeted=id==42; snapshot.syncSequence=seq
  clash.onBallSync({Sequence=seq,TargetPlayerID=id,Speed=100,ServerTime=t})
@@ -66,6 +71,10 @@ event(42,.01); frame(.01); assert(not clash.isActive(),'distant redirect must no
 clash.detachCharacter(); seq=0; target=42; t=1; snapshot.syncSequence=nil; snapshot.position=v(-20); assert(clash.bindCharacter(character))
 event(42,0); event(7,.01); event(42,.1); assert(clash.isActive(), 'setup for return timeout')
 event(7,.01); frame(.11); assert(not clash.isActive() and not active, 'return timeout must still stop clash')
+clash.detachCharacter(); seq=0; target=42; t=1; snapshot.syncSequence=nil; snapshot.position=v(-20); assert(clash.bindCharacter(character))
+event(42,0); event(7,.01)
+dashHandler({userId=9,player=third,position=v(100),velocity=v(-120),detectedAt=t})
+event(42,.3); assert(clash.isActive() and active, 'approaching dash from another player must extend return window')
 clash.teardown()
 print('Auto Clash runtime: PASS')
 '''

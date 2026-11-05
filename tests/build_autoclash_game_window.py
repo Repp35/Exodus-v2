@@ -13,6 +13,8 @@ local function typeof(x) return getmetatable(x)==mt and "Vector3" or type(x) end
 local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
 local function vector(x) return typeof(x)=="Vector3" and finite(x.X) and finite(x.Y) and finite(x.Z) end
 local function id(x) return type(x)=="number" and x>0 and x or nil end
+local function clock() return 1 end
+local state={dashBonusUntil=0}
 local root=v(0)
 local function rootPosition() return root end
 local localPlayer={UserId=42}
@@ -22,15 +24,16 @@ local gameInfo={getDeflectAbility=function() return ability end, getSyncData=fun
  getDeflectWindow=function(speed) assert(speed==100); return .3 end}
 '''
 post = r'''
-assert(not withinDeflectWindow({},ball), "ball reaches range after window")
-ball.position=v(-39); assert(withinDeflectWindow({},ball), "ball reaches range during window")
-ball.velocity=v(-100); assert(not withinDeflectWindow({},ball), "ball moving away")
-ball.position=v(-5); assert(withinDeflectWindow({},ball), "ball in range")
-ball.targetId=7; assert(not withinDeflectWindow({},ball), "different target")
-ball.targetId=42; ball.teleported=true; assert(not withinDeflectWindow({},ball), "teleport")
-ball.teleported=false; ability.DeflectDistance=nil; assert(not withinDeflectWindow({},ball), "unknown range")
+assert(not withinDeflectWindow(state,ball), "ball reaches range after window")
+state.dashBonusUntil=2; assert(withinDeflectWindow(state,ball), 'approaching dash must extend the deflect window')
+state.dashBonusUntil=0; ball.position=v(-39); assert(withinDeflectWindow(state,ball), "ball reaches range during window")
+ball.velocity=v(-100); assert(not withinDeflectWindow(state,ball), "ball moving away")
+ball.position=v(-5); assert(withinDeflectWindow(state,ball), "ball in range")
+ball.targetId=7; assert(not withinDeflectWindow(state,ball), "different target")
+ball.targetId=42; ball.teleported=true; assert(not withinDeflectWindow(state,ball), "teleport")
+ball.teleported=false; ability.DeflectDistance=nil; assert(not withinDeflectWindow(state,ball), "unknown range")
 ability.DeflectDistance=10; gameInfo.getDeflectWindow=function() return nil end
-assert(not withinDeflectWindow({},ball), "unknown window")
+assert(not withinDeflectWindow(state,ball), "unknown window")
 print("Auto Clash game window: PASS")
 '''
 output.write_text(pre + helper + post)

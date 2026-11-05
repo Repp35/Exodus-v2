@@ -77,7 +77,7 @@ local function observeCharacter(player, record, time)
         if horizontal(measured) > horizontal(velocity) and horizontal(measured) < 400 then velocity = measured end
     end
     local speed, previous = horizontal(velocity), record.speed
-    if previous and speed >= MIN_SPEED and (previous < MIN_SPEED or speed - previous >= MIN_INCREASE) then
+    if speed >= MIN_SPEED and (previous == nil or previous < MIN_SPEED or speed - previous >= MIN_INCREASE) then
         register(player, record, position, velocity, time)
     end
     record.speed, record.position, record.positionAt = speed, position, time
@@ -127,7 +127,7 @@ end
 function Dash.tick(time)
     if not players then return end
     if type(time) ~= "number" then time = now() end
-    if time >= lastScan and time - lastScan < 1 / 30 then return end
+    if time >= lastScan and time - lastScan < 1 / 120 then return end
     lastScan = time
     for _, player in ipairs(order) do
         local record = records[player]

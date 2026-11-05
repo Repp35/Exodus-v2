@@ -48,6 +48,10 @@ currentTime+=.04; rootPart.AssemblyLinearVelocity=vec(-120); rootPart.Position=v
 assert(#seen==2, 'second dash after debounce was lost')
 dash.resetState(); currentTime+=.5; animationPlayed:Fire(track); dash.tick(currentTime)
 assert(#seen==2, 'stale character listener survived reset')
+rootPart.AssemblyLinearVelocity=vec(-120)
+assert(dash.setup({Utils={now=function() return currentTime end,getPlayers=function() return players end,apiVersion=function() return 1 end}}))
+dash.setHandler(function(event) table.insert(seen,event) end); dash.tick(currentTime)
+assert(#seen==3, 'dash already in progress on first sample must be detected')
 print('Dash detection and lifecycle scenarios: PASS')
 '''
 out.write_text(pre+source+post,encoding='utf-8')

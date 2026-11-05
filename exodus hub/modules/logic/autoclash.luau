@@ -217,6 +217,7 @@ local function withinDeflectWindow(s, snapshot)
     local sync = gameInfo.getSyncData()
     local window = gameInfo.getDeflectWindow(sync and sync.Speed or speed)
     if not finite(window) or window <= 0 then return false end
+    if clock() < s.dashBonusUntil then window *= 1.5 end
     if distance <= range then return true end
     local closing = snapshot.velocity:Dot(root - snapshot.position) / distance
     return finite(closing) and closing > 0 and (distance - range) / closing <= window
@@ -416,7 +417,7 @@ local function radiusAt(s, factor)
     return s.parryRadius
 end
 local function extendReturnForDash(s, time)
-    if not s.returnAt or s.returnPending or time > s.returnExpires then return end
+    if not s.returnAt or s.returnPending then return end
     local window, bonus = returnAllowance(s, s.returnFrom, time)
     window *= 10
     s.returnBonus = bonus
@@ -426,47 +427,22 @@ local function extendReturnForDash(s, time)
     end
 end
 local function trackDash(s, event, time)
-    if type(event) ~= "table" or event.userId ~= s.partner then return end
-    s.dashEvent, s.dashData = event, nil
-    if not event.player or s.partner == -1 or s.parryRadius <= 0 or not vector(event.position) or not vector(event.velocity) then return end
+    if type(event) ~= "table" or not localPlayer or event.userId == localPlayer.UserId
+        or not vector(event.position) or not vector(event.velocity) then return end
     local own = rootPosition(s)
     if not own then return end
-    local distance, speed = horizontalDistance(own, event.position), horizontal(event.velocity)
-    if distance <= 0 or speed <= 0 then return end
+    local distance = horizontalDistance(own, event.position)
+    if distance <= 0 then return end
     local dx, dz = own.X - event.position.X, own.Z - event.position.Z
     local closing = (event.velocity.X * dx + event.velocity.Z * dz) / distance
-    if closing / speed < 0.3 then return end
-    local acceptRadius, detectRadius = radiusAt(s, 1.15), radiusAt(s, 1.5)
-    if current ~= s or not s.bound then return end
-    if acceptRadius <= 0 or detectRadius <= 0 then return end
-    if distance > detectRadius and distance - closing * (0.25 + ping(s, time)) > acceptRadius then return end
-    local target = id(s.target)
-    if target ~= localPlayer.UserId and target ~= event.userId then return end
+    if not finite(closing) or closing <= 0 then return end
     local detected = finite(event.detectedAt) and event.detectedAt or time
-    local expiry = detected + 0.25 + ping(s, time) * 0.3
-    s.dashData = {
-        player = event.player, userId = event.userId, detectedAt = detected, expiresAt = expiry,
-        position = event.position, velocity = event.velocity, previousPosition = event.previousPosition,
-        distanceAtDetection = distance, confirmRadius = acceptRadius, targetAtDetection = target,
-        dangerous = distance <= acceptRadius,
-    }
-    if s.dashData.dangerous then
-        s.dashBonusUntil = detected + 0.7 + ping(s, time) * 0.3
-        extendReturnForDash(s, detected)
-    end
-end
-local function confirmDash(s, time)
-    local data = s.dashData
-    if not data then return end
-    if data.userId ~= s.partner or time < data.detectedAt or time > data.expiresAt then s.dashData = nil; return end
-    if data.dangerous then return end
-    local own = rootPosition(s)
-    local player, root = playerRoot(data.userId)
-    if own and root and player == data.player and vector(root.Position) and horizontalDistance(own, root.Position) <= data.confirmRadius then
-        data.dangerous, data.confirmedAt = true, time
-        s.dashBonusUntil = data.detectedAt + 0.7 + ping(s, time) * 0.3
-        extendReturnForDash(s, time)
-    end
+    s.dashEvent = event
+    s.dashData = { player = event.player, userId = event.userId, detectedAt = detected,
+        expiresAt = detected + 0.7, position = event.position, velocity = event.velocity,
+        previousPosition = event.previousPosition, dangerous = true }
+    s.dashBonusUntil = math.max(s.dashBonusUntil, detected + 0.7)
+    extendReturnForDash(s, time)
 end
 confirmInvalidTarget = function(s, time)
     local reason = "invalid_target"
@@ -628,7 +604,6 @@ local function updateFrame(s, time)
     s.dashOwner = nil
     if not dashOk then error(dashError, 0) end
     if current ~= s or not s.bound then return end
-    confirmDash(s, time)
     if snapshot.teleported then
         if s.active then s.windowPartner = s.partner; setActive(s, false, "teleported", nil, time); s.windowPaused = true end
         if not s.teleported then acceptSync(s, { Sequence = snapshot.syncSequence, Teleported = true, Source = "snapshot" }, time) end
@@ -846,10 +821,7 @@ function AutoClash.getActivationContext()
 end
 function AutoClash.getDashData()
     local data = state.dashData
-    if not data or not data.player or not data.player.Parent or data.userId ~= state.partner then return nil end
-    local time, target = clock(), id(state.target)
-    if time < data.detectedAt or time > data.expiresAt then return nil end
-    if (target ~= localPlayer.UserId and target ~= data.userId) or (data.targetAtDetection ~= localPlayer.UserId and data.targetAtDetection ~= data.userId) then return nil end
+    if not data or clock() < data.detectedAt or clock() > data.expiresAt then return nil end
     return data
 end
 function AutoClash.getStatus()
