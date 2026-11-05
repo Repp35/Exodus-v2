@@ -302,7 +302,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
     if target == previous then return end
     updateSwitch(s, previous, target, time, serverTime)
     s.target = target
-    if s.active and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
+    if s.active and target ~= me and outsideClashRadius(s, target) then
         s.lastGate = "target_outside_clash_radius"
         setActive(s, false, "target_outside_clash_radius", nil, time)
         clearReturn(s)
@@ -506,7 +506,7 @@ local function evaluate(s, snapshot, time)
             setActive(s, false, "target_return_timeout", nil, time)
             return
         end
-        if target and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
+        if target and target ~= me and outsideClashRadius(s, target) then
             setActive(s, false, "target_redirected", nil, time); s.lastGate = "target_redirected"; return
         end
         s.lastGate = targeted and "deact_targeted" or "deact_waiting_target_return"
@@ -584,9 +584,15 @@ local function updateFrame(s, time)
         return
     end
     s.teleported = false
-    if not snapshotCurrent(s, snapshot, time) then missingSnapshot(s, time, "snapshot_stale"); return end
     local target = id(snapshot.targetId)
-    if s.active and target and target ~= localPlayer.UserId and target ~= s.partner and outsideClashRadius(s, target) then
+    if s.active and target and target ~= localPlayer.UserId and outsideClashRadius(s, target) then
+        s.lastGate = "target_outside_clash_radius"
+        setActive(s, false, "target_outside_clash_radius", nil, time)
+        clearReturn(s)
+        return
+    end
+    if not snapshotCurrent(s, snapshot, time) then missingSnapshot(s, time, "snapshot_stale"); return end
+    if s.active and target and target ~= localPlayer.UserId and outsideClashRadius(s, target) then
         s.lastGate = "target_outside_clash_radius"
         setActive(s, false, "target_outside_clash_radius", nil, time)
         clearReturn(s)
