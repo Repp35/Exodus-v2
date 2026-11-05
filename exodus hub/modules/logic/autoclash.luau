@@ -489,12 +489,10 @@ local function evaluate(s, snapshot, time)
     local target, me = id(snapshot.targetId), localPlayer.UserId
     -- The ball alternates between us and the clash partner. An opponent-targeted
     -- frame is not a failed local deflect window and must not stop spam.
-    if s.active and target ~= me and not prediction.imminent then
+    if s.active and target ~= me and target ~= s.partner and not prediction.imminent then
         s.lastGate = "outside_deflect_window"
         setActive(s, false, "outside_deflect_window", nil, time)
         s.windowPaused, s.windowPartner = false, nil
-        s.activationLockUntil = math.max(s.activationLockUntil or 0, time + 0.05)
-        utils.stopAllSpam()
         return
     end
     s.windowExitSince = nil
@@ -627,6 +625,14 @@ local function updateFrame(s, time)
 end
 local function dispatch(s, kind, data, time)
     if current ~= s or not s.bound then return true end
+    if kind == "frame" and s.draining then
+        for i = s.queueHead, #s.queue do
+            if s.queue[i].kind == "frame" then
+                s.queue[i].at = time
+                return true
+            end
+        end
+    end
     s.queue[#s.queue + 1] = { kind = kind, data = data, at = time }
     if s.draining then return true end
     s.draining = true
