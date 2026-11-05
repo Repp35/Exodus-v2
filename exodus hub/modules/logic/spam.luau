@@ -68,9 +68,13 @@ local function startCpfWorker()
 				end
 				local time = now()
 				if time >= due then
-					requestParry()
-					due += interval
-					if due < now() then due = now() + interval end
+					local pending = math.floor((time - due) / interval) + 1
+					local burst = math.min(pending, 4)
+					for _ = 1, burst do
+						if worker ~= workerGeneration or not Utils.isActive() or not Utils.isSpamActive() then break end
+						requestParry()
+					end
+					due += pending * interval
 				end
 				task.wait(math.max(0, due - now()))
 			else
