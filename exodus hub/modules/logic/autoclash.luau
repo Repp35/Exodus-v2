@@ -14,6 +14,9 @@ local LIMIT = {
     sampleGap = 0.10,
     minimumSpeed = 6,
     frame = 1 / 60,
+    proximityClashAge = 3,
+    proximityCooldown = 0.5,
+    proximityRadiusFactor = 0.5,
 }
 
 local function finite(value)
@@ -55,7 +58,7 @@ local function makeState()
         radiusAt = 0, radiusSpeed = -1, snapshot = nil, prediction = nil,
         missingSince = nil, recoveryUntil = 0, pull = nil, pullEvent = nil,
         dashEvent = nil, dashData = nil, dashBonusUntil = 0, dashLockUntil = 0, activationLockUntil = 0,
-        exitReason = nil, exitSince = 0, exitFrames = 0, exitLastAt = 0, clashAwayAt = nil,
+        exitReason = nil, exitSince = 0, exitFrames = 0, exitLastAt = 0, clashAwayAt = nil, clashStartedAt = nil, proximityReadyUntil = 0, proximityCooldownUntil = 0,
         ownDashPending = false, ownDashFrames = 0, ownDashDistance = nil, ownDashAt = 0, ownDashEventAt = 0,
         activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 },
         lastGate = "none", errors = {},
@@ -122,6 +125,14 @@ local function setActive(s, enabled, reason, detail, time)
         local own = rootPosition(s)
         if root and own and vector(root.Position) then s.recentDistance = (own - root.Position).Magnitude end
     end
+    if enabled then
+        s.clashStartedAt = time
+        s.proximityReadyUntil = 0
+    else
+        s.proximityReadyUntil = s.clashStartedAt and time - s.clashStartedAt >= LIMIT.proximityClashAge and time + LIMIT.proximityCooldown + 0.5 or 0
+        s.proximityCooldownUntil = time + LIMIT.proximityCooldown
+        s.clashStartedAt = nil
+    end
     s.active = enabled
     s.clashAwayAt = enabled and (s.target > 0 and s.target ~= localPlayer.UserId and time or nil) or nil
     clearExit(s)
@@ -160,6 +171,14 @@ local function gate(s)
     if wasActive or s.lastGate ~= reason or s.target ~= -1 or s.returnPending then clearExchange(s) end
     s.lastGate = reason
     return false
+end
+local function proximityEligible(s, userId, time)
+    if time < s.proximityCooldownUntil or time > s.proximityReadyUntil then return false end
+    local player, root = playerRoot(userId)
+    local humanoid = player and player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+    local own = rootPosition(s)
+    return humanoid ~= nil and humanoid.Health > 0 and root ~= nil and own ~= nil
+        and s.parryRadius > 0 and (own - root.Position).Magnitude < s.parryRadius * LIMIT.proximityRadiusFactor
 end
 local function closePartner(s, userId)
     if not userId or userId <= 0 or userId == localPlayer.UserId then return false end
@@ -438,8 +457,8 @@ local function evaluate(s, snapshot, time)
     local target, me = id(snapshot.targetId), localPlayer.UserId
     local targeted = target and target == me or (not target and snapshot.targeted == true)
     local aimed = s.target == me and targeted and prediction.imminent
-    if not s.active and s.recentPartner > 0 and (target == s.recentPartner or targeted) and closePartner(s, s.recentPartner)
-        and prediction.distance <= prediction.parryRadius then
+    if not s.active and s.recentPartner > 0 and (target == s.recentPartner or targeted) and proximityEligible(s, s.recentPartner, time)
+        and prediction.distance < prediction.parryRadius * LIMIT.proximityRadiusFactor then
         s.partner = s.recentPartner
         setActive(s, true, "known_clash_return", "near_partner_target_switch", time)
         return
@@ -450,8 +469,8 @@ local function evaluate(s, snapshot, time)
     if s.pull then
         local pull = s.pull
         if time - pull.at > LIMIT.pullRecovery then s.pull = nil
-        elseif pull.partner > 0 and closePartner(s, pull.partner) and (target == pull.partner or targeted)
-            and prediction.distance <= prediction.parryRadius then
+        elseif pull.partner > 0 and proximityEligible(s, pull.partner, time) and (target == pull.partner or targeted)
+            and prediction.distance < prediction.parryRadius * LIMIT.proximityRadiusFactor then
             s.pull, s.partner, s.recentPartner = nil, pull.partner, pull.partner
             setActive(s, true, "pull_partner_return", "near_partner_target_switch", time)
             return
