@@ -13,6 +13,8 @@ local LIMIT = {
     sampleGap = 0.10,
     minimumSpeed = 6,
     frame = 1 / 60,
+    activationWindowFactor = 0.75,
+    deactivationWindowFactor = 0.60,
 }
 
 local function finite(value)
@@ -56,6 +58,7 @@ local function makeState()
         missingSince = nil, pull = nil, pullEvent = nil,
         dashEvent = nil, dashData = nil, dashBonusUntil = 0, dashLockUntil = 0, activationLockUntil = 0,
         exitReason = nil, exitSince = 0, exitFrames = 0, exitLastAt = 0, clashAwayAt = nil, clashStartedAt = nil,
+        windowExitSince = nil,
         ownDashPending = false, ownDashFrames = 0, ownDashDistance = nil, ownDashAt = 0, ownDashEventAt = 0,
         activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 },
         lastGate = "none", errors = {},
@@ -100,6 +103,7 @@ end
 local function clearExit(s)
     s.activationLockUntil, s.dashLockUntil = 0, 0
     s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = nil, 0, 0, 0
+    s.windowExitSince = nil
     s.ownDashPending, s.ownDashFrames, s.ownDashDistance, s.ownDashAt, s.ownDashEventAt = false, 0, nil, 0, 0
 end
 local function clearExchange(s)
@@ -116,8 +120,7 @@ end
 local function setActive(s, enabled, reason, detail, time, recoveryValidated)
     if current ~= s or not s.bound then return end
     enabled = enabled == true
-    if enabled and (not s.prediction or not s.prediction.imminent or not s.returnPending
-        or s.target ~= localPlayer.UserId or s.partner <= 0) then return end
+    if enabled and (not s.prediction or (not s.prediction.imminent and not recoveryValidated)) then return end
     if s.active == enabled then return end
     if not enabled and s.partner > 0 then
         if finite(s.speed) and s.speed > 0 then s.lastClashSpeed = s.speed end
@@ -484,17 +487,29 @@ local function evaluate(s, snapshot, time)
     local target, me = id(snapshot.targetId), localPlayer.UserId
     local nearbyTarget = target and target ~= me and not outsideClashRadius(s, target)
     if s.active and not prediction.imminent and not nearbyTarget then
-        s.lastGate = "outside_deflect_window"
-        s.windowPartner = s.partner
-        setActive(s, false, "outside_deflect_window", nil, time)
-        s.windowPaused = true
+        s.windowExitSince = s.windowExitSince or time
+        local window = gameInfo.getDeflectWindow(s.speed)
+        local delay = finite(window) and math.max(0, window * LIMIT.deactivationWindowFactor) or 0
+        if time - s.windowExitSince >= delay then
+            s.lastGate = "outside_deflect_window"
+            s.windowPartner = s.partner
+            setActive(s, false, "outside_deflect_window", nil, time)
+            s.windowPaused = true
+        end
         return
     end
+    s.windowExitSince = nil
     if s.windowPaused and id(snapshot.targetId) ~= localPlayer.UserId and id(snapshot.targetId) ~= s.windowPartner then
         s.windowPaused, s.windowPartner = false, nil
     end
     local targeted = target and target == me or (not target and snapshot.targeted == true)
-    local aimed = s.target == me and targeted and prediction.imminent
+    local window = gameInfo.getDeflectWindow(s.speed)
+    local own = rootPosition(s)
+    local distance = prediction.distance
+    local closing = own and distance > 0 and snapshot.velocity:Dot(own - snapshot.position) / distance or 0
+    local timeToRange = closing > 0 and math.max(0, (distance - (gameInfo.getDeflectAbility().DeflectDistance or 0)) / closing) or math.huge
+    local activationReady = prediction.imminent and finite(window) and timeToRange <= window * LIMIT.activationWindowFactor
+    local aimed = s.target == me and targeted and activationReady
     if s.pull and time - s.pull.at > LIMIT.pullRecovery then s.pull = nil end
     if s.active then
         if target and target ~= me and not s.clashAwayAt then s.clashAwayAt = time end
@@ -509,6 +524,14 @@ local function evaluate(s, snapshot, time)
         end
         s.lastGate = targeted and "deact_targeted" or "deact_waiting_target_return"
         return
+    end
+    if aimed and not s.hasActivated and not s.distantRecovery and type(autoParry.getPressure) == "function" then
+        local ok, pressure = pcall(autoParry.getPressure)
+        if ok and type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= 0.2 then
+            clearReturn(s)
+            setActive(s, true, "ap_pressure", "auto_parry_pressure", time)
+            return
+        end
     end
     if s.returnPending and aimed then
         if not similarRecoveryDistance(s) then
@@ -553,10 +576,34 @@ local function acceptSync(s, data, time, original)
     local explicit = data.TargetPlayerID ~= nil or data.HighlightTargetPlayerID ~= nil
     if not target and not explicit then target = id(gameInfo.getTargetId()) end
     local previous = s.target
+    local fastRecovery = s.distantRecovery and not s.active and s.recoveryReturnedToMe
+        and previous == localPlayer.UserId and target == s.recoveryPartner
     local outcome = observeTarget(s, target, explicit, tonumber(data.ServerTime), time)
     if current ~= s or not s.bound then return end
     if outcome == "pull" then return end
     if not target then return end
+    if fastRecovery then
+        local currentSpeed = tonumber(data.Speed)
+        local snapshot = readSnapshot(s, time)
+        local own = rootPosition(s)
+        local _, partnerRoot = playerRoot(target)
+        local ability = gameInfo.getDeflectAbility()
+        local range = ability and ability.DeflectDistance
+        local window = finite(currentSpeed) and gameInfo.getDeflectWindow(currentSpeed) or nil
+        if snapshot and not snapshot.teleported and snapshotCurrent(s, snapshot, time)
+            and id(snapshot.targetId) == target and finite(s.recoverySpeed) and finite(currentSpeed)
+            and currentSpeed > s.recoverySpeed and own and partnerRoot and vector(partnerRoot.Position)
+            and finite(range) and range > 0 and finite(window) and window > 0
+            and (own - partnerRoot.Position).Magnitude <= range + currentSpeed * window then
+            local prediction = geometry(s, snapshot, time)
+            if current == s and s.bound and prediction then
+                s.snapshot, s.prediction, s.partner = snapshot, prediction, target
+                clearReturn(s)
+                setActive(s, true, "recovery_partner_pass", "faster_partner_return", time, true)
+                return
+            end
+        end
+    end
     local sameTarget = target ~= nil and target == previous
     local evaluateEvent = not sameTarget and data.Source ~= "snapshot" and (s.returnPending or (target == localPlayer.UserId and data.Source == "packet"))
         or sameTarget and not s.active and target == localPlayer.UserId and data.Source == "packet"
