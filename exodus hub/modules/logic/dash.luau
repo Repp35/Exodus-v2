@@ -204,8 +204,9 @@ local function addPlayer(player)
 		player,
 		player.CharacterAdded:Connect(function(character)
 			if generation ~= R.generation or not R.playerIndex[player] then return end
-			R.previousSpeed[player] = nil; R.lastPosition[player] = nil; R.lastPositionAt[player] = nil; R.cooldown[player] = nil
-			R.hookedAnimator[player] = nil; table.clear(R.trackSnapshot[player]); task.spawn(attachCharacter, character, player, generation)
+			R.previousSpeed[player] = nil; R.lastPosition[player] = nil; R.lastPositionAt[player] = nil
+			R.cooldown[player] = nil; R.hookedAnimator[player] = nil; table.clear(R.trackSnapshot[player])
+			task.spawn(attachCharacter, character, player, generation)
 		end)
 	)
 end

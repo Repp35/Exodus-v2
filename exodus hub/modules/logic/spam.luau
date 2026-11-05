@@ -30,7 +30,9 @@ local function setActive(value, reason)
 	if Utils and type(Utils.recordTransition) == "function" then Utils.recordTransition("Spam", value and "stopped" or "running", status.phase, reason) end
 end
 local function requestParry()
-	local time = now(); status.lastRequestAt = time; local ok, result, detail = pcall(Remote.fireParry, 1)
+	local time = now()
+	status.lastRequestAt = time
+	local ok, result, detail = pcall(Remote.fireParry, 1)
 	if ok and result == true then status.lastError = nil; return end
 	local message = tostring(ok and (detail or "Remote.fireParry indisponível") or result); status.lastError = message
 	if time - status.lastErrorAt >= 1 then
@@ -39,25 +41,35 @@ local function requestParry()
 	end
 end
 local function readRate()
-	local config = Utils.getConfig(); local mode = type(Utils.getConfigValue) == "function" and Utils.getConfigValue("SpamRateMode") or config.SpamRateMode
-	local key = mode == "CPF" and "CPF" or "CPS"; local rate = tonumber(type(Utils.getConfigValue) == "function" and Utils.getConfigValue(key) or config[key]) or 0
+	local config = Utils.getConfig()
+	local mode = type(Utils.getConfigValue) == "function" and Utils.getConfigValue("SpamRateMode") or config.SpamRateMode
+	local key = mode == "CPF" and "CPF" or "CPS"
+	local rate = tonumber(type(Utils.getConfigValue) == "function" and Utils.getConfigValue(key) or config[key]) or 0
 	if rate ~= rate or rate == math.huge or rate <= 0 then return key, 0 end
 	return key, rate
 end
+
 local function startCpfWorker()
 	if cpfWorkerRunning then return end
-	cpfWorkerRunning = true; workerGeneration += 1; local worker = workerGeneration
+	cpfWorkerRunning = true
+	workerGeneration += 1
+	local worker = workerGeneration
 	task.spawn(function()
 		local due, previousMode, previousRate
 		while worker == workerGeneration do
-			local mode, rate = readRate(); local enabled = Utils.isActive() and Utils.isSpamActive() and rate > 0
+			local mode, rate = readRate()
+			local enabled = Utils.isActive() and Utils.isSpamActive() and rate > 0
 			if enabled then
 				if not active then setActive(true, "spam_active") end
 				local interval = 1 / (mode == "CPF" and rate * 60 or rate)
-				if previousMode ~= mode or previousRate ~= rate or due == nil then due = now(); previousMode, previousRate = mode, rate end
+				if previousMode ~= mode or previousRate ~= rate or due == nil then
+					due = now()
+					previousMode, previousRate = mode, rate
+				end
 				local time = now()
 				if time >= due then
-					local pending = math.floor((time - due) / interval) + 1; local burst = math.min(pending, 4)
+					local pending = math.floor((time - due) / interval) + 1
+					local burst = math.min(pending, 4)
 					for _ = 1, burst do
 						if worker ~= workerGeneration or not Utils.isActive() or not Utils.isSpamActive() then break end
 						requestParry()
@@ -74,6 +86,7 @@ local function startCpfWorker()
 		if worker == workerGeneration then cpfWorkerRunning = false end
 	end)
 end
+
 local function syncCpfWorker()
 	if Utils and not cpfWorkerRunning then startCpfWorker() end
 end
@@ -91,7 +104,10 @@ function Spam.setup(deps)
 	then
 		return false, "dependência ausente: Remote ou Utils"
 	end
-	Spam.teardown(); Utils, Remote = deps.Utils, deps.Remote; startCpfWorker(); return true
+	Spam.teardown()
+	Utils, Remote = deps.Utils, deps.Remote
+	startCpfWorker()
+	return true
 end
 function Spam.resetState()
 	generation += 1; setActive(false, "reset"); phase = 0; lastMode, lastRate = nil, nil

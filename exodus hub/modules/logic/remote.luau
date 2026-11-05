@@ -193,20 +193,36 @@ local function getStorageStatus()
 		lastError = captureEnabled == true and Storage.lastError or nil,
 	}
 end
-local function isAlive(remote) return remote and typeof(remote) == "Instance" and remote:IsA("RemoteEvent") and remote.Parent ~= nil end
-local function getDeflectAbility() return GameInfo and GameInfo.getDeflectAbility() or nil end
+
+-- remote validation (ball synchronization only)
+local function isAlive(remote)
+	return remote and typeof(remote) == "Instance" and remote:IsA("RemoteEvent") and remote.Parent ~= nil
+end
+
+-- deflect ability
+local function getDeflectAbility()
+	return GameInfo and GameInfo.getDeflectAbility() or nil
+end
 local function logParryMethod(method, message)
 	if loggedParryMethods[method] then return end
-	loggedParryMethods[method] = true; print("[Exodus Remote] " .. message)
+	loggedParryMethods[method] = true
+	print("[Exodus Remote] " .. message)
 end
 local function deflectTrace(message)
-	if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(tostring(message), 2) end
+	if type(debug) == "table" and type(debug.traceback) == "function" then
+		return debug.traceback(tostring(message), 2)
+	end
 	return tostring(message)
 end
 
 -- setup
 function Remote.setup(deps)
-	if type(deps) ~= "table" or not deps.Utils or type(deps.GameInfo) ~= "table" or type(deps.GameInfo.getDeflectAbility) ~= "function" then
+	if
+		type(deps) ~= "table"
+		or not deps.Utils
+		or type(deps.GameInfo) ~= "table"
+		or type(deps.GameInfo.getDeflectAbility) ~= "function"
+	then
 		return false, "dependência ausente: Utils ou API de Deflect do GameInfo"
 	end
 	Utils = deps.Utils; GameInfo = deps.GameInfo; captureEnabled = deps.captureDiagnostics == true; remoteState = "deflect_only"

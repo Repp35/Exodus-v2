@@ -132,7 +132,8 @@ local function disconnectConnections()
 	end
 end
 local function resetParryLock()
-	R.armed = not R.firedForTarget; R.lastTargeted = false
+	R.armed = not R.firedForTarget
+	R.lastTargeted = false
 end
 local function clearBallState()
 	R.targeted = false; R.lastBall = nil; R.lastPosition = nil; R.lastPositionAt = nil
@@ -146,8 +147,8 @@ local function resetTracking()
 	R.pingAt = 0; R.lastDistance = 0; R.lastSpeed = 0; R.lastLeadTime = T.MIN_LEAD_TIME
 	R.lastFireAt = 0; R.lastApproaching = false; R.lastTarget = -1; R.lastSyncSequence = nil
 	R.targetId = -1; R.targetKnown = false; R.teleported = false; R.teleportSequence = nil
-	R.resilienceBonus = 0; R.resilienceBonusAt = -1; R.lastFireRevision = 0; table.clear(R.pressureClicks)
-	table.clear(R.pressureReturns); R.pressureAwayTarget = nil; R.pressureAwayAt = nil
+	R.resilienceBonus = 0; R.resilienceBonusAt = -1; R.lastFireRevision = 0
+	table.clear(R.pressureClicks); table.clear(R.pressureReturns); R.pressureAwayTarget = nil; R.pressureAwayAt = nil
 end
 local function invalidateLife()
 	R.lifeGeneration += 1; R.alive = false; R.bound = false; resetParryLock()
@@ -155,7 +156,14 @@ end
 local function observeTarget(targetId)
 	if not R.player or not isFiniteNumber(targetId) or targetId <= 0 then return end
 	local me = R.player.UserId
-	if targetId ~= me then R.targetAwaySeen = true elseif R.targetAwaySeen then R.targetAwaySeen = false; R.firedForTarget = false; R.armed = true; R.targetCycle += 1 end
+	if targetId ~= me then
+		R.targetAwaySeen = true
+	elseif R.targetAwaySeen then
+		R.targetAwaySeen = false
+		R.firedForTarget = false
+		R.armed = true
+		R.targetCycle += 1
+	end
 end
 local function getResilienceBonus(time)
 	if not R.alive or not R.bound or not R.player then return 0 end
@@ -295,7 +303,8 @@ local function getRemoteParry(ball)
 	if not ok or result == false then
 		local time = clock()
 		if Utils and type(Utils.recordError) == "function" and time - R.lastErrorAt >= 1 then
-			R.lastErrorAt = time; Utils.recordError("AutoParry", tostring(ok and (detail or "remote indisponivel") or result))
+			R.lastErrorAt = time
+			Utils.recordError("AutoParry", tostring(ok and (detail or "remote indisponivel") or result))
 		end
 		return false
 	end
@@ -345,33 +354,60 @@ local function updateVelocity(ball, position, time, dt, syncData, requireMovemen
 end
 local function requestParry(ball, reason)
 	if R.firedForTarget or not R.player or R.lastTarget ~= R.player.UserId then return false end
-	R.firedForTarget = true; R.armed = false; R.lastFireAt = clock()
-	if getRemoteParry(ball) then setPhase("fired", reason); return true end
-	R.firedForTarget = false; R.armed = true; return false
+	R.firedForTarget = true
+	R.armed = false
+	R.lastFireAt = clock()
+	if getRemoteParry(ball) then
+		setPhase("fired", reason)
+		return true
+	end
+	R.firedForTarget = false
+	R.armed = true
+	return false
 end
 local function onHeartbeat(character, root, dt, generation)
 	if generation ~= R.generation or not R.alive or not R.bound then return end
 	if not character.Parent or not root.Parent then return end
 	local time = clock()
 	if not isAutoParryEnabled() or not isSystemActive() then return end
-	local ball, targeted, snapshot = readFrameState(time); local targetId = snapshot and tonumber(snapshot.targetId) or tonumber(GameInfo.getTargetId())
-	if targetId and targetId > 0 then observeTarget(targetId); R.lastTarget = targetId end
-	if isSpamActive() then setPhase("waiting", "spam_active"); return end
-	if not targeted or not ball or not snapshot or not R.player or targetId ~= R.player.UserId then setPhase("waiting", "not_target"); return end
-	if R.firedForTarget then setPhase("waiting", "target_already_parried"); return end
-	local position = snapshot.position; local velocity = snapshot.velocity
+	local ball, targeted, snapshot = readFrameState(time)
+	local targetId = snapshot and tonumber(snapshot.targetId) or tonumber(GameInfo.getTargetId())
+	if targetId and targetId > 0 then
+		observeTarget(targetId)
+		R.lastTarget = targetId
+	end
+	if isSpamActive() then
+		setPhase("waiting", "spam_active")
+		return
+	end
+	if not targeted or not ball or not snapshot or not R.player or targetId ~= R.player.UserId then
+		setPhase("waiting", "not_target")
+		return
+	end
+	if R.firedForTarget then
+		setPhase("waiting", "target_already_parried")
+		return
+	end
+	local position = snapshot.position
+	local velocity = snapshot.velocity
 	if not isValidVector3(position) then position = GameInfo.getBallPosition(ball) end
 	if not isValidVector3(velocity) then velocity = GameInfo.getBallVelocity(ball) end
 	if not isValidVector3(position) or not isValidVector3(velocity) then return end
 	local rootPosition = GameInfo.getRootPosition(root)
 	if not isValidVector3(rootPosition) then return end
-	local speed = velocity.Magnitude; local radius = computeParryRadius(speed, R.ping, getResilienceBonus(time), getWindowFactor()); R.lastBall = ball; R.lastSpeed = speed
-	R.lastDistance = (rootPosition - position).Magnitude; R.lastApproaching = velocity:Dot(rootPosition - position) > 0
-	if R.lastDistance <= radius then requestParry(ball, "parry_requested") end
+	local speed = velocity.Magnitude
+	local radius = computeParryRadius(speed, R.ping, getResilienceBonus(time), getWindowFactor())
+	R.lastBall = ball
+	R.lastSpeed = speed
+	R.lastDistance = (rootPosition - position).Magnitude
+	R.lastApproaching = velocity:Dot(rootPosition - position) > 0
+	if R.lastDistance <= radius then
+		requestParry(ball, "parry_requested")
+	end
 end
 local function detachCharacterInternal(reason)
-	R.generation += 1; disconnectConnections(); invalidateLife(); R.root = nil
-	R.character = nil; resetTracking(); setPhase("detached", reason or "detach")
+	R.generation += 1; disconnectConnections(); invalidateLife(); R.root = nil; R.character = nil
+	resetTracking(); setPhase("detached", reason or "detach")
 end
 function AutoParry.setup(deps)
 	if type(deps) ~= "table" then return false, "dependencias invalidas" end
@@ -428,8 +464,8 @@ function AutoParry.bindCharacter(character)
 	if not signal then return false, "RunService indisponivel" end
 	local playerOk, player = pcall(Utils.getLocalPlayer)
 	if not playerOk or not player then return false, "Players.LocalPlayer indisponivel" end
-	R.root = root; R.character = character; R.player = player; R.alive = true
-	R.bound = true; resetTracking(); setPhase("waiting", "character_bound"); GameInfo.getDeflectCooldownState()
+	R.root = root; R.character = character; R.player = player; R.alive = true; R.bound = true
+	resetTracking(); setPhase("waiting", "character_bound"); GameInfo.getDeflectCooldownState()
 	local heartbeatOk, heartbeatConnection = pcall(function()
 		return signal:Connect(function(dt) onHeartbeat(character, root, dt, generation) end)
 	end)
@@ -483,12 +519,17 @@ function AutoParry.onBallSync(data)
 		local ok, value = pcall(GameInfo.getTargetId)
 		if ok then targetId = tonumber(value) or -1 end
 	end
-	if isSpamActive() and R.player and R.lastTarget == R.player.UserId and targetId > 0 and targetId ~= R.player.UserId then R.firedForTarget = true; R.armed = false end
+	if isSpamActive() and R.player and R.lastTarget == R.player.UserId and targetId > 0 and targetId ~= R.player.UserId then
+		R.firedForTarget = true
+		R.armed = false
+	end
 	observeTarget(targetId)
 	if targetId > 0 and R.player and targetId ~= R.player.UserId then R.armed = not R.firedForTarget end
 	if targetId == -1 and R.lastTarget ~= -1 then clearBallState() end
 	R.targetId = targetId; R.targetKnown = true; R.lastTarget = targetId
-	if R.player and targetId == R.player.UserId and R.character and R.root and not R.firedForTarget then onHeartbeat(R.character, R.root, 0, R.generation) end
+	if R.player and targetId == R.player.UserId and R.character and R.root and not R.firedForTarget then
+		onHeartbeat(R.character, R.root, 0, R.generation)
+	end
 	return true
 end
 function AutoParry.getTargetStatus()
@@ -600,38 +641,32 @@ function AutoParry.getPressure()
 	local time = clock(); local count, factorSum, configuredSum, speedSum, ratioSum = 0, 0, 0, 0, 0
 	for i = #R.pressureClicks, 1, -1 do
 		local sample = R.pressureClicks[i]
-		if time < sample.at or time - sample.at > 3 then
-			table.remove(R.pressureClicks, i)
+		if time < sample.at or time - sample.at > 3 then table.remove(R.pressureClicks, i)
 		else
-			count += 1
-			factorSum += sample.factor
-			configuredSum += sample.configured; speedSum += sample.speed; ratioSum += math.clamp(sample.factor / sample.configured, 0, 1)
+			count += 1; factorSum += sample.factor; configuredSum += sample.configured; speedSum += sample.speed
+			ratioSum += math.clamp(sample.factor / sample.configured, 0, 1)
 		end
 	end
 	local returns, intervalSum = 0, 0
 	for i = #R.pressureReturns, 1, -1 do
 		local sample = R.pressureReturns[i]
-		if time < sample.at or time - sample.at > 3 then table.remove(R.pressureReturns, i) else returns += 1; intervalSum += sample.interval end
+		if time < sample.at or time - sample.at > 3 then table.remove(R.pressureReturns, i)
+		else returns += 1; intervalSum += sample.interval end
 	end
 	local latest = R.pressureClicks[#R.pressureClicks]; local lastReturn = R.pressureReturns[#R.pressureReturns]
 	local recentLevel, factorDrop
 	if count >= 3 and returns >= 2 and latest and time - latest.at <= 1 and lastReturn and time - lastReturn.at <= 1 then
-		local latestRatio = math.clamp(latest.factor / latest.configured, 0, 1); local previous = R.pressureClicks[count - 1]; local older = R.pressureClicks[count - 2]
-		local previousRatio = (math.clamp(previous.factor / previous.configured, 0, 1) + math.clamp(older.factor / older.configured, 0, 1)) / 2; recentLevel = 1 - latestRatio
-		factorDrop = math.max(0, previousRatio - latestRatio)
+		local latestRatio = math.clamp(latest.factor / latest.configured, 0, 1)
+		local previous = R.pressureClicks[count - 1]; local older = R.pressureClicks[count - 2]
+		local previousRatio = (math.clamp(previous.factor / previous.configured, 0, 1) + math.clamp(older.factor / older.configured, 0, 1)) / 2
+		recentLevel = 1 - latestRatio; factorDrop = math.max(0, previousRatio - latestRatio)
 	end
 	return {
-		samples = count,
-		cps = count / 3,
-		averageFactor = count > 0 and factorSum / count or nil,
-		configuredFactor = count > 0 and configuredSum / count or nil,
-		averageSpeed = count > 0 and speedSum / count or nil,
-		returnSamples = returns,
-		averageReturnTime = returns > 0 and intervalSum / returns or nil,
+		samples = count, cps = count / 3, averageFactor = count > 0 and factorSum / count or nil,
+		configuredFactor = count > 0 and configuredSum / count or nil, averageSpeed = count > 0 and speedSum / count or nil,
+		returnSamples = returns, averageReturnTime = returns > 0 and intervalSum / returns or nil,
 		level = count >= 3 and returns >= 2 and math.clamp(1 - ratioSum / count, 0, 1) or nil,
-		currentFactor = latest and latest.factor or nil,
-		currentLevel = recentLevel,
-		factorDrop = factorDrop,
+		currentFactor = latest and latest.factor or nil, currentLevel = recentLevel, factorDrop = factorDrop,
 		latestReturnTime = lastReturn and lastReturn.interval or nil,
 	}
 end
