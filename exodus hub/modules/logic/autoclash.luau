@@ -343,7 +343,12 @@ local function observeTarget(s, target, explicit, serverTime, time)
         s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = nil, 0, 0, 0
         s.lastGate = "target_lost"
     elseif previous > 0 and previous ~= me and target == me then
-        s.clashAwayAt = nil
+        if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.10 + ping(s, time) then
+            s.lastGate = "deact_target_return_timeout"
+            setActive(s, false, "target_return_timeout", nil, time)
+        else
+            s.clashAwayAt = nil
+        end
         local elapsed = s.returnAt and time - s.returnAt or nil
         if finite(serverTime) and finite(s.returnServerAt) then elapsed = serverTime - s.returnServerAt end
         if s.returnFrom == previous and finite(elapsed) and elapsed >= 0 and elapsed <= s.returnWindow and time <= s.returnExpires then
@@ -536,6 +541,11 @@ local function evaluate(s, snapshot, time)
     if s.active then
         if target and target ~= me and not s.clashAwayAt then s.clashAwayAt = time end
         if target == me then s.clashAwayAt = nil end
+        if s.clashAwayAt and time - s.clashAwayAt > 0.10 + ping(s, time) then
+            s.lastGate = "deact_target_return_timeout"
+            setActive(s, false, "target_return_timeout", nil, time)
+            return
+        end
         if target and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
             setActive(s, false, "target_redirected", nil, time); s.lastGate = "target_redirected"; return
         end
@@ -593,6 +603,10 @@ local function acceptSync(s, data, time, original)
     end
 end
 local function updateFrame(s, time)
+    if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.10 + ping(s, time) then
+        s.lastGate = "deact_target_return_timeout"
+        setActive(s, false, "target_return_timeout", nil, time)
+    end
     if not gate(s) or not s.root or not s.root.Parent or not s.character.Parent then return end
     if not s.returnPending and s.returnExpires > 0 and time >= s.returnExpires then clearReturn(s) end
     local snapshot = readSnapshot(s, time)
