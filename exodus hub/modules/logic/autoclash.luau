@@ -7,7 +7,7 @@ local targetResetToken, returnToken = 0, 0
 -- Decision thresholds are kept separate from the event-processing machinery.
 local LIMIT = {
     snapshotGrace = 0.20,
-    windowExitGrace = 0.05,
+    windowExitGrace = 0.02,
     pullRecovery = 2.0,
     returnSlow = 0.15,
     returnFast = 0.015,
