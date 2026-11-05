@@ -14,7 +14,7 @@ local LIMIT = {
     minimumSpeed = 6,
     frame = 1 / 60,
     activationWindowFactor = 0.75,
-    deactivationWindowFactor = 0.90,
+    deactivationWindowFactor = 0.50,
 }
 
 local function finite(value)
@@ -355,7 +355,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
         s.lastGate = "target_lost"
     elseif previous > 0 and previous ~= me and target == me then
         if s.distantRecovery and previous ~= s.recoveryPartner then s.recoveryReturnedToMe = true end
-        if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.06 + ping(s, time) then
+        if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.03 + ping(s, time) then
             s.lastGate = "deact_target_return_timeout"
             setActive(s, false, "target_return_timeout", nil, time)
         else
@@ -514,7 +514,7 @@ local function evaluate(s, snapshot, time)
     if s.active then
         if target and target ~= me and not s.clashAwayAt then s.clashAwayAt = time end
         if target == me then s.clashAwayAt = nil end
-        if s.clashAwayAt and time - s.clashAwayAt > 0.06 + ping(s, time) then
+        if s.clashAwayAt and time - s.clashAwayAt > 0.03 + ping(s, time) then
             s.lastGate = "deact_target_return_timeout"
             setActive(s, false, "target_return_timeout", nil, time)
             return
@@ -589,7 +589,7 @@ local function acceptSync(s, data, time, original)
     end
 end
 local function updateFrame(s, time)
-    if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.06 + ping(s, time) then
+    if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.03 + ping(s, time) then
         s.lastGate = "deact_target_return_timeout"
         setActive(s, false, "target_return_timeout", nil, time)
     end
