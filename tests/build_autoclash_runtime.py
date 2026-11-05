@@ -29,7 +29,7 @@ local players={GetPlayerByUserId=function(_,id) return id==7 and enemy or id==9 
 local t, target, active, manual, seq = 1, 42, false, false, 0
 local snapshot={position=v(-20),velocity=v(100),speed=100,syncSpeed=100,targetId=42,targeted=true,teleported=false}
 local info={getSnapshotAt=function() return snapshot end,isSnapshotValid=function() return true end,
- getTargetId=function() return target end,getSyncData=function() return {Speed=100} end,getSyncSequence=function() return seq end,
+ getTargetId=function() return target end,getSyncData=function() return {Speed=snapshot.syncSpeed} end,getSyncSequence=function() return seq end,
  getLocalPing=function() return 0 end,getBallSpeedLimits=function() return 16,600 end,getDeflectAbility=function() return {DeflectDistance=10} end,
  getDeflectWindow=function() return .3 end}
 local utils={now=function() return t end,getPlayers=function() return players end,getRunService=function() return run end,
@@ -51,7 +51,7 @@ dashHandler({userId=7,player=enemy,position=v(10),velocity=v(-120),detectedAt=t}
 assert(clash.getStatus().dashBonusUntil>t and not clash.isActive(),'approaching dash must extend windows without activating')
 local function event(id, dt)
  t+=dt; seq+=1; target=id; snapshot.targetId=id; snapshot.targeted=id==42; snapshot.syncSequence=seq
- clash.onBallSync({Sequence=seq,TargetPlayerID=id,Speed=100,ServerTime=t})
+ clash.onBallSync({Sequence=seq,TargetPlayerID=id,Speed=snapshot.syncSpeed,ServerTime=t})
 end
 local function frame(dt) t+=dt; heartbeat() end
 event(42,0); event(7,.01); event(42,.1)
@@ -83,6 +83,22 @@ clash.detachCharacter(); seq=0; target=42; t=1; snapshot.syncSequence=nil; snaps
 event(42,0); event(7,.01)
 dashHandler({userId=9,player=third,position=v(100),velocity=v(-120),detectedAt=t})
 event(42,.3); assert(clash.isActive() and active, 'approaching dash from another player must extend return window')
+local function prepareFastRecovery()
+ clash.detachCharacter(); seq=0; target=42; t=1; active=false; snapshot.syncSequence=nil; snapshot.position=v(-20)
+ snapshot.speed=100; snapshot.syncSpeed=100; snapshot.velocity=v(100); enemyRoot.Position=v(10); thirdRoot.Position=v(100)
+ assert(clash.bindCharacter(character)); event(42,0); event(7,.01); event(42,.1); assert(clash.isActive(), 'fast recovery setup')
+ event(9,.01); assert(not clash.isActive(), 'distant target should stop before recovery')
+ event(42,.01); assert(not clash.isActive(), 'distant return alone should not activate')
+end
+prepareFastRecovery(); snapshot.speed=120; snapshot.syncSpeed=120; snapshot.velocity=v(120); event(7,.01)
+assert(clash.isActive() and active, 'faster pass to partner in window must activate immediately')
+prepareFastRecovery(); event(7,.01); assert(not clash.isActive(), 'equal speed must not activate at partner pass')
+prepareFastRecovery(); snapshot.syncSpeed=80; snapshot.speed=80; snapshot.velocity=v(80); event(7,.01)
+assert(not clash.isActive(), 'slower ball must not activate at partner pass')
+prepareFastRecovery(); snapshot.syncSpeed=120; snapshot.speed=120; snapshot.velocity=v(120); enemyRoot.Position=v(100); event(7,.01)
+assert(not clash.isActive(), 'partner outside window must not activate at partner pass')
+prepareFastRecovery(); snapshot.syncSpeed=120; snapshot.speed=120; snapshot.velocity=v(120); thirdRoot.Position=v(10); event(9,.01)
+assert(not clash.isActive(), 'another nearby player must not activate recovery')
 clash.teardown()
 print('Auto Clash runtime: PASS')
 '''

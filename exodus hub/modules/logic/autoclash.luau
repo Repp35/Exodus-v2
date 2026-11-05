@@ -48,7 +48,7 @@ local function makeState()
         root = nil, character = nil, connections = {}, darkConnections = {}, queue = {}, queueHead = 1, draining = false,
         target = -1, manualTarget = -1, manualPartner = -1, sequence = nil, syncAt = 0, syncSource = nil, teleported = false,
         partner = -1, recentPartner = -1, recentDistance = 0, resetToken = targetResetToken,
-        distantRecovery = false, recoveryPartner = nil, recoveryDistance = nil,
+        distantRecovery = false, recoveryPartner = nil, recoveryDistance = nil, recoverySpeed = nil, recoveryReturnedToMe = false, lastClashSpeed = nil,
         returnToken = returnToken, returnFrom = -1, returnAt = nil, returnServerAt = nil, returnWindow = 0,
         returnBonus = 0, returnExpires = 0, returnPending = false,
         lastSwitchAt = 0, lastSwitchServerAt = nil, intervalMs = 0, intervalAverage = nil, intervalSamples = 0,
@@ -107,19 +107,20 @@ local function clearExchange(s)
     s.target, s.partner, s.recentPartner, s.recentDistance = -1, -1, -1, 0
     s.lastSwitchAt, s.lastSwitchServerAt, s.intervalMs, s.intervalAverage, s.intervalSamples = 0, nil, 0, nil, 0
     s.dashEvent, s.dashData, s.dashBonusUntil, s.dashLockUntil = nil, nil, 0, 0
-    s.distantRecovery, s.recoveryPartner, s.recoveryDistance = false, nil, nil
+    s.distantRecovery, s.recoveryPartner, s.recoveryDistance, s.recoverySpeed, s.recoveryReturnedToMe = false, nil, nil, nil, false
     s.windowPaused, s.windowPartner, s.windowOutsideSince = false, nil, nil
     s.activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 }
     targetResetToken += 1
     s.resetToken = targetResetToken
     clearReturn(s)
 end
-local function setActive(s, enabled, reason, detail, time)
+local function setActive(s, enabled, reason, detail, time, recoveryValidated)
     if current ~= s or not s.bound then return end
     enabled = enabled == true
-    if enabled and (not s.prediction or not s.prediction.imminent) then return end
+    if enabled and (not s.prediction or (not s.prediction.imminent and not recoveryValidated)) then return end
     if s.active == enabled then return end
     if not enabled and s.partner > 0 then
+        if finite(s.speed) and s.speed > 0 then s.lastClashSpeed = s.speed end
         s.recentPartner = s.partner
         local _, root = playerRoot(s.partner)
         local own = rootPosition(s)
@@ -134,7 +135,7 @@ local function setActive(s, enabled, reason, detail, time)
     s.windowOutsideSince = nil
     if enabled then
         s.windowPaused, s.windowPartner = false, nil
-        s.distantRecovery, s.recoveryPartner, s.recoveryDistance = false, nil, nil
+        s.distantRecovery, s.recoveryPartner, s.recoveryDistance, s.recoverySpeed, s.recoveryReturnedToMe = false, nil, nil, nil, false
     else
         clearReturn(s)
     end
@@ -195,7 +196,10 @@ local function rememberDistantRecovery(s, partner)
     local _, root = playerRoot(partner)
     local distance = not s.active and s.recentPartner == partner and s.recentDistance > 0 and s.recentDistance
         or (own and root and vector(root.Position) and (own - root.Position).Magnitude or nil)
+    local previousSpeed = s.active and s.speed or s.lastClashSpeed
     s.distantRecovery, s.recoveryPartner, s.recoveryDistance = true, partner, distance
+    s.recoverySpeed = finite(previousSpeed) and previousSpeed > 0 and previousSpeed or nil
+    s.recoveryReturnedToMe = false
 end
 local function similarRecoveryDistance(s)
     if not s.distantRecovery then return true end
@@ -243,6 +247,7 @@ local function geometry(s, snapshot, time)
     local distance = (own - position).Magnitude
     local insideWindow = withinDeflectWindow(s, snapshot)
     s.speed = speed
+    if s.active and speed > 0 then s.lastClashSpeed = speed end
     return { position = position, velocity = velocity, distance = distance, speed = speed,
         parryRadius = s.parryRadius, activationGate = insideWindow and "activation_ready" or "outside_deflect_window",
         imminent = insideWindow }
@@ -346,6 +351,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
         s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = nil, 0, 0, 0
         s.lastGate = "target_lost"
     elseif previous > 0 and previous ~= me and target == me then
+        if s.distantRecovery and previous ~= s.recoveryPartner then s.recoveryReturnedToMe = true end
         if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.10 + ping(s, time) then
             s.lastGate = "deact_target_return_timeout"
             setActive(s, false, "target_return_timeout", nil, time)
@@ -553,10 +559,34 @@ local function acceptSync(s, data, time, original)
     local explicit = data.TargetPlayerID ~= nil or data.HighlightTargetPlayerID ~= nil
     if not target and not explicit then target = id(gameInfo.getTargetId()) end
     local previous = s.target
+    local fastRecovery = s.distantRecovery and not s.active and s.recoveryReturnedToMe
+        and previous == localPlayer.UserId and target == s.recoveryPartner
     local outcome = observeTarget(s, target, explicit, tonumber(data.ServerTime), time)
     if current ~= s or not s.bound then return end
     if outcome == "pull" then return end
     if not target then return end
+    if fastRecovery then
+        local currentSpeed = tonumber(data.Speed)
+        local snapshot = readSnapshot(s, time)
+        local own = rootPosition(s)
+        local _, partnerRoot = playerRoot(target)
+        local ability = gameInfo.getDeflectAbility()
+        local range = ability and ability.DeflectDistance
+        local window = finite(currentSpeed) and gameInfo.getDeflectWindow(currentSpeed) or nil
+        if snapshot and not snapshot.teleported and snapshotCurrent(s, snapshot, time)
+            and id(snapshot.targetId) == target and finite(s.recoverySpeed) and finite(currentSpeed)
+            and currentSpeed > s.recoverySpeed and own and partnerRoot and vector(partnerRoot.Position)
+            and finite(range) and range > 0 and finite(window) and window > 0
+            and (own - partnerRoot.Position).Magnitude <= range + currentSpeed * window then
+            local prediction = geometry(s, snapshot, time)
+            if current == s and s.bound and prediction then
+                s.snapshot, s.prediction, s.partner = snapshot, prediction, target
+                clearReturn(s)
+                setActive(s, true, "recovery_partner_pass", "faster_partner_return", time, true)
+                return
+            end
+        end
+    end
     local sameTarget = target ~= nil and target == previous
     local evaluateEvent = not sameTarget and data.Source ~= "snapshot" and (s.returnPending or (target == localPlayer.UserId and data.Source == "packet"))
         or sameTarget and not s.active and target == localPlayer.UserId and data.Source == "packet"
