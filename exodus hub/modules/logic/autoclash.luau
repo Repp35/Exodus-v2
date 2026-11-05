@@ -57,7 +57,7 @@ local function makeState()
         missingSince = nil, pull = nil, pullEvent = nil,
         dashEvent = nil, dashData = nil, dashBonusUntil = 0, dashLockUntil = 0, activationLockUntil = 0,
         exitReason = nil, exitSince = 0, exitFrames = 0, exitLastAt = 0, clashAwayAt = nil, clashStartedAt = nil,
-        windowExitSince = nil,
+        windowExitSince = nil, ballAwaySince = nil,
         ownDashPending = false, ownDashFrames = 0, ownDashDistance = nil, ownDashAt = 0, ownDashEventAt = 0,
         activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 },
         lastGate = "none", errors = {},
@@ -135,6 +135,7 @@ local function setActive(s, enabled, reason, detail, time, recoveryValidated)
         s.clashStartedAt = nil
     end
     s.active = enabled
+    s.ballAwaySince = nil
     if enabled then
         s.windowPaused, s.windowPartner = false, nil
         s.distantRecovery, s.recoveryPartner, s.recoveryDistance, s.recoverySpeed, s.recoveryReturnedToMe = false, nil, nil, nil, false
@@ -505,6 +506,19 @@ local function evaluate(s, snapshot, time)
     local aimed = s.target == me and targeted and activationReady
     if s.pull and time - s.pull.at > LIMIT.pullRecovery then s.pull = nil end
     if s.active then
+        -- Only the ball velocity counts; movement of the local player does not.
+        local away = own and vector(snapshot.position) and vector(snapshot.velocity)
+            and snapshot.velocity:Dot(snapshot.position - own) > 0
+        if away then
+            s.ballAwaySince = s.ballAwaySince or time
+            if time - s.ballAwaySince >= 0.09 + ping(s, time) then
+                s.lastGate = "ball_moving_away_timeout"
+                setActive(s, false, "ball_moving_away_timeout", nil, time)
+                return
+            end
+        else
+            s.ballAwaySince = nil
+        end
         if target and target ~= me and not s.clashAwayAt then s.clashAwayAt = time end
         if target == me then s.clashAwayAt = nil end
         if s.clashAwayAt and time - s.clashAwayAt > 0.09 + ping(s, time) then
