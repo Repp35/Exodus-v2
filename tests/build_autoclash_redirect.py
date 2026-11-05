@@ -35,6 +35,8 @@ for _,manualMode in ipairs({false,true}) do
  local _,near=scenario(manualMode,42,7,false,9,false); assert(near==0,'near third party should not trigger distant stop')
 end
 local s,n=scenario(false,42,7,true,9,true); assert(n==1 and not s.windowPaused,'paused clash must retain partner')
+s,n=scenario(false,-1,7,true,9,false); assert(n==1 and not s.active,'missing previous target must not delay stopping')
+s,n=scenario(false,9,7,true,9,false); assert(n==1 and not s.active,'already known distant target must stop immediately')
 manual=true; stopped=0; distant=true
 current={active=false,target=-1,partner=-1,recentPartner=-1,manualTarget=42,manualPartner=-1}
 AutoClash.onBallSync({TargetPlayerID=9}); assert(stopped==1,'unknown partner and distant target must stop manual spam')

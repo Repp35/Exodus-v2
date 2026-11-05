@@ -637,10 +637,14 @@ local function updateFrame(s, time)
     end
     s.teleported = false
     local target = id(snapshot.targetId)
-    if s.active and target and target ~= localPlayer.UserId and target ~= s.partner and outsideClashRadius(s, target) then
-        s.lastGate = "target_outside_clash_radius"
-        setActive(s, false, "target_outside_clash_radius", nil, time)
+    local partner = s.partner > 0 and s.partner or (s.windowPartner or s.recentPartner)
+    if target and target ~= localPlayer.UserId and target ~= partner and (s.active or s.windowPaused)
+        and outsideClashRadius(s, target) then
+        if s.active then setActive(s, false, "distant_target_redirected", nil, time) end
+        s.windowPaused, s.windowPartner, s.partner, s.recentPartner = false, nil, -1, -1
         clearReturn(s)
+        s.lastGate = "distant_target_redirected"
+        utils.stopAllSpam()
         return
     end
     if not snapshotCurrent(s, snapshot, time) then
@@ -796,8 +800,8 @@ function AutoClash.onBallSync(data)
     if manual and (not partner or partner <= 0) then
         partner = s.partner > 0 and s.partner or (s.windowPartner or s.recentPartner)
     end
-    if target and target ~= me and target ~= partner and previous ~= target
-        and (previous == me or (partner and partner > 0 and previous == partner))
+    if target and target ~= me and target ~= partner
+        and (manual or s.active or s.windowPaused)
         and outsideClashRadius(s, target) then
         if s.active then setActive(s, false, "distant_target_redirected", nil, clock()) end
         s.windowPaused, s.windowPartner, s.partner, s.recentPartner = false, nil, -1, -1
