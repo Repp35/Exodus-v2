@@ -217,7 +217,7 @@ local function isSnapshotTargeted(snapshot)
 	if target then return target == R.localUserId end
 	return snapshot.targeted == true
 end
-local function readPingOneWay()
+local function getPingOneWay()
 	if GameInfo and type(GameInfo.getLocalPing) == "function" then
 		local ok, value = pcall(GameInfo.getLocalPing)
 		if ok and type(value) == "number" and value == value and value >= 0 and value < math.huge then return value end
@@ -232,14 +232,6 @@ local function readPingOneWay()
 	local value = tonumber(ping.oneWay)
 	if not value or value <= 0 or value == math.huge or value == -math.huge then return 0 end
 	return value
-end
-local cachedPing, cachedPingAt = 0, -math.huge
-local function getPingOneWay()
-	local time = now()
-	if time < cachedPingAt or time - cachedPingAt >= 1 / 60 then
-		cachedPing = readPingOneWay(); cachedPingAt = time
-	end
-	return cachedPing
 end
 local function pingCompensation() return getPingOneWay() * T.PING_FACTOR end
 local function getReturnWindow(speed)
@@ -383,7 +375,6 @@ local function stopForOutsidePull(position, reason)
 end
 local function resetRuntime(reason)
 	R.generation += 1
-	cachedPing, cachedPingAt = 0, -math.huge
 	if R.active then setActive(false, reason or "reset") end
 	disconnectList(R.connections, true)
 	for player, connection in pairs(R.darkConnections) do

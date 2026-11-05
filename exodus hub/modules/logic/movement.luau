@@ -11,7 +11,6 @@ local function disconnectJump()
 	jumpConnection:Disconnect(); jumpConnection = nil
 end
 function Movement.syncJump()
-	if Utils and Utils.getConfigValue("AutoJump") == true and Utils.isActive() and jumpConnection and jumpConnection.Connected then return true end
 	generation += 1; disconnectJump()
 	if not Utils or Utils.getConfigValue("AutoJump") ~= true or not Utils.isActive() then return true end
 	local player = Utils.getLocalPlayer(); local runService = Utils.getRunService()

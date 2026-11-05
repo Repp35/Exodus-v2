@@ -370,7 +370,6 @@ local function onHeartbeat(character, root, dt, generation)
 	if not character.Parent or not root.Parent then return end
 	local time = clock()
 	if not isAutoParryEnabled() or not isSystemActive() then return end
-	samplePing(time)
 	local ball, targeted, snapshot = readFrameState(time)
 	local targetId = snapshot and tonumber(snapshot.targetId) or tonumber(GameInfo.getTargetId())
 	if targetId and targetId > 0 then
@@ -487,10 +486,7 @@ function AutoParry.fire()
 	if not R.lastApproaching or R.lastSpeed < minimumBallSpeed() then return false end
 	return requestParry(R.lastBall, "manual_parry")
 end
-function AutoParry.resetState()
-	resetTracking()
-	if R.bound and R.alive then setPhase("waiting", "reset") end
-end
+function AutoParry.resetState() detachCharacterInternal("reset") end
 function AutoParry.detachCharacter() detachCharacterInternal("detach") end
 function AutoParry.teardown()
 	detachCharacterInternal("teardown"); Remote = nil; GameInfo = nil; Utils = nil

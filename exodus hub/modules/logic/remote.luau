@@ -262,12 +262,15 @@ local function locateBallSync()
 	local replicatedStorage = Utils.getReplicatedStorage()
 	if not replicatedStorage then return nil end
 	local remotes = replicatedStorage:FindFirstChild("Remotes")
-	local candidate = remotes and remotes:FindFirstChild("BallSyncData")
-	if candidate and candidate:IsA("RemoteEvent") then return candidate end
-	candidate = replicatedStorage:FindFirstChild("BallSyncData")
-	if candidate and candidate:IsA("RemoteEvent") then return candidate end
-	candidate = replicatedStorage:FindFirstChild("BallSyncData", true)
-	if candidate and candidate:IsA("RemoteEvent") then return candidate end
+	local candidates = {
+		remotes and remotes:FindFirstChild("BallSyncData"),
+		replicatedStorage:FindFirstChild("BallSyncData"),
+		replicatedStorage:FindFirstChild("BallSyncData", true),
+	}
+
+	for _, candidate in pairs(candidates) do
+		if candidate and candidate:IsA("RemoteEvent") then return candidate end
+	end
 	return nil
 end
 local function disconnectBallSync()

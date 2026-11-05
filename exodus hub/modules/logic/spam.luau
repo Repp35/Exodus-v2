@@ -30,17 +30,14 @@ local function setActive(value, reason)
 	if Utils and type(Utils.recordTransition) == "function" then Utils.recordTransition("Spam", value and "stopped" or "running", status.phase, reason) end
 end
 local function requestParry()
-	local utils, remote = Utils, Remote
-	if not utils or not remote then return end
 	local time = now()
 	status.lastRequestAt = time
-	local ok, result, detail = pcall(remote.fireParry, 1)
-	if Utils ~= utils or Remote ~= remote then return end
+	local ok, result, detail = pcall(Remote.fireParry, 1)
 	if ok and result == true then status.lastError = nil; return end
 	local message = tostring(ok and (detail or "Remote.fireParry indisponível") or result); status.lastError = message
 	if time - status.lastErrorAt >= 1 then
 		status.lastErrorAt = time
-		if type(utils.recordError) == "function" then utils.recordError("Spam", message) end
+		if type(Utils.recordError) == "function" then Utils.recordError("Spam", message) end
 	end
 end
 local function readRate()
@@ -48,7 +45,7 @@ local function readRate()
 	local mode = type(Utils.getConfigValue) == "function" and Utils.getConfigValue("SpamRateMode") or config.SpamRateMode
 	local key = mode == "CPF" and "CPF" or "CPS"
 	local rate = tonumber(type(Utils.getConfigValue) == "function" and Utils.getConfigValue(key) or config[key]) or 0
-	if rate ~= rate or rate == math.huge or rate <= 0 or (key == "CPF" and rate * 60 == math.huge) then return key, 0 end
+	if rate ~= rate or rate == math.huge or rate <= 0 then return key, 0 end
 	return key, rate
 end
 

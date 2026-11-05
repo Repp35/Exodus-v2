@@ -405,7 +405,7 @@ function GameInfo.applyPacket(packet)
 		local delta = (sequence - current) % 65536
 		if delta == 0 or delta >= 32768 then return false end
 	end
-	lastPacket = table.clone(packet); lastPacketAt = os.clock(); return true
+	lastPacket = packet; lastPacketAt = os.clock(); return true
 end
 function GameInfo.decodeBallPacket(packet): BallSync?
 	local provider = getBallReplicator()

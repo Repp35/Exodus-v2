@@ -197,10 +197,7 @@ end
 local function addPlayer(player)
 	if not player or not player.Parent then return end
 	if R.playerIndex[player] then return end
-	table.insert(R.playerList, player)
-	table.sort(R.playerList, function(a, b) return a.UserId < b.UserId end)
-	for index, item in ipairs(R.playerList) do R.playerIndex[item] = index end
-	R.trackSnapshot[player] = {}
+	local index = #R.playerList + 1; R.playerList[index] = player; R.playerIndex[player] = index; R.trackSnapshot[player] = {}
 	R.previousSpeed[player] = nil; R.lastPosition[player] = nil; R.lastPositionAt[player] = nil; local generation = R.generation
 	if player.Character then task.spawn(attachCharacter, player.Character, player, generation) end
 	addPlayerConnection(
@@ -217,8 +214,9 @@ local function removePlayer(player)
 	if not player then return end
 	disconnectPlayerConnections(player); local index = R.playerIndex[player]
 	if index then
-		table.remove(R.playerList, index); R.playerIndex[player] = nil
-		for newIndex = index, #R.playerList do R.playerIndex[R.playerList[newIndex]] = newIndex end
+		local lastIndex = #R.playerList; local lastPlayer = R.playerList[lastIndex]
+		if index ~= lastIndex then R.playerList[index] = lastPlayer; R.playerIndex[lastPlayer] = index end
+		R.playerList[lastIndex] = nil; R.playerIndex[player] = nil
 	end
 	R.cooldown[player] = nil; R.trackSnapshot[player] = nil; R.hookedAnimator[player] = nil; R.previousSpeed[player] = nil
 	R.lastPosition[player] = nil; R.lastPositionAt[player] = nil

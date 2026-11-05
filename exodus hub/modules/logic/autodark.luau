@@ -22,14 +22,14 @@ function AutoDark.sync()
 	local players = Utils.getPlayers(); local localPlayer = Utils.getLocalPlayer(); local runService = Utils.getRunService()
 	if not players or not localPlayer or not runService or not runService.Heartbeat then return false, "Players ou Heartbeat indisponível" end
 	local trackedPlayers = {}
-	track(players.PlayerAdded:Connect(function(player) if player ~= localPlayer then trackedPlayers[player] = true end end))
+	track(players.PlayerAdded:Connect(function(player) trackedPlayers[player] = true end))
 	track(players.PlayerRemoving:Connect(function(player) trackedPlayers[player] = nil end))
 	for _, player in ipairs(players:GetPlayers()) do
-		if player ~= localPlayer then trackedPlayers[player] = true end
+		trackedPlayers[player] = true
 	end
 	local function otherDarkActive()
 		for player in pairs(trackedPlayers) do
-			if player:GetAttribute("DarkSealed") == true then return true end
+			if player ~= localPlayer and player:GetAttribute("DarkSealed") == true then return true end
 		end
 		return false
 	end

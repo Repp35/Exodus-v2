@@ -209,8 +209,8 @@ function Character.setup(deps: any)
 	characterAddedConnection = player.CharacterAdded:Connect(function(character) setupCharacter(character) end)
 	characterRemovingConnection = player.CharacterRemoving:Connect(function(character)
 		if character ~= activeCharacter then return end
-		generation = generation + 1; setPhase("cleaning", "character_removing")
-		disconnectCharacterRuntime()
+		local currentGeneration = generation; generation = generation + 1; setPhase("cleaning", "character_removing")
+		if currentGeneration <= generation then disconnectCharacterRuntime() end
 		setPhase("stopped", "character_removed")
 	end)
 	boundUtils.trackGlobal(characterAddedConnection); boundUtils.trackGlobal(characterRemovingConnection); local currentCharacter = player.Character

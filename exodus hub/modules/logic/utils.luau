@@ -71,25 +71,21 @@ local State = {
 local DiagnosticsModules = {}
 local SpamObservers = {}
 local ConfigObservers = {}
-local function observe(list, observer)
-	if type(observer) ~= "function" then return nil end
-	if not table.find(list, observer) then table.insert(list, observer) end
-	return { Disconnect = function()
-		local index = table.find(list, observer)
-		if index then table.remove(list, index) end
-	end }
-end
 local function notifySpamObservers()
-	for _, observer in ipairs(table.clone(SpamObservers)) do
+	for observer in pairs(SpamObservers) do
 		local ok, err = pcall(observer)
 		if not ok then warn("[Spam] " .. tostring(err)) end
 	end
 end
 function Utils.observeSpam(observer)
-	return observe(SpamObservers, observer)
+	if type(observer) ~= "function" then return nil end
+	SpamObservers[observer] = true
+	return { Disconnect = function() SpamObservers[observer] = nil end }
 end
 function Utils.observeConfig(observer)
-	return observe(ConfigObservers, observer)
+	if type(observer) ~= "function" then return nil end
+	ConfigObservers[observer] = true
+	return { Disconnect = function() ConfigObservers[observer] = nil end }
 end
 local NamespaceUpdating = false
 local TransitionRefreshPending = false
@@ -360,7 +356,7 @@ function Utils.setConfig(config)
 	for key, value in pairs(normalized) do
 		State.config[key] = value
 	end
-	for _, observer in ipairs(table.clone(ConfigObservers)) do
+	for observer in pairs(ConfigObservers) do
 		local ok, err = pcall(observer, normalized)
 		if not ok then warn("[Config] " .. tostring(err)) end
 	end
