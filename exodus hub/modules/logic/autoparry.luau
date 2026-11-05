@@ -397,7 +397,30 @@ local function onHeartbeat(character, root, dt, generation)
 	end
 	if R.teleported then clearBallState(); setPhase("waiting", "teleport_lock"); return end
 	if not isAutoParryEnabled() then setPhase("waiting", "auto_parry_disabled"); return end
-	if isSpamActive() then clearBallState(); setPhase("waiting", "spam_active"); return end
+	if isSpamActive() then
+		local _, _, spamSnapshot = readFrameState(time)
+		if spamSnapshot then
+			local targetId = tonumber(spamSnapshot.targetId)
+			if targetId and targetId > 0 then
+				local sequence = spamSnapshot.syncSequence
+				local fresh = true
+				if type(sequence) == "number" and type(R.lastSyncSequence) == "number" then
+					local delta = (sequence - R.lastSyncSequence) % 65536
+					fresh = delta < 32768 and (delta ~= 0 or R.lastTarget == targetId)
+				end
+				if fresh then
+					if R.player and R.lastTarget == R.player.UserId and targetId ~= R.player.UserId then
+						R.firedForTarget = true
+						R.armed = false
+					end
+					observeTarget(targetId)
+					R.lastTarget = targetId
+					if type(sequence) == "number" then R.lastSyncSequence = sequence end
+				end
+			end
+		end
+		clearBallState(); setPhase("waiting", "spam_active"); return
+	end
 	if not isSystemActive() then setPhase("waiting", "system_inactive"); return end
 	local ball, targeted, snapshot = readFrameState(time)
 	if snapshot and R.lastSyncSequence ~= nil then
@@ -559,6 +582,10 @@ function AutoParry.onBallSync(data)
 	if data.TargetPlayerID == nil and GameInfo and type(GameInfo.getTargetId) == "function" then
 		local ok, value = pcall(GameInfo.getTargetId)
 		if ok then targetId = tonumber(value) or -1 end
+	end
+	if isSpamActive() and R.player and R.lastTarget == R.player.UserId and targetId > 0 and targetId ~= R.player.UserId then
+		R.firedForTarget = true
+		R.armed = false
 	end
 	observeTarget(targetId)
 	if targetId > 0 and R.player and targetId ~= R.player.UserId then R.armed = not R.firedForTarget end
