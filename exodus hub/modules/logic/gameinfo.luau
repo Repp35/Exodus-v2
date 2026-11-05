@@ -121,6 +121,7 @@ function GameInfo.getLocalPing() return players.LocalPlayer and players.LocalPla
 function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
 function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
 function GameInfo.getDashAbility() return getAbility(2, "Dash") end
+function GameInfo.getFierceDeflectAbility() return getAbility(19, "ActivateAndBlock") end
 function GameInfo.getDarkSealAbility() return getAbility(20, "SendEvent") end
 function GameInfo.getDeflectUICooldown()
     local ability = GameInfo.getDeflectAbility()
@@ -362,7 +363,7 @@ GameInfo.__contract = {
     requiresMethods = { Utils = { "now", "apiVersion", "getPlayers", "getReplicatedStorage", "getWorkspace" } },
     provides = { "setup", "getBall", "getBallPosition", "getBallVelocity", "getRootPosition", "getLocalPing", "getDeflectRange", "getDeflectWindow",
         "getDeflectAbility", "getDeflectServerEvents", "decodeDeflectServerEvent", "getHeldDeflectServerCooldown", "getDeflectCooldownState",
-        "getDashAbility", "getDarkSealAbility", "getBallSpeedLimits", "getDeflectCD", "getSnapshot", "getSnapshotAt", "isSnapshotValid",
+        "getDashAbility", "getFierceDeflectAbility", "getDarkSealAbility", "getBallSpeedLimits", "getDeflectCD", "getSnapshot", "getSnapshotAt", "isSnapshotValid",
         "getSyncData", "getSyncSequence", "decodeBallPacket", "getTargetId", "applySync", "installBallWatcher" },
 }
 return GameInfo
