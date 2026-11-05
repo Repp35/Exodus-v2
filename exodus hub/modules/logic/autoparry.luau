@@ -228,7 +228,6 @@ function AutoParry.onBallSync(data)
     end
     state.teleported, state.teleportSequence = false, nil
     local target = data.TargetPlayerID ~= nil and (tonumber(data.TargetPlayerID) or -1) or gameInfo.getTargetId()
-    if utils.isSpamActive() and state.player and state.target == state.player.UserId and target > 0 and target ~= state.player.UserId then state.fired = true end
     observeTarget(target, clock())
     if target <= 0 then
         state.target, state.targetKnown = target, true
