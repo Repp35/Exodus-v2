@@ -299,6 +299,13 @@ local function observeTarget(s, target, explicit, serverTime, time)
         return
     end
     local previous = s.target
+    if s.active and previous == s.partner and target ~= me and target ~= s.partner then
+        s.target = target
+        s.lastGate = "partner_target_redirected"
+        setActive(s, false, "partner_target_redirected", nil, time)
+        clearReturn(s)
+        return
+    end
     if target == previous then return end
     updateSwitch(s, previous, target, time, serverTime)
     s.target = target
@@ -722,7 +729,14 @@ function AutoClash.onBallSync(data)
     local s = current
     if not s or type(data) ~= "table" then return end
     local copy = table.clone(data)
-    local target = id(copy.TargetPlayerID) or id(copy.HighlightTargetPlayerID)
+    local target = id(copy.TargetPlayerID) or id(copy.HighlightTargetPlayerID) or id(gameInfo.getTargetId())
+    if s.active and s.target == s.partner and s.partner > 0 and target and target ~= localPlayer.UserId and target ~= s.partner then
+        local now = clock()
+        s.target = target
+        s.lastGate = "partner_target_redirected"
+        setActive(s, false, "partner_target_redirected", nil, now)
+        clearReturn(s)
+    end
     if s.active and target and target ~= localPlayer.UserId and outsideClashRadius(s, target) then
         local now = clock()
         s.lastGate = "target_outside_clash_radius"
