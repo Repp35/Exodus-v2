@@ -123,7 +123,7 @@ local function setActive(s, enabled, reason, detail, time)
         if root and own and vector(root.Position) then s.recentDistance = (own - root.Position).Magnitude end
     end
     s.active = enabled
-    s.clashAwayAt = nil
+    s.clashAwayAt = enabled and (s.target > 0 and s.target ~= localPlayer.UserId and time or nil) or nil
     clearExit(s)
     if enabled then
         local prediction = s.prediction
@@ -283,7 +283,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
         return "pull"
     end
     if previous == me and target ~= me then
-        if s.active then s.clashAwayAt = time end
+        if s.active then s.clashAwayAt = s.clashAwayAt or time end
         if s.active and s.partner > 0 and target ~= s.partner and not closePartner(s, target) then setActive(s, false, "target_redirected", nil, time) end
         local window, bonus = returnAllowance(s, target, time)
         if current ~= s or not s.bound then return end
@@ -296,7 +296,12 @@ local function observeTarget(s, target, explicit, serverTime, time)
         s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = nil, 0, 0, 0
         s.lastGate = "target_lost"
     elseif previous > 0 and previous ~= me and target == me then
-        s.clashAwayAt = nil
+        if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.05 + ping(s, time) then
+            s.lastGate = "deact_target_return_timeout"
+            setActive(s, false, "target_return_timeout", nil, time)
+        else
+            s.clashAwayAt = nil
+        end
         local elapsed = s.returnAt and time - s.returnAt or nil
         if finite(serverTime) and finite(s.returnServerAt) then elapsed = serverTime - s.returnServerAt end
         if s.returnFrom == previous and finite(elapsed) and elapsed >= 0 and elapsed <= s.returnWindow and time <= s.returnExpires then
@@ -463,6 +468,8 @@ local function evaluate(s, snapshot, time)
         end
     end
     if s.active then
+        if target and target ~= me and not s.clashAwayAt then s.clashAwayAt = time end
+        if target == me then s.clashAwayAt = nil end
         if s.clashAwayAt and time - s.clashAwayAt > 0.05 + ping(s, time) then
             s.lastGate = "deact_target_return_timeout"
             setActive(s, false, "target_return_timeout", nil, time)
