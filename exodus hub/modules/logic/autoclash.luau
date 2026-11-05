@@ -616,27 +616,20 @@ function OwnDash.shouldDeactivate(t)
 	R.lastGate = "own_dash_escape_not_farther"; return false
 end
 function Deactivation.shouldDeactivate(t, snapshot)
-	if isSnapshotTargeted(snapshot) and R.lastTarget == R.localUserId then
-		R.outsideRadiusSince = nil; Deactivation.clearConfirmation(); R.lastGate = "targeted"; return false
+	if isSnapshotTargeted(snapshot) then R.lastGate = "deact_targeted"; return false end
+	local root = getRootPosition()
+	local position = getSnapshotPosition(snapshot)
+	local speed = math.max(finiteNumber(snapshot and snapshot.speed, R.lastSpeed), 0)
+	if not root or not position or speed <= 0 then R.lastGate = "deact_tti_unavailable"; return false end
+	local radiusData = AutoParry.getRadius("geometry", 0, speed, "game")
+	local radius = type(radiusData) == "table" and tonumber(radiusData.noWindowParryRadius)
+	local window = type(radiusData) == "table" and tonumber(radiusData.deflectWindow)
+	if not radius or radius ~= radius or radius < 0 or radius == math.huge or not window or window ~= window or window <= 0 or window == math.huge then
+		R.lastGate = "deact_window_unavailable"; return false
 	end
-	local rootPosition = getRootPosition()
-	local ballPosition = getSnapshotPosition(snapshot)
-	if rootPosition and ballPosition and R.parryRadius > 0 and distanceSquared(rootPosition, ballPosition) > R.parryRadius * R.parryRadius then
-		if not R.outsideRadiusSince or t < R.outsideRadiusSince then R.outsideRadiusSince = t end
-		-- Distance alone is not a reliable clash termination signal.
-	else
-		R.outsideRadiusSince = nil
-	end
-	local dashEscape = OwnDash.shouldDeactivate(t)
-	if dashEscape and not isSnapshotTargeted(snapshot) then R.lastGate = "own_dash_escape"; return true end
-	local root = getRootPosition(); local position = getSnapshotPosition(snapshot)
-	if not root or not position or R.parryRadius <= 0 then Deactivation.clearConfirmation(); R.lastGate = "deact_no_position"; return false end
-	if t < R.activationDeactLockedUntil then Deactivation.clearConfirmation(); R.lastGate = "deact_activation_lock"; return false end
-	if t < R.dashDeactLockedUntil then Deactivation.clearConfirmation(); R.lastGate = "deact_dash_lock"; return false end
-	local speed = R.lastSpeed
-	if speed <= 0 then Deactivation.clearConfirmation(); R.lastGate = "deact_ball_stopped"; return false end
-	if Deactivation.direction(t, snapshot, speed) then return Deactivation.confirm(t, "deact_direction") end
-	Deactivation.clearConfirmation(); R.lastGate = "deact_none"; return false
+	local tti = math.max((position - root).Magnitude - radius, 0) / speed
+	if tti > math.max(window - 0.05, 0) then R.lastGate = "deact_tti_outside_window"; return true end
+	R.lastGate = "deact_tti_inside_window"; return false
 end
 
 -- evaluation
