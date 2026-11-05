@@ -235,10 +235,9 @@ local function getPingOneWay()
 end
 local function pingCompensation() return getPingOneWay() * T.PING_FACTOR end
 local function getReturnWindow(speed)
-	local configured = Utils and type(Utils.getConfigValue) == "function" and tonumber(Utils.getConfigValue("AutoClashActivationMs"))
 	local minimum, maximum
 	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum, maximum = GameInfo.getBallSpeedLimits() end
-	local low = configured and math.clamp(configured, 0, 400) / 1000 or T.RETURN_WIN_LO; local base = lerpBySpeed(speed, low, low * T.RETURN_WIN_MIN_FACTOR, minimum or speed, maximum or speed)
+	local low = T.RETURN_WIN_LO; local base = lerpBySpeed(speed, low, low * T.RETURN_WIN_MIN_FACTOR, minimum or speed, maximum or speed)
 	local bonus = 0
 	if AutoParry and type(AutoParry.getPressure) == "function" then
 		local ok, pressure = pcall(AutoParry.getPressure)
@@ -475,10 +474,10 @@ function Deactivation.direction(t, snapshot, speed)
 	if distanceSquared(root, position) <= directionDeactRadius * directionDeactRadius then Deactivation.clearConfirmation(); R.lastGate = "deact_direction_radius_protected"; return false end
 	if R.lastDirectionSwitchAt <= 0 then return false end
 	if R.lastSyncAt < R.lastDirectionSwitchAt then return false end
-	local configured = Utils and type(Utils.getConfigValue) == "function" and tonumber(Utils.getConfigValue("AutoClashDeactivationMs")); local ping = pingCompensation()
+	local ping = pingCompensation()
 	local minimum, maximum
 	if GameInfo and type(GameInfo.getBallSpeedLimits) == "function" then minimum, maximum = GameInfo.getBallSpeedLimits() end
-	local base = (configured and math.clamp(configured, 0, 400) / 1000 or T.DEACT_DIRECTION_MAX_LO) + ping
+	local base = T.DEACT_DIRECTION_MAX_LO + ping
 	local baseMax = math.max(lerpBySpeed(speed, base, base * T.DEACT_DIRECTION_MAX_MIN_FACTOR, minimum or speed, maximum or speed), T.MIN_EVAL_INTERVAL * 1.5); local directionMax = baseMax
 	if R.clashIntervalEma and R.clashIntervalEmaSamples >= T.CLASH_INTERVAL_EMA_MIN_SAMPLES then directionMax = math.max(R.clashIntervalEma * T.CLASH_INTERVAL_DIRECTION_FACTOR, baseMax) end
 	if t - R.lastDirectionSwitchAt <= directionMax then return false end
