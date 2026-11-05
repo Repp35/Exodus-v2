@@ -4,21 +4,13 @@ Remake do Exodus Hub para o jogo que fornece `GameBall`, `BallReplicator` e `Cli
 
 ## Instalação
 
-`Exodus-v3.luau` é a distribuição em arquivo único. Depois de publicar esse arquivo na branch `main`, inicie com:
+Execute o loader no cliente Roblox:
 
 ```lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/Repp35/Exodus-v2/main/Exodus-v3.luau"))()
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Repp35/Exodus-v2/main/exodus%20hub/loader.luau"))()
 ```
 
-Para usar uma revisão específica, substitua `main` pelo SHA do commit. O arquivo distribuído contém todos os módulos e não baixa código adicional durante a inicialização. Para uso local, carregue o arquivo com `readfile` e `loadstring` do executor. Ele precisa executar no cliente Roblox e oferecer essas APIs de execução; a persistência de configuração requer também as APIs de arquivos e pastas.
-
-Ao alterar o código-fonte, gere novamente a distribuição com Python 3:
-
-```sh
-python3 tools/bundle.py
-```
-
-O código-fonte está em `exodus hub/`; `loader.luau` também aceita um checkout local completo ou carrega todos os módulos de um único commit do GitHub. Para fixar o loader modular a um commit, defina `_G.EXODUS_REVISION` com o SHA completo antes de executá-lo.
+O loader usa um checkout local completo quando disponível; caso contrário, carrega todos os módulos de um único commit do GitHub. Para escolher o commit, defina `_G.EXODUS_REVISION` com o SHA completo antes de executá-lo. A persistência de configuração requer as APIs de arquivo e pasta do executor.
 
 ## Controles
 
