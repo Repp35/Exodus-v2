@@ -396,10 +396,6 @@ local function observeTarget(s, target, explicit, serverTime, time)
     end
 end
 local function updateFrame(s, time)
-    if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.09 + ping(s, time) then
-        s.lastGate = "deact_target_return_timeout"
-        setActive(s, false, "target_return_timeout", nil, time)
-    end
     if not gate(s) or not s.root or not s.root.Parent or not s.character.Parent then return end
     if not s.returnPending and s.returnExpires > 0 and time >= s.returnExpires then clearReturn(s) end
     local snapshot = readSnapshot(s, time)
@@ -421,6 +417,16 @@ local function updateFrame(s, time)
     end
     s.teleported = false
     local target = id(snapshot.targetId)
+    -- Evaluate the real ball trajectory every frame, without return-time delays.
+    -- A partner-targeted ball may be travelling away, but it must not keep
+    -- AutoClash firing outside our own deflection window.
+    if s.active and not withinDeflectWindow(s, snapshot) then
+        s.lastGate = "outside_deflect_window"
+        setActive(s, false, "outside_deflect_window", nil, time)
+        s.windowPaused, s.windowPartner = false, nil
+        s.activationLockUntil = math.max(s.activationLockUntil or 0, time + 0.05)
+        utils.stopAllSpam()
+    end
     local partner = s.partner > 0 and s.partner or (s.windowPartner or s.recentPartner)
     if target and target ~= localPlayer.UserId and target ~= partner and (s.active or s.windowPaused)
         and outsideClashRadius(s, target) then
