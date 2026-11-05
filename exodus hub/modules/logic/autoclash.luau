@@ -149,7 +149,7 @@ local function setActive(s, enabled, reason, detail, time, recoveryValidated)
         if s.partner == -1 and s.target ~= localPlayer.UserId and s.target ~= -1 then s.partner = s.target end
         local activationRadius = s.activationRadius
         if time < s.dashBonusUntil then
-            local ok, value = pcall(autoParry.getRadius, "geometry", 1.5, s.speed, "game")
+            local ok, value = pcall(autoParry.getRadius, "geometry", 1, s.speed, "game")
             if ok and type(value) == "table" and finite(value.fullRadius) then activationRadius = value.fullRadius end
         end
         s.activation = {
