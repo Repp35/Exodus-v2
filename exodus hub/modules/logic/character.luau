@@ -15,9 +15,7 @@ local function setPhase(value, reason)
 	local previous = phase; phase = value
 	if utils then utils.recordTransition("Character", previous, value, reason) end
 end
-local function detach(entry)
-	entry.detach()
-end
+local function detach(entry) entry.detach() end
 local function clearLife()
 	local life = currentLife; currentLife = nil
 	if life then
@@ -48,11 +46,8 @@ local function bindLife(life)
 		local result, detail = entry.bind(life.character)
 		if not valid(life) then detach(entry); return end
 		if result ~= true then
-			utils.recordError(
-				"Character",
-				("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(detail or result))
-			)
-			detach(entry); deactivate(life, "bind_failed"); setPhase("invalid", "bind_failed"); return
+			utils.recordError("Character", ("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(detail or result))); detach(entry); deactivate(life, "bind_failed")
+			setPhase("invalid", "bind_failed"); return
 		end
 		life.bound[#life.bound + 1] = entry
 	end

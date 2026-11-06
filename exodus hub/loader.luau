@@ -237,8 +237,7 @@ local function loadModules(urls, localRoot)
 		local pending = #names; local deadline = os.clock() + 30
 		for _, name in ipairs(names) do
 			task.spawn(function()
-				load(name)
-				pending -= 1
+				load(name); pending -= 1
 			end)
 		end
 		while pending > 0 do
@@ -566,10 +565,7 @@ function Loader.start()
 	if not ready then return false, "Loader", reason end
 	startLock = true; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules
 	Exodus.Loader = Loader; Modules.Loader = Loader; local started, moduleName, startError = startInternal(); startLock = false
-	if started ~= true then
-		rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry()
-		return started, moduleName, startError
-	end
+	if started ~= true then rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry(); return started, moduleName, startError end
 	activeLoaded = nil; return started, moduleName, startError
 end
 local function startSafely()
