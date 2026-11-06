@@ -48,13 +48,8 @@ end
 local function track(s, signal, callback)
 	local connection = signal:Connect(callback); s.connections[#s.connections + 1] = connection; utils.trackCharacter(connection); return connection
 end
-local function rootOf(id)
-	local player = id and players:GetPlayerByUserId(id); local character = player and player.Character; return character and character:FindFirstChild("HumanoidRootPart")
-end
 local function distanceToPlayer(s, id)
-	local root = rootOf(id)
-	if not root or not root.Parent or not s.root.Parent then return nil end
-	return (root.Position - s.root.Position).Magnitude
+	return id and gameInfo.getPlayerDistance(id) or nil
 end
 
 -- geometry
@@ -74,11 +69,9 @@ local function returnLimit(s, speed, window)
 	if not distance then return limit, false end
 	local ownRange = tonumber(gameInfo.getDeflectRange())
 	if not finite(ownRange) or ownRange <= 0 then ownRange = 8.5 end
-	local opponent = players:GetPlayerByUserId(s.partner); local opponentRange = opponent and tonumber(opponent:GetAttribute("DeflectRange"))
-	if not finite(opponentRange) or opponentRange <= 0 then opponentRange = 8.5 end
 	local ping = gameInfo.getLocalPing()
 	if not finite(ping) or ping < 0 then ping = 0 end
-	local close = distance <= ownRange + speed * ping; local travel = math.max(0, distance - ownRange - opponentRange) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping), close
+	local close = distance <= ownRange + speed * ping; local travel = math.max(0, distance - ownRange - 8.5) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping), close
 end
 
 -- activation
@@ -402,6 +395,7 @@ AutoSpam.__contract = {
 			"isSnapshotValid",
 			"getDeflectWindow",
 			"getDeflectRange",
+			"getPlayerDistance",
 			"getLocalPing",
 			"getDeflectGeometry",
 			"getBallFrozen",

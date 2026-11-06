@@ -194,6 +194,14 @@ function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode")
 function GameInfo.observeAbilityMode(callback)
 	return world:GetAttributeChangedSignal("CurGamemode"):Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
 end
+function GameInfo.getPlayerDistance(id)
+	local own = players.LocalPlayer
+	local other = type(id) == "number" and players:GetPlayerByUserId(id)
+	local ownRoot = own and own.Character and own.Character:FindFirstChild("HumanoidRootPart")
+	local otherRoot = other and other.Character and other.Character:FindFirstChild("HumanoidRootPart")
+	if not ownRoot or not otherRoot or not ownRoot.Parent or not otherRoot.Parent then return nil end
+	return (ownRoot.Position - otherRoot.Position).Magnitude
+end
 function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
 function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
 function GameInfo.getDashAbility() return getAbility(2, "Dash") end
@@ -473,6 +481,7 @@ GameInfo.__contract = {
 		"areAbilitiesEnabled",
 		"observeAbilityMode",
 		"getDeflectRange",
+		"getPlayerDistance",
 		"getDeflectWindow",
 		"getDeflectGeometry",
 		"getBallFrozen",
