@@ -51,8 +51,6 @@ local function makeState()
 		queueHead = 1,
 		draining = false,
 		target = -1,
-		manualTarget = -1,
-		manualPartner = -1,
 		sequence = nil,
 		syncAt = 0,
 		syncSource = nil,
@@ -738,41 +736,26 @@ end
 function AutoSpam.onBallSync(data)
 	local s = current
 	if not s or type(data) ~= "table" then return end
-	local copy = table.clone(data); local sequence = copy.Sequence or copy.TeleportSequence; local manualSequence = false
-	if manualSequence and not s.wasManual then
-		s.manualSequence = nil
-		if s.target > 0 then s.manualTarget = s.target end
-		if s.partner > 0 then s.manualPartner = s.partner end
-	end
-	s.wasManual = manualSequence
-	local lastSequence
-	if manualSequence then lastSequence = s.manualSequence else lastSequence = s.sequence end
+	local copy = table.clone(data)
+	local sequence = copy.Sequence or copy.TeleportSequence
 	if sequence ~= nil then
 		if not finite(sequence) or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return end
-		if finite(lastSequence) and (sequence - lastSequence) % 65536 >= 32768 then return end
-		if manualSequence then s.manualSequence = sequence end
+		if finite(s.sequence) and (sequence - s.sequence) % 65536 >= 32768 then return end
 	end
-	local target = id(copy.TargetPlayerID) or id(copy.HighlightTargetPlayerID) or id(gameInfo.getTargetId()); local lastTarget = manualSequence and s.manualTarget or s.target
-	if sequence ~= nil and lastSequence == sequence and target and lastTarget > 0 and target ~= lastTarget then return end
-	local me = localPlayer.UserId; local manual = false; local previous = s.target; local partner = manual and s.manualPartner or (s.partner > 0 and s.partner or s.windowPartner or s.recentPartner)
-	if manual and (not partner or partner <= 0) then partner = s.partner > 0 and s.partner or (s.windowPartner or s.recentPartner) end
-	if target and target ~= me and target ~= partner and (manual or s.active or s.windowPaused) and outsideClashRadius(s, target) then
-		if not manual then rememberDistantRecovery(s, partner) end
+	local target = id(copy.TargetPlayerID) or id(copy.HighlightTargetPlayerID) or id(gameInfo.getTargetId())
+	if sequence ~= nil and s.sequence == sequence and target and s.target > 0 and target ~= s.target then return end
+	local partner = s.partner > 0 and s.partner or (s.windowPartner or s.recentPartner)
+	if target and target ~= localPlayer.UserId and target ~= partner and (s.active or s.windowPaused) and outsideClashRadius(s, target) then
+		rememberDistantRecovery(s, partner)
 		if s.active then setActive(s, false, "distant_target_redirected", nil, clock()) end
 		s.windowPaused, s.windowPartner, s.partner, s.recentPartner = false, nil, -1, -1
-		s.manualPartner, s.manualTarget, s.target = -1, target, target
-		clearReturn(s); s.lastGate = "distant_target_redirected"; utils.setAutoSpamActive(false)
-	elseif manual and target then
-		if not partner or partner <= 0 then
-			if previous == me and target ~= me then s.manualPartner = target elseif previous <= 0 and target ~= me and not outsideClashRadius(s, target) then s.manualPartner = target end
-		else
-			s.manualPartner = partner
-		end
-		s.manualTarget = target
-	elseif not manual then
-		s.manualTarget, s.manualPartner, s.manualSequence = -1, -1, nil
+		s.target = target
+		clearReturn(s)
+		s.lastGate = "distant_target_redirected"
 	end
-	if copy.Sequence == nil and copy.TeleportSequence == nil and data == gameInfo.getSyncData() then copy.Sequence = gameInfo.getSyncSequence() end
+	if copy.Sequence == nil and copy.TeleportSequence == nil and data == gameInfo.getSyncData() then
+		copy.Sequence = gameInfo.getSyncSequence()
+	end
 	return dispatch(s, "sync", { copy = copy, original = data }, clock())
 end
 function AutoSpam.isActive() return state.active end
