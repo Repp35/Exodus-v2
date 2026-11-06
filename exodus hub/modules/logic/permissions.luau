@@ -162,7 +162,9 @@ end
 local function readonly(value)
 	if type(value) ~= "table" then return value end
 	local copied = {}
-	for key, item in pairs(value) do copied[key] = readonly(item) end
+	for key, item in pairs(value) do
+		copied[key] = readonly(item)
+	end
 	return table.freeze(copied)
 end
 local function objectView(consumer, method, getter, readable, writable)
@@ -194,13 +196,7 @@ local function wrap(consumer, source, provider)
 		if not exposed.provide[method] and not (exposed.data and exposed.data[method]) then deny(source, "api.expose." .. method) end
 		local value = provider[method]
 		if value == nil then error(("Permissions: API ausente: %s.%s"):format(source, method), 2) end
-		if exposed.data and exposed.data[method] then
-			view[method] = readonly(value)
-		elseif source == "gameinfo" and entry.objectRead and entry.objectRead[method] then
-			view[method] = objectView(consumer, method, value, entry.objectRead[method], entry.objectWrite and entry.objectWrite[method])
-		else
-			view[method] = value
-		end
+		if exposed.data and exposed.data[method] then view[method] = readonly(value) elseif source == "gameinfo" and entry.objectRead and entry.objectRead[method] then view[method] = objectView(consumer, method, value, entry.objectRead[method], entry.objectWrite and entry.objectWrite[method]) else view[method] = value end
 	end
 	setmetatable(view, {
 		__index = function(_, method) deny(consumer, "api.consume." .. source .. "." .. tostring(method)) end,
