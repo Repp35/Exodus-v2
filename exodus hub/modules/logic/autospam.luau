@@ -18,6 +18,15 @@ local T = {
 	minimumSpeed = 6,
 	frame = 1 / 60,
 	activationWindowFactor = 0.75,
+	activationLockRadiusFactor = 0.7,
+	activationLockSeconds = 0.05,
+	dashLockSeconds = 0.07,
+	dashLockPingFactor = 0.3,
+	recoveryDistanceFactor = 0.25,
+	pressureBoostThreshold = 0.6,
+	dashBonusSeconds = 0.3,
+	targetReturnTimeout = 0.09,
+	exitConfirmSeconds = 0.05,
 }
 
 -- helpers
@@ -206,8 +215,8 @@ local function setActive(s, enabled, reason, detail, time, recoveryValidated)
 			radius = activationRadius,
 			speed = s.speed,
 		}
-		if prediction and s.parryRadius > 0 and prediction.distance <= s.parryRadius * 0.7 then s.activationLockUntil = time + 0.05 end
-		if time < s.dashBonusUntil then s.dashLockUntil = time + 0.07 + ping(s, time) * 0.3 end
+		if prediction and s.parryRadius > 0 and prediction.distance <= s.parryRadius * T.activationLockRadiusFactor then s.activationLockUntil = time + T.activationLockSeconds end
+		if time < s.dashBonusUntil then s.dashLockUntil = time + T.dashLockSeconds + ping(s, time) * T.dashLockPingFactor end
 	else
 		s.partner = -1; s.dashLockUntil = 0
 	end
@@ -246,7 +255,7 @@ local function similarRecoveryDistance(s)
 	if not s.recoveryPartner or s.partner ~= s.recoveryPartner or not finite(s.recoveryDistance) then return false end
 	local own = rootPosition(s); local _, root = playerRoot(s.recoveryPartner)
 	if not own or not root or not vector(root.Position) then return false end
-	local currentDistance = (own - root.Position).Magnitude; return math.abs(currentDistance - s.recoveryDistance) <= math.max(2, s.recoveryDistance * 0.25)
+	local currentDistance = (own - root.Position).Magnitude; return math.abs(currentDistance - s.recoveryDistance) <= math.max(2, s.recoveryDistance * T.recoveryDistanceFactor)
 end
 local function withinDeflectWindow(s, snapshot)
 	local root = rootPosition(s); local ability = gameInfo.getDeflectAbility()
@@ -392,7 +401,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
 		s.lastGate = "target_lost"
 	elseif previous > 0 and previous ~= me and target == me then
 		if s.distantRecovery and previous ~= s.recoveryPartner then s.recoveryReturnedToMe = true end
-		if s.active and s.clashAwayAt and time - s.clashAwayAt > 0.09 + ping(s, time) then s.lastGate = "deact_target_return_timeout"; setActive(s, false, "target_return_timeout", nil, time)
+		if s.active and s.clashAwayAt and time - s.clashAwayAt > T.targetReturnTimeout + ping(s, time) then s.lastGate = "deact_target_return_timeout"; setActive(s, false, "target_return_timeout", nil, time)
 		else s.clashAwayAt = nil end
 		local elapsed = s.returnAt and time - s.returnAt or nil
 		if finite(serverTime) and finite(s.returnServerAt) then elapsed = serverTime - s.returnServerAt end
@@ -475,13 +484,13 @@ local function trackDash(s, event, time)
 		player = event.player,
 		userId = event.userId,
 		detectedAt = detected,
-		expiresAt = detected + 0.3,
+		expiresAt = detected + T.dashBonusSeconds,
 		position = event.position,
 		velocity = event.velocity,
 		previousPosition = event.previousPosition,
 		dangerous = true,
 	}
-	s.dashBonusUntil = math.max(s.dashBonusUntil, detected + 0.3); extendReturnForDash(s, time)
+	s.dashBonusUntil = math.max(s.dashBonusUntil, detected + T.dashBonusSeconds); extendReturnForDash(s, time)
 end
 confirmInvalidTarget = function(s, time)
 	local reason = "invalid_target"
@@ -490,7 +499,7 @@ confirmInvalidTarget = function(s, time)
 		return false
 	end
 	s.exitFrames += 1; s.exitLastAt = time
-	if s.exitFrames >= 2 and time - s.exitSince >= 0.05 then
+	if s.exitFrames >= 2 and time - s.exitSince >= T.exitConfirmSeconds then
 		s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = nil, 0, 0, 0
 		return true
 	end
@@ -529,7 +538,7 @@ local function evaluate(s, snapshot, time)
 	end
 	if aimed and not s.hasActivated and not s.distantRecovery and type(autoParry.getPressure) == "function" then
 		local ok, pressure = pcall(autoParry.getPressure)
-		if ok and type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= 0.6 then
+		if ok and type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= T.pressureBoostThreshold then
 			clearReturn(s); setActive(s, true, "ap_pressure", "auto_parry_pressure", time); return
 		end
 	end
