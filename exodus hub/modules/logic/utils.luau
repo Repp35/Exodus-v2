@@ -126,13 +126,11 @@ end
 -- environment
 local function refreshNamespace()
 	if refreshing then return end
-	refreshing = true
-	local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
-		namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author = NAME, "Exodus", VERSION, API_VERSION, AUTHOR
-		namespace.State, namespace.Config, namespace.ModuleURLs, namespace.Diagnostics =
-			stateSnapshot(), snapshot(state.config), snapshot(state.urls), diagnosticsSnapshot()
-		_G.Exodus = namespace
-	refreshing = false
+	refreshing = true; local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
+	namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author = NAME, "Exodus", VERSION, API_VERSION, AUTHOR
+	namespace.State, namespace.Config, namespace.ModuleURLs, namespace.Diagnostics =
+		stateSnapshot(), snapshot(state.config), snapshot(state.urls), diagnosticsSnapshot()
+	_G.Exodus = namespace; refreshing = false
 end
 
 -- diagnostics

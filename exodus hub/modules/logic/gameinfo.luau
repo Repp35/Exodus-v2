@@ -151,9 +151,8 @@ function GameInfo.bindBallSync(handler)
 		return syncConnection ~= nil and syncConnection.Connected == true
 	end
 	if syncConnection and syncConnection.Connected and syncRemote == candidate then return true end
-	disconnectSync()
-	local connection = candidate.OnClientEvent:Connect(handler)
-	syncConnection, syncRemote = connection, candidate; utils.trackGlobal(connection); return true
+	disconnectSync(); local connection = candidate.OnClientEvent:Connect(handler); syncConnection, syncRemote = connection, candidate; utils.trackGlobal(connection)
+	return true
 end
 function GameInfo.startMaintenance(options)
 	if type(options) ~= "table" or type(options.isActive) ~= "function" then return false end

@@ -103,8 +103,7 @@ local function attachFlow(s)
 end
 local function twPlay(obj, t, props, style, dir)
 	if not obj or obj.Parent == nil then return nil end
-	local tween = TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props)
-	tween:Play(); return tween
+	local tween = TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props); tween:Play(); return tween
 end
 
 -- safety
@@ -1125,8 +1124,7 @@ function ExodusUI.setup(deps)
 				while generation == spinGeneration and spinActive == crate and screenGui and screenGui.Parent and Utils.isActive() do
 					local owned = network:CSendFunction(4.702176977990345e76, crate)
 					if generation ~= spinGeneration or spinActive ~= crate then break end
-					network:CSendEvent(owned == true and 1.796923298985336e75 or 1.0038569313364564e77, crate)
-					task.wait(0.3)
+					network:CSendEvent(owned == true and 1.796923298985336e75 or 1.0038569313364564e77, crate); task.wait(0.3)
 				end
 			end)
 		end)
