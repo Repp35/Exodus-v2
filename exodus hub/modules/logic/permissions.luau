@@ -54,7 +54,7 @@ local POLICIES = {
 				"apiVersion getConfig getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
 			),
 			gameinfo = allow(
-				"getBallSpeedLimits getBallFrozen getDeflectGeometry getClashContext getDeflectAbility getDeflectWindow getLocalPing getManifestRemote getSnapshot getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
+				"getBallSpeedLimits getBallFrozen getDeflectGeometry getClashContext getDeflectAbility getDeflectWindow getManifestRemote getSnapshot getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
 			),
 			dash = allow("setHandler tick"),
 		},

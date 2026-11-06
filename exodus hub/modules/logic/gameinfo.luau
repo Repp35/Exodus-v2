@@ -336,6 +336,7 @@ local function snapshot(time)
 		grace = sync and sync.Grace == true or false,
 		oldGrace = sync and sync.OldGrace == true or false,
 		syncAt = syncReceivedAt,
+		serverTime = sync and sync.ServerTime or nil,
 		syncSequence = syncSequence(sync, provider),
 	}
 end

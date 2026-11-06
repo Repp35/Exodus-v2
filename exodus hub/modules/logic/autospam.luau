@@ -10,18 +10,23 @@ local current, generation = nil, 0
 
 -- tuning
 local T = {
-	ACTIVATION_RETURN = 0.18,
-	DEACTIVATION_RETURN = 0.1,
-	CLICK_INTERVAL = 1 / 25,
-	PING_FACTOR = 0.3,
-	ACTIVATION_RADIUS_FACTOR = 0.8,
-	DASH_RADIUS_FACTOR = 1.5,
-	DASH_RETURN_MULTIPLIER = 2.5,
-	DASH_BONUS_DURATION = 0.3,
-	SWITCH_WINDOW_MARGIN = 0.04,
-	SNAPSHOT_MAX_AGE = 0.5,
-	SEQUENCE_MODULUS = 65536,
-	SEQUENCE_HALF = 32768,
+	ACTIVATION = {
+		RETURN = 0.18,
+		RADIUS_FACTOR = 0.8,
+		DASH_RADIUS_FACTOR = 1.5,
+		DASH_RETURN_MULTIPLIER = 2.5,
+		DASH_BONUS_DURATION = 0.3,
+	},
+	DEACTIVATION = {
+		RETURN = 0.1,
+		SWITCH_WINDOW_MARGIN = 0.04,
+	},
+	SHARED = {
+		CLICK_INTERVAL = 1 / 25,
+		SNAPSHOT_MAX_AGE = 0.5,
+		SEQUENCE_MODULUS = 65536,
+		SEQUENCE_HALF = 32768,
+	},
 }
 
 -- helpers
@@ -31,8 +36,13 @@ local function userId(value)
 	return finite(value) and value > 0 and value % 1 == 0 and value or nil
 end
 local function now() return utils.now() end
-local function ping()
-	local value = gameInfo.getLocalPing(); return finite(value) and math.max(value, 0) or 0
+local function elapsed(localStart, serverStart, localNow, serverNow)
+	if finite(serverStart) and finite(serverNow) then
+		if serverNow < serverStart then return nil end
+		return serverNow - serverStart
+	end
+	if finite(localStart) and localNow >= localStart then return localNow - localStart end
+	return nil
 end
 local function track(s, signal, callback)
 	local connection = signal:Connect(callback); s.connections[#s.connections + 1] = connection; utils.trackCharacter(connection); return connection
@@ -56,23 +66,23 @@ local function geometry(s, snapshot, factor)
 	return g, speed, window
 end
 local function returnWindow(window, speed, base)
-	local minimum, maximum = gameInfo.getBallSpeedLimits(); local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local scale = 1 + (T.CLICK_INTERVAL / T.ACTIVATION_RETURN - 1) * fraction; return math.min(base * scale, window) + ping() * T.PING_FACTOR
+	local minimum, maximum = gameInfo.getBallSpeedLimits(); local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local scale = 1 + (T.SHARED.CLICK_INTERVAL / T.ACTIVATION.RETURN - 1) * fraction; return math.min(base * scale, window)
 end
 
 -- activation
-local function start(s, reason, partner, time)
+local function start(s, reason, partner, time, serverTime)
 	if s.active then return end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
-	s.awayAt = s.target == partner and time or nil
-	s.lastSwitchAt, s.reason = time, reason
+	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
+	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
 	s.dashEntry = reason == "return_target" and time <= s.dashUntil; utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function shouldActivate(s, snapshot, time)
 	if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
 	if gameInfo.getBallFrozen() == true or not s.pending then return false end
-	local pending = s.pending; local factor = time <= s.dashUntil and T.DASH_RADIUS_FACTOR or T.ACTIVATION_RADIUS_FACTOR; local g = geometry(s, snapshot, factor)
+	local pending = s.pending; local factor = time <= s.dashUntil and T.ACTIVATION.DASH_RADIUS_FACTOR or T.ACTIVATION.RADIUS_FACTOR; local g = geometry(s, snapshot, factor)
 	if not g then return false end
-	if pending.recovery then local partnerDistance = distanceToPlayer(s, pending.partner); local normal = geometry(s, snapshot, T.ACTIVATION_RADIUS_FACTOR); return normal ~= nil and partnerDistance ~= nil and partnerDistance <= normal.fullRadius end
+	if pending.recovery then local partnerDistance = distanceToPlayer(s, pending.partner); local normal = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); return normal ~= nil and partnerDistance ~= nil and partnerDistance <= normal.fullRadius end
 	return s.target == localPlayer.UserId and snapshot.targetId == localPlayer.UserId and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
 end
 
@@ -82,12 +92,12 @@ local function stop(s, reason, distant)
 	if distant and s.partner then s.recoveryPartner = s.partner end
 	if s.active then s.active = false; utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
 	s.reason, s.pending, s.awayAt, s.partner = reason, nil, nil, nil
-	s.departedAt, s.departedTo = nil, nil
+	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
 end
 local function stopBoth(s, reason)
 	stop(s, reason, false); s.recoveryPartner = nil; utils.setManualSpamActive(false)
 end
-local function shouldDeactivate(s, snapshot, time, fresh)
+local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
@@ -96,13 +106,15 @@ local function shouldDeactivate(s, snapshot, time, fresh)
 	local outside = (snapshot.position - s.root.Position).Magnitude > g.fullRadius
 	if not outside then s.dashEntry = false end
 	if outside and not (s.dashEntry and time <= s.dashUntil) then return "outside_window" end
-	if fresh and s.awayAt and s.target == s.partner and time - s.awayAt > returnWindow(window, speed, T.DEACTIVATION_RETURN) then return "return_timeout" end
-	if fresh and s.lastSwitchAt and time - s.lastSwitchAt > math.max(T.SWITCH_WINDOW_MARGIN, window - T.SWITCH_WINDOW_MARGIN) + ping() * T.PING_FACTOR then return "no_target_switch" end
+	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime)
+	if fresh and awayElapsed and s.target == s.partner and awayElapsed > returnWindow(window, speed, T.DEACTIVATION.RETURN) then return "return_timeout" end
+	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
+	if fresh and switchElapsed and switchElapsed > math.max(T.DEACTIVATION.SWITCH_WINDOW_MARGIN, window - T.DEACTIVATION.SWITCH_WINDOW_MARGIN) then return "no_target_switch" end
 	return nil
 end
 
 -- target-tracking
-local function inspectTarget(s, target, time, snapshot)
+local function inspectTarget(s, target, time, snapshot, serverTime)
 	if not target or target == s.target then return end
 	local previous, me = s.target, localPlayer.UserId
 	if not s.active and s.pending then s.pending = nil end
@@ -113,26 +125,32 @@ local function inspectTarget(s, target, time, snapshot)
 		local distance = distanceToPlayer(s, target)
 		if distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
 	end
-	if s.active and s.awayAt and previous == s.partner and target == me and window and time - s.awayAt > returnWindow(window, speed, T.DEACTIVATION_RETURN) then stop(s, "return_timeout", false) end
-	if s.lastSwitchAt and time >= s.lastSwitchAt then s.intervalMs = (time - s.lastSwitchAt) * 1000 end
-	s.target, s.lastSwitchAt = target, time
+	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime)
+	if s.active and awayElapsed and previous == s.partner and target == me and window and awayElapsed > returnWindow(window, speed, T.DEACTIVATION.RETURN) then stop(s, "return_timeout", false) end
+	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
+	if switchElapsed then s.intervalMs = switchElapsed * 1000 end
+	s.target, s.lastSwitchAt, s.lastSwitchServerAt = target, time, serverTime
 	if previous == me and target ~= me then
-		s.departedAt, s.departedTo = time, target
-		if s.active and target == s.partner then s.awayAt = time end
+		s.departedAt, s.departedServerAt, s.departedTo = time, serverTime, target
+		if s.active and target == s.partner then
+			s.awayAt, s.awayServerAt = time, serverTime
+		end
 		if not s.active and s.recoveryPartner == target then s.pending = { partner = target, recovery = true } end
 	elseif previous and previous ~= me and target == me then
-		if s.active and previous == s.partner then s.awayAt = nil end
+		if s.active and previous == s.partner then
+			s.awayAt, s.awayServerAt = nil, nil
+		end
 		if not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
 		elseif not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt and window then
-			local limit = returnWindow(window, speed, T.ACTIVATION_RETURN) * (time <= s.dashUntil and T.DASH_RETURN_MULTIPLIER or 1)
-			if time - s.departedAt <= limit then s.pending = { partner = previous } end
+			local limit = returnWindow(window, speed, T.ACTIVATION.RETURN) * (time <= s.dashUntil and T.ACTIVATION.DASH_RETURN_MULTIPLIER or 1); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
+			if returnElapsed and returnElapsed <= limit then s.pending = { partner = previous } end
 		end
 	end
 end
 
 -- evaluation
-local function evaluate(s, time, fresh)
+local function evaluate(s, time, fresh, serverTime)
 	if current ~= s or not s.root.Parent then return end
 	if not utils.isActive() then stopBoth(s, "hub_inactive"); return end
 	if utils.getConfigValue("AutoSpam") ~= true then
@@ -142,21 +160,23 @@ local function evaluate(s, time, fresh)
 	if s.active and gameInfo.getBallFrozen() == true then stop(s, "frozen", false) end
 	local snapshot = gameInfo.getSnapshotAt(time)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
-	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SNAPSHOT_MAX_AGE then return end
+	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
 	local target = userId(snapshot.targetId)
 	if not fresh then
 		local sequence = snapshot.syncSequence
 		if finite(sequence) and finite(s.sequence) then
-			local delta = (sequence - s.sequence) % T.SEQUENCE_MODULUS
-			if delta >= T.SEQUENCE_HALF or (delta == 0 and target and s.target and target ~= s.target) then return end
+			local delta = (sequence - s.sequence) % T.SHARED.SEQUENCE_MODULUS
+			if delta >= T.SHARED.SEQUENCE_HALF or (delta == 0 and target and s.target and target ~= s.target) then return end
 		end
-		inspectTarget(s, target, time, snapshot)
+		inspectTarget(s, target, time, snapshot, snapshot.serverTime)
 	end
 	if s.active then
-		local reason = shouldDeactivate(s, snapshot, time, fresh)
+		local reason = shouldDeactivate(s, snapshot, time, fresh, serverTime)
 		if reason then stop(s, reason, false) end
 	elseif shouldActivate(s, snapshot, time) then
-		start(s, s.pending.recovery and "recovery" or "return_target", s.pending.partner, time)
+		local activationServerTime = serverTime
+		if not fresh then activationServerTime = snapshot.serverTime end
+		start(s, s.pending.recovery and "recovery" or "return_target", s.pending.partner, time, activationServerTime)
 	end
 end
 
@@ -180,7 +200,7 @@ function AutoSpam.setup(deps)
 		local s = current
 		if not s or not event or event.userId == localPlayer.UserId or not event.position or not event.velocity then return end
 		local offset = s.root.Position - event.position
-		if offset.X * event.velocity.X + offset.Z * event.velocity.Z > 0 then s.dashUntil = now() + T.DASH_BONUS_DURATION; s.dashData = event end
+		if offset.X * event.velocity.X + offset.Z * event.velocity.Z > 0 then s.dashUntil = now() + T.ACTIVATION.DASH_BONUS_DURATION; s.dashData = event end
 	end)
 	return true
 end
@@ -241,8 +261,8 @@ function AutoSpam.onBallSync(data)
 	if not s or type(data) ~= "table" then return end
 	local sequence = data.Sequence or data.TeleportSequence
 	if finite(sequence) and finite(s.sequence) then
-		local delta = (sequence - s.sequence) % T.SEQUENCE_MODULUS
-		if delta >= T.SEQUENCE_HALF or (delta == 0 and data.Teleported ~= true) then return end
+		local delta = (sequence - s.sequence) % T.SHARED.SEQUENCE_MODULUS
+		if delta >= T.SHARED.SEQUENCE_HALF or (delta == 0 and data.Teleported ~= true) then return end
 	end
 	if finite(sequence) then s.sequence = sequence end
 	if data.Teleported == true then
@@ -250,9 +270,10 @@ function AutoSpam.onBallSync(data)
 		s.target, s.recoveryPartner = nil, nil
 		return
 	end
-	local time = now(); local snapshot = gameInfo.getSnapshotAt(time); local target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or gameInfo.getTargetId()
-	if snapshot and userId(target) then inspectTarget(s, target, time, snapshot) end
-	evaluate(s, time, true)
+	local time = now(); local snapshot = gameInfo.getSnapshotAt(time); local target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or gameInfo.getTargetId(); local serverTime = tonumber(data.ServerTime)
+	if not finite(serverTime) then serverTime = nil end
+	if snapshot and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
+	evaluate(s, time, true, serverTime)
 end
 
 -- api
@@ -310,7 +331,6 @@ AutoSpam.__contract = {
 			"getDeflectWindow",
 			"getDeflectGeometry",
 			"getBallFrozen",
-			"getLocalPing",
 			"getTargetId",
 			"getBallSpeedLimits",
 		},
