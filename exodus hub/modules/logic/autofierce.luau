@@ -58,8 +58,7 @@ local function update()
 	local ok, sent = pcall(function()
 		return remote.fireFierce(function()
 			if not enabled() or not targeted() or os.clock() >= attempt.cooldownEnd or not gameInfo.isBallWithinDeflectRadius(1) then return false end
-			token = autoParry.beginFierce()
-			return true
+			token = autoParry.beginFierce(); return true
 		end)
 	end)
 	if not ok or sent ~= true then autoParry.cancelFierce(token) end
@@ -68,7 +67,15 @@ end
 
 -- lifecycle
 function AutoFierce.setup(deps)
-	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" or type(deps.AutoParry) ~= "table" then return false, "dependências ausentes: Utils, GameInfo ou Remote" end
+	if
+		type(deps) ~= "table"
+		or type(deps.Utils) ~= "table"
+		or type(deps.GameInfo) ~= "table"
+		or type(deps.Remote) ~= "table"
+		or type(deps.AutoParry) ~= "table"
+	then
+		return false, "dependências ausentes: Utils, GameInfo ou Remote"
+	end
 	AutoFierce.teardown(); utils, gameInfo, remote, autoParry = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry; pending, nextSignalAt = nil, 0; local runService = utils.getRunService()
 	if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
 	track(utils.observeConfig(function()
@@ -89,7 +96,14 @@ AutoFierce.__contract = {
 	requires = { Utils = "utils", GameInfo = "gameinfo", Remote = "remote", AutoParry = "autoparry" },
 	requiresMethods = {
 		Utils = { "getConfigValue", "getLocalPlayer", "getRunService", "isActive", "observeConfig", "trackGlobal", "untrackGlobal" },
-		GameInfo = { "areAbilitiesEnabled", "getDeflectServerEvents", "decodeDeflectServerEvent", "getDeflectWindow", "getTargetId", "isBallWithinDeflectRadius" },
+		GameInfo = {
+			"areAbilitiesEnabled",
+			"getDeflectServerEvents",
+			"decodeDeflectServerEvent",
+			"getDeflectWindow",
+			"getTargetId",
+			"isBallWithinDeflectRadius",
+		},
 		AutoParry = { "beginFierce", "cancelFierce" },
 		Remote = { "fireFierce" },
 	},

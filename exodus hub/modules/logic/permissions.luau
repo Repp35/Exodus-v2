@@ -34,7 +34,9 @@ local POLICIES = {
 		consume = { utils = allow(""), gameinfo = allow("getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
 	},
 	autoparry = {
-		provide = allow("setup bindCharacter fire beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"),
+		provide = allow(
+			"setup bindCharacter fire beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"
+		),
 		consume = {
 			utils = allow(
 				"apiVersion getConfigValue getLocalPlayer getRunService isActive isSpamActive recordError recordTransition trackCharacter untrackCharacter"
