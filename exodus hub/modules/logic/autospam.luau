@@ -69,22 +69,16 @@ end
 local function returnWindow(window, speed, base)
 	local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0; return math.max(T.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
 end
-
--- Return time is an estimate: player range includes resilience.
 local function returnLimit(s, speed, window)
-	local limit = returnWindow(window, speed, T.DEACTIVATION.RETURN)
-	local distance = distanceToPlayer(s, s.partner)
+	local limit = returnWindow(window, speed, T.DEACTIVATION.RETURN); local distance = distanceToPlayer(s, s.partner)
 	if not distance then return limit, false end
 	local ownRange = tonumber(gameInfo.getDeflectRange())
 	if not finite(ownRange) or ownRange <= 0 then ownRange = 8.5 end
-	local opponent = players:GetPlayerByUserId(s.partner)
-	local opponentRange = opponent and tonumber(opponent:GetAttribute("DeflectRange"))
+	local opponent = players:GetPlayerByUserId(s.partner); local opponentRange = opponent and tonumber(opponent:GetAttribute("DeflectRange"))
 	if not finite(opponentRange) or opponentRange <= 0 then opponentRange = 8.5 end
 	local ping = gameInfo.getLocalPing()
 	if not finite(ping) or ping < 0 then ping = 0 end
-	local close = distance <= ownRange + speed * ping
-	local travel = math.max(0, distance - ownRange - opponentRange) / speed
-	return math.max(limit, travel + T.SHARED.MIN_RETURN + ping), close
+	local close = distance <= ownRange + speed * ping; local travel = math.max(0, distance - ownRange - opponentRange) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping), close
 end
 
 -- activation
@@ -126,8 +120,7 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	local outside = (snapshot.position - s.root.Position).Magnitude > g.fullRadius
 	if not outside then s.dashEntry = false end
 	if outside and not (s.dashEntry and dashActive(s, time)) then return "outside_window" end
-	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime)
-	local limit, close = returnLimit(s, speed, window)
+	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime); local limit, close = returnLimit(s, speed, window)
 	if fresh and awayElapsed and s.target == s.partner and not close and awayElapsed > limit then return "return_timeout" end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
 	if fresh and switchElapsed and switchElapsed > math.max(T.DEACTIVATION.SWITCH_WINDOW_MARGIN, window - T.DEACTIVATION.SWITCH_WINDOW_MARGIN) then return "no_target_switch" end
