@@ -157,7 +157,7 @@ local function makeDraggable(handle, target, onDragEnd, disableOnMobile)
 	local dragInput, dragOffX, dragOffY = nil, 0, 0; local state, wasDragged, startX, startY = "Idle", false, 0, 0; local THRESH_SQ = 100
 	trackConn(handle.InputBegan:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-		if disableOnMobile and isMobileDevice() then return end
+		if disableOnMobile and UIS.TouchEnabled then return end
 		if state ~= "Idle" then return end
 		state, wasDragged, dragInput = "Pressed", false, input; local abs = target.AbsolutePosition; dragOffX, dragOffY = input.Position.X - abs.X, input.Position.Y - abs.Y; startX, startY = input.Position.X, input.Position.Y
 	end))
