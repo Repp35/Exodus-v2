@@ -310,7 +310,9 @@ local function initializeModules(loaded)
 					local dependency = deps[dependencyName]
 					if type(dependency) ~= "table" or type(methods) ~= "table" then error(name .. ": dependência inválida: " .. tostring(dependencyName), 2) end
 					for _, method in ipairs(methods) do
-						if type(method) ~= "string" or type(dependency[method]) ~= "function" then error(("API interna ausente: %s.%s (exigida por %s)"):format(tostring(dependencyName), tostring(method), name), 2) end
+						if type(method) ~= "string" or type(dependency[method]) ~= "function" then
+							error(("API interna ausente: %s.%s (exigida por %s)"):format(tostring(dependencyName), tostring(method), name), 2)
+						end
 					end
 				end
 			end
@@ -319,7 +321,10 @@ local function initializeModules(loaded)
 				for dependencyName, minimum in pairs(contract.requiresVersions) do
 					local dependency = deps[dependencyName]; local dependencyContract = contractOf(dependency); local version = dependencyContract.version
 					if type(minimum) ~= "number" or type(version) ~= "number" or version < minimum then
-						error(("API incompatível: %s requer versão %s; encontrada %s"):format(tostring(dependencyName), tostring(minimum), tostring(version)), 2)
+						error(
+							("API incompatível: %s requer versão %s; encontrada %s"):format(tostring(dependencyName), tostring(minimum), tostring(version)),
+							2
+						)
 					end
 				end
 			end

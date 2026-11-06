@@ -378,8 +378,7 @@ function GameInfo.getBallSpeedLimits()
 	end
 	local low, high = gameBall:GetBaseSpeed(), gameBall:GetMaxSpeed()
 	if not finite(low) or not finite(high) or low <= 0 or high <= low then error("API externa inválida: GameBall retornou limites de velocidade inválidos", 2) end
-	minimumSpeed, maximumSpeed = low, high
-	return minimumSpeed, maximumSpeed
+	minimumSpeed, maximumSpeed = low, high; return minimumSpeed, maximumSpeed
 end
 function GameInfo.getDeflectWindow(speed)
 	local low, high = GameInfo.getBallSpeedLimits(); local sync = syncData()
