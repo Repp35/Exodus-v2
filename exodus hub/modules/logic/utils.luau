@@ -195,7 +195,7 @@ function Utils.start()
 end
 function Utils.stop()
 	local previous = state.lifecycle.phase
-	state.active, state.manualSpam, state.autoSpam = false, false, false
+	state.active, state.autoSpam = false, false
 	notify(spamObservers, "Spam")
 	if savePending then saveToken += 1; savePending = false end
 	if saveDirty then flushSave() end
@@ -249,7 +249,7 @@ local function setSpam(key, value, source, reason)
 	return true
 end
 function Utils.setManualSpamActive(value) return setSpam("manualSpam", value, "Spam", "manual_toggle") end
-function Utils.setAutoSpamActive(value) return setSpam("autoSpam", value, "AutoClash", "automatic_toggle") end
+function Utils.setAutoSpamActive(value) return setSpam("autoSpam", value, "AutoSpam", "automatic_toggle") end
 function Utils.stopAllSpam()
 	local changed = state.manualSpam or state.autoSpam
 	state.manualSpam, state.autoSpam = false, false
