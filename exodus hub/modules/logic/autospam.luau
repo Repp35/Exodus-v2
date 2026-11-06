@@ -66,9 +66,7 @@ local function geometry(s, snapshot, factor)
 	return g, speed, window
 end
 local function returnWindow(window, speed, base)
-	local minimum, maximum = gameInfo.getBallSpeedLimits()
-	local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0
-	return math.min(base * (1 - 0.9 * factor), window)
+	local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0; return math.min(base * (1 - 0.9 * factor), window)
 end
 
 -- activation
