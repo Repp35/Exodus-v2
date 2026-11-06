@@ -27,6 +27,8 @@ end
 local function cancel(reason)
 	generation += 1; running, currentMode, currentRate = false, nil, nil; transition(false, reason)
 end
+
+-- dispatch
 local function request(boundUtils, boundRemote, token)
 	if inFlight then return end
 	inFlight = true; status.lastRequestAt = os.clock()
@@ -46,6 +48,8 @@ local function request(boundUtils, boundRemote, token)
 		if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
 	end
 end
+
+-- scheduler
 local function sync()
 	if not utils or not remote then return end
 	local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
@@ -69,6 +73,8 @@ local function sync()
 		if not ok then error(err, 0) end
 	end)
 end
+
+-- setup
 function Spam.setup(deps)
 	if
 		type(deps) ~= "table"
@@ -106,6 +112,8 @@ function Spam.teardown()
 	end
 	spamObserver, configObserver, utils, remote = nil, nil, nil, nil
 end
+
+-- status
 function Spam.getStatus()
 	return {
 		schema = utils and utils.apiVersion() or 1,

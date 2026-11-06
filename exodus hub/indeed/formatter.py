@@ -454,11 +454,28 @@ def add_title(source: str, file_name: str, custom_title: str | None = None) -> s
 
 def require_sections(source: str, file_name: str) -> str:
     """Reject files without a section supplied in code or via --section."""
-    if not any(section_name_from_comment(line) for line in source.splitlines()):
+    sections = {
+        canonical_section_name(name)
+        for line in source.splitlines()
+        if (name := section_name_from_comment(line))
+    }
+    if not sections:
         raise FormatterError(
             f"{file_name}: seção obrigatória. Insira '-- nome-da-seção' no "
             "código ou informe --section NOME=TRECHO ao executar."
         )
+    required = []
+    if re.search(r"(?m)^local\s+T\s*=", source):
+        required.append("tuning")
+    if re.search(r"(?m)^\w+\.__contract\s*=", source):
+        required.append("contract")
+    if re.search(r"(?m)^local\s+function\s+shouldActivate\s*\(", source):
+        required.append("activation")
+    if re.search(r"(?m)^local\s+function\s+shouldDeactivate\s*\(", source):
+        required.append("deactivation")
+    missing = [name for name in required if name not in sections]
+    if missing:
+        raise FormatterError(f"{file_name}: seção obrigatória ausente: {', '.join(missing)}.")
     return source
 
 

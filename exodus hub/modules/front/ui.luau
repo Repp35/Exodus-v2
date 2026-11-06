@@ -1198,6 +1198,8 @@ function ExodusUI.setup(deps)
 	end
 	setSpam(Utils.isManualSpamActive()); return true
 end
+
+-- contract
 ExodusUI.__contract = { requires = {}, provides = { "setup" } }
 
 return ExodusUI

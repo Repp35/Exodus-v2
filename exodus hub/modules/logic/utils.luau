@@ -9,7 +9,11 @@ local runService = game:GetService("RunService")
 local workspace = game:GetService("Workspace")
 local http = game:GetService("HttpService")
 local API_VERSION, VERSION, NAME, AUTHOR = 1, "3.0.0", "Exodus Hub", "delta"
+
+-- tuning
 local T = { FOLDER = "Exodus Hub", HISTORY_LIMIT = 32 }
+
+-- state
 local state = {
 	active = false,
 	config = {},

@@ -1,6 +1,8 @@
 -- [[ uiconfig ]]
 
 local UIConfig = {}
+
+-- config
 UIConfig.panelToggles = {
 	{
 		kind = "toggle",

@@ -9,6 +9,8 @@ local function allow(names)
 	end
 	return items
 end
+
+-- policy-table
 local POLICIES = {
 	permissions = { provide = allow("validate wrap policy"), consume = {} },
 	config = { provide = allow("register defaults validatePatch normalizePatch validate getRegistry"), consume = {} },

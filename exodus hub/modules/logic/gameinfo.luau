@@ -2,7 +2,10 @@
 
 local GameInfo = {}
 
+-- dependencies
 local utils, players, world
+
+-- state
 local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
 local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
@@ -28,6 +31,7 @@ local T = {
 	RANGE_WINDOW_BONUS = 0.12,
 }
 
+-- runtime-state
 local minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0
 local errors, cooldownConnection, parriedConnection = {}, nil, nil
 local syncConnection, syncRemote, maintenance = nil, nil, 0

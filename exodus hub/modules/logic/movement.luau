@@ -2,9 +2,14 @@
 
 local Movement = {}
 
+-- dependencies
 local utils, gameInfo, remote
+
+-- state
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0
+
+-- helpers
 local function stopJump()
 	epoch += 1; local connection = jumpConnection; jumpConnection, jumpCharacter, jumpHumanoid = nil, nil, nil
 	if not connection then return end
@@ -20,6 +25,8 @@ local function jumpStep(player)
 	if not humanoid or humanoid.Health <= 0 or humanoid.FloorMaterial == Enum.Material.Air then return end
 	if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end
 end
+
+-- actions
 function Movement.syncJump()
 	stopJump()
 	if not utils or not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then return true end

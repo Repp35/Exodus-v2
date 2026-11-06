@@ -4,6 +4,8 @@ local Dash = {}
 
 -- dependencies
 local utils, gameInfo, players, handler
+
+-- state
 local records, connections = {}, {}
 local generation, lastTick = 0, -math.huge
 
@@ -69,6 +71,8 @@ local function observe(player, record, time)
 	if (burst or (signaled and fast)) and (fast or horizontal(velocity) >= T.MIN_SPEED) then emit(player, record, position, velocity, previous, time) end
 	record.speed, record.fast, record.position, record.positionAt = speed, fast, position, time
 end
+
+-- lifecycle
 local function removePlayer(player)
 	local record = records[player]
 	if not record then return end
@@ -121,6 +125,8 @@ end
 function Dash.teardown()
 	Dash.resetState(); utils, gameInfo, handler = nil, nil, nil
 end
+
+-- status
 function Dash.getStatus()
 	local count = 0
 	for _ in pairs(records) do

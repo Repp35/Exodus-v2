@@ -2,7 +2,10 @@
 
 local Character = {}
 
+-- dependencies
 local utils, spam, binds
+
+-- state
 local added, removing, currentLife
 local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
 
@@ -15,6 +18,8 @@ local function setPhase(value, reason)
 	local previous = phase; phase = value
 	if utils then utils.recordTransition("Character", previous, value, reason) end
 end
+
+-- lifecycle
 local function detach(entry) entry.detach() end
 local function clearLife()
 	local life = currentLife; currentLife = nil
