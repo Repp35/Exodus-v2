@@ -9,8 +9,8 @@ UIConfig.panelToggles = {
 	},
 	{
 		kind = "toggle",
-		label = "Auto Clash",
-		key = "AutoClash",
+		label = "Auto Spam",
+		key = "AutoSpam",
 	},
 	{
 		kind = "toggle",
@@ -33,7 +33,7 @@ UIConfig.__config = {
 	schema = {
 		AutoParry = "boolean",
 		AutoParryWindowFactor = "rate",
-		AutoClash = "boolean",
+		AutoSpam = "boolean",
 		AutoDark = "boolean",
 		AutoFierceDeflect = "boolean",
 		AutoJump = "boolean",
@@ -66,7 +66,7 @@ UIConfig.__config = {
 	defaults = {
 		AutoParry = true,
 		AutoParryWindowFactor = 0.5,
-		AutoClash = true,
+		AutoSpam = true,
 		AutoDark = false,
 		AutoFierceDeflect = false,
 		AutoJump = false,
