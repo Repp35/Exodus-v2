@@ -13,8 +13,7 @@ end
 -- dispatch
 local function send(ability, method, ...)
 	if not ability or type(ability[method]) ~= "function" then return false, method .. " indisponível" end
-	local ok, result = pcall(ability[method], ability, ...)
-	if not ok then return false, tostring(result) end
+	local result = ability[method](ability, ...)
 	if result == false then return false, method .. " recusado" end
 	return true
 end
@@ -23,8 +22,7 @@ function Remote.fireParry(_flag, guard)
 	local ability = gameInfo.getDeflectAbility()
 	if not ability then return false, "Deflect indisponível" end
 	if type(guard) == "function" then
-		local ok, allowed = pcall(guard)
-		if not ok or not allowed then return false, "Deflect cancelado" end
+		if not guard() then return false, "Deflect cancelado" end
 	end
 	return send(ability, "Deflect")
 end
