@@ -7,7 +7,26 @@ local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
 local lastSync, packet, packetAt = nil, nil, 0
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
-local minimumSpeed, maximumSpeed, speedAt = 16, 600, 0
+-- tuning
+local T = {
+	MIN_SPEED = 16,
+	MAX_SPEED = 600,
+	PACKET_AGE = 0.5,
+	BALL_SEARCH_INTERVAL = 0.5,
+	SYNC_CONNECTED_INTERVAL = 3,
+	SYNC_RETRY_INTERVAL = 1,
+	COOLDOWN_RETRY = 0.5,
+	HELD_COOLDOWN_INTERVAL = 0.05,
+	SPEED_REFRESH = 0.5,
+	SAMPLE_INTERVAL = 1 / 240,
+	SAMPLE_MAX_GAP = 0.25,
+	WINDOW_BASE = 0.85,
+	WINDOW_SPREAD = 0.65,
+	RANGE_BASE = 8.5,
+	RANGE_BONUS_SPAN = 7.5,
+	RANGE_WINDOW_BONUS = 0.12,
+}
+local minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0
 local errors, cooldownConnection, parriedConnection = {}, nil, nil
 local syncConnection, syncRemote, maintenance = nil, nil, 0
 local cooldown, signalAt, heldAt, missingAt, warningAt
@@ -62,7 +81,7 @@ local function getReplicator()
 end
 local function syncData()
 	local provider = getReplicator()
-	if packet and os.clock() - packetAt > 0.5 then packet = nil end
+	if packet and os.clock() - packetAt > T.PACKET_AGE then packet = nil end
 	if packet then
 		local sequence = provider and provider.hasState == true and provider.lastSeq
 		if type(sequence) ~= "number" or (packet.Sequence ~= sequence and (packet.Sequence - sequence) % 65536 < 32768) then return packet end
@@ -93,7 +112,7 @@ end
 local function getBall()
 	if ball and ball.Parent then return ball end
 	if watching and os.clock() < searchAt then return nil end
-	ball, searchAt = findBall(), os.clock() + 0.5; return ball
+	ball, searchAt = findBall(), os.clock() + T.BALL_SEARCH_INTERVAL; return ball
 end
 local function disconnect(connection)
 	if connection then
@@ -144,7 +163,7 @@ function GameInfo.startMaintenance(options)
 			if not activeOk or active ~= true or token ~= maintenance then break end
 			local linked = type(options.onBallSync) == "function" and GameInfo.bindBallSync(options.onBallSync)
 			if token ~= maintenance then break end
-			task.wait(linked and 3 or 1)
+			task.wait(linked and T.SYNC_CONNECTED_INTERVAL or T.SYNC_RETRY_INTERVAL)
 		end
 	end)
 	return true
@@ -160,7 +179,7 @@ function GameInfo.setup(deps)
 	utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
 	if not players or not world then return false, "dependência ausente: Players ou Workspace" end
 	ball, searchAt, watching = nil, 0, false; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt = nil, nil, 0
-	sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = 16, 600, 0; errors = {}
+	sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}
 	cooldown = { known = false, active = false, rawActive = false, lastEventAt = -math.huge }; signalAt, heldAt, missingAt, warningAt = 0, 0, nil, 0; GameInfo.getDeflectCooldownState(); return true
 end
 function GameInfo.getBall() return getBall() end
@@ -202,7 +221,7 @@ function GameInfo.getDeflectCooldownState()
 	end
 	if parriedConnection and parriedConnection.Connected == false then disconnect(parriedConnection); parriedConnection = nil end
 	if not cooldownConnection and time >= signalAt then
-		signalAt = time + 0.5; local signals = GameInfo.getDeflectServerEvents()
+		signalAt = time + T.COOLDOWN_RETRY; local signals = GameInfo.getDeflectServerEvents()
 		if signals and signals.cooldown then
 			cooldownConnection = signals.cooldown:Connect(function(abilityId, eventId, value)
 				local kind, duration = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
@@ -226,7 +245,7 @@ function GameInfo.getDeflectCooldownState()
 		end
 	end
 	if not cooldown.rawActive and time >= heldAt then
-		heldAt = time + 0.05; local duration, received = GameInfo.getHeldDeflectServerCooldown()
+		heldAt = time + T.HELD_COOLDOWN_INTERVAL; local duration, received = GameInfo.getHeldDeflectServerCooldown()
 		if duration and received and received <= time and time < received + duration and received > cooldown.lastEventAt + 0.01 then
 			cooldown.known, cooldown.rawActive, cooldown.lastEventAt, cooldown.endsAt = true, true, received, received + duration
 		end
@@ -285,11 +304,11 @@ local function snapshot(time)
 	time = type(time) == "number" and time or utils.now(); local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData()
 	if sampledBall ~= currentBall or (sync and sync.Teleported == true) then
 		sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = currentBall, position, time, Vector3.zero, nil
-	elseif sampledPosition and sampledAt and time - sampledAt >= 1 / 240 then
+	elseif sampledPosition and sampledAt and time - sampledAt >= T.SAMPLE_INTERVAL then
 		local elapsed = time - sampledAt; local displacement = position - sampledPosition
 		if displacement.Magnitude > 0.001 then
 			local measured, expected = displacement / elapsed, sync and tonumber(sync.Speed)
-			if elapsed <= 0.25 and (not expected or expected <= 0 or measured.Magnitude <= expected * 2.5 + 30) then measuredVelocity, movedAt = measured, time
+			if elapsed <= T.SAMPLE_MAX_GAP and (not expected or expected <= 0 or measured.Magnitude <= expected * 2.5 + 30) then measuredVelocity, movedAt = measured, time
 			else measuredVelocity, movedAt = Vector3.zero, nil end
 		elseif movedAt and time - movedAt > 0.1 then
 			measuredVelocity = Vector3.zero
@@ -345,12 +364,12 @@ function GameInfo.installBallWatcher(track)
 	track((world.DescendantRemoving or world.ChildRemoved):Connect(function(item)
 		if ball == item then ball, searchAt = nil, 0 end
 	end))
-	ball, watching, searchAt = findBall(), true, os.clock() + 0.5; return true
+	ball, watching, searchAt = findBall(), true, os.clock() + T.BALL_SEARCH_INTERVAL; return true
 end
 function GameInfo.getBallSpeedLimits()
 	local time = os.clock()
 	if time < speedAt then return minimumSpeed, maximumSpeed end
-	speedAt = time + 0.5; local module = child(child(ts(), "Gameplay"), "GameBall")
+	speedAt = time + T.SPEED_REFRESH; local module = child(child(ts(), "Gameplay"), "GameBall")
 	if module ~= gameBallScript then gameBallScript, gameBall = module, nil end
 	if not gameBall then local value = load(module, "GameBall"); gameBall = value and value.GameBall end
 	if type(gameBall) ~= "table" or type(gameBall.GetBaseSpeed) ~= "function" or type(gameBall.GetMaxSpeed) ~= "function" then
@@ -364,14 +383,14 @@ function GameInfo.getDeflectWindow(speed)
 	local low, high = GameInfo.getBallSpeedLimits(); local sync = syncData()
 	if not finite(speed) and sync and finite(sync.Speed) then speed = sync.Speed end
 	if not finite(speed) or high <= low then return nil end
-	local window = 0.85 - 0.65 * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer; local inClash = false
+	local window = T.WINDOW_BASE - T.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer; local inClash = false
 	if gameBall and player and type(gameBall.IsInClash) == "function" then local ok, active = pcall(gameBall.IsInClash, gameBall, player); inClash = ok and active == true end
 	if inClash and type(gameBall.GetClashMinWindow) == "function" then
 		local ok, minimum = pcall(gameBall.GetClashMinWindow, gameBall, speed)
 		if ok and finite(minimum) then window = math.max(window, minimum) end
 	end
 	local range = GameInfo.getDeflectRange()
-	if finite(range) then window += math.clamp((range - 8.5) / 7.5, 0, 1) * 0.12 end
+	if finite(range) then window += math.clamp((range - T.RANGE_BASE) / T.RANGE_BONUS_SPAN, 0, 1) * T.RANGE_WINDOW_BONUS end
 	if inClash and type(gameBall.GetClashWindowScale) == "function" then
 		local ok, scale = pcall(gameBall.GetClashWindowScale, gameBall)
 		if ok and finite(scale) and scale > 0 then window *= scale end
