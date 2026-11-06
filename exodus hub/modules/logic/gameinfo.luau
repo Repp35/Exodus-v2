@@ -235,10 +235,12 @@ function GameInfo.getDeflectCooldownState()
 	cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true; cooldown.blocking = cooldown.active; return cooldown
 end
 function GameInfo.getSyncData() return syncData() end
-function GameInfo.getSyncSequence()
-	local current = syncData()
+local function syncSequence(current, provider)
 	if packet and current == packet then return packet.Sequence end
-	local provider = getReplicator(); return provider and provider.hasState == true and provider.lastSeq or nil
+	return provider and provider.hasState == true and provider.lastSeq or nil
+end
+function GameInfo.getSyncSequence()
+	return syncSequence(syncData(), getReplicator())
 end
 function GameInfo.applyPacket(value)
 	if type(value) ~= "table" then return false end
@@ -289,7 +291,7 @@ local function snapshot(time)
 		sampledPosition, sampledAt = position, time
 	end
 	if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
-	local target = targetId(sync)
+	local target, provider = targetId(sync), getReplicator()
 	return {
 		schema = 2,
 		generatedAt = time,
@@ -307,7 +309,7 @@ local function snapshot(time)
 		grace = sync and sync.Grace == true or false,
 		oldGrace = sync and sync.OldGrace == true or false,
 		syncAt = time,
-		syncSequence = GameInfo.getSyncSequence(),
+		syncSequence = syncSequence(sync, provider),
 	}
 end
 function GameInfo.getSnapshot(_, time) return snapshot(time) end
