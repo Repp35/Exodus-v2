@@ -2,7 +2,7 @@
 
 local AutoFierce = {}
 
-local utils, gameInfo, autoClash, spam, connection
+local utils, gameInfo, remote, autoSpam, connection
 local trackedAbility, startedAt, deadline, lastCooldown, used
 local function finite(n) return type(n) == "number" and n == n and n > -math.huge and n < math.huge end
 local function reset()
@@ -57,12 +57,12 @@ local function step()
 	then
 		return
 	end
-	used = true; local ok, result = pcall(fierce.ActivateAndBlock, fierce)
-	if not ok or result == false then used = false; utils.recordError("AutoFierce", tostring(ok and "Fierce recusado" or result)); return end
-	utils.stopAllSpam(); spam.resetState(); autoClash.stopSpam()
+	used = true; local ok, result = remote.fireFierce()
+	if not ok then used = false; utils.recordError("AutoFierce", tostring(result)); return end
+	if autoSpam then autoSpam.stopSpam() end
 end
 function AutoFierce.setup(deps)
-	AutoFierce.teardown(); utils, gameInfo, autoClash, spam = deps.Utils, deps.GameInfo, deps.AutoClash, deps.Spam; local service = utils.getRunService()
+	AutoFierce.teardown(); utils, gameInfo, remote, autoSpam = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoSpam; local service = utils.getRunService()
 	if not service or not service.Heartbeat then return false, "Heartbeat indisponível" end
 	connection = service.Heartbeat:Connect(function()
 		local ok, err = pcall(step)
@@ -75,15 +75,15 @@ function AutoFierce.teardown()
 		if utils then utils.untrackGlobal(connection) end
 		connection:Disconnect(); connection = nil
 	end
-	reset(); utils, gameInfo, autoClash, spam = nil, nil, nil, nil
+	reset(); utils, gameInfo, remote, autoSpam = nil, nil, nil, nil
 end
 AutoFierce.__contract = {
-	requires = { Utils = "utils", GameInfo = "gameinfo", AutoClash = "autoclash", Spam = "spam" },
+	requires = { Utils = "utils", GameInfo = "gameinfo", AutoSpam = "autospam", Remote = "remote" },
 	requiresMethods = {
-		Utils = { "isActive", "getConfigValue", "getLocalPlayer", "getRunService", "stopAllSpam", "trackGlobal", "untrackGlobal", "recordError" },
+		Utils = { "isActive", "getConfigValue", "getLocalPlayer", "getRunService", "trackGlobal", "untrackGlobal", "recordError" },
 		GameInfo = { "getDeflectAbility", "getFierceDeflectAbility", "getDeflectWindow", "getSyncData", "getTargetId", "getSnapshotAt", "isSnapshotValid" },
-		AutoClash = { "stopSpam" },
-		Spam = { "resetState" },
+		AutoSpam = { "stopSpam" },
+		Remote = { "fireFierce" },
 	},
 
 	provides = { "setup", "teardown" },
