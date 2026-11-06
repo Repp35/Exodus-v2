@@ -95,10 +95,9 @@ local function disconnect(connection)
 		connection:Disconnect()
 	end
 end
+
 -- synchronization
-local function validSyncRemote(instance)
-	return typeof(instance) == "Instance" and instance:IsA("RemoteEvent") and instance.Parent ~= nil
-end
+local function validSyncRemote(instance) return typeof(instance) == "Instance" and instance:IsA("RemoteEvent") and instance.Parent ~= nil end
 local function disconnectSync()
 	if syncConnection then
 		if utils then utils.untrackGlobal(syncConnection) end
@@ -109,8 +108,7 @@ end
 local function findSyncRemote()
 	local replicated = storage()
 	if not replicated then return nil end
-	local remotes = replicated:FindFirstChild("Remotes")
-	local candidate = remotes and remotes:FindFirstChild("BallSyncData")
+	local remotes = replicated:FindFirstChild("Remotes"); local candidate = remotes and remotes:FindFirstChild("BallSyncData")
 	if validSyncRemote(candidate) then return candidate end
 	candidate = replicated:FindFirstChild("BallSyncData")
 	if validSyncRemote(candidate) then return candidate end
@@ -129,14 +127,11 @@ function GameInfo.bindBallSync(handler)
 	disconnectSync()
 	local ok, connection = pcall(function() return candidate.OnClientEvent:Connect(handler) end)
 	if not ok or not connection then return false end
-	syncConnection, syncRemote = connection, candidate
-	utils.trackGlobal(connection)
-	return true
+	syncConnection, syncRemote = connection, candidate; utils.trackGlobal(connection); return true
 end
 function GameInfo.startMaintenance(options)
 	if type(options) ~= "table" or type(options.isActive) ~= "function" then return false end
-	maintenance += 1
-	local token = maintenance
+	maintenance += 1; local token = maintenance
 	task.spawn(function()
 		while token == maintenance do
 			local activeOk, active = pcall(options.isActive)
@@ -149,16 +144,14 @@ function GameInfo.startMaintenance(options)
 	return true
 end
 function GameInfo.stopMaintenance()
-	maintenance += 1
-	disconnectSync()
+	maintenance += 1; disconnectSync()
 end
 
 -- setup
 function GameInfo.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
-	GameInfo.stopMaintenance()
-	disconnect(cooldownConnection); disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil; utils = deps.Utils
-	players, world = utils.getPlayers(), utils.getWorkspace()
+	GameInfo.stopMaintenance(); disconnect(cooldownConnection); disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil
+	utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
 	if not players or not world then return false, "dependência ausente: Players ou Workspace" end
 	ball, searchAt, watching = nil, 0, false; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt = nil, nil, 0
 	sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = 16, 600, 0; errors = {}
