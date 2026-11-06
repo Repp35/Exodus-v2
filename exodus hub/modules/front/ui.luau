@@ -293,9 +293,8 @@ local function cleanupUI()
 	for _, tween in ipairs(UIState.pageTweens) do
 		safeCancel(tween)
 	end
-	UIState.pageTweens = {}; UIState.panelOpen = false; UIState.clashBallOn = false
-	-- Limpeza da UI não interfere no estado do spam manual.
-	UIState.panelTween = nil; UIState.btnTween = nil
+	UIState.pageTweens = {}; UIState.panelOpen = false; UIState.clashBallOn = false; UIState.panelTween = nil
+	UIState.btnTween = nil
 	UIState.btnIsDragging = function() return false end
 	for i = #flowingTweens, 1, -1 do
 		safeCancel(flowingTweens[i]); flowingTweens[i] = nil
