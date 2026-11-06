@@ -212,7 +212,7 @@ function Utils.stop()
 	if saveDirty then flushSave() end
 	state.lifecycle.stoppedAt = os.clock()
 	_G.ExodusOnBurst = function() end
-	if type(_G.ExodusUICleanup) == "function" then pcall(_G.ExodusUICleanup) end
+	if type(_G.ExodusUICleanup) == "function" then _G.ExodusUICleanup() end
 	disconnectAll(state.characterConnections); disconnectAll(state.globalConnections)
 	state.config, state.urls, modules = {}, {}, {}
 	if type(_G.Exodus) == "table" then
@@ -221,7 +221,7 @@ function Utils.stop()
 		if type(exodus.RemoteHooks) == "table" then exodus.RemoteHooks.register = nil end
 		if type(exodus.AutoParryHitbox) == "table" then
 			local hitbox = exodus.AutoParryHitbox
-			if hitbox.connection then pcall(hitbox.connection.Disconnect, hitbox.connection) end
+			if hitbox.connection then hitbox.connection:Disconnect() end
 			hitbox.connection, hitbox.handler = nil, nil
 		end
 	end
