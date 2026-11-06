@@ -55,8 +55,7 @@ local function connectObserver(list, observer)
 end
 local function notify(list, label, value)
 	for _, observer in ipairs(table.clone(list)) do
-		local ok, err = pcall(observer, value)
-		if not ok then warn("[" .. label .. "] " .. tostring(err)) end
+		observer(value)
 	end
 end
 function Utils.observeSpam(observer) return connectObserver(spamObservers, observer) end
@@ -73,7 +72,7 @@ local function untrack(list, connection)
 end
 local function disconnectAll(list)
 	for i = #list, 1, -1 do
-		local connection = list[i]; list[i] = nil; pcall(connection.Disconnect, connection)
+		local connection = list[i]; list[i] = nil; connection:Disconnect()
 	end
 end
 
@@ -105,8 +104,8 @@ local function diagnosticsSnapshot()
 	for _, name in ipairs(names) do
 		local module = modules[name]
 		if type(module) == "table" and type(module.getStatus) == "function" then
-			local ok, status = pcall(module.getStatus)
-			if ok and type(status) == "table" then statuses[name] = snapshot(status) elseif not ok then statuses[name] = { ok = false, error = tostring(status) } end
+			local status = module.getStatus()
+			if type(status) == "table" then statuses[name] = snapshot(status) end
 		end
 	end
 	local diagnostics = state.diagnostics
