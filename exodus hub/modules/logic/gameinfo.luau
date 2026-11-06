@@ -7,6 +7,7 @@ local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
 local lastSync, packet, packetAt = nil, nil, 0
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
+
 -- tuning
 local T = {
 	MIN_SPEED = 16,
@@ -26,6 +27,7 @@ local T = {
 	RANGE_BONUS_SPAN = 7.5,
 	RANGE_WINDOW_BONUS = 0.12,
 }
+
 local minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0
 local errors, cooldownConnection, parriedConnection = {}, nil, nil
 local syncConnection, syncRemote, maintenance = nil, nil, 0
