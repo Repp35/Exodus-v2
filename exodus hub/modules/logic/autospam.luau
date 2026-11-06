@@ -22,8 +22,8 @@ local T = {
 		SWITCH_WINDOW_MARGIN = 0.04,
 	},
 	SHARED = {
-		RETURN_ACCEL = 7, -- GameBall.GetSpeedOverTime (dump)
-		RETURN_STEP = 0.0078125, -- BallReplicator.SimulateFrom (dump)
+		RETURN_ACCEL = 7,
+		RETURN_STEP = 0.0078125,
 		SNAPSHOT_MAX_AGE = 0.5,
 		SEQUENCE_MODULUS = 65536,
 		SEQUENCE_HALF = 32768,
@@ -67,25 +67,18 @@ local function geometry(s, snapshot, factor)
 	if not g then return nil end
 	return g, speed, window
 end
--- The Return gate compares physical progress with the original 16-studs/s
--- travel budget. This follows GameBall's acceleration and BallReplicator's
--- fixed-size integration steps, independently of the deflect window.
 local function returnDistance(speed, duration)
 	if not finite(speed) or not finite(duration) or duration < 0 then return nil end
 	local minimum, maximum = gameInfo.getBallSpeedLimits()
 	if not finite(minimum) or not finite(maximum) or minimum <= 0 or maximum < minimum then return nil end
 	local velocity, distance, remaining = math.clamp(speed, minimum, maximum), 0, duration
 	while remaining > 0 do
-		local dt = math.min(remaining, T.SHARED.RETURN_STEP)
-		distance += velocity * dt
-		velocity = math.min(velocity + T.SHARED.RETURN_ACCEL * dt, maximum)
-		remaining -= dt
+		local dt = math.min(remaining, T.SHARED.RETURN_STEP); distance += velocity * dt; velocity = math.min(velocity + T.SHARED.RETURN_ACCEL * dt, maximum); remaining -= dt
 	end
 	return distance
 end
 local function returnProgress(speed, duration, base)
-	local minimum = gameInfo.getBallSpeedLimits()
-	local travelled, reference = returnDistance(speed, duration), returnDistance(minimum, base)
+	local minimum = gameInfo.getBallSpeedLimits(); local travelled, reference = returnDistance(speed, duration), returnDistance(minimum, base)
 	if not travelled or not reference or reference <= 0 then return nil end
 	return travelled / reference
 end
@@ -134,8 +127,7 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	local outside = (snapshot.position - s.root.Position).Magnitude > g.fullRadius
 	if not outside then s.dashEntry = false end
 	if outside and not (s.dashEntry and dashActive(s, time)) then return "outside_window" end
-	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime)
-	local awayProgress = awayElapsed and returnProgress(s.awaySpeed or returnSpeed(snapshot), awayElapsed, T.DEACTIVATION.RETURN)
+	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime); local awayProgress = awayElapsed and returnProgress(s.awaySpeed or returnSpeed(snapshot), awayElapsed, T.DEACTIVATION.RETURN)
 	if fresh and awayProgress and s.target == s.partner and awayProgress > 1 then return "return_timeout" end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
 	if fresh and switchElapsed and switchElapsed > math.max(T.DEACTIVATION.SWITCH_WINDOW_MARGIN, window - T.DEACTIVATION.SWITCH_WINDOW_MARGIN) then return "no_target_switch" end
@@ -154,8 +146,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime, eventSpeed)
 		local distance = distanceToPlayer(s, target)
 		if distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
 	end
-	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime)
-	local awayProgress = awayElapsed and returnProgress(s.awaySpeed or returnSpeed(snapshot, eventSpeed), awayElapsed, T.DEACTIVATION.RETURN)
+	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime); local awayProgress = awayElapsed and returnProgress(s.awaySpeed or returnSpeed(snapshot, eventSpeed), awayElapsed, T.DEACTIVATION.RETURN)
 	if s.active and awayProgress and previous == s.partner and target == me and awayProgress > 1 then stop(s, "return_timeout", false) end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
 	if switchElapsed then s.intervalMs = switchElapsed * 1000 end
@@ -173,9 +164,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime, eventSpeed)
 		if not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
 		elseif not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt then
-			local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
-			local limit = T.ACTIVATION.RETURN * (dashActive(s, time) and T.ACTIVATION.DASH_RETURN_MULTIPLIER or 1)
-			local progress = returnElapsed and returnProgress(s.departedSpeed or returnSpeed(snapshot, eventSpeed), returnElapsed, limit)
+			local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime); local limit = T.ACTIVATION.RETURN * (dashActive(s, time) and T.ACTIVATION.DASH_RETURN_MULTIPLIER or 1); local progress = returnElapsed and returnProgress(s.departedSpeed or returnSpeed(snapshot, eventSpeed), returnElapsed, limit)
 			if progress and progress <= 1 then s.pending = { partner = previous } end
 		end
 	end
