@@ -1,103 +1,63 @@
 -- [[ spam ]]
 
--- dependencies
 local Spam = {}
+
 local utils, remote, spamObserver, configObserver
-
--- state
-local workers = {
-	manual = { generation = 0, running = false, inFlight = false },
-	auto = { generation = 0, running = false, inFlight = false },
-}
-
-local status = {
-	phase = "stopped",
-	lastRequestAt = 0,
-	lastError = nil,
-	lastErrorAt = -math.huge,
-	cpfFps = 0,
-	cpfClicks = 0,
-}
-
--- tuning
-local T = {
-	CPF_REFERENCE_FPS = 60,
-	ERROR_INTERVAL = 1,
-}
-
--- rates
+local generation, running, inFlight = 0, false, false
+local currentMode, currentRate
+local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge, cpfFps = 0, cpfClicks = 0 }
 local function readRate()
 	local config = utils.getConfig(); local mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"; local rate = tonumber(config[mode]) or 0
-	if rate ~= rate or rate <= 0 or rate == math.huge or rate == -math.huge then return mode, 0 end
-	if mode == "CPF" and rate * T.CPF_REFERENCE_FPS == math.huge then return mode, 0 end
+	if rate ~= rate or rate <= 0 or rate == math.huge then return mode, 0 end
+	if mode == "CPF" and rate * 60 == math.huge then return mode, 0 end
 	return mode, rate
 end
-local function isEnabled(kind, boundUtils)
-	if kind == "manual" then return boundUtils.isManualSpamActive() end
-	return boundUtils.isAutoSpamActive()
-end
-
--- lifecycle
-local function updatePhase(reason)
-	local phase = (workers.manual.running or workers.auto.running) and "running" or "stopped"
+local function transition(active, reason)
+	local phase = active and "running" or "stopped"
 	if status.phase == phase then return end
 	local previous = status.phase; status.phase = phase
 	if utils and type(utils.recordTransition) == "function" then utils.recordTransition("Spam", previous, phase, reason) end
 end
-local function stopWorker(kind, reason)
-	local worker = workers[kind]; worker.generation += 1; worker.running = false; worker.mode = nil
-	worker.rate = nil; updatePhase(reason)
+local function cancel(reason)
+	generation += 1; running, currentMode, currentRate = false, nil, nil; transition(false, reason)
 end
-
--- dispatch
-local function click(kind, boundUtils, boundRemote, token)
-	local worker = workers[kind]
-	if worker.inFlight then return end
-	worker.inFlight = true; status.lastRequestAt = os.clock()
-	local ok, success, detail = pcall(
+local function request(boundUtils, boundRemote, token)
+	if inFlight then return end
+	inFlight = true; status.lastRequestAt = os.clock()
+	local ok, result, detail = pcall(
 		boundRemote.fireParry,
 		1,
-		function() return token == worker.generation and boundUtils.isActive() and isEnabled(kind, boundUtils) end
+		function() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
 	)
-	worker.inFlight = false
-	if token ~= worker.generation or boundUtils ~= utils then return end
-	if ok and success == true then status.lastError = nil; return end
-	local message = tostring(ok and (detail or "Remote.fireParry indisponível") or success); status.lastError = message; local now = os.clock()
-	if now - status.lastErrorAt >= T.ERROR_INTERVAL then
-		status.lastErrorAt = now
-		if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam." .. kind, message) end
+	inFlight = false
+	if token ~= generation or utils ~= boundUtils then return end
+	if ok and result == true then status.lastError = nil; return end
+	local message = tostring(ok and (detail or "Remote.fireParry indisponível") or result); status.lastError = message; local time = os.clock()
+	if time - status.lastErrorAt >= 1 then
+		status.lastErrorAt = time
+		if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
 	end
-end
-local function startWorker(kind, mode, rate)
-	local worker = workers[kind]; worker.generation += 1; local token, boundUtils, boundRemote = worker.generation, utils, remote
-	worker.running, worker.mode, worker.rate = true, mode, rate
-	updatePhase(kind .. "_enabled")
-	task.spawn(function()
-		local frequency = mode == "CPF" and rate * T.CPF_REFERENCE_FPS or rate; local interval = 1 / frequency; local due = os.clock()
-		while token == worker.generation and boundUtils.isActive() and isEnabled(kind, boundUtils) do
-			local now = os.clock()
-			if now >= due then click(kind, boundUtils, boundRemote, token); local elapsed = math.floor((now - due) / interval) + 1; due += elapsed * interval end
-			if token == worker.generation then task.wait(math.max(0, due - os.clock())) end
-		end
-		if token == worker.generation then stopWorker(kind, kind .. "_disabled") end
-	end)
 end
 local function sync()
 	if not utils or not remote then return end
-	local mode, rate = readRate()
-	for _, kind in ipairs({ "manual", "auto" }) do
-		local worker = workers[kind]; local enabled = utils.isActive() and isEnabled(kind, utils) and rate > 0
-		if not enabled then
-			if worker.running then stopWorker(kind, kind .. "_disabled") end
-		elseif not worker.running then
-			startWorker(kind, mode, rate)
-		elseif worker.mode ~= mode or worker.rate ~= rate then
-			stopWorker(kind, "rate_changed"); startWorker(kind, mode, rate)
-		end
+	local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
+	if not enabled then
+		if running then cancel("spam_disabled") end
+		return
 	end
+	if running and currentMode == mode and currentRate == rate then return end
+	if running then cancel("rate_changed") end
+	generation += 1; local token, boundUtils, boundRemote = generation, utils, remote; running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
+	task.spawn(function()
+		local interval = 1 / (mode == "CPF" and rate * 60 or rate); local due = os.clock()
+		while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
+			local time = os.clock()
+			if time >= due then local pending = math.floor((time - due) / interval) + 1; request(boundUtils, boundRemote, token); due += pending * interval end
+			if token == generation then task.wait(math.max(0, due - os.clock())) end
+		end
+		if token == generation then cancel("spam_disabled") end
+	end)
 end
-
--- public-api
 function Spam.setup(deps)
 	if
 		type(deps) ~= "table"
@@ -120,16 +80,16 @@ function Spam.setup(deps)
 	utils.trackGlobal(spamObserver); utils.trackGlobal(configObserver); sync(); return true
 end
 function Spam.resetState()
-	stopWorker("manual", "reset"); stopWorker("auto", "reset")
+	cancel("reset")
 	status.lastError, status.lastErrorAt = nil, -math.huge
 	status.cpfFps, status.cpfClicks = 0, 0
-	local manualToken, autoToken = workers.manual.generation, workers.auto.generation
+	local token = generation
 	task.defer(function()
-		if workers.manual.generation == manualToken and workers.auto.generation == autoToken then sync() end
+		if token == generation then sync() end
 	end)
 end
 function Spam.teardown()
-	stopWorker("manual", "teardown"); stopWorker("auto", "teardown")
+	cancel("teardown")
 	if utils then
 		if spamObserver then utils.untrackGlobal(spamObserver); spamObserver:Disconnect() end
 		if configObserver then utils.untrackGlobal(configObserver); configObserver:Disconnect() end
@@ -140,8 +100,6 @@ function Spam.getStatus()
 	return {
 		schema = utils and utils.apiVersion() or 1,
 		phase = status.phase,
-		manualRunning = workers.manual.running,
-		autoRunning = workers.auto.running,
 		lastRequestAt = status.lastRequestAt,
 		lastError = status.lastError,
 		cpfFps = status.cpfFps,
@@ -149,22 +107,11 @@ function Spam.getStatus()
 		cpfCompensation = false,
 	}
 end
-
--- contract
 Spam.__contract = {
 	requires = { Remote = "remote", Utils = "utils" },
 	requiresMethods = {
 		Remote = { "fireParry" },
-		Utils = {
-			"getConfig",
-			"isActive",
-			"isManualSpamActive",
-			"isAutoSpamActive",
-			"observeSpam",
-			"observeConfig",
-			"trackGlobal",
-			"untrackGlobal",
-		},
+		Utils = { "getConfig", "isActive", "isManualSpamActive", "isAutoSpamActive", "observeSpam", "observeConfig", "trackGlobal", "untrackGlobal" },
 	},
 
 	provides = { "setup", "resetState", "teardown", "getStatus" },
