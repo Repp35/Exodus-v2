@@ -277,7 +277,9 @@ function AutoParry.onBallSync(data)
         sequence = gameInfo.getSyncSequence()
     end
     local order = sequenceOrder(sequence)
-    if order == "same" or order == "old" then return true end
+    if order == "old" then return true end
+    -- Teleport may be reported separately using a sequence already seen in a snapshot.
+    if order == "same" and (data.Teleported ~= true or state.teleported) then return true end
     if order == "new" then state.sequence = sequence end
     if data.Teleported == true then
         state.teleported, state.teleportSequence, state.fired, state.awaySeen = true, sequence, false, false
@@ -300,6 +302,7 @@ function AutoParry.onBallSync(data)
     if order == nil and state.sequence ~= nil and state.targetKnown and target ~= state.target then
         return true
     end
+    if not finite(target) then return true end
     observeTarget(target, clock())
     if target <= 0 then
         state.target, state.targetKnown = target, true
