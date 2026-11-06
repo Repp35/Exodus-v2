@@ -1,6 +1,5 @@
 -- [[ autospam ]]
 
--- activation and deactivation of automatic spam only
 local AutoSpam = {}
 
 local utils, gameInfo, autoParry, dash, players, runService, localPlayer
@@ -755,8 +754,7 @@ function AutoSpam.onBallSync(data)
 	end
 	local target = id(copy.TargetPlayerID) or id(copy.HighlightTargetPlayerID) or id(gameInfo.getTargetId()); local lastTarget = manualSequence and s.manualTarget or s.target
 	if sequence ~= nil and lastSequence == sequence and target and lastTarget > 0 and target ~= lastTarget then return end
-	local me = localPlayer.UserId; local manual = false; local previous = s.target
-	local partner = manual and s.manualPartner or (s.partner > 0 and s.partner or s.windowPartner or s.recentPartner)
+	local me = localPlayer.UserId; local manual = false; local previous = s.target; local partner = manual and s.manualPartner or (s.partner > 0 and s.partner or s.windowPartner or s.recentPartner)
 	if manual and (not partner or partner <= 0) then partner = s.partner > 0 and s.partner or (s.windowPartner or s.recentPartner) end
 	if target and target ~= me and target ~= partner and (manual or s.active or s.windowPaused) and outsideClashRadius(s, target) then
 		if not manual then rememberDistantRecovery(s, partner) end
