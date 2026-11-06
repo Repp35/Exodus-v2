@@ -9,7 +9,7 @@ local runService = game:GetService("RunService")
 local workspace = game:GetService("Workspace")
 local http = game:GetService("HttpService")
 local API_VERSION, VERSION, NAME, AUTHOR = 1, "3.0.0", "Exodus Hub", "delta"
-local FOLDER, HISTORY_LIMIT = "Exodus Hub", 32
+local T = { FOLDER = "Exodus Hub", HISTORY_LIMIT = 32 }
 local state = {
 	active = false,
 	config = {},
@@ -39,7 +39,7 @@ end
 local function snapshot(value) return type(value) == "table" and copy(value) or {} end
 local function append(list, value)
 	list[#list + 1] = value
-	if #list > HISTORY_LIMIT then table.remove(list, 1) end
+	if #list > T.HISTORY_LIMIT then table.remove(list, 1) end
 end
 
 -- observers
@@ -161,13 +161,13 @@ end
 -- persistence
 function Utils.ensureDataFolder()
 	if type(makefolder) ~= "function" or type(isfolder) ~= "function" then return false, "APIs de pasta do executor indisponíveis" end
-	local ok, exists = pcall(isfolder, FOLDER)
+	local ok, exists = pcall(isfolder, T.FOLDER)
 	if not ok then return false, tostring(exists) end
 	if not exists then
-		local created, err = pcall(makefolder, FOLDER)
-		if not created then return false, tostring(err or ("falha ao criar " .. FOLDER)) end
+		local created, err = pcall(makefolder, T.FOLDER)
+		if not created then return false, tostring(err or ("falha ao criar " .. T.FOLDER)) end
 	end
-	return true, FOLDER
+	return true, T.FOLDER
 end
 local function saveConfig(config)
 	if not persistenceReady or type(writefile) ~= "function" then return end
