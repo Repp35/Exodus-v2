@@ -282,8 +282,22 @@ function AutoSpam.onBallSync(data)
 		s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
 		return
 	end
-	local time = now(); local snapshot = gameInfo.getSnapshotAt(time); local target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or gameInfo.getTargetId(); local serverTime = tonumber(data.ServerTime)
+	local time = now(); local target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or gameInfo.getTargetId(); local serverTime = tonumber(data.ServerTime)
 	if not finite(serverTime) then serverTime = nil end
+	local speed = tonumber(data.Speed)
+	if
+		(s.active or utils.isManualSpamActive())
+		and s.partner
+		and target
+		and target ~= localPlayer.UserId
+		and target ~= s.partner
+		and finite(speed)
+		and speed > 0
+	then
+		local g = gameInfo.getDeflectGeometry(speed, nil, 1, true); local distance = distanceToPlayer(s, target)
+		if g and distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
+	end
+	local snapshot = gameInfo.getSnapshotAt(time)
 	if snapshot and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
 	evaluate(s, time, true, serverTime, snapshot)
 end
