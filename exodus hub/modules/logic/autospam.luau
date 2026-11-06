@@ -49,11 +49,8 @@ local function geometry(s, snapshot, factor)
 	if not g then return nil end
 	return g, speed, window
 end
-local function returnWindow(s, window, speed, partner)
-	local distance = distanceToPlayer(s, partner); local travel = distance and speed > 0 and distance * 2 / speed or window; return math.min(window, math.max(1 / 25, travel + 1 / 25)) + ping() * 0.3
-end
-local function activationReturnWindow(window, speed)
-	local minimum, maximum = gameInfo.getBallSpeedLimits(); local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local base = 0.18 + (1 / 25 - 0.18) * fraction; return math.min(base, window) + ping() * 0.3
+local function returnWindow(window, speed, base)
+	local minimum, maximum = gameInfo.getBallSpeedLimits(); local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local scale = 1 + ((1 / 25) / 0.18 - 1) * fraction; return math.min(base * scale, window) + ping() * 0.3
 end
 
 -- activation
@@ -83,7 +80,7 @@ local function shouldDeactivate(s, snapshot, time, fresh)
 	local outside = (snapshot.position - s.root.Position).Magnitude > g.fullRadius
 	if not outside then s.dashEntry = false end
 	if outside and not (s.dashEntry and time <= s.dashUntil) then return "outside_window" end
-	if fresh and s.awayAt and s.target == s.partner and time - s.awayAt > returnWindow(s, window, speed, s.partner) then return "return_timeout" end
+	if fresh and s.awayAt and s.target == s.partner and time - s.awayAt > returnWindow(window, speed, 0.1) then return "return_timeout" end
 	if fresh and s.lastSwitchAt and time - s.lastSwitchAt > math.max(0.04, window - 0.04) + ping() * 0.3 then return "no_target_switch" end
 	return nil
 end
@@ -100,7 +97,7 @@ local function inspectTarget(s, target, time, snapshot)
 		local distance = distanceToPlayer(s, target)
 		if distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
 	end
-	if s.active and s.awayAt and previous == s.partner and target == me and window and time - s.awayAt > returnWindow(s, window, speed, s.partner) then stop(s, "return_timeout", false) end
+	if s.active and s.awayAt and previous == s.partner and target == me and window and time - s.awayAt > returnWindow(window, speed, 0.1) then stop(s, "return_timeout", false) end
 	if s.lastSwitchAt and time >= s.lastSwitchAt then s.intervalMs = (time - s.lastSwitchAt) * 1000 end
 	s.target, s.lastSwitchAt = target, time
 	if previous == me and target ~= me then
@@ -112,7 +109,7 @@ local function inspectTarget(s, target, time, snapshot)
 		if not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
 		elseif not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt and window then
-			local limit = activationReturnWindow(window, speed) * (time <= s.dashUntil and 2.5 or 1)
+			local limit = returnWindow(window, speed, 0.18) * (time <= s.dashUntil and 2.5 or 1)
 			if time - s.departedAt <= limit then s.pending = { partner = previous } end
 		end
 	end
