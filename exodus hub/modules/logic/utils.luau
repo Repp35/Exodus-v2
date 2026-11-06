@@ -127,13 +127,11 @@ end
 local function refreshNamespace()
 	if refreshing then return end
 	refreshing = true
-	pcall(function()
-		local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
+	local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
 		namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author = NAME, "Exodus", VERSION, API_VERSION, AUTHOR
 		namespace.State, namespace.Config, namespace.ModuleURLs, namespace.Diagnostics =
 			stateSnapshot(), snapshot(state.config), snapshot(state.urls), diagnosticsSnapshot()
 		_G.Exodus = namespace
-	end)
 	refreshing = false
 end
 
@@ -285,8 +283,7 @@ function Utils.setConfig(patch)
 	if type(patch) ~= "table" then return false end
 	local normalized = snapshot(patch)
 	if configModule then
-		local ok, result, reason = pcall(configModule.normalizePatch, patch)
-		if not ok then return false, result end
+		local result, reason = configModule.normalizePatch(patch)
 		if type(result) ~= "table" then return false, reason end
 		normalized = result
 	end
