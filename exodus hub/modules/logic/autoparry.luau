@@ -221,7 +221,6 @@ local function request(reason)
 	end
 	phase("fired", reason); return true
 end
--- avaliação por frame
 local function tick(character, root, generation)
 	if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
 	if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
@@ -253,7 +252,6 @@ function AutoParry.setup(deps)
 	if not state.player then return false, "Players.LocalPlayer indisponível" end
 	resetTracking(); phase("detached", "setup_complete"); return true
 end
--- vinculação do personagem
 function AutoParry.bindCharacter(character)
 	if not utils or not gameInfo or not remote then return false, "dependências não inicializadas" end
 	detach("rebind_start")
@@ -336,7 +334,6 @@ local function rootPosition()
 	local character = state.player and state.player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
 	return root and root.Parent and gameInfo.getRootPosition(root) or nil
 end
--- tempo e distância
 function AutoParry.getTiming(value, time, root, factor, baseWindow)
 	if type(value) ~= "table" then return nil end
 	root = vector(root) and root or rootPosition(); local position, velocity = value.position, value.velocity
@@ -380,7 +377,6 @@ function AutoParry.getRadius(mode, factor, speedOverride, baseWindow)
 	result.mode, result.speed, result.distance, result.tti, result.resilience = mode, speed, state.distance, tti, resilience()
 	result.value = mode == "tti" and tti or (mode == "speed_distance" and { speed = speed, distance = state.distance } or result.fullRadius); return result
 end
--- pressão e retornos da bola
 function AutoParry.getPressure()
 	local time, count, factors, configured, speeds, ratios = clock(), 0, 0, 0, 0, 0
 	for i = #state.clicks, 1, -1 do
@@ -422,7 +418,6 @@ function AutoParry.getPressure()
 		latestReturnTime = lastReturn and lastReturn.interval or nil,
 	}
 end
--- status e diagnósticos
 function AutoParry.getStatus()
 	local geometry = AutoParry.getRadius("geometry", utils and configuredFactor() or 0.5); local target = AutoParry.getTargetStatus()
 	return {

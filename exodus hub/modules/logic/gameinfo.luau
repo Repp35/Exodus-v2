@@ -66,7 +66,6 @@ local function getAbility(index, method)
 	if type(ability) == "table" and type(ability[method]) == "function" then return ability end
 	return nil
 end
--- replicação da bola
 local function getReplicator()
 	local folder = child(ts(), "BallReplicator"); local module = folder and (folder:IsA("ModuleScript") and folder or child(folder, "BallReplicator"))
 	if module ~= replicatorScript then replicatorScript, replicator = module, nil end
@@ -107,7 +106,6 @@ local function targetId(data)
 	if type(data) == "table" and data.Targeted == true and players.LocalPlayer then return players.LocalPlayer.UserId end
 	local ok, value = pcall(world.GetAttribute, world, "GameBallTarget"); return ok and targetNumber(value) or -1
 end
--- localização da GameBall
 local function findBall()
 	local candidate = world:FindFirstChild("GameBall") or world:FindFirstChild("GameBall", true)
 	if candidate and candidate:IsA("BasePart") then return candidate end
@@ -196,7 +194,6 @@ function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
 function GameInfo.getDashAbility() return getAbility(2, "Dash") end
 function GameInfo.getFierceDeflectAbility() return getAbility(19, "ActivateAndBlock") end
 function GameInfo.getDarkSealAbility() return getAbility(20, "SendEvent") end
--- eventos de cooldown
 local function generatedRemote(id)
 	local remotes = child(ts(), "GeneratedNetworkRemotes"); local remote = child(remotes, "RE_" .. tostring(id)); return remote and remote:IsA("RemoteEvent") and remote or nil
 end
@@ -218,7 +215,6 @@ function GameInfo.getHeldDeflectServerCooldown()
 	if finite(duration) and duration > 0 and finite(received) then return duration, received end
 	return nil
 end
--- estado de cooldown
 function GameInfo.getDeflectCooldownState()
 	local time = os.clock()
 	if cooldownConnection and cooldownConnection.Connected == false then
@@ -265,7 +261,6 @@ function GameInfo.getDeflectCooldownState()
 	if cooldown.rawActive and finite(cooldown.endsAt) then remaining = math.max(remaining, cooldown.endsAt - time) end
 	cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true; cooldown.blocking = cooldown.active; return cooldown
 end
--- sequência e leitura dos pacotes
 function GameInfo.getSyncData() return syncData() end
 local function syncSequence(current, provider)
 	if packet and current == packet then return packet.Sequence end
@@ -302,7 +297,6 @@ function GameInfo.decodeBallPacket(value)
 		Speed = decoded.speed,
 	}
 end
--- target atual
 function GameInfo.getTargetId() return targetId(syncData()) end
 
 -- snapshots
@@ -358,14 +352,12 @@ function GameInfo.isSnapshotValid(value)
 		and type(value.targetId) == "number"
 		and type(value.targeted) == "boolean"
 end
--- aplicação da sincronização
 function GameInfo.applySync(value)
 	if type(value) == "table" and type(value.syncData) == "table" then value = value.syncData end
 	if type(value) ~= "table" then local provider = getReplicator(); value = provider and provider.syncData end
 	if type(value) ~= "table" then return nil end
 	lastSync = value; return value
 end
--- observação da bola
 function GameInfo.installBallWatcher(track)
 	if type(track) ~= "function" then return false, "trackConnection invalido" end
 	track((world.DescendantAdded or world.ChildAdded):Connect(function(item)
@@ -376,7 +368,6 @@ function GameInfo.installBallWatcher(track)
 	end))
 	ball, watching, searchAt = findBall(), true, os.clock() + T.BALL_SEARCH_INTERVAL; return true
 end
--- limites de velocidade e janela
 function GameInfo.getBallSpeedLimits()
 	local time = os.clock()
 	if time < speedAt then return minimumSpeed, maximumSpeed end
@@ -408,7 +399,6 @@ function GameInfo.getDeflectWindow(speed)
 	end
 	return window
 end
--- Manifest e contexto do Clash
 function GameInfo.getManifestRemote() return generatedRemote(9.318024238496386e76) end
 function GameInfo.getClashContext()
 	local player = players.LocalPlayer

@@ -21,7 +21,6 @@ local LOCAL_ROOTS = { "Exodus-v2/exodus hub", "Exodus-v2-main/exodus hub", "exod
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local CACHE_BUSTER = tostring(os.time())
 local HttpService = game:GetService("HttpService")
--- manifesto de módulos
 local MODULE_MANIFEST = {
 	{ name = "config", path = "modules/front/config.luau" },
 	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
@@ -39,7 +38,6 @@ local MODULE_MANIFEST = {
 }
 
 local lastApiErrors = {}
--- contratos da API
 local SINGLE_RESULT_API = {
 	utils = {
 		now = true,
@@ -147,7 +145,6 @@ local function getRequestFunction()
 	end
 	return nil
 end
--- verificação do executor
 local function validateExecutor()
 	local requestFunction = getRequestFunction()
 	if type(requestFunction) ~= "function" and not (ALLOW_LOCAL_FALLBACK and type(isfile) == "function" and type(readfile) == "function") then
@@ -167,7 +164,6 @@ end
 local function waitBeforeRetry(attempt)
 	if type(task) == "table" and type(task.wait) == "function" then local delays = { 0.25, 0.75, 1.5 }; task.wait(delays[attempt] or delays[#delays]) end
 end
--- requisições e retentativas
 local function request(url, headers)
 	if type(url) ~= "string" or url == "" then return nil, "URL inválida" end
 	local lastError
@@ -221,7 +217,6 @@ local function clearRegistry()
 	Exodus.UI = nil; Exodus.Diagnostics = nil; Exodus.Version = nil; Exodus.StartError = nil
 	Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false; _G.ExodusOnBurst = nil
 end
--- limpeza da execução anterior
 local function stopPreviousRuntime()
 	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then pcall(Modules.gameinfo.stopMaintenance) end
 	for _, name in ipairs({ "character", "spam", "autospam", "autodark", "movement", "dash", "autoparry" }) do
@@ -275,7 +270,6 @@ local function buildCDNURL(url)
 	if not repository or not version or not path then return nil end
 	return "https://cdn.jsdelivr.net/gh/" .. repository .. "@" .. version .. "/" .. path
 end
--- download e compilação
 local function loadModule(name, relativePath, url, localRoot)
 	if localRoot then
 		local path = localRoot .. "/" .. relativePath; local ok, source = pcall(readfile, path)
@@ -381,7 +375,6 @@ local function collectCharacterBinds(loaded)
 	end
 	return binds
 end
--- inicialização dos módulos
 local function initializeModules(loaded)
 	local characterBinds, bindModule, bindError = collectCharacterBinds(loaded)
 	if not characterBinds then return false, bindModule, bindError end
@@ -435,7 +428,6 @@ local function bindRuntime(loaded, log)
 	then
 		return nil, "contrato de runtime incompleto"
 	end
-	-- assinantes da sincronização
 	local ballSyncSubscribers = {}
 	for _, name in ipairs(MODULE_ORDER) do
 		local module = loaded[name]
@@ -469,7 +461,6 @@ local function bindRuntime(loaded, log)
 	end
 	local pendingSyncRefresh = false
 	local lastClashPacketSequence
-	-- decodificação do BallSync
 	local function onBallSync(...)
 		local argCount = select("#", ...)
 		local data
@@ -578,7 +569,6 @@ local function waitForLocalPlayer(timeout)
 	until os.clock() >= deadline
 	return false, "LocalPlayer indisponível após esperar " .. tostring(timeout or 10) .. "s"
 end
--- inicialização do hub
 local function startInternal()
 	printStartup("Exodus: iniciando"); stopPreviousRuntime(); clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
 	if not playerReady then return false, "Loader", playerError end
