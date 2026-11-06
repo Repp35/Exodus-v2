@@ -439,12 +439,8 @@ def add_title(source: str, file_name: str, custom_title: str | None = None) -> s
     titles = [index for index, line in enumerate(lines) if TITLE_RE.fullmatch(line.strip())]
     if len(titles) > 1:
         raise FormatterError(f"{file_name}: mais de um título encontrado.")
-    if not titles and custom_title is None:
-        raise FormatterError(
-            f"{file_name}: título obrigatório. Insira '-- [[ título ]]' no arquivo "
-            "ou informe --title ao executar."
-        )
-    title = f"-- [[ {custom_title} ]]" if custom_title is not None else lines[titles[0]].strip()
+    title_text = custom_title if custom_title is not None else (lines[titles[0]].strip()[5:-3].strip() if titles else normalized_title(file_name))
+    title = f"-- [[ {title_text} ]]"
     if titles:
         del lines[titles[0]]
     while lines and not lines[0].strip():
@@ -949,7 +945,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--title",
-        help="título obrigatório quando o código não possuir -- [[ título ]]",
+        help="substitui o título; sem título no código, usa o nome do arquivo sem extensão",
     )
     parser.add_argument(
         "--directive",
