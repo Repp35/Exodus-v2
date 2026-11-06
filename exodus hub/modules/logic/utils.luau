@@ -1,6 +1,7 @@
 -- [[ utils ]]
 
 local Utils = {}
+-- services
 local players = game:GetService("Players")
 local replicated = game:GetService("ReplicatedStorage")
 local runService = game:GetService("RunService")
@@ -8,6 +9,7 @@ local workspace = game:GetService("Workspace")
 local http = game:GetService("HttpService")
 local API_VERSION, VERSION, NAME, AUTHOR = 1, "3.0.0", "Exodus Hub", "delta"
 local FOLDER, HISTORY_LIMIT = "Exodus Hub", 32
+-- runtime state
 local state = {
 	active = false,
 	config = {},
@@ -24,6 +26,7 @@ local configModule, modules, persistenceReady = nil, {}, false
 local savePending, saveToken, saveWriting, saveDirty, saveSnapshot = false, 0, false, false, nil
 local refreshPending, refreshing = false, false
 local spamObservers, configObservers = {}, {}
+-- helpers
 local function copy(value, depth)
 	if type(value) ~= "table" or (depth or 0) > 8 then return value end
 	local result = {}
@@ -37,6 +40,7 @@ local function append(list, value)
 	list[#list + 1] = value
 	if #list > HISTORY_LIMIT then table.remove(list, 1) end
 end
+-- observers
 local function connectObserver(list, observer)
 	if type(observer) ~= "function" then return nil end
 	if not table.find(list, observer) then table.insert(list, observer) end
@@ -55,6 +59,7 @@ local function notify(list, label, value)
 end
 function Utils.observeSpam(observer) return connectObserver(spamObservers, observer) end
 function Utils.observeConfig(observer) return connectObserver(configObservers, observer) end
+-- connection tracking
 local function track(list, connection)
 	if connection and type(connection.Disconnect) == "function" then list[#list + 1] = connection end
 	return connection
@@ -70,6 +75,7 @@ local function disconnectAll(list)
 		local connection = list[i]; list[i] = nil; pcall(connection.Disconnect, connection)
 	end
 end
+-- snapshots
 local function lifecycleSnapshot()
 	local result = snapshot(state.lifecycle)
 	result.schema, result.generatedAt = API_VERSION, os.clock()
@@ -115,6 +121,7 @@ local function diagnosticsSnapshot()
 		modules = statuses,
 	}
 end
+-- environment
 local function refreshNamespace()
 	if refreshing then return end
 	refreshing = true
@@ -127,6 +134,7 @@ local function refreshNamespace()
 	end)
 	refreshing = false
 end
+-- diagnostics
 local function recordTransition(source, fromState, toState, reason)
 	local item = {
 		source = tostring(source or "Unknown"),
@@ -145,6 +153,7 @@ local function recordTransition(source, fromState, toState, reason)
 		end)
 	end
 end
+-- persistence
 function Utils.ensureDataFolder()
 	if type(makefolder) ~= "function" or type(isfolder) ~= "function" then return false, "APIs de pasta do executor indisponíveis" end
 	local ok, exists = pcall(isfolder, FOLDER)
@@ -186,6 +195,7 @@ local function queueSave()
 		savePending = false; flushSave()
 	end)
 end
+-- lifecycle
 function Utils.start()
 	local previous = state.lifecycle.phase; state.active = true; state.lifecycle.generation += 1
 	state.lifecycle.startedAt, state.lifecycle.stoppedAt, state.lifecycle.phase = os.clock(), 0, "starting"
@@ -216,6 +226,7 @@ function Utils.stop()
 	end
 	state.lifecycle.phase = "stopped"; recordTransition("Utils", previous, "stopped", "stop"); refreshNamespace(); return true
 end
+-- public state API
 function Utils.isActive() return state.active end
 function Utils.getStateSnapshot() return stateSnapshot() end
 function Utils.getConfig() return snapshot(state.config) end
@@ -242,6 +253,7 @@ end
 function Utils.isManualSpamActive() return state.manualSpam end
 function Utils.isAutoSpamActive() return state.autoSpam end
 function Utils.isSpamActive() return state.manualSpam or state.autoSpam end
+-- spam state
 local function setSpam(key, value, source, reason)
 	value = value == true
 	if state[key] == value then return false end
@@ -258,6 +270,7 @@ function Utils.stopAllSpam()
 end
 function Utils.isFiniteNumber(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 function Utils.isNonNegativeFiniteNumber(value) return Utils.isFiniteNumber(value) and value >= 0 end
+-- configuration
 function Utils.normalizeSpamRate(value, fallback)
 	local rate = tonumber(value)
 	if not Utils.isFiniteNumber(rate) then rate = tonumber(fallback) end
@@ -321,6 +334,7 @@ function Utils.setModuleURLs(urls)
 	end
 	refreshNamespace(); return true
 end
+-- connection API
 function Utils.trackGlobal(connection) return track(state.globalConnections, connection) end
 function Utils.untrackGlobal(connection) return untrack(state.globalConnections, connection) end
 function Utils.trackCharacter(connection) return track(state.characterConnections, connection) end
@@ -337,6 +351,7 @@ function Utils.version() return VERSION end
 function Utils.apiVersion() return API_VERSION end
 function Utils.author() return AUTHOR end
 _G.ExodusStop = Utils.stop
+-- contract
 Utils.__contract = {
 	requires = {},
 	provides = {

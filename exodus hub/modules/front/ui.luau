@@ -499,6 +499,7 @@ local function createParryTimingCard(yPos, parent)
 	end))
 	return nextCardY(yPos, CARD_H)
 end
+-- spam rates
 local function createRateSelector(yPos, parent)
 	local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig(); config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.3917)
 	config.SpamRateMode = config.SpamRateMode == "CPF" and "CPF" or "CPS"
@@ -583,6 +584,7 @@ local function createRateSelector(yPos, parent)
 	end))
 	return nextCardY(yPos, RATE_CARD_H)
 end
+-- keybind selector
 local function createKeybindSelector(yPos, parent)
 	local f = cardFrame(yPos, CARD_H, parent)
 	inst("TextLabel", {
@@ -603,6 +605,7 @@ local function createKeybindSelector(yPos, parent)
 	end)
 	return nextCardY(yPos, CARD_H)
 end
+-- manual spam
 local function createSpamCard(yPos, parent)
 	local f = cardFrame(yPos, SPAM_CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true
 	local visBtn = makeBtn(visible and "Mini UI: Visivel" or "Mini UI: Oculto", 8, 24, COL_W - 16, 30, f, visible and Color3.fromRGB(0, 130, 65) or C.btnDark); visBtn.TextSize = 11

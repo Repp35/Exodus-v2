@@ -146,6 +146,7 @@ end
 
 -- cleanup
 local function getSignature(value) return structure(value, "payload") end
+-- remote inspection
 local function inspectRemote(remote, ...)
 	local state = Runtime.remoteStates[remote]
 	if not state then return end
@@ -181,6 +182,7 @@ local function looksSyncRelated(instance)
 	end
 	return false
 end
+-- discovery
 local function scanReplicatedStorage()
 	local descendants = {}
 	local ok = pcall(function() descendants = ReplicatedStorage:GetDescendants() end)
@@ -211,6 +213,7 @@ local function inspectBallReplicator(moduleScript)
 	local syncData = type(provider) == "table" and provider.syncData or nil; Runtime.lastReplicatorSignature = getSignature(syncData); log("TS.BallReplicator module=" .. safePath(moduleScript))
 	recordStructure("TS.BallReplicator.BallReplicator.syncData", syncData); return replicator
 end
+-- polling
 local function pollGameInfo(gameInfo)
 	if not gameInfo then return end
 	local provider = gameInfo.GameInfo; local signature = getSignature(provider)
@@ -225,6 +228,7 @@ local function pollBallReplicator(ballReplicator)
 	if signature == Runtime.lastReplicatorSignature then return end
 	Runtime.lastReplicatorSignature = signature; recordStructure("TS.BallReplicator.BallReplicator.syncData (changed)", syncData)
 end
+-- teardown
 local function disconnectAll()
 	for index, connection in ipairs(Runtime.eventConnections) do
 		if connection then pcall(function() connection:Disconnect() end) end

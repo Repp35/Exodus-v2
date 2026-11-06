@@ -1,9 +1,11 @@
 -- [[ read_current_values ]]
 
+-- services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local output = {}
+-- helpers
 local function safe(label, fn)
 	local ok, value = pcall(fn)
 	if ok then local line = ("[CurrentValues] %-28s %s"):format(label, tostring(value)); output[#output + 1] = line; print(line); return value end
@@ -23,6 +25,7 @@ local function getNested(module, key)
 	if type(module[key]) == "table" then return module[key] end
 	return module
 end
+-- inspection
 print("[CurrentValues] ===== leitura da sessão atual =====")
 safe("PlaceId", function() return game.PlaceId end)
 safe("GameId", function() return game.GameId end)

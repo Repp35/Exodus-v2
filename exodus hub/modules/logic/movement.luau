@@ -2,8 +2,10 @@
 
 local Movement = {}
 
+-- dependencies and state
 local utils, gameInfo, remote, jumpConnection
 local epoch = 0
+-- auto jump
 local function stopJump()
 	epoch += 1
 	if jumpConnection then
@@ -29,6 +31,7 @@ function Movement.syncJump()
 	end)
 	utils.trackGlobal(jumpConnection); return true
 end
+-- up dash
 function Movement.upDash()
 	if not utils or not gameInfo or not utils.isActive() then return false, "Hub inativo" end
 	local ability = gameInfo.getDashAbility()
@@ -39,6 +42,7 @@ function Movement.upDash()
 	if not ability.Dashing then return false, "Dash indisponível ou em cooldown" end
 	ability.MoveDir = Vector3.new(0, 1, 0); return true
 end
+-- lifecycle
 function Movement.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" then return false, "dependências ausentes: Utils ou GameInfo" end
 	stopJump(); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote; return Movement.syncJump()
@@ -46,6 +50,7 @@ end
 function Movement.teardown()
 	stopJump(); utils, gameInfo, remote = nil, nil, nil
 end
+-- contract
 Movement.__contract = {
 	requires = { Utils = "utils", GameInfo = "gameinfo", Remote = "remote" },
 	requiresMethods = {

@@ -1,5 +1,6 @@
 -- [[ config ]]
 
+-- registry
 local Config = {}
 local Registry = {}
 local Keys = {}
@@ -13,6 +14,7 @@ local SupportedKinds = {
 	rateMode = true,
 }
 
+-- validation
 local function isFiniteNumber(value) return type(value) == "number" and value == value and value < math.huge and value > -math.huge end
 local function validKeyCode(value) return typeof(value) == "EnumItem" and value.EnumType == Enum.KeyCode end
 local function validateValue(key, kind, value: any)
@@ -32,6 +34,7 @@ local function copy(source)
 	end
 	return result
 end
+-- registration
 function Config.register(name, definition)
 	if type(name) ~= "string" or type(definition) ~= "table" or Registry[name] then return false end
 	local schema = type(definition.schema) == "table" and definition.schema or {}; local defaults = type(definition.defaults) == "table" and definition.defaults or {}
@@ -47,6 +50,7 @@ function Config.register(name, definition)
 	end
 	Registry[name] = { schema = copy(schema), defaults = copy(defaults) }; return true
 end
+-- defaults
 function Config.defaults()
 	local result = {}
 	for _, definition in pairs(Registry) do
@@ -56,6 +60,7 @@ function Config.defaults()
 	end
 	return result
 end
+-- patch validation
 function Config.validatePatch(patch)
 	if type(patch) ~= "table" then return false, "configuração não é uma tabela" end
 	for key, value in pairs(patch) do
@@ -84,6 +89,7 @@ function Config.getRegistry()
 	end
 	return result
 end
+-- contract
 Config.__contract = {
 	provides = { "register", "defaults", "validate", "normalizePatch" },
 	requires = {},

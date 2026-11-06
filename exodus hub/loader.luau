@@ -1,5 +1,6 @@
 -- [[ loader ]]
 
+-- logging
 local function printRawError(moduleName, message, filePath)
 	local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message)); local warned = false
 	if type(warn) == "function" then warned = pcall(warn, output) end
@@ -75,6 +76,7 @@ local TWO_RESULT_API = {
 	gameinfo = { getBallSpeedLimits = true, decodeDeflectServerEvent = true, getHeldDeflectServerCooldown = true },
 }
 
+-- diagnostics
 local function withTrace(err)
 	local message = tostring(err)
 	if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(message, 2) end
@@ -624,6 +626,7 @@ local function startInternal()
 	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
 	Exodus.Started = true; Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
 end
+-- rollback
 local function rollbackLoaded(loaded)
 	if type(loaded) ~= "table" then return end
 	for index = #MODULE_ORDER, 1, -1 do

@@ -2,6 +2,7 @@
 
 local GameInfo = {}
 
+-- dependencies and state
 local utils, players, world
 local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
@@ -11,6 +12,7 @@ local minimumSpeed, maximumSpeed, speedAt = 16, 600, 0
 local errors, cooldownConnection, parriedConnection = {}, nil, nil
 local syncConnection, syncRemote, maintenance = nil, nil, 0
 local cooldown, signalAt, heldAt, missingAt, warningAt
+-- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function child(parent, name) return parent and parent:FindFirstChild(name) end
 local function report(name, message)
@@ -27,6 +29,7 @@ local function load(module, name)
 end
 local function storage() return utils and utils.getReplicatedStorage() end
 local function ts() return child(storage(), "TS") end
+-- abilities
 local function getAbilities()
 	local module = child(ts(), "ClientAbilities")
 	if abilityScript ~= module then abilityScript, abilities = module, nil end
@@ -41,6 +44,7 @@ local function getAbility(index, method)
 	if type(ability) == "table" and type(ability[method]) == "function" then return ability end
 	return nil
 end
+-- ball replicator
 local function getReplicator()
 	local folder = child(ts(), "BallReplicator"); local module = folder and (folder:IsA("ModuleScript") and folder or child(folder, "BallReplicator"))
 	if module ~= replicatorScript then replicatorScript, replicator = module, nil end
@@ -68,6 +72,7 @@ local function syncData()
 	if type(data) ~= "table" then data = provider and provider.syncData end
 	return type(data) == "table" and data or nil
 end
+-- targeting
 local function targetNumber(value)
 	if typeof(value) == "Instance" and value:IsA("Player") then return value.UserId end
 	if type(value) == "string" then value = tonumber(value) end
@@ -79,6 +84,7 @@ local function targetId(data)
 	if type(data) == "table" and data.Targeted == true and players.LocalPlayer then return players.LocalPlayer.UserId end
 	local ok, value = pcall(world.GetAttribute, world, "GameBallTarget"); return ok and targetNumber(value) or -1
 end
+-- ball tracking
 local function findBall()
 	local candidate = world:FindFirstChild("GameBall") or world:FindFirstChild("GameBall", true)
 	if candidate and candidate:IsA("BasePart") then return candidate end
@@ -157,6 +163,7 @@ function GameInfo.setup(deps)
 	sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = 16, 600, 0; errors = {}
 	cooldown = { known = false, active = false, rawActive = false, lastEventAt = -math.huge }; signalAt, heldAt, missingAt, warningAt = 0, 0, nil, 0; GameInfo.getDeflectCooldownState(); return true
 end
+-- public data API
 function GameInfo.getBall() return getBall() end
 function GameInfo.getBallPosition(value) return value.Position end
 function GameInfo.getBallVelocity(value) return value.AssemblyLinearVelocity end
@@ -167,6 +174,7 @@ function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
 function GameInfo.getDashAbility() return getAbility(2, "Dash") end
 function GameInfo.getFierceDeflectAbility() return getAbility(19, "ActivateAndBlock") end
 function GameInfo.getDarkSealAbility() return getAbility(20, "SendEvent") end
+-- cooldown events
 local function generatedRemote(id)
 	local remotes = child(ts(), "GeneratedNetworkRemotes"); local remote = child(remotes, "RE_" .. tostring(id)); return remote and remote:IsA("RemoteEvent") and remote or nil
 end
@@ -234,6 +242,7 @@ function GameInfo.getDeflectCooldownState()
 	if cooldown.rawActive and finite(cooldown.endsAt) then remaining = math.max(remaining, cooldown.endsAt - time) end
 	cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true; cooldown.blocking = cooldown.active; return cooldown
 end
+-- sync packets
 function GameInfo.getSyncData() return syncData() end
 local function syncSequence(current, provider)
 	if packet and current == packet then return packet.Sequence end
@@ -271,6 +280,7 @@ function GameInfo.decodeBallPacket(value)
 	}
 end
 function GameInfo.getTargetId() return targetId(syncData()) end
+-- snapshots
 local function snapshot(time)
 	local currentBall = getBall()
 	if not currentBall then return nil end
@@ -323,12 +333,14 @@ function GameInfo.isSnapshotValid(value)
 		and type(value.targetId) == "number"
 		and type(value.targeted) == "boolean"
 end
+-- sync application
 function GameInfo.applySync(value)
 	if type(value) == "table" and type(value.syncData) == "table" then value = value.syncData end
 	if type(value) ~= "table" then local provider = getReplicator(); value = provider and provider.syncData end
 	if type(value) ~= "table" then return nil end
 	lastSync = value; return value
 end
+-- ball watcher
 function GameInfo.installBallWatcher(track)
 	if type(track) ~= "function" then return false, "trackConnection invalido" end
 	track((world.DescendantAdded or world.ChildAdded):Connect(function(item)
@@ -339,6 +351,7 @@ function GameInfo.installBallWatcher(track)
 	end))
 	ball, watching, searchAt = findBall(), true, os.clock() + 0.5; return true
 end
+-- speed and deflect window
 function GameInfo.getBallSpeedLimits()
 	local time = os.clock()
 	if time < speedAt then return minimumSpeed, maximumSpeed end
@@ -370,6 +383,7 @@ function GameInfo.getDeflectWindow(speed)
 	end
 	return window
 end
+-- manifest and clash data
 function GameInfo.getManifestRemote() return generatedRemote(9.318024238496386e76) end
 function GameInfo.getClashContext()
 	local player = players.LocalPlayer
@@ -385,6 +399,7 @@ function GameInfo.getClashContext()
 	if not ownRoot or not partnerRoot or (ownRoot.Position - partnerRoot.Position).Magnitude > 35 then return nil end
 	return { partnerId = partnerId, lastParryAt = lastAt, age = age }
 end
+-- status
 function GameInfo.getStatus()
 	local now = utils.now(); local value = snapshot(now)
 	return {
@@ -396,6 +411,7 @@ function GameInfo.getStatus()
 		speed = value and value.speed or 0,
 	}
 end
+-- contract
 GameInfo.__contract = {
 	requires = { Utils = "utils" },
 	requiresMethods = { Utils = { "now", "apiVersion", "getPlayers", "getReplicatedStorage", "getWorkspace" } },

@@ -2,10 +2,12 @@
 
 local AutoSpam = {}
 
+-- dependencies
 local utils, gameInfo, autoParry, dash, players, runService, localPlayer
 local current
 local nextGeneration = 0
 local targetResetToken, returnToken = 0, 0
+-- tuning
 local LIMIT = {
 	snapshotGrace = 0.20,
 	pullRecovery = 2.0,
@@ -17,6 +19,7 @@ local LIMIT = {
 	activationWindowFactor = 0.75,
 }
 
+-- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function id(value)
 	if type(value) == "string" then value = tonumber(value) end
@@ -35,6 +38,7 @@ local function playerRoot(userId)
 	local player = players:GetPlayerByUserId(userId); local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 	return player, root and root.Parent and root or nil
 end
+-- state
 local function makeState()
 	return {
 		generation = nextGeneration,
@@ -114,6 +118,7 @@ local function makeState()
 	}
 end
 local state = makeState()
+-- diagnostics
 local function report(s, source, message, time)
 	message = tostring(message); local previous = s.errors[source]
 	if previous and previous.message == message and time >= previous.at and time - previous.at < 1 then return end
@@ -160,6 +165,7 @@ local function clearExchange(s)
 	s.activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 }; targetResetToken += 1
 	s.resetToken = targetResetToken; clearReturn(s)
 end
+-- activation and deactivation
 local function setActive(s, enabled, reason, detail, time, recoveryValidated)
 	if current ~= s or not s.bound then return end
 	enabled = enabled == true
@@ -217,6 +223,7 @@ local function gate(s)
 	if wasActive or s.lastGate ~= reason or s.target ~= -1 or s.returnPending then clearExchange(s) end
 	s.lastGate = reason; return false
 end
+-- range checks
 local function outsideClashRadius(s, userId)
 	local _, root = playerRoot(userId); local own = rootPosition(s); local ability = gameInfo.getDeflectAbility(); local sync = gameInfo.getSyncData()
 	local speed = sync and tonumber(sync.Speed) or s.speed; local range = ability and ability.DeflectDistance
@@ -345,6 +352,7 @@ local function stopForPull(s, position, reason, time)
 	return true
 end
 local confirmInvalidTarget
+-- target tracking
 local function observeTarget(s, target, explicit, serverTime, time)
 	local me = localPlayer.UserId
 	if not target then
@@ -428,6 +436,7 @@ local function snapshotCurrent(s, snapshot, time)
 	end
 	return true
 end
+-- snapshots
 local function readSnapshot(s, time)
 	local method = type(gameInfo.getSnapshotAt) == "function" and gameInfo.getSnapshotAt or function(t) return gameInfo.getSnapshot(nil, t) end
 	local ok, value = pcall(method, time)
@@ -486,6 +495,7 @@ confirmInvalidTarget = function(s, time)
 	end
 	return false
 end
+-- evaluation
 local function evaluate(s, snapshot, time)
 	if current ~= s or not s.bound or not gate(s) then return end
 	local prediction = geometry(s, snapshot, time)
@@ -567,6 +577,7 @@ local function acceptSync(s, data, time, original)
 		if current == s and snapshot and not snapshot.teleported then evaluate(s, snapshot, time) end
 	end
 end
+-- frame updates
 local function updateFrame(s, time)
 	if not gate(s) or not s.root or not s.root.Parent or not s.character.Parent then return end
 	if not s.returnPending and s.returnExpires > 0 and time >= s.returnExpires then clearReturn(s) end
@@ -603,6 +614,7 @@ local function updateFrame(s, time)
 	end
 	if current == s and s.bound then evaluate(s, snapshot, time) end
 end
+-- event dispatch
 local function dispatch(s, kind, data, time)
 	if current ~= s or not s.bound then return true end
 	if kind == "frame" and s.draining then
@@ -636,6 +648,7 @@ local function disconnect(connection)
 	if utils then utils.untrackCharacter(connection) end
 	connection:Disconnect()
 end
+-- lifecycle
 local function detach(reason)
 	local old = current
 	if old then
@@ -654,6 +667,7 @@ end
 local function track(s, connection)
 	s.connections[#s.connections + 1] = connection; utils.trackCharacter(connection)
 end
+-- setup
 function AutoSpam.setup(deps)
 	if
 		type(deps) ~= "table"
@@ -733,6 +747,7 @@ function AutoSpam.teardown()
 	if dash then dash.setHandler(nil) end
 	utils, gameInfo, autoParry, dash, players, runService, localPlayer = nil, nil, nil, nil, nil, nil, nil
 end
+-- ball sync
 function AutoSpam.onBallSync(data)
 	local s = current
 	if not s or type(data) ~= "table" then return end
@@ -784,6 +799,7 @@ function AutoSpam.getDashData()
 	if not data or clock() < data.detectedAt or clock() > data.expiresAt then return nil end
 	return data
 end
+-- status
 function AutoSpam.getStatus()
 	local s, value, context = state, state.activation, nil
 	if gameInfo and type(gameInfo.getClashContext) == "function" then
@@ -828,6 +844,7 @@ function AutoSpam.getStatus()
 		deactivationCandidateAt = s.exitSince,
 	}
 end
+-- contract
 AutoSpam.__contract = {
 	requires = { AutoParry = "autoparry", Dash = "dash", GameInfo = "gameinfo", Utils = "utils" },
 	requiresMethods = {

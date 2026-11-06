@@ -1,6 +1,7 @@
 -- [[ uiconfig ]]
 
 local UIConfig = {}
+-- panel toggles
 UIConfig.panelToggles = {
 	{
 		kind = "toggle",
@@ -18,6 +19,7 @@ UIConfig.panelToggles = {
 		key = "ClashBallVisible",
 	},
 }
+-- panel components
 UIConfig.panelComponents = {
 	{
 		kind = "rate_selector",
@@ -29,6 +31,7 @@ UIConfig.panelComponents = {
 		kind = "manual_spam",
 	},
 }
+-- config schema and defaults
 UIConfig.__config = {
 	schema = {
 		AutoParry = "boolean",
@@ -81,6 +84,7 @@ UIConfig.__config = {
 	},
 
 }
+-- contract
 UIConfig.__contract = {
 	provides = {},
 	requires = {},
