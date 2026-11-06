@@ -24,7 +24,7 @@ local function validateValue(key, kind, value: any)
 	if kind == "delayMs" and (not isFiniteNumber(value) or value < 0 or value > 400) then return false, "tempo inválido: " .. key end
 	if kind == "position" and (not isFiniteNumber(value) or value < -10000 or value > 10000) then return false, "posição inválida: " .. key end
 	if kind == "keyCode" and not validKeyCode(value) then return false, "keybind inválido: " .. key end
-	if kind == "rateMode" and value ~= "CPS" and value ~= "CPF" then return false, "SpamRateMode inválido" end
+	if kind == "rateMode" and value ~= "CPS" and value ~= "CPF" and value ~= "Auto" then return false, "SpamRateMode inválido" end
 	return true
 end
 local function copy(source)

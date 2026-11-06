@@ -2,7 +2,7 @@
 
 -- dependencies
 local Spam = {}
-local utils, remote, spamObserver, configObserver
+local utils, remote, gameInfo, spamObserver, configObserver
 
 -- state
 local generation, running, inFlight = 0, false, false
@@ -11,7 +11,7 @@ local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErro
 
 -- config
 local function readRate()
-	local config = utils.getConfig(); local mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"; local rate = tonumber(config[mode]) or 0
+	local config = utils.getConfig(); local mode = config.SpamRateMode == "Auto" and "Auto" or (config.SpamRateMode == "CPF" and "CPF" or "CPS"); if mode == "Auto" then return mode, 1 end; local rate = tonumber(config[mode]) or 0
 	if rate ~= rate or rate <= 0 or rate == math.huge then return mode, 0 end
 	if mode == "CPF" and rate * 60 == math.huge then return mode, 0 end
 	return mode, rate
@@ -62,11 +62,23 @@ local function sync()
 	generation += 1; local token, boundUtils, boundRemote = generation, utils, remote; running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
 	task.spawn(function()
 		local ok, err = xpcall(function()
-			local interval = 1 / (mode == "CPF" and rate * 60 or rate); local due = os.clock()
-			while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
-				local time = os.clock()
-				if time >= due then local pending = math.floor((time - due) / interval) + 1; request(boundUtils, boundRemote, token); due += pending * interval end
-				if token == generation then task.wait(math.max(0, due - os.clock())) end
+			if mode == "Auto" then
+				while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
+					local delay = gameInfo.getAutoSpamDelay()
+					if delay ~= nil and delay <= 0 then
+						request(boundUtils, boundRemote, token)
+						if token == generation then task.wait() end
+					elseif token == generation then
+						task.wait(delay and math.min(0.05, math.max(delay, 1 / 240)) or 0.05)
+					end
+				end
+			else
+				local interval = 1 / (mode == "CPF" and rate * 60 or rate); local due = os.clock()
+				while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
+					local time = os.clock()
+					if time >= due then local pending = math.floor((time - due) / interval) + 1; request(boundUtils, boundRemote, token); due += pending * interval end
+					if token == generation then task.wait(math.max(0, due - os.clock())) end
+				end
 			end
 		end, function(message) return debug.traceback(tostring(message), 2) end)
 		if token == generation then cancel(ok and "spam_disabled" or "spam_error") end
@@ -80,6 +92,8 @@ function Spam.setup(deps)
 		type(deps) ~= "table"
 		or type(deps.Utils) ~= "table"
 		or type(deps.Remote) ~= "table"
+		or type(deps.GameInfo) ~= "table"
+		or type(deps.GameInfo.getAutoSpamDelay) ~= "function"
 		or type(deps.Remote.fireParry) ~= "function"
 		or type(deps.Utils.getConfig) ~= "function"
 		or type(deps.Utils.isActive) ~= "function"
@@ -90,7 +104,7 @@ function Spam.setup(deps)
 	then
 		return false, "dependência ausente: Remote ou Utils"
 	end
-	Spam.teardown(); utils, remote = deps.Utils, deps.Remote; spamObserver = utils.observeSpam(sync)
+	Spam.teardown(); utils, remote, gameInfo = deps.Utils, deps.Remote, deps.GameInfo; spamObserver = utils.observeSpam(sync)
 	configObserver = utils.observeConfig(function(changes)
 		if changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil then sync() end
 	end)
@@ -110,7 +124,7 @@ function Spam.teardown()
 		if spamObserver then utils.untrackGlobal(spamObserver); spamObserver:Disconnect() end
 		if configObserver then utils.untrackGlobal(configObserver); configObserver:Disconnect() end
 	end
-	spamObserver, configObserver, utils, remote = nil, nil, nil, nil
+	spamObserver, configObserver, utils, remote, gameInfo = nil, nil, nil, nil, nil
 end
 
 -- status
@@ -128,9 +142,10 @@ end
 
 -- contract
 Spam.__contract = {
-	requires = { Remote = "remote", Utils = "utils" },
+	requires = { Remote = "remote", Utils = "utils", GameInfo = "gameinfo" },
 	requiresMethods = {
 		Remote = { "fireParry" },
+		GameInfo = { "getAutoSpamDelay" },
 		Utils = { "getConfig", "isActive", "isManualSpamActive", "isAutoSpamActive", "observeSpam", "observeConfig", "trackGlobal", "untrackGlobal" },
 	},
 

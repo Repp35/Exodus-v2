@@ -201,6 +201,30 @@ function GameInfo.getPlayerDistance(id)
 end
 function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
 function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
+function GameInfo.getAutoSpamDelay()
+	local ability = GameInfo.getDeflectAbility()
+	if not ability then return nil end
+	local time = os.clock()
+	local last = ability.LastPressClock
+	local delay = finite(last) and math.max(0, 0.0301 - (time - last)) or 0
+	local limit = world:GetAttribute("CPS_LIMIT")
+	if not finite(limit) then limit = 50 end
+	limit = math.floor(limit)
+	if limit <= 0 then return nil end
+	local clicks = ability.ClickInstances
+	if type(clicks) ~= "table" then return nil end
+	if #clicks >= limit then
+		local remaining
+		for _, click in ipairs(clicks) do
+			if type(click) == "table" and finite(click.Time) then
+				remaining = remaining and math.min(remaining, click.Time) or click.Time
+			end
+		end
+		if not remaining then return nil end
+		delay = math.max(delay, remaining > 0 and remaining or 1 / 240)
+	end
+	return delay
+end
 function GameInfo.getDashAbility() return getAbility(2, "Dash") end
 function GameInfo.getFierceDeflectAbility() return getAbility(19, "ActivateAndBlock") end
 function GameInfo.getDarkSealAbility() return getAbility(20, "SendEvent") end
@@ -494,6 +518,7 @@ GameInfo.__contract = {
 		"isBallWithinDeflectRadius",
 		"getBallFrozen",
 		"getDeflectAbility",
+		"getAutoSpamDelay",
 		"getDeflectServerEvents",
 		"decodeDeflectServerEvent",
 		"getHeldDeflectServerCooldown",
