@@ -11,7 +11,7 @@ local current, generation = nil, 0
 -- tuning
 local T = {
 	ACTIVATION = {
-		RETURN = 0.18,
+		RETURN = 0.13,
 		RADIUS_FACTOR = 0.8,
 		DASH_RADIUS_FACTOR = 1.5,
 		DASH_RETURN_MULTIPLIER = 2.5,
