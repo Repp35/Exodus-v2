@@ -30,7 +30,7 @@ local MODULE_MANIFEST = {
 	{ name = "remote", path = "modules/logic/remote.luau" },
 	{ name = "autoparry", path = "modules/logic/autoparry.luau" },
 	{ name = "dash", path = "modules/logic/dash.luau" },
-	{ name = "autoclash", path = "modules/logic/autoclash.luau" },
+	{ name = "autospam", path = "modules/logic/autospam.luau" },
 	{ name = "spam", path = "modules/logic/spam.luau" },
 	{ name = "autofierce", path = "modules/logic/autofierce.luau" },
 	{ name = "character", path = "modules/logic/character.luau" },
@@ -218,7 +218,7 @@ local function clearRegistry()
 end
 local function stopPreviousRuntime()
 	if type(Modules.remote) == "table" and type(Modules.remote.stopMaintenance) == "function" then pcall(Modules.remote.stopMaintenance) end
-	for _, name in ipairs({ "character", "autofierce", "spam", "autoclash", "autodark", "movement", "dash", "autoparry" }) do
+	for _, name in ipairs({ "character", "autofierce", "spam", "autospam", "autodark", "movement", "dash", "autoparry" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
 			if type(module.teardown) == "function" then pcall(module.teardown) elseif type(module.resetState) == "function" then pcall(module.resetState) end
@@ -442,7 +442,7 @@ local function bindRuntime(loaded, log)
 			} end
 		end
 	end
-	local syncPriority = { autoclash = 1, autoparry = 2 }
+	local syncPriority = { autospam = 1, autoparry = 2 }
 	table.sort(ballSyncSubscribers, function(a, b)
 		local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3; return left == right and a.name < b.name or left < right
 	end)
@@ -479,7 +479,7 @@ local function bindRuntime(loaded, log)
 							lastClashPacketSequence = sequence; packet.Source = "packet"
 							if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
 							if not packet.Teleported then
-								for _, name in ipairs({ "autoclash", "autoparry" }) do
+								for _, name in ipairs({ "autospam", "autoparry" }) do
 									for _, sub in ipairs(ballSyncSubscribers) do
 										if sub.name == name then callSync(sub.name, sub.handler, packet) end
 									end
@@ -621,7 +621,7 @@ local function startInternal()
 			if not ok then utils.recordError("UpDash", err or "Dash indisponível") end
 		end,
 		onPanic = function()
-			loaded.autoparry.resetState(); utils.setManualSpamActive(false); utils.setAutoSpamActive(false)
+			loaded.autoparry.resetState(); utils.setAutoSpamActive(false)
 		end,
 	}, loaded.uiconfig)
 	if not uiReady then utils.stop(); return false, uiModule, uiError end
