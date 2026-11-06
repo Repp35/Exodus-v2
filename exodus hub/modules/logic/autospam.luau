@@ -65,7 +65,11 @@ local function geometry(s, snapshot, factor)
 	if not g then return nil end
 	return g, speed, window
 end
-local function returnWindow(window, speed, base) return math.min(base, window) end
+local function returnWindow(window, speed, base)
+	local minimum, maximum = gameInfo.getBallSpeedLimits()
+	local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0
+	return math.min(base * (1 - 0.9 * factor), window)
+end
 
 -- activation
 local function start(s, reason, partner, time, serverTime)
