@@ -44,8 +44,8 @@ local function report(name, message)
 end
 local function load(module, name)
 	if not module or not module:IsA("ModuleScript") then return nil end
-	local ok, result = pcall(require, module)
-	if not ok or type(result) ~= "table" then report(name, ok and "módulo não retornou tabela" or result); return nil end
+	local result = require(module)
+	if type(result) ~= "table" then return nil end
 	return result
 end
 local function storage() return utils and utils.getReplicatedStorage() end
@@ -104,7 +104,7 @@ local function targetId(data)
 	local target = type(data) == "table" and (targetNumber(data.TargetPlayerID) or targetNumber(data.HighlightTargetPlayerID))
 	if target then return target end
 	if type(data) == "table" and data.Targeted == true and players.LocalPlayer then return players.LocalPlayer.UserId end
-	local ok, value = pcall(world.GetAttribute, world, "GameBallTarget"); return ok and targetNumber(value) or -1
+	return targetNumber(world:GetAttribute("GameBallTarget")) or -1
 end
 local function findBall()
 	local candidate = world:FindFirstChild("GameBall") or world:FindFirstChild("GameBall", true)
@@ -152,8 +152,7 @@ function GameInfo.bindBallSync(handler)
 	end
 	if syncConnection and syncConnection.Connected and syncRemote == candidate then return true end
 	disconnectSync()
-	local ok, connection = pcall(function() return candidate.OnClientEvent:Connect(handler) end)
-	if not ok or not connection then return false end
+	local connection = candidate.OnClientEvent:Connect(handler)
 	syncConnection, syncRemote = connection, candidate; utils.trackGlobal(connection); return true
 end
 function GameInfo.startMaintenance(options)
@@ -161,8 +160,7 @@ function GameInfo.startMaintenance(options)
 	maintenance += 1; local token = maintenance
 	task.spawn(function()
 		while token == maintenance do
-			local activeOk, active = pcall(options.isActive)
-			if not activeOk or active ~= true or token ~= maintenance then break end
+			if not options.isActive() or token ~= maintenance then break end
 			local linked = type(options.onBallSync) == "function" and GameInfo.bindBallSync(options.onBallSync)
 			if token ~= maintenance then break end
 			task.wait(linked and T.SYNC_CONNECTED_INTERVAL or T.SYNC_RETRY_INTERVAL)
@@ -377,8 +375,8 @@ function GameInfo.getBallSpeedLimits()
 	if type(gameBall) ~= "table" or type(gameBall.GetBaseSpeed) ~= "function" or type(gameBall.GetMaxSpeed) ~= "function" then
 		report("GameBall", "API de velocidade indisponível; usando últimos limites conhecidos"); return minimumSpeed, maximumSpeed
 	end
-	local ok, low, high = pcall(function() return gameBall:GetBaseSpeed(), gameBall:GetMaxSpeed() end)
-	if ok and finite(low) and finite(high) and low > 0 and high > low then minimumSpeed, maximumSpeed = low, high else report("GameBall", ok and "limites de velocidade inválidos" or low) end
+	local low, high = gameBall:GetBaseSpeed(), gameBall:GetMaxSpeed()
+	if finite(low) and finite(high) and low > 0 and high > low then minimumSpeed, maximumSpeed = low, high end
 	return minimumSpeed, maximumSpeed
 end
 function GameInfo.getDeflectWindow(speed)
@@ -386,16 +384,16 @@ function GameInfo.getDeflectWindow(speed)
 	if not finite(speed) and sync and finite(sync.Speed) then speed = sync.Speed end
 	if not finite(speed) or high <= low then return nil end
 	local window = T.WINDOW_BASE - T.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer; local inClash = false
-	if gameBall and player and type(gameBall.IsInClash) == "function" then local ok, active = pcall(gameBall.IsInClash, gameBall, player); inClash = ok and active == true end
+	if gameBall and player and type(gameBall.IsInClash) == "function" then inClash = gameBall:IsInClash(player) == true end
 	if inClash and type(gameBall.GetClashMinWindow) == "function" then
-		local ok, minimum = pcall(gameBall.GetClashMinWindow, gameBall, speed)
-		if ok and finite(minimum) then window = math.max(window, minimum) end
+		local minimum = gameBall:GetClashMinWindow(speed)
+		if finite(minimum) then window = math.max(window, minimum) end
 	end
 	local range = GameInfo.getDeflectRange()
 	if finite(range) then window += math.clamp((range - T.RANGE_BASE) / T.RANGE_BONUS_SPAN, 0, 1) * T.RANGE_WINDOW_BONUS end
 	if inClash and type(gameBall.GetClashWindowScale) == "function" then
-		local ok, scale = pcall(gameBall.GetClashWindowScale, gameBall)
-		if ok and finite(scale) and scale > 0 then window *= scale end
+		local scale = gameBall:GetClashWindowScale()
+		if finite(scale) and scale > 0 then window *= scale end
 	end
 	return window
 end
