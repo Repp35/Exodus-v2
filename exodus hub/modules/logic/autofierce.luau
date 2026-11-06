@@ -2,7 +2,7 @@
 
 local AutoFierce = {}
 
-local utils, gameInfo, remote, autoSpam, connection
+local utils, gameInfo, remote, connection
 local trackedAbility, startedAt, deadline, lastCooldown, used
 local function finite(n) return type(n) == "number" and n == n and n > -math.huge and n < math.huge end
 local function reset()
@@ -59,10 +59,9 @@ local function step()
 	end
 	used = true; local ok, result = remote.fireFierce()
 	if not ok then used = false; utils.recordError("AutoFierce", tostring(result)); return end
-	if autoSpam then autoSpam.stopSpam() end
 end
 function AutoFierce.setup(deps)
-	AutoFierce.teardown(); utils, gameInfo, remote, autoSpam = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoSpam; local service = utils.getRunService()
+	AutoFierce.teardown(); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote; local service = utils.getRunService()
 	if not service or not service.Heartbeat then return false, "Heartbeat indisponível" end
 	connection = service.Heartbeat:Connect(function()
 		local ok, err = pcall(step)
@@ -75,14 +74,13 @@ function AutoFierce.teardown()
 		if utils then utils.untrackGlobal(connection) end
 		connection:Disconnect(); connection = nil
 	end
-	reset(); utils, gameInfo, remote, autoSpam = nil, nil, nil, nil
+	reset(); utils, gameInfo, remote = nil, nil, nil
 end
 AutoFierce.__contract = {
-	requires = { Utils = "utils", GameInfo = "gameinfo", AutoSpam = "autospam", Remote = "remote" },
+	requires = { Utils = "utils", GameInfo = "gameinfo", Remote = "remote" },
 	requiresMethods = {
 		Utils = { "isActive", "getConfigValue", "getLocalPlayer", "getRunService", "trackGlobal", "untrackGlobal", "recordError" },
 		GameInfo = { "getDeflectAbility", "getFierceDeflectAbility", "getDeflectWindow", "getSyncData", "getTargetId", "getSnapshotAt", "isSnapshotValid" },
-		AutoSpam = { "stopSpam" },
 		Remote = { "fireFierce" },
 	},
 
