@@ -401,8 +401,11 @@ local function observeTarget(s, target, explicit, serverTime, time)
 		s.lastGate = "target_lost"
 	elseif previous > 0 and previous ~= me and target == me then
 		if s.distantRecovery and previous ~= s.recoveryPartner then s.recoveryReturnedToMe = true end
-		if s.active and s.clashAwayAt and time - s.clashAwayAt > T.targetReturnTimeout + ping(s, time) then s.lastGate = "deact_target_return_timeout"; setActive(s, false, "target_return_timeout", nil, time)
-		else s.clashAwayAt = nil end
+		if s.active and s.clashAwayAt and time - s.clashAwayAt > T.targetReturnTimeout + ping(s, time) then
+			s.lastGate = "deact_target_return_timeout"; setActive(s, false, "target_return_timeout", nil, time)
+		else
+			s.clashAwayAt = nil
+		end
 		local elapsed = s.returnAt and time - s.returnAt or nil
 		if finite(serverTime) and finite(s.returnServerAt) then elapsed = serverTime - s.returnServerAt end
 		if s.returnFrom == previous and finite(elapsed) and elapsed >= 0 and elapsed <= s.returnWindow and time <= s.returnExpires then
