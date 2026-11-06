@@ -195,10 +195,7 @@ function GameInfo.observeAbilityMode(callback)
 	return world:GetAttributeChangedSignal("CurGamemode"):Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
 end
 function GameInfo.getPlayerDistance(id)
-	local own = players.LocalPlayer
-	local other = type(id) == "number" and players:GetPlayerByUserId(id)
-	local ownRoot = own and own.Character and own.Character:FindFirstChild("HumanoidRootPart")
-	local otherRoot = other and other.Character and other.Character:FindFirstChild("HumanoidRootPart")
+	local own = players.LocalPlayer; local other = type(id) == "number" and players:GetPlayerByUserId(id); local ownRoot = own and own.Character and own.Character:FindFirstChild("HumanoidRootPart"); local otherRoot = other and other.Character and other.Character:FindFirstChild("HumanoidRootPart")
 	if not ownRoot or not otherRoot or not ownRoot.Parent or not otherRoot.Parent then return nil end
 	return (ownRoot.Position - otherRoot.Position).Magnitude
 end

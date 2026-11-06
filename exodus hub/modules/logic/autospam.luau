@@ -48,9 +48,7 @@ end
 local function track(s, signal, callback)
 	local connection = signal:Connect(callback); s.connections[#s.connections + 1] = connection; utils.trackCharacter(connection); return connection
 end
-local function distanceToPlayer(s, id)
-	return id and gameInfo.getPlayerDistance(id) or nil
-end
+local function distanceToPlayer(s, id) return id and gameInfo.getPlayerDistance(id) or nil end
 
 -- geometry
 local function geometry(s, snapshot, factor)
