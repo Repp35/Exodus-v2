@@ -9,6 +9,7 @@ local lastSync, packet, packetAt = nil, nil, 0
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 local minimumSpeed, maximumSpeed, speedAt = 16, 600, 0
 local errors, cooldownConnection, parriedConnection = {}, nil, nil
+local syncConnection, syncRemote, maintenance = nil, nil, 0
 local cooldown, signalAt, heldAt, missingAt, warningAt
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function child(parent, name) return parent and parent:FindFirstChild(name) end
@@ -94,8 +95,68 @@ local function disconnect(connection)
 		connection:Disconnect()
 	end
 end
+-- synchronization
+local function validSyncRemote(instance)
+	return typeof(instance) == "Instance" and instance:IsA("RemoteEvent") and instance.Parent ~= nil
+end
+local function disconnectSync()
+	if syncConnection then
+		if utils then utils.untrackGlobal(syncConnection) end
+		syncConnection:Disconnect()
+	end
+	syncConnection, syncRemote = nil, nil
+end
+local function findSyncRemote()
+	local replicated = storage()
+	if not replicated then return nil end
+	local remotes = replicated:FindFirstChild("Remotes")
+	local candidate = remotes and remotes:FindFirstChild("BallSyncData")
+	if validSyncRemote(candidate) then return candidate end
+	candidate = replicated:FindFirstChild("BallSyncData")
+	if validSyncRemote(candidate) then return candidate end
+	candidate = replicated:FindFirstChild("BallSyncData", true)
+	if validSyncRemote(candidate) then return candidate end
+	return nil
+end
+function GameInfo.bindBallSync(handler)
+	if type(handler) ~= "function" then return false end
+	local candidate = findSyncRemote()
+	if not candidate then
+		if syncRemote and not validSyncRemote(syncRemote) then disconnectSync() end
+		return syncConnection ~= nil and syncConnection.Connected == true
+	end
+	if syncConnection and syncConnection.Connected and syncRemote == candidate then return true end
+	disconnectSync()
+	local ok, connection = pcall(function() return candidate.OnClientEvent:Connect(handler) end)
+	if not ok or not connection then return false end
+	syncConnection, syncRemote = connection, candidate
+	utils.trackGlobal(connection)
+	return true
+end
+function GameInfo.startMaintenance(options)
+	if type(options) ~= "table" or type(options.isActive) ~= "function" then return false end
+	maintenance += 1
+	local token = maintenance
+	task.spawn(function()
+		while token == maintenance do
+			local activeOk, active = pcall(options.isActive)
+			if not activeOk or active ~= true or token ~= maintenance then break end
+			local linked = type(options.onBallSync) == "function" and GameInfo.bindBallSync(options.onBallSync)
+			if token ~= maintenance then break end
+			task.wait(linked and 3 or 1)
+		end
+	end)
+	return true
+end
+function GameInfo.stopMaintenance()
+	maintenance += 1
+	disconnectSync()
+end
+
+-- setup
 function GameInfo.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
+	GameInfo.stopMaintenance()
 	disconnect(cooldownConnection); disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil; utils = deps.Utils
 	players, world = utils.getPlayers(), utils.getWorkspace()
 	if not players or not world then return false, "dependência ausente: Players ou Workspace" end
@@ -385,6 +446,9 @@ GameInfo.__contract = {
 		"getTargetId",
 		"applySync",
 		"installBallWatcher",
+		"bindBallSync",
+		"startMaintenance",
+		"stopMaintenance",
 	},
 
 }
