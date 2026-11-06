@@ -22,7 +22,6 @@ local T = {
 		SWITCH_WINDOW_MARGIN = 0.04,
 	},
 	SHARED = {
-		CLICK_INTERVAL = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
 		SEQUENCE_MODULUS = 65536,
 		SEQUENCE_HALF = 32768,
@@ -67,7 +66,7 @@ local function geometry(s, snapshot, factor)
 	return g, speed, window
 end
 local function returnWindow(window, speed, base)
-	local minimum, maximum = gameInfo.getBallSpeedLimits(); local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local scale = 1 + (T.SHARED.CLICK_INTERVAL / T.ACTIVATION.RETURN - 1) * fraction; return math.min(base * scale, window)
+	return math.min(base, window)
 end
 
 -- activation
