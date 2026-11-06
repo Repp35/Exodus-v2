@@ -6,25 +6,11 @@ local utils, remote, spamObserver, configObserver
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge, cpfFps = 0, cpfClicks = 0 }
-
--- tuning
-local T = { REFERENCE_FRAME = 1 / 60, ERROR_INTERVAL = 1 }
-
--- rates
-local function validRate(value)
-	local rate = tonumber(value); return rate and rate == rate and rate > 0 and rate < math.huge and rate or 0
-end
-local function cpsInterval(config)
-	local cps = validRate(config.CPS); return cps > 0 and 1 / cps or nil
-end
-local function cpfInterval(config)
-	local cpf = validRate(config.CPF)
-	if cpf == 0 then return nil end
-	local interval = T.REFERENCE_FRAME / cpf; return interval > 0 and interval < math.huge and interval or nil
-end
 local function readRate()
-	local config = utils.getConfig(); local mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"; local rate = validRate(config[mode])
-	local interval = mode == "CPF" and cpfInterval(config) or cpsInterval(config); return mode, rate, interval
+	local config = utils.getConfig(); local mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"; local rate = tonumber(config[mode]) or 0
+	if rate ~= rate or rate <= 0 or rate == math.huge then return mode, 0 end
+	if mode == "CPF" and rate * 60 == math.huge then return mode, 0 end
+	return mode, rate
 end
 local function transition(active, reason)
 	local phase = active and "running" or "stopped"
@@ -47,14 +33,14 @@ local function request(boundUtils, boundRemote, token)
 	if token ~= generation or utils ~= boundUtils then return end
 	if ok and result == true then status.lastError = nil; return end
 	local message = tostring(ok and (detail or "Remote.fireParry indisponível") or result); status.lastError = message; local time = os.clock()
-	if time - status.lastErrorAt >= T.ERROR_INTERVAL then
+	if time - status.lastErrorAt >= 1 then
 		status.lastErrorAt = time
 		if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
 	end
 end
 local function sync()
 	if not utils or not remote then return end
-	local mode, rate, interval = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and interval ~= nil
+	local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
 	if not enabled then
 		if running then cancel("spam_disabled") end
 		return
@@ -63,7 +49,7 @@ local function sync()
 	if running then cancel("rate_changed") end
 	generation += 1; local token, boundUtils, boundRemote = generation, utils, remote; running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
 	task.spawn(function()
-		local due = os.clock()
+		local interval = 1 / (mode == "CPF" and rate * 60 or rate); local due = os.clock()
 		while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
 			local time = os.clock()
 			if time >= due then local pending = math.floor((time - due) / interval) + 1; request(boundUtils, boundRemote, token); due += pending * interval end
