@@ -170,9 +170,9 @@ local function request(reason)
     if not sameCycle() then return false end
 
     if not ok or sent ~= true then
-        -- Unlock only when Remote did not dispatch. Never unlock a successful click
-        -- just because the spam/config state changed while Deflect() executed.
-        state.fired = false
+        -- The click attempt consumes this target cycle even when Remote rejects it.
+        -- Only leaving the target and becoming the target again can unlock it.
+        phase("waiting", "parry_attempt_failed")
         local now = clock()
         if now - state.lastErrorAt >= 1 then
             state.lastErrorAt = now
@@ -282,10 +282,9 @@ function AutoParry.onBallSync(data)
     if order == "same" and (data.Teleported ~= true or state.teleported) then return true end
     if order == "new" then state.sequence = sequence end
     if data.Teleported == true then
-        state.teleported, state.teleportSequence, state.fired, state.awaySeen = true, sequence, false, false
-        state.cycle += 1
-        state.lastFireAt = 0
-        state.target, state.targetKnown, state.lastBall = -1, false, nil
+        state.teleported, state.teleportSequence = true, sequence
+        -- Teleport resets ball tracking, not the one-click-per-target lock.
+        state.lastBall = nil
         state.speed, state.distance, state.approaching = 0, 0, false
         state.awayAt, state.awayTarget = nil, nil
         table.clear(state.clicks); table.clear(state.returns)
