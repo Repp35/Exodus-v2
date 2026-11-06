@@ -16,8 +16,7 @@ local function setPhase(value, reason)
 	if utils then utils.recordTransition("Character", previous, value, reason) end
 end
 local function detach(entry)
-	local ok, err = pcall(entry.detach)
-	if not ok and utils then utils.recordError("Character", ("%s falhou ao desvincular: %s"):format(entry.name, tostring(err))) end
+	entry.detach()
 end
 local function clearLife()
 	local life = currentLife; currentLife = nil
@@ -46,12 +45,12 @@ local function bindLife(life)
 	if not root or not root:IsA("BasePart") or not root.Parent then deactivate(life, "root_unavailable"); setPhase("invalid", "root_unavailable"); return end
 	for index, entry in ipairs(binds) do
 		if not valid(life) then return end
-		local ok, result, detail = pcall(entry.bind, life.character)
+		local result, detail = entry.bind(life.character)
 		if not valid(life) then detach(entry); return end
-		if not ok or result ~= true then
+		if result ~= true then
 			utils.recordError(
 				"Character",
-				("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(ok and (detail or result) or result))
+				("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(detail or result))
 			)
 			detach(entry); deactivate(life, "bind_failed"); setPhase("invalid", "bind_failed"); return
 		end
