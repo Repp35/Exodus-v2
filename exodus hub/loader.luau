@@ -45,39 +45,21 @@ end
 local ALLOW_LOCAL_FALLBACK = true
 
 -- http
-local function getGlobalEnvironment()
-	if type(getgenv) == "function" then
-		local ok, environment = pcall(getgenv)
-		if ok and type(environment) == "table" then return environment end
-	end
-	return _G
-end
 local function getRequestFunction()
-	local environment = getGlobalEnvironment(); local synApi = type(environment.syn) == "table" and environment.syn or nil
+	local environment = type(getgenv) == "function" and getgenv() or _G
+	local synApi = type(environment.syn) == "table" and environment.syn or nil
 	local fluxusApi = type(environment.fluxus) == "table" and environment.fluxus or nil
-	local candidates = {
-		{ environment.request },
-		{ environment.http_request },
-		{ synApi and synApi.request },
-		{ fluxusApi and fluxusApi.request },
-	}
-
-	for _, item in ipairs(candidates) do
-		local candidate = item[1]
+	for _, candidate in ipairs({ environment.request or false, environment.http_request or false, synApi and synApi.request or false, fluxusApi and fluxusApi.request or false }) do
 		if type(candidate) == "function" then return candidate end
 	end
 	return nil
 end
+local requestFunction = getRequestFunction()
 local function validateExecutor()
-	local requestFunction = getRequestFunction()
-	if type(requestFunction) ~= "function" and not (ALLOW_LOCAL_FALLBACK and type(isfile) == "function" and type(readfile) == "function") then
+	if not requestFunction and not (ALLOW_LOCAL_FALLBACK and type(isfile) == "function" and type(readfile) == "function") then
 		return false, "executor sem request ou arquivos locais suportados"
 	end
 	if type(loadstring) ~= "function" then return false, "executor sem loadstring" end
-	local okCompile, chunk, compileError = pcall(loadstring, "return true", "ExodusPreflight")
-	if not okCompile or type(chunk) ~= "function" then return false, tostring(not okCompile and chunk or compileError or "loadstring rejeitou o preflight") end
-	local okRun, result = pcall(chunk)
-	if not okRun or result ~= true then return false, tostring(not okRun and result or "preflight de compilação falhou") end
 	return true
 end
 local function isRetryableHttp(message)
@@ -90,7 +72,6 @@ end
 local function request(url, headers)
 	if type(url) ~= "string" or url == "" then return nil, "URL inválida" end
 	local lastError
-	local requestFunction = getRequestFunction()
 	for attempt = 1, 3 do
 		if requestFunction then
 			local ok, responseBody = pcall(function()
@@ -110,7 +91,7 @@ local function request(url, headers)
 			lastError = tostring(responseBody)
 		end
 		if not isRetryableHttp(lastError) then break end
-		waitBeforeRetry(attempt)
+		if attempt < 3 then waitBeforeRetry(attempt) end
 	end
 	local message = lastError or "Nenhum serviço HTTP disponível"; return nil, message
 end
@@ -119,8 +100,7 @@ local function findCompleteLocalRoot()
 	for _, root in ipairs(LOCAL_ROOTS) do
 		local complete = true
 		for _, entry in ipairs(MODULE_MANIFEST) do
-			local ok, exists = pcall(isfile, root .. "/" .. entry.path)
-			if not ok or not exists then complete = false; break end
+			if not isfile(root .. "/" .. entry.path) then complete = false; break end
 		end
 		if complete then return root end
 	end
@@ -162,7 +142,7 @@ local function compile(name, source)
 end
 local function execute(name, chunk)
 	local module = chunk()
-	if type(module) ~= "table" then return nil, name .. " não retornou uma tabela" end
+	if type(module) ~= "table" then error(name .. " não retornou uma tabela", 2) end
 	return module
 end
 
@@ -194,8 +174,9 @@ local function buildCDNURL(url)
 end
 local function loadModule(name, relativePath, url, localRoot)
 	if localRoot then
-		local path = localRoot .. "/" .. relativePath; local ok, source = pcall(readfile, path)
-		if not ok or type(source) ~= "string" or source == "" then return nil, "falha ao ler " .. path end
+		local path = localRoot .. "/" .. relativePath
+		local source = readfile(path)
+		if type(source) ~= "string" or source == "" then error("Arquivo local inválido: " .. path, 2) end
 		local chunk, compileError = compile(name .. " [local]", source); return chunk, compileError, "local"
 	end
 	local source, fetchError
@@ -217,24 +198,16 @@ local function loadModule(name, relativePath, url, localRoot)
 	return nil, fetchError or "origem remota indisponível"
 end
 local function loadModules(urls, localRoot)
-	local loaded = {}; local names = {}
-	for _, name in ipairs(MODULE_ORDER) do
-		names[#names + 1] = name
-	end
-	names[#names + 1] = "ui"; local results = {}
+	local loaded, results = {}, {}
 	local function load(name)
 		local entry = MODULE_BY_NAME[name]
-		if not entry then results[name] = { error = "módulo ausente no manifesto" }; return end
-		local chunk, loadError, source = loadModule(name, entry.path, urls[name], localRoot)
-		results[name] = {
-			chunk = chunk,
-			error = loadError,
-			source = source,
-		}
+		local chunk, loadError = loadModule(name, entry.path, urls[name], localRoot)
+		results[name] = { chunk = chunk, error = loadError }
 	end
 	if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
-		local pending = #names; local deadline = os.clock() + 30
-		for _, name in ipairs(names) do
+		local pending = #MODULE_MANIFEST; local deadline = os.clock() + 30
+		for _, entry in ipairs(MODULE_MANIFEST) do
+			local name = entry.name
 			task.spawn(function()
 				load(name); pending -= 1
 			end)
@@ -244,18 +217,16 @@ local function loadModules(urls, localRoot)
 			task.wait()
 		end
 	else
-		for _, name in ipairs(names) do
-			load(name)
+		for _, entry in ipairs(MODULE_MANIFEST) do
+			load(entry.name)
 		end
 	end
-	for _, name in ipairs(names) do
+	for _, entry in ipairs(MODULE_MANIFEST) do
+		local name = entry.name
 		local result = results[name]
-		if not result or not result.chunk then return nil, name, result and result.error or "resultado de carregamento ausente" end
-	end
-	for _, name in ipairs(names) do
-		local module, executeError = execute(name, results[name].chunk)
-		if not module then clearRegistry(); return nil, name, executeError end
-		loaded[name] = module; register(name, module)
+		if not result or not result.chunk then error(("%s: %s"):format(name, tostring(result and result.error or "carregamento incompleto")), 2) end
+		local module = execute(name, result.chunk)
+		loaded[name] = register(name, module)
 	end
 	return loaded
 end
@@ -337,7 +308,7 @@ local function initializeModules(loaded)
 end
 
 -- runtime
-local function bindRuntime(loaded, log)
+local function bindRuntime(loaded)
 	local utils = loaded.utils; local gameInfo = loaded.gameinfo; local remote = loaded.remote
 	if
 		type(gameInfo) ~= "table"
@@ -365,7 +336,8 @@ local function bindRuntime(loaded, log)
 	end
 	local syncPriority = { autospam = 1, autoparry = 2 }
 	table.sort(ballSyncSubscribers, function(a, b)
-		local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3; return left == right and a.name < b.name or left < right
+		local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3
+		return left == right and a.name < b.name or left < right
 	end)
 	local function callSync(name, handler, data)
 		local result, detail = handler(data)
@@ -379,6 +351,16 @@ local function bindRuntime(loaded, log)
 		end
 	end
 	local pendingSyncRefresh = false
+	local function scheduleSyncRefresh()
+		if pendingSyncRefresh then return end
+		pendingSyncRefresh = true
+		task.defer(function()
+			pendingSyncRefresh = false
+			if not utils.isActive() then return end
+			local refreshed = gameInfo.applySync(nil)
+			if type(refreshed) == "table" then notifyBallSync(refreshed) end
+		end)
+	end
 	local lastClashPacketSequence
 	local function onBallSync(...)
 		local argCount = select("#", ...)
@@ -395,13 +377,7 @@ local function bindRuntime(loaded, log)
 						if (forward == true or (forward > 0 and forward < 32768)) and currentDelta < 32768 then
 							lastClashPacketSequence = sequence; packet.Source = "packet"
 							if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
-							if not packet.Teleported then
-								for _, name in ipairs({ "autospam", "autoparry" }) do
-									for _, sub in ipairs(ballSyncSubscribers) do
-										if sub.name == name then callSync(sub.name, sub.handler, packet) end
-									end
-								end
-							end
+							if not packet.Teleported then notifyBallSync(packet) end
 						end
 					end
 				end
@@ -409,15 +385,7 @@ local function bindRuntime(loaded, log)
 					local sequence = buffer.readu16(value, 1); local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
 					if type(current) ~= "number" or (sequence - current) % 65536 < 32768 then notifyBallSync({ Teleported = true, TeleportSequence = sequence }) end
 				end
-				if not pendingSyncRefresh then
-					pendingSyncRefresh = true
-					task.defer(function()
-						pendingSyncRefresh = false
-						if type(utils.isActive) == "function" and not utils.isActive() then return end
-						local refreshed = gameInfo.applySync(nil)
-						if type(refreshed) == "table" then notifyBallSync(refreshed) end
-					end)
-				end
+				scheduleSyncRefresh()
 				return
 			end
 			if type(value) == "table" then data = value; break end
@@ -428,30 +396,23 @@ local function bindRuntime(loaded, log)
 		end
 		local decodedData = gameInfo.applySync(data)
 		if type(decodedData) ~= "table" then
-			if not pendingSyncRefresh then
-				pendingSyncRefresh = true
-				task.defer(function()
-					pendingSyncRefresh = false
-					if type(utils.isActive) == "function" and not utils.isActive() then return end
-					local refreshed = gameInfo.applySync(nil)
-					if type(refreshed) == "table" then notifyBallSync(refreshed) end
-				end)
-			end
+			scheduleSyncRefresh()
 			return
 		end
 		notifyBallSync(decodedData)
 	end
 	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
-	if watcherReady ~= true then return nil, "GameInfo: observador da bola indisponível" end
+	if watcherReady ~= true then error("GameInfo.installBallWatcher falhou", 2) end
 	local syncReady = gameInfo.bindBallSync(onBallSync)
 	local maintenanceReady = gameInfo.startMaintenance({
 		isActive = utils.isActive,
 		onBallSync = onBallSync,
 	})
-	if maintenanceReady ~= true then return nil, "GameInfo: manutenção indisponível" end
+	if maintenanceReady ~= true then error("GameInfo.startMaintenance falhou", 2) end
+	local parryReady = gameInfo.getDeflectAbility() ~= nil
 	return {
-		parryRemote = gameInfo.getDeflectAbility() ~= nil,
-		parryInitialized = gameInfo.getDeflectAbility() ~= nil,
+		parryRemote = parryReady,
+		parryInitialized = parryReady,
 		watcher = watcherReady == true,
 		ballSync = syncReady == true,
 		maintenance = maintenanceReady == true,
@@ -475,16 +436,14 @@ end
 -- start
 local activeLoaded
 local function waitForLocalPlayer(timeout)
-	local ok, players = pcall(game.GetService, game, "Players")
-	if not ok or not players then return false, "serviço Players indisponível" end
-	local deadline = os.clock() + (tonumber(timeout) or 10)
+	local players = game:GetService("Players")
+	if players.LocalPlayer then return true end
+	local deadline = os.clock() + timeout
 	repeat
-		local playerOk, player = pcall(function() return players.LocalPlayer end)
-		if playerOk and player then return true end
-		if type(task) ~= "table" or type(task.wait) ~= "function" then break end
 		task.wait()
+		if players.LocalPlayer then return true end
 	until os.clock() >= deadline
-	return false, "LocalPlayer indisponível após esperar " .. tostring(timeout or 10) .. "s"
+	return false, "LocalPlayer indisponível após esperar " .. timeout .. "s"
 end
 local function startInternal()
 	printStartup("Exodus: iniciando"); stopPreviousRuntime(); clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
