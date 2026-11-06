@@ -6,34 +6,25 @@ local utils, remote, spamObserver, configObserver
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge, cpfFps = 0, cpfClicks = 0 }
+
 -- tuning
 local T = { REFERENCE_FRAME = 1 / 60, ERROR_INTERVAL = 1 }
 
 -- rates
 local function validRate(value)
-	local rate = tonumber(value)
-	return rate and rate == rate and rate > 0 and rate < math.huge and rate or 0
+	local rate = tonumber(value); return rate and rate == rate and rate > 0 and rate < math.huge and rate or 0
 end
-
 local function cpsInterval(config)
-	local cps = validRate(config.CPS)
-	return cps > 0 and 1 / cps or nil
+	local cps = validRate(config.CPS); return cps > 0 and 1 / cps or nil
 end
-
 local function cpfInterval(config)
 	local cpf = validRate(config.CPF)
 	if cpf == 0 then return nil end
-	-- CPF is clicks per fixed reference frame (16.67ms), not measured device FPS.
-	local interval = T.REFERENCE_FRAME / cpf
-	return interval > 0 and interval < math.huge and interval or nil
+	local interval = T.REFERENCE_FRAME / cpf; return interval > 0 and interval < math.huge and interval or nil
 end
-
 local function readRate()
-	local config = utils.getConfig()
-	local mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"
-	local rate = validRate(config[mode])
-	local interval = mode == "CPF" and cpfInterval(config) or cpsInterval(config)
-	return mode, rate, interval
+	local config = utils.getConfig(); local mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"; local rate = validRate(config[mode])
+	local interval = mode == "CPF" and cpfInterval(config) or cpsInterval(config); return mode, rate, interval
 end
 local function transition(active, reason)
 	local phase = active and "running" or "stopped"
