@@ -1056,7 +1056,7 @@ function ExodusUI.setup(deps)
 			end)
 			if not inputOk then
 				local fallback, fallbackErr = pcall(function()
-					local vim = game:GetService("VirtualInputManager"); vim:SendMouseButtonEvent(0, 0, 1, true, game, 0); vim:SendMouseButtonEvent(0, 0, 1, false, game, 0)
+					local vim = game:GetService("VirtualInputManager"); vim:SendMouseButtonEvent(0, 0, 1, true, CoreGui.Parent, 0); vim:SendMouseButtonEvent(0, 0, 1, false, CoreGui.Parent, 0)
 				end)
 				if not fallback then Utils.recordError("AntiAFK", tostring(err) .. " | " .. tostring(fallbackErr)) end
 			end
