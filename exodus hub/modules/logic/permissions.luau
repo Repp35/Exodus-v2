@@ -10,7 +10,7 @@ local function allow(names)
 	return items
 end
 local POLICIES = {
-	permissions = { provide = allow("validate wrap environment policy"), consume = {} },
+	permissions = { provide = allow("validate wrap policy"), consume = {} },
 	config = { provide = allow("register defaults validatePatch normalizePatch validate getRegistry"), consume = {} },
 	uiconfig = { provide = allow(""), consume = {}, data = allow("panelToggles panelComponents") },
 	utils = {
@@ -18,10 +18,10 @@ local POLICIES = {
 			"observeSpam observeConfig ensureDataFolder start stop isActive getStateSnapshot getConfig getConfigValue getConfigSnapshot getModuleURLsSnapshot getLifecycle getDiagnostics setDiagnosticsModules setLifecyclePhase recordTransition recordError isManualSpamActive isAutoSpamActive isSpamActive setManualSpamActive setAutoSpamActive stopAllSpam isFiniteNumber isNonNegativeFiniteNumber normalizeSpamRate setConfig loadConfig setConfigModule setModuleURLs trackGlobal untrackGlobal trackCharacter untrackCharacter disconnectCharacterConnections getPlayers getReplicatedStorage getRunService getWorkspace getLocalPlayer now name version apiVersion author"
 		),
 		consume = {},
-		services = allow("Players ReplicatedStorage RunService Workspace HttpService"),
-		globalRead = allow("Exodus ExodusOnBurst ExodusUICleanup"),
-		globalWrite = allow("Exodus ExodusStop ExodusOnBurst"),
-		filesystem = true,
+
+
+
+
 	},
 	gameinfo = {
 		provide = allow(
@@ -30,7 +30,7 @@ local POLICIES = {
 		consume = {
 			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace now recordError trackGlobal untrackGlobal"),
 		},
-		imports = true,
+
 	},
 	remote = {
 		provide = allow("setup fireParry fireDark fireFierce fireDash"),
@@ -62,7 +62,7 @@ local POLICIES = {
 			autoparry = allow("getPressure getRadius getStatus"),
 			dash = allow("setHandler tick"),
 		},
-		objectRead = { getDeflectAbility = allow("DeflectDistance"), getManifestRemote = allow("OnClientEvent") },
+
 	},
 	spam = {
 		provide = allow("setup resetState teardown getStatus"),
@@ -87,8 +87,8 @@ local POLICIES = {
 			gameinfo = allow("getDashAbility"),
 			remote = allow("fireDash"),
 		},
-		objectRead = { getDashAbility = allow("Dashing") },
-		objectWrite = { getDashAbility = allow("MoveDir") },
+
+
 	},
 	dash = {
 		provide = allow("setup setHandler tick resetState teardown getStatus"),
@@ -96,7 +96,7 @@ local POLICIES = {
 			utils = allow("apiVersion getPlayers now"),
 			gameinfo = allow("getDashAbility"),
 		},
-		objectRead = { getDashAbility = allow("Dashing") },
+
 	},
 	character = {
 		provide = allow("setup teardown getStatus"),
@@ -117,17 +117,14 @@ local POLICIES = {
 			),
 			uiconfig = allow("panelToggles panelComponents"),
 		},
-		services = allow("UserInputService TweenService CoreGui VirtualUser VirtualInputManager ReplicatedStorage"),
-		globalRead = allow("ExodusUICleanup"),
-		globalWrite = allow("ExodusUICleanup"),
-		workspace = true,
-		imports = true,
+
+
+
+
+
 	},
 }
 
-local GLOBALS = allow(
-	"assert error pcall xpcall print warn type typeof tostring tonumber pairs ipairs next select unpack setmetatable getmetatable rawequal math table string utf8 coroutine os task bit32 buffer Enum Vector2 Vector3 CFrame UDim UDim2 Color3 ColorSequence ColorSequenceKeypoint NumberSequence NumberSequenceKeypoint NumberRange Rect RaycastParams OverlapParams PhysicalProperties TweenInfo Instance Font BrickColor DateTime Random"
-)
 
 -- validation
 local function policy(name)
@@ -167,27 +164,6 @@ local function readonly(value)
 	end
 	return table.freeze(copied)
 end
-local function objectView(consumer, method, getter, readable, writable)
-	local previous, cached
-	return function(...)
-		local object = getter(...)
-		if object == nil then return nil end
-		if previous == object then return cached end
-		previous = object
-		cached = setmetatable({}, {
-			__index = function(_, field)
-				if not readable[field] then deny(consumer, "game.data.read." .. method .. "." .. tostring(field)) end
-				return object[field]
-			end,
-			__newindex = function(_, field, value)
-				if not (writable and writable[field]) then deny(consumer, "game.data.write." .. method .. "." .. tostring(field)) end
-				object[field] = value
-			end,
-			__metatable = "locked",
-		})
-		return cached
-	end
-end
 local function wrap(consumer, source, provider)
 	local entry = policy(consumer); local allowed = entry.consume[source]
 	if not allowed then deny(consumer, "api.consume." .. source) end
@@ -196,7 +172,7 @@ local function wrap(consumer, source, provider)
 		if not exposed.provide[method] and not (exposed.data and exposed.data[method]) then deny(source, "api.expose." .. method) end
 		local value = provider[method]
 		if value == nil then error(("Permissions: API ausente: %s.%s"):format(source, method), 2) end
-		if exposed.data and exposed.data[method] then view[method] = readonly(value) elseif source == "gameinfo" and entry.objectRead and entry.objectRead[method] then view[method] = objectView(consumer, method, value, entry.objectRead[method], entry.objectWrite and entry.objectWrite[method]) else view[method] = value end
+		view[method] = exposed.data and exposed.data[method] and readonly(value) or value
 	end
 	setmetatable(view, {
 		__index = function(_, method) deny(consumer, "api.consume." .. source .. "." .. tostring(method)) end,
@@ -205,58 +181,12 @@ local function wrap(consumer, source, provider)
 	})
 	return table.freeze(view)
 end
-local function environment(name, base)
-	local entry = policy(name); local env = {}
-	for global in pairs(GLOBALS) do
-		if base[global] ~= nil then env[global] = base[global] end
-	end
-	local optionalGlobals = entry.filesystem and allow("makefolder isfolder isfile readfile writefile") or {}
-	for key in pairs(optionalGlobals) do
-		env[key] = base[key]
-	end
-	if entry.imports then env.require = base.require end
-	if entry.services then
-		local proxy = {}
-		proxy.GetService = function(_, service)
-			if not entry.services[service] then deny(name, "game.service." .. tostring(service)) end
-			return game:GetService(service)
-		end
-		env.game = table.freeze(setmetatable(proxy, {
-			__index = function(_, key) deny(name, "game." .. tostring(key)) end,
-			__newindex = function(_, key) deny(name, "game." .. tostring(key)) end,
-			__metatable = "locked",
-		}))
-	end
-	if entry.workspace then env.workspace = workspace end
-	if entry.globalRead or entry.globalWrite then
-		env._G = setmetatable({}, {
-			__index = function(_, key)
-				if not (entry.globalRead and entry.globalRead[key]) then deny(name, "global.read." .. tostring(key)) end
-				return _G[key]
-			end,
-			__newindex = function(_, key, value)
-				if not (entry.globalWrite and entry.globalWrite[key]) then deny(name, "global.write." .. tostring(key)) end
-				_G[key] = value
-			end,
-			__metatable = "locked",
-		})
-	end
-	return setmetatable(env, {
-		__index = function(_, key)
-			if optionalGlobals[key] then return nil end
-			deny(name, "global.read." .. tostring(key))
-		end,
-		__newindex = function(_, key) deny(name, "global.write." .. tostring(key)) end,
-		__metatable = "locked",
-	})
-end
 
 -- api
 Permissions.validate = validate
 Permissions.wrap = wrap
-Permissions.environment = environment
 Permissions.policy = function(name)
-	local entry = policy(name); local result = { provides = {}, consumes = {}, services = {} }
+	local entry = policy(name); local result = { provides = {}, consumes = {} }
 	for method in pairs(entry.provide) do
 		result.provides[#result.provides + 1] = method
 	end
@@ -267,15 +197,12 @@ Permissions.policy = function(name)
 		end
 		table.sort(copy); result.consumes[source] = copy
 	end
-	for service in pairs(entry.services or {}) do
-		result.services[#result.services + 1] = service
-	end
-	table.sort(result.provides); table.sort(result.services); return result
+	table.sort(result.provides); return result
 end
 
 -- contract
 Permissions.__contract = {
-	provides = { "validate", "wrap", "environment", "policy" },
+	provides = { "validate", "wrap", "policy" },
 	requires = {},
 }
 

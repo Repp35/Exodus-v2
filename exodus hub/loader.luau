@@ -217,11 +217,10 @@ local function loadModules(urls, localRoot)
 		local result = results[entry.name]
 		if not result or not result.chunk then error(("%s: %s"):format(entry.name, tostring(result and result.error or "carregamento incompleto")), 2) end
 	end
-	if type(setfenv) ~= "function" or type(getfenv) ~= "function" then error("Permissions: executor sem setfenv/getfenv", 2) end
 	local permissions = execute("permissions", results.permissions.chunk); permissions.validate("permissions", permissions); loaded.permissions = register("permissions", permissions)
 	for _, entry in ipairs(MODULE_MANIFEST) do
 		local name = entry.name
-		if name ~= "permissions" then local chunk = results[name].chunk; setfenv(chunk, permissions.environment(name, getfenv(chunk))); local module = execute(name, chunk); permissions.validate(name, module); loaded[name] = register(name, module) end
+		if name ~= "permissions" then local module = execute(name, results[name].chunk); permissions.validate(name, module); loaded[name] = register(name, module) end
 	end
 	return loaded
 end
