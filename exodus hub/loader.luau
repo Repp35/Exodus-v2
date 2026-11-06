@@ -428,8 +428,7 @@ local function bindRuntime(loaded, log)
 	then
 		return nil, "contrato de runtime incompleto"
 	end
-	local abilityOk, ability = pcall(gameInfo.getDeflectAbility)
-	local ballSyncSubscribers = {}
+	local abilityOk, ability = pcall(gameInfo.getDeflectAbility); local ballSyncSubscribers = {}
 	for _, name in ipairs(MODULE_ORDER) do
 		local module = loaded[name]
 		if name ~= "utils" and type(module) == "table" then
