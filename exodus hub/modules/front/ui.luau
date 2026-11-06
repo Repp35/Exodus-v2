@@ -1228,7 +1228,12 @@ function ExodusUI.setup(deps)
 	if config.DarkBallVisible then darkBall.Position = UDim2.new(0, darkX, 0, darkY) end
 	if config.JumpBallVisible then jumpBall.Position = UDim2.new(0, jumpX, 0, jumpY) end
 	if config.UpDashBallVisible then upDashBall.Position = UDim2.new(0, upDashX, 0, upDashY) end
-	if type(Utils.observeSpam) == "function" then trackConn(Utils.observeSpam(function() setSpam(Utils.isManualSpamActive()) end)) end
+	if type(Utils.observeSpam) == "function" then
+		trackConn(Utils.observeSpam(function()
+			local manual = Utils.isManualSpamActive()
+			if UIState.spamOn ~= manual then setSpam(manual) end
+		end))
+	end
 	if type(Utils.observeConfig) == "function" then
 		trackConn(Utils.observeConfig(function(changes)
 			if changes.AutoSpam ~= nil then UIState.clashBallOn = changes.AutoSpam == true; paintClashBall(); syncAutoSpamToggle() end
