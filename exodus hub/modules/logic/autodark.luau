@@ -5,7 +5,7 @@ local AutoDark = {}
 local utils, remote
 
 -- tuning
-local DARK_EVENT = 2.4141700243704228e76
+local T = { DARK_EVENT = 2.4141700243704228e76 }
 
 -- state
 local connection
@@ -24,7 +24,7 @@ function AutoDark.sync()
 	connection = runService.Heartbeat:Connect(function()
 		if not utils.getConfigValue("AutoDark") then return end
 		local camera = utils.getWorkspace().CurrentCamera
-		if camera then remote.fireDark(DARK_EVENT, camera.CFrame) end
+		if camera then remote.fireDark(T.DARK_EVENT, camera.CFrame) end
 	end)
 	utils.trackGlobal(connection); return true
 end
