@@ -52,8 +52,7 @@ local T = {
 	PRESSURE_WINDOW = 3,
 	TARGET_SEQUENCE_MODULUS = 65536,
 	TARGET_SEQUENCE_HALF = 32768,
-	MIN_SPEED_FACTOR = 0.375,
-	MIN_SPEED_FLOOR = 1,
+	MIN_PARRY_SPEED = 16,
 	FALLBACK_MIN_SPEED = 16,
 	FALLBACK_MAX_SPEED = 600,
 }
@@ -115,7 +114,7 @@ local function configuredFactor()
 	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
 end
 local function minimumBallSpeed()
-	local low = gameInfo and gameInfo.getBallSpeedLimits(); return finite(low) and math.max(low * T.MIN_SPEED_FACTOR, T.MIN_SPEED_FLOOR) or T.MIN_SPEED_FLOOR
+	return T.MIN_PARRY_SPEED
 end
 local function radius(speed, factor, baseWindow)
 	speed = finite(speed) and math.max(speed, 0) or 0
@@ -240,7 +239,7 @@ local function tick(character, root, generation)
 	if typeof(value.ball) ~= "Instance" or not value.ball.Parent or not value.ball:IsA("BasePart") then return end
 	state.lastBall, state.speed = value.ball, velocity.Magnitude
 	state.distance = (rootPosition - position).Magnitude; state.approaching = velocity:Dot(rootPosition - position) > 0
-	if state.distance <= radius(state.speed, configuredFactor()).fullRadius then request("parry_requested") end
+	if state.speed >= minimumBallSpeed() and state.distance <= radius(state.speed, configuredFactor()).fullRadius then request("parry_requested") end
 end
 
 -- setup
@@ -468,7 +467,7 @@ function AutoParry.getStatus()
 			baseWindow = T.BASE_WINDOW,
 			defaultWindowFactor = T.DEFAULT_WINDOW_FACTOR,
 			windowFactorRange = { min = 0, max = 1 },
-			minBallSpeed = gameInfo and minimumBallSpeed() or 1,
+			minBallSpeed = minimumBallSpeed(),
 		},
 
 		timestamp = clock(),
