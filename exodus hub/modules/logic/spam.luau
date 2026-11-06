@@ -27,7 +27,6 @@ end
 local function cancel(reason)
 	generation += 1; running, currentMode, currentRate = false, nil, nil; transition(false, reason)
 end
--- envio de cliques
 local function request(boundUtils, boundRemote, token)
 	if inFlight then return end
 	inFlight = true; status.lastRequestAt = os.clock()
@@ -45,7 +44,6 @@ local function request(boundUtils, boundRemote, token)
 		if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
 	end
 end
--- agendamento CPS e CPF
 local function sync()
 	if not utils or not remote then return end
 	local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
@@ -66,7 +64,6 @@ local function sync()
 		if token == generation then cancel("spam_disabled") end
 	end)
 end
--- observadores e inicialização
 function Spam.setup(deps)
 	if
 		type(deps) ~= "table"
@@ -88,7 +85,6 @@ function Spam.setup(deps)
 	end)
 	utils.trackGlobal(spamObserver); utils.trackGlobal(configObserver); sync(); return true
 end
--- reinicialização e limpeza
 function Spam.resetState()
 	cancel("reset")
 	status.lastError, status.lastErrorAt = nil, -math.huge
@@ -105,7 +101,6 @@ function Spam.teardown()
 	end
 	spamObserver, configObserver, utils, remote = nil, nil, nil, nil
 end
--- estado do Spam
 function Spam.getStatus()
 	return {
 		schema = utils and utils.apiVersion() or 1,

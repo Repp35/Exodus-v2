@@ -62,7 +62,6 @@ function Config.defaults()
 	end
 	return result
 end
--- validação de alterações
 function Config.validatePatch(patch)
 	if type(patch) ~= "table" then return false, "configuração não é uma tabela" end
 	for key, value in pairs(patch) do

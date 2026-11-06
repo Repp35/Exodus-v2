@@ -146,7 +146,6 @@ end
 
 -- cleanup
 local function getSignature(value) return structure(value, "payload") end
--- captura de eventos remotos
 local function inspectRemote(remote, ...)
 	local state = Runtime.remoteStates[remote]
 	if not state then return end
@@ -184,7 +183,6 @@ local function looksSyncRelated(instance)
 end
 
 -- discovery
--- descoberta de remotes e módulos
 local function scanReplicatedStorage()
 	local descendants = {}
 	local ok = pcall(function() descendants = ReplicatedStorage:GetDescendants() end)
@@ -217,7 +215,6 @@ local function inspectBallReplicator(moduleScript)
 end
 
 -- polling
--- monitoramento de alterações
 local function pollGameInfo(gameInfo)
 	if not gameInfo then return end
 	local provider = gameInfo.GameInfo; local signature = getSignature(provider)
@@ -234,7 +231,6 @@ local function pollBallReplicator(ballReplicator)
 end
 
 -- teardown
--- limpeza das conexões
 local function disconnectAll()
 	for index, connection in ipairs(Runtime.eventConnections) do
 		if connection then pcall(function() connection:Disconnect() end) end
@@ -251,7 +247,6 @@ local function stop(reason)
 	log("observation ended: " .. tostring(reason or "manual")); local ok, err = saveFile()
 	if ok then print(CONFIG.TAG .. " saved " .. CONFIG.LOG_PATH) else warn(CONFIG.TAG .. " could not save TXT: " .. tostring(err)) end
 end
--- interface de diagnóstico
 local API = {
 	stop = stop,
 }
