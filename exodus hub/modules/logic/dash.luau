@@ -41,12 +41,6 @@ local function windEffect(root)
 	end
 	return false
 end
-local function dashSound(root)
-	for _, item in ipairs(root:GetChildren()) do
-		if item:IsA("Sound") and item.Playing and string.find(string.lower(item.Name), "dash", 1, true) then return true end
-	end
-	return false
-end
 local function emit(player, record, position, velocity, previous, time)
 	if time - (record.lastDetection or -math.huge) < T.DETECTION_GAP then return end
 	record.lastDetection = time
@@ -66,7 +60,7 @@ local function resetCharacter(record, character)
 	record.character, record.animator, record.animationConnection, record.attributeConnection = character, nil, nil, nil
 	record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
 	record.lastDetection, record.signalAt, record.signalActive = nil, -math.huge, false
-	record.effectActive, record.soundActive = false, false
+	record.effectActive = false
 	if character then
 		record.attributeConnection = character:GetAttributeChangedSignal("IsDashing"):Connect(function()
 			if record.character ~= character then return end
@@ -106,9 +100,9 @@ local function observe(player, record, time)
 	local attribute = character:GetAttribute("IsDashing") == true; local ability = player == players.LocalPlayer and gameInfo and gameInfo.getDashAbility() or nil
 	local localDash = ability and ability.Dashing == true or false; local signal = attribute or localDash
 	if signal and not record.signalActive then record.signalAt = time end
-	record.signalActive = signal; local effect = windEffect(root); local sound = dashSound(root)
-	if (effect and not record.effectActive) or (sound and not record.soundActive) then record.signalAt = time end
-	record.effectActive, record.soundActive = effect, sound
+	record.signalActive = signal; local effect = windEffect(root)
+	if effect and not record.effectActive then record.signalAt = time end
+	record.effectActive = effect
 	local speed, previousSpeed = velocity.Magnitude, record.speed or 0; local fast = speed >= T.MIN_SPEED; local burst = fast and (not record.fast or speed - previousSpeed >= T.MIN_INCREASE)
 	local signaled = time - record.signalAt <= T.SIGNAL_GRACE
 	if (burst or (signaled and fast)) and (fast or horizontal(velocity) >= T.MIN_SPEED) then emit(player, record, position, velocity, previous, time) end
