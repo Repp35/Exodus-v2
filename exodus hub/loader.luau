@@ -476,7 +476,7 @@ local function startInternal()
 			if not ok then utils.recordError("UpDash", err or "Dash indisponível") end
 		end,
 		onPanic = function()
-			loaded.autoparry.resetState(); utils.setAutoSpamActive(false)
+			loaded.autoparry.resetState(); loaded.autospam.stopSpam()
 		end,
 	}, loaded.permissions.wrap("ui", "uiconfig", loaded.uiconfig))
 	if not uiReady then utils.stop(); return false, uiModule, uiError end
@@ -500,7 +500,13 @@ function Loader.start()
 	if startLock then return false, "Loader", "startup já em andamento" end
 	local ready, reason = validateExecutor()
 	if not ready then return false, "Loader", reason end
-	startLock = true; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules; Exodus.Loader = Loader; Modules.Loader = Loader; local started, moduleName, startError = startInternal(); startLock = false
+	startLock = true; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules; Exodus.Loader = Loader; Modules.Loader = Loader
+	local ok, started, moduleName, startError = xpcall(startInternal, function(err) return debug.traceback(tostring(err), 2) end)
+	startLock = false
+	if not ok then
+		rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry()
+		return false, "Loader", started
+	end
 	if started ~= true then rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry(); return started, moduleName, startError end
 	activeLoaded = nil; return started, moduleName, startError
 end

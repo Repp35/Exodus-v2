@@ -113,6 +113,7 @@ local function inspectTarget(s, target, time, snapshot)
 	if s.active and s.awayAt and previous == s.partner and target == me and window and time - s.awayAt > returnWindow(s, window, speed, s.partner) then
 		stop(s, "return_timeout", false)
 	end
+	if s.lastSwitchAt and time >= s.lastSwitchAt then s.intervalMs = (time - s.lastSwitchAt) * 1000 end
 	s.target, s.lastSwitchAt = target, time
 	if previous == me and target ~= me then
 		s.departedAt, s.departedTo = time, target
@@ -140,7 +141,14 @@ local function evaluate(s, time, fresh)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > 0.5 then return end
 	local target = userId(snapshot.targetId)
-	if not fresh then inspectTarget(s, target, time, snapshot) end
+	if not fresh then
+		local sequence = snapshot.syncSequence
+		if finite(sequence) and finite(s.sequence) then
+			local delta = (sequence - s.sequence) % 65536
+			if delta >= 32768 or (delta == 0 and target and s.target and target ~= s.target) then return end
+		end
+		inspectTarget(s, target, time, snapshot)
+	end
 	if s.active then
 		local reason = shouldDeactivate(s, snapshot, time, fresh)
 		if reason then stop(s, reason, false) end
@@ -207,9 +215,14 @@ function AutoSpam.onBallSync(data)
 	local sequence = data.Sequence or data.TeleportSequence
 	if finite(sequence) and finite(s.sequence) then
 		local delta = (sequence - s.sequence) % 65536
-		if delta == 0 or delta >= 32768 then return end
+		if delta >= 32768 or (delta == 0 and data.Teleported ~= true) then return end
 	end
 	if finite(sequence) then s.sequence = sequence end
+	if data.Teleported == true then
+		stop(s, "teleported", false)
+		s.target, s.recoveryPartner = nil, nil
+		return
+	end
 	local time = now(); local snapshot = gameInfo.getSnapshotAt(time)
 	local target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or gameInfo.getTargetId()
 	if snapshot and userId(target) then inspectTarget(s, target, time, snapshot) end
@@ -219,7 +232,7 @@ function AutoSpam.isActive() return current ~= nil and current.active end
 function AutoSpam.stopSpam() if current then stop(current, "stop_spam", false) end end
 function AutoSpam.getPullEvent() return nil end
 function AutoSpam.getDashData() return current and now() <= current.dashUntil and current.dashData or nil end
-function AutoSpam.getTargetSwitch() local s = current; return { timestampMs = s and (s.lastSwitchAt or 0) * 1000 or 0, partnerId = s and s.partner or -1, intervalMs = 0, resetToken = generation } end
+function AutoSpam.getTargetSwitch() local s = current; return { timestampMs = s and (s.lastSwitchAt or 0) * 1000 or 0, partnerId = s and s.partner or -1, intervalMs = s and (s.intervalMs or 0) or 0, resetToken = generation } end
 function AutoSpam.getActivationContext() local s = current; return { active = s ~= nil and s.active, reason = s and s.reason or "detached", partner = s and s.partner or -1 } end
 function AutoSpam.getStatus() local s = current; return { schema = utils and utils.apiVersion() or 1, phase = s and (s.active and "active" or "idle") or "detached", active = s ~= nil and s.active, lastGate = s and s.reason or "detached", clashPartnerId = s and s.partner or -1 } end
 AutoSpam.__contract = {

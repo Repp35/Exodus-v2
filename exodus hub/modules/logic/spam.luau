@@ -30,11 +30,14 @@ end
 local function request(boundUtils, boundRemote, token)
 	if inFlight then return end
 	inFlight = true; status.lastRequestAt = os.clock()
-	local result, detail = boundRemote.fireParry(
-		1,
-		function() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
-	)
+	local ok, result, detail = xpcall(function()
+		return boundRemote.fireParry(
+			1,
+			function() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
+		)
+	end, function(err) return debug.traceback(tostring(err), 2) end)
 	inFlight = false
+	if not ok then error(result, 0) end
 	if token ~= generation or utils ~= boundUtils then return end
 	if result == true then status.lastError = nil; return end
 	local message = tostring(detail or "Remote.fireParry indisponível"); status.lastError = message; local time = os.clock()
@@ -54,13 +57,16 @@ local function sync()
 	if running then cancel("rate_changed") end
 	generation += 1; local token, boundUtils, boundRemote = generation, utils, remote; running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
 	task.spawn(function()
-		local interval = 1 / (mode == "CPF" and rate * 60 or rate); local due = os.clock()
-		while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
-			local time = os.clock()
-			if time >= due then local pending = math.floor((time - due) / interval) + 1; request(boundUtils, boundRemote, token); due += pending * interval end
-			if token == generation then task.wait(math.max(0, due - os.clock())) end
-		end
-		if token == generation then cancel("spam_disabled") end
+		local ok, err = xpcall(function()
+			local interval = 1 / (mode == "CPF" and rate * 60 or rate); local due = os.clock()
+			while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
+				local time = os.clock()
+				if time >= due then local pending = math.floor((time - due) / interval) + 1; request(boundUtils, boundRemote, token); due += pending * interval end
+				if token == generation then task.wait(math.max(0, due - os.clock())) end
+			end
+		end, function(message) return debug.traceback(tostring(message), 2) end)
+		if token == generation then cancel(ok and "spam_disabled" or "spam_error") end
+		if not ok then error(err, 0) end
 	end)
 end
 function Spam.setup(deps)

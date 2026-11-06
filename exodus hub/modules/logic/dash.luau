@@ -25,7 +25,10 @@ local function rootOf(player)
 	local character = player.Character; return character and character:FindFirstChild("HumanoidRootPart")
 end
 local function disconnect(connection)
-	if connection then connection:Disconnect() end
+	if connection then
+		if utils then utils.untrackGlobal(connection) end
+		connection:Disconnect()
+	end
 end
 local function emit(player, record, position, velocity, previous, time)
 	if time - (record.lastDetection or -math.huge) < T.DETECTION_GAP then return end
@@ -77,6 +80,7 @@ local function addPlayer(player)
 	record.characterConnection = player.CharacterAdded:Connect(function(character)
 		if records[player] == record then resetCharacter(record, character) end
 	end)
+	utils.trackGlobal(record.characterConnection)
 end
 function Dash.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências ausentes: Utils ou GameInfo" end
@@ -89,6 +93,7 @@ function Dash.setup(deps)
 	connections.removing = players.PlayerRemoving:Connect(function(player)
 		if token == generation then removePlayer(player) end
 	end)
+	utils.trackGlobal(connections.added); utils.trackGlobal(connections.removing)
 	for _, player in ipairs(players:GetPlayers()) do
 		addPlayer(player)
 	end
@@ -127,7 +132,7 @@ end
 -- contract
 Dash.__contract = {
 	requires = { Utils = "utils", GameInfo = "gameinfo" },
-	requiresMethods = { Utils = { "getPlayers", "now" }, GameInfo = { "getDashAbility" } },
+	requiresMethods = { Utils = { "getPlayers", "now", "trackGlobal", "untrackGlobal" }, GameInfo = { "getDashAbility" } },
 	provides = { "setup", "setHandler", "tick", "resetState", "teardown", "getStatus" },
 }
 

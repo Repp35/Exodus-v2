@@ -73,7 +73,8 @@ local function untrack(list, connection)
 end
 local function disconnectAll(list)
 	for i = #list, 1, -1 do
-		local connection = list[i]; list[i] = nil; connection:Disconnect()
+		local connection = list[i]; list[i] = nil
+		if connection then connection:Disconnect() end
 	end
 end
 

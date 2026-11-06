@@ -84,7 +84,7 @@ local POLICIES = {
 	dash = {
 		provide = allow("setup setHandler tick resetState teardown getStatus"),
 		consume = {
-			utils = allow("apiVersion getPlayers now"),
+			utils = allow("apiVersion getPlayers now trackGlobal untrackGlobal"),
 			gameinfo = allow("getDashAbility"),
 		},
 	},
