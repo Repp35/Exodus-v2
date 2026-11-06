@@ -45,8 +45,7 @@ end
 local function rootPosition(s) return s.root and s.root.Parent and vector(s.root.Position) and s.root.Position or nil end
 local function playerRoot(userId)
 	if not players or not userId or userId <= 0 then return nil, nil end
-	local player = players:GetPlayerByUserId(userId); local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	return player, root and root.Parent and root or nil
+	local player = players:GetPlayerByUserId(userId); local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart"); return player, root and root.Parent and root or nil
 end
 
 -- state
@@ -173,8 +172,7 @@ local function clearExchange(s)
 	s.dashEvent, s.dashData, s.dashBonusUntil, s.dashLockUntil = nil, nil, 0, 0
 	s.distantRecovery, s.recoveryPartner, s.recoveryDistance, s.recoverySpeed, s.recoveryReturnedToMe = false, nil, nil, nil, false
 	s.windowPaused, s.windowPartner = false, nil
-	s.activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 }; targetResetToken += 1
-	s.resetToken = targetResetToken; clearReturn(s)
+	s.activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 }; targetResetToken += 1; s.resetToken = targetResetToken; clearReturn(s)
 end
 local function setActive(s, enabled, reason, detail, time, recoveryValidated)
 	if current ~= s or not s.bound then return end
@@ -234,8 +232,7 @@ local function gate(s)
 	s.lastGate = reason; return false
 end
 local function outsideClashRadius(s, userId)
-	local _, root = playerRoot(userId); local own = rootPosition(s); local ability = gameInfo.getDeflectAbility(); local sync = gameInfo.getSyncData()
-	local speed = sync and tonumber(sync.Speed) or s.speed; local range = ability and ability.DeflectDistance
+	local _, root = playerRoot(userId); local own = rootPosition(s); local ability = gameInfo.getDeflectAbility(); local sync = gameInfo.getSyncData(); local speed = sync and tonumber(sync.Speed) or s.speed; local range = ability and ability.DeflectDistance
 	if not root or not own or not vector(root.Position) or not finite(range) or range <= 0 or not finite(speed) or speed < 0 then return true end
 	local window = gameInfo.getDeflectWindow(speed)
 	if not finite(window) or window <= 0 then return true end
@@ -314,8 +311,7 @@ local function returnAllowance(s, partner, time)
 	if current ~= s or not s.bound then return 0, 0 end
 	local low, high = gameInfo.getBallSpeedLimits()
 	if current ~= s or not s.bound then return 0, 0 end
-	local fraction = finite(low) and finite(high) and high > low and math.clamp((s.speed - low) / (high - low), 0, 1) or 0; local base = T.returnSlow + (T.returnFast - T.returnSlow) * fraction
-	local bonus = 0
+	local fraction = finite(low) and finite(high) and high > low and math.clamp((s.speed - low) / (high - low), 0, 1) or 0; local base = T.returnSlow + (T.returnFast - T.returnSlow) * fraction; local bonus = 0
 	if type(autoParry.getPressure) == "function" then
 		local pressure = autoParry.getPressure()
 		if
@@ -341,9 +337,7 @@ local function updateSwitch(s, previous, target, time, serverTime)
 	if s.lastSwitchAt > 0 then
 		local interval = time - s.lastSwitchAt
 		if finite(serverTime) and finite(s.lastSwitchServerAt) then interval = serverTime - s.lastSwitchServerAt end
-		if finite(interval) and interval >= 0 then
-			s.intervalMs = interval * 1000; s.intervalAverage = s.intervalAverage and s.intervalAverage * 0.6 + interval * 0.4 or interval; s.intervalSamples += 1
-		end
+		if finite(interval) and interval >= 0 then s.intervalMs = interval * 1000; s.intervalAverage = s.intervalAverage and s.intervalAverage * 0.6 + interval * 0.4 or interval; s.intervalSamples += 1 end
 	end
 	s.lastSwitchAt, s.lastSwitchServerAt = time, finite(serverTime) and serverTime or nil
 end
@@ -372,15 +366,10 @@ local function observeTarget(s, target, explicit, serverTime, time)
 		s.lastGate = "invalid_target"; return
 	end
 	local previous = s.target
-	if s.active and previous == s.partner and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
-		s.target = target; s.lastGate = "partner_target_redirected"; setActive(s, false, "partner_target_redirected", nil, time); clearReturn(s)
-		return
-	end
+	if s.active and previous == s.partner and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then s.target = target; s.lastGate = "partner_target_redirected"; setActive(s, false, "partner_target_redirected", nil, time); clearReturn(s); return end
 	if target == previous then return end
 	updateSwitch(s, previous, target, time, serverTime); s.target = target
-	if s.active and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then
-		s.lastGate = "target_outside_clash_radius"; setActive(s, false, "target_outside_clash_radius", nil, time); clearReturn(s); return
-	end
+	if s.active and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then s.lastGate = "target_outside_clash_radius"; setActive(s, false, "target_outside_clash_radius", nil, time); clearReturn(s); return end
 	if s.pull then
 		if (target == me or target == s.pull.partner) and target ~= s.pull.lastTarget then s.pull.switched = true end
 		s.pull.lastTarget = target
@@ -399,11 +388,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
 		s.lastGate = "target_lost"
 	elseif previous > 0 and previous ~= me and target == me then
 		if s.distantRecovery and previous ~= s.recoveryPartner then s.recoveryReturnedToMe = true end
-		if s.active and s.clashAwayAt and time - s.clashAwayAt > T.targetReturnTimeout + ping(s, time) then
-			s.lastGate = "deact_target_return_timeout"; setActive(s, false, "target_return_timeout", nil, time)
-		else
-			s.clashAwayAt = nil
-		end
+		if s.active and s.clashAwayAt and time - s.clashAwayAt > T.targetReturnTimeout + ping(s, time) then s.lastGate = "deact_target_return_timeout"; setActive(s, false, "target_return_timeout", nil, time) else s.clashAwayAt = nil end
 		local elapsed = s.returnAt and time - s.returnAt or nil
 		if finite(serverTime) and finite(s.returnServerAt) then elapsed = serverTime - s.returnServerAt end
 		if s.returnFrom == previous and finite(elapsed) and elapsed >= 0 and elapsed <= s.returnWindow and time <= s.returnExpires then
@@ -523,8 +508,7 @@ local function evaluate(s, snapshot, time)
 	if s.windowPaused and id(snapshot.targetId) ~= localPlayer.UserId and id(snapshot.targetId) ~= s.windowPartner then
 		s.windowPaused, s.windowPartner = false, nil
 	end
-	local targeted = target and target == me or (not target and snapshot.targeted == true); local window = gameInfo.getDeflectWindow(s.speed); local own = rootPosition(s)
-	local distance = prediction.distance; local closing = own and distance > 0 and snapshot.velocity:Dot(own - snapshot.position) / distance or 0
+	local targeted = target and target == me or (not target and snapshot.targeted == true); local window = gameInfo.getDeflectWindow(s.speed); local own = rootPosition(s); local distance = prediction.distance; local closing = own and distance > 0 and snapshot.velocity:Dot(own - snapshot.position) / distance or 0
 	local timeToRange = closing > 0 and math.max(0, (distance - (gameInfo.getDeflectAbility().DeflectDistance or 0)) / closing) or math.huge
 	local activationReady = prediction.imminent and finite(window) and timeToRange <= window * T.activationWindowFactor
 	local aimed = s.target == me and targeted and activationReady
@@ -535,18 +519,13 @@ local function evaluate(s, snapshot, time)
 	end
 	if aimed and not s.hasActivated and not s.distantRecovery and type(autoParry.getPressure) == "function" then
 		local pressure = autoParry.getPressure()
-		if type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= T.pressureBoostThreshold then
-			clearReturn(s); setActive(s, true, "ap_pressure", "auto_parry_pressure", time); return
-		end
+		if type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= T.pressureBoostThreshold then clearReturn(s); setActive(s, true, "ap_pressure", "auto_parry_pressure", time); return end
 	end
 	if s.returnPending and aimed then
 		if not similarRecoveryDistance(s) then clearReturn(s); s.lastGate = "recovery_distance_changed"; return end
 		local reason = time < s.dashBonusUntil and "anti_dash" or "predicted_impact"; clearReturn(s); setActive(s, true, "activated", reason, time); return
 	end
-	if not targeted then s.lastGate = "act_not_targeted"
-	elseif not s.returnPending then s.lastGate = "act_no_return_pending"
-	elseif s.target ~= me then s.lastGate = "target_not_me"
-	else s.lastGate = prediction.activationGate end
+	if not targeted then s.lastGate = "act_not_targeted" elseif not s.returnPending then s.lastGate = "act_no_return_pending" elseif s.target ~= me then s.lastGate = "target_not_me" else s.lastGate = prediction.activationGate end
 end
 local function acceptSync(s, data, time, original)
 	if not gate(s) or type(data) ~= "table" then return end
@@ -577,8 +556,7 @@ local function acceptSync(s, data, time, original)
 	if current ~= s or not s.bound then return end
 	if outcome == "pull" then return end
 	if not target then return end
-	local sameTarget = target ~= nil and target == previous
-	local evaluateEvent = not sameTarget and data.Source ~= "snapshot" and (s.returnPending or (target == localPlayer.UserId and data.Source == "packet"))
+	local sameTarget = target ~= nil and target == previous; local evaluateEvent = not sameTarget and data.Source ~= "snapshot" and (s.returnPending or (target == localPlayer.UserId and data.Source == "packet"))
 		or sameTarget and not s.active and target == localPlayer.UserId and data.Source == "packet"
 	if evaluateEvent then
 		local snapshot = readSnapshot(s, time)
@@ -614,9 +592,7 @@ local function updateFrame(s, time)
 	end
 	if target ~= id(s.target) then
 		local sequence = snapshot.syncSequence
-		if type(sequence) == "number" or (s.sequence == nil and (s.syncSource ~= "event" or time - s.syncAt >= 0.1)) then
-			acceptSync(s, { Sequence = sequence, TargetPlayerID = snapshot.targetId, Speed = snapshot.syncSpeed, Source = "snapshot" }, time)
-		end
+		if type(sequence) == "number" or (s.sequence == nil and (s.syncSource ~= "event" or time - s.syncAt >= 0.1)) then acceptSync(s, { Sequence = sequence, TargetPlayerID = snapshot.targetId, Speed = snapshot.syncSpeed, Source = "snapshot" }, time) end
 	end
 	if current == s and s.bound then evaluate(s, snapshot, time) end
 end
@@ -632,10 +608,7 @@ local function dispatch(s, kind, data, time)
 	s.draining = true
 	while current == s and s.bound and s.queueHead <= #s.queue do
 		local item = s.queue[s.queueHead]; s.queueHead += 1
-		if item.kind == "sync" then acceptSync(s, item.data.copy, item.at, item.data.original)
-		elseif item.kind == "frame" then updateFrame(s, item.at)
-		elseif item.kind == "dash" then trackDash(s, item.data, item.at)
-		elseif item.kind == "pull" then stopForPull(s, item.data.position, item.data.reason, item.at) end
+		if item.kind == "sync" then acceptSync(s, item.data.copy, item.at, item.data.original) elseif item.kind == "frame" then updateFrame(s, item.at) elseif item.kind == "dash" then trackDash(s, item.data, item.at) elseif item.kind == "pull" then stopForPull(s, item.data.position, item.data.reason, item.at) end
 	end
 	s.queue, s.queueHead, s.draining = {}, 1, false
 	return true
@@ -659,8 +632,7 @@ local function detach(reason)
 			disconnect(connection); old.darkConnections[player] = nil
 		end
 	end
-	nextGeneration += 1; targetResetToken += 1; returnToken += 1; state = makeState()
-	state.reason = reason
+	nextGeneration += 1; targetResetToken += 1; returnToken += 1; state = makeState(); state.reason = reason
 end
 local function track(s, connection)
 	s.connections[#s.connections + 1] = connection; utils.trackCharacter(connection)

@@ -236,8 +236,7 @@ function Utils.setLifecyclePhase(value)
 end
 function Utils.recordTransition(source, fromState, toState, reason) recordTransition(source, fromState, toState, reason) end
 function Utils.recordError(source, message)
-	local item = { source = tostring(source or "Unknown"), message = tostring(message or ""), at = os.clock() }; state.diagnostics.lastError = item; append(state.diagnostics.errors, item)
-	warn(("[%s] %s"):format(item.source, item.message)); refreshNamespace(); return true
+	local item = { source = tostring(source or "Unknown"), message = tostring(message or ""), at = os.clock() }; state.diagnostics.lastError = item; append(state.diagnostics.errors, item); warn(("[%s] %s"):format(item.source, item.message)); refreshNamespace(); return true
 end
 function Utils.isManualSpamActive() return state.manualSpam end
 function Utils.isAutoSpamActive() return state.autoSpam end
@@ -245,8 +244,7 @@ function Utils.isSpamActive() return state.manualSpam or state.autoSpam end
 local function setSpam(key, value, source, reason)
 	value = value == true
 	if state[key] == value then return false end
-	local previous = state[key]; state[key] = value; notify(spamObservers); recordTransition(source, previous and "active" or "inactive", value and "active" or "inactive", reason)
-	return true
+	local previous = state[key]; state[key] = value; notify(spamObservers); recordTransition(source, previous and "active" or "inactive", value and "active" or "inactive", reason); return true
 end
 function Utils.setManualSpamActive(value) return setSpam("manualSpam", value, "Spam", "manual_toggle") end
 function Utils.setAutoSpamActive(value) return setSpam("autoSpam", value, "AutoSpam", "automatic_toggle") end

@@ -45,10 +45,7 @@ local function bindLife(life)
 		if not valid(life) then return end
 		local result, detail = entry.bind(life.character)
 		if not valid(life) then detach(entry); return end
-		if result ~= true then
-			utils.recordError("Character", ("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(detail or result))); detach(entry); deactivate(life, "bind_failed")
-			setPhase("invalid", "bind_failed"); return
-		end
+		if result ~= true then utils.recordError("Character", ("%s não vinculou o personagem: %s"):format(entry.name or ("bind_" .. index), tostring(detail or result))); detach(entry); deactivate(life, "bind_failed"); setPhase("invalid", "bind_failed"); return end
 		life.bound[#life.bound + 1] = entry
 	end
 	if valid(life) then setPhase("bound", "character_bound") end
@@ -118,8 +115,7 @@ function Character.teardown()
 	end
 	if added then added:Disconnect() end
 	if removing then removing:Disconnect() end
-	added, removing = nil, nil; setPhase("cleaning", "character_controller_teardown"); clearLife(); setPhase("stopped", "character_controller_stopped")
-	utils, spam, binds = nil, nil, nil
+	added, removing = nil, nil; setPhase("cleaning", "character_controller_teardown"); clearLife(); setPhase("stopped", "character_controller_stopped"); utils, spam, binds = nil, nil, nil
 end
 
 -- status

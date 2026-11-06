@@ -202,16 +202,14 @@ end
 local function inspectGameInfo(moduleScript)
 	local gameInfo, err = safeRequire(moduleScript)
 	if not gameInfo then log("TS.GameInfo unavailable: " .. tostring(err)); return nil end
-	local provider = gameInfo.GameInfo; local ballModel = type(provider) == "table" and provider.BallModel or nil; Runtime.lastGameInfoSignature = getSignature(provider)
-	log("TS.GameInfo module=" .. safePath(moduleScript)); recordStructure("TS.GameInfo.GameInfo", provider)
+	local provider = gameInfo.GameInfo; local ballModel = type(provider) == "table" and provider.BallModel or nil; Runtime.lastGameInfoSignature = getSignature(provider); log("TS.GameInfo module=" .. safePath(moduleScript)); recordStructure("TS.GameInfo.GameInfo", provider)
 	log(("BallModel class=%s; path=%s"):format(typeof(ballModel) == "Instance" and ballModel.ClassName or tostring(typeof(ballModel)), safePath(ballModel))); return gameInfo
 end
 local function inspectBallReplicator(moduleScript)
 	local replicator, err = safeRequire(moduleScript)
 	if not replicator then log("TS.BallReplicator unavailable: " .. tostring(err)); return nil end
 	local provider = replicator.BallReplicator
-	local syncData = type(provider) == "table" and provider.syncData or nil; Runtime.lastReplicatorSignature = getSignature(syncData); log("TS.BallReplicator module=" .. safePath(moduleScript))
-	recordStructure("TS.BallReplicator.BallReplicator.syncData", syncData); return replicator
+	local syncData = type(provider) == "table" and provider.syncData or nil; Runtime.lastReplicatorSignature = getSignature(syncData); log("TS.BallReplicator module=" .. safePath(moduleScript)); recordStructure("TS.BallReplicator.BallReplicator.syncData", syncData); return replicator
 end
 
 -- polling
@@ -219,8 +217,7 @@ local function pollGameInfo(gameInfo)
 	if not gameInfo then return end
 	local provider = gameInfo.GameInfo; local signature = getSignature(provider)
 	if signature == Runtime.lastGameInfoSignature then return end
-	Runtime.lastGameInfoSignature = signature; recordStructure("TS.GameInfo.GameInfo (changed)", provider); local ballModel = type(provider) == "table" and provider.BallModel or nil
-	log(("BallModel class=%s; path=%s"):format(typeof(ballModel) == "Instance" and ballModel.ClassName or tostring(typeof(ballModel)), safePath(ballModel)))
+	Runtime.lastGameInfoSignature = signature; recordStructure("TS.GameInfo.GameInfo (changed)", provider); local ballModel = type(provider) == "table" and provider.BallModel or nil; log(("BallModel class=%s; path=%s"):format(typeof(ballModel) == "Instance" and ballModel.ClassName or tostring(typeof(ballModel)), safePath(ballModel)))
 end
 local function pollBallReplicator(ballReplicator)
 	if not ballReplicator then return end

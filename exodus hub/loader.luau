@@ -46,8 +46,7 @@ local ALLOW_LOCAL_FALLBACK = true
 
 -- http
 local function getRequestFunction()
-	local environment = type(getgenv) == "function" and getgenv() or _G; local synApi = type(environment.syn) == "table" and environment.syn or nil
-	local fluxusApi = type(environment.fluxus) == "table" and environment.fluxus or nil
+	local environment = type(getgenv) == "function" and getgenv() or _G; local synApi = type(environment.syn) == "table" and environment.syn or nil; local fluxusApi = type(environment.fluxus) == "table" and environment.fluxus or nil
 	for _, candidate in ipairs({
 		environment.request or false,
 		environment.http_request or false,
@@ -65,8 +64,7 @@ local function validateExecutor()
 	return true
 end
 local function isRetryableHttp(message)
-	local statusCode = tonumber(string.match(tostring(message), "HTTP%s+(%d+)"))
-	return statusCode == nil or statusCode == 408 or statusCode == 425 or statusCode == 429 or (statusCode and statusCode >= 500 and statusCode <= 599)
+	local statusCode = tonumber(string.match(tostring(message), "HTTP%s+(%d+)")); return statusCode == nil or statusCode == 408 or statusCode == 425 or statusCode == 429 or (statusCode and statusCode >= 500 and statusCode <= 599)
 end
 local function waitBeforeRetry(attempt)
 	if type(task) == "table" and type(task.wait) == "function" then local delays = { 0.25, 0.75, 1.5 }; task.wait(delays[attempt] or delays[#delays]) end
@@ -117,10 +115,7 @@ local function clearRegistry()
 	for _, name in ipairs(MODULE_ORDER) do
 		Modules[name] = nil
 	end
-	Modules.ui = nil; Modules.Loader = Loader; Exodus.Utils = nil; Exodus.State = nil
-	Exodus.Config = nil; Exodus.ModuleURLs = nil; Exodus.Runtime = nil; Exodus.Context = nil
-	Exodus.UI = nil; Exodus.Diagnostics = nil; Exodus.Version = nil; Exodus.StartError = nil
-	Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false; _G.ExodusOnBurst = nil
+	Modules.ui = nil; Modules.Loader = Loader; Exodus.Utils = nil; Exodus.State = nil; Exodus.Config = nil; Exodus.ModuleURLs = nil; Exodus.Runtime = nil; Exodus.Context = nil; Exodus.UI = nil; Exodus.Diagnostics = nil; Exodus.Version = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false; _G.ExodusOnBurst = nil
 end
 local function stopPreviousRuntime()
 	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then Modules.gameinfo.stopMaintenance() end
@@ -157,9 +152,7 @@ local function resolveLatestRevision()
 	})
 	if not body then return nil, requestError or "SHA mais recente indisponível" end
 	local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
-	if not ok or type(document) ~= "table" or type(document.sha) ~= "string" or not string.match(document.sha, "^[a-fA-F0-9]+$") or #document.sha ~= 40 then
-		return nil, "resposta do SHA mais recente inválida"
-	end
+	if not ok or type(document) ~= "table" or type(document.sha) ~= "string" or not string.match(document.sha, "^[a-fA-F0-9]+$") or #document.sha ~= 40 then return nil, "resposta do SHA mais recente inválida" end
 	return document.sha
 end
 local function buildURLs(revision)
@@ -187,8 +180,7 @@ local function loadModule(name, relativePath, url, localRoot)
 		local fallbackURL = buildCDNURL(url)
 		if fallbackURL then
 			local fallbackSource, fallbackError = request(fallbackURL)
-			if fallbackSource then source, fetchError, sourceKind = fallbackSource, nil, "cdn"
-			else fetchError = tostring(fetchError or "falha no GitHub Raw") .. "; CDN: " .. tostring(fallbackError) end
+			if fallbackSource then source, fetchError, sourceKind = fallbackSource, nil, "cdn" else fetchError = tostring(fetchError or "falha no GitHub Raw") .. "; CDN: " .. tostring(fallbackError) end
 		end
 	end
 	if source then
@@ -248,8 +240,7 @@ local function collectCharacterBinds(loaded)
 	for _, name in ipairs(MODULE_ORDER) do
 		local module = loaded[name]
 		if name ~= "utils" and type(module) == "table" then
-			local contract = contractOf(module); local hasBindFlag = contract.bindCharacter == true; local hasBindFn = type(module.bindCharacter) == "function"
-			local hasDetachFn = type(module.detachCharacter) == "function"
+			local contract = contractOf(module); local hasBindFlag = contract.bindCharacter == true; local hasBindFn = type(module.bindCharacter) == "function"; local hasDetachFn = type(module.detachCharacter) == "function"
 			if hasBindFlag and hasBindFn and hasDetachFn then
 				binds[#binds + 1] = {
 					name = name,
@@ -278,9 +269,7 @@ local function initializeModules(loaded)
 					local dependency = deps[dependencyName]
 					if type(dependency) ~= "table" or type(methods) ~= "table" then error(name .. ": dependência inválida: " .. tostring(dependencyName), 2) end
 					for _, method in ipairs(methods) do
-						if type(method) ~= "string" or type(dependency[method]) ~= "function" then
-							error(("API interna ausente: %s.%s (exigida por %s)"):format(tostring(dependencyName), tostring(method), name), 2)
-						end
+						if type(method) ~= "string" or type(dependency[method]) ~= "function" then error(("API interna ausente: %s.%s (exigida por %s)"):format(tostring(dependencyName), tostring(method), name), 2) end
 					end
 				end
 			end
@@ -367,9 +356,7 @@ local function bindRuntime(loaded)
 				if type(gameInfo.decodeBallPacket) == "function" then
 					local packet = gameInfo.decodeBallPacket(value)
 					if type(packet) == "table" and type(packet.Sequence) == "number" then
-						local sequence = packet.Sequence; local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
-						local forward = not lastClashPacketSequence or (sequence - lastClashPacketSequence) % 65536
-						local currentDelta = type(current) == "number" and (sequence - current) % 65536 or 0
+						local sequence = packet.Sequence; local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence(); local forward = not lastClashPacketSequence or (sequence - lastClashPacketSequence) % 65536; local currentDelta = type(current) == "number" and (sequence - current) % 65536 or 0
 						if (forward == true or (forward > 0 and forward < 32768)) and currentDelta < 32768 then
 							lastClashPacketSequence = sequence; packet.Source = "packet"
 							if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
@@ -459,9 +446,7 @@ local function startInternal()
 	utils.start(); utils.setLifecyclePhase("loading"); Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot()
 	for _, entry in ipairs(MODULE_MANIFEST) do
 		local module = loaded[entry.name]
-		if type(module) == "table" and module.__config and not loaded.config.register(entry.name, module.__config) then
-			utils.stop(); return false, "Config", "schema duplicado ou inválido: " .. entry.name
-		end
+		if type(module) == "table" and module.__config and not loaded.config.register(entry.name, module.__config) then utils.stop(); return false, "Config", "schema duplicado ou inválido: " .. entry.name end
 	end
 	if type(utils.setConfigModule) ~= "function" or not utils.setConfigModule(loaded.config) then utils.stop(); return false, "Utils", "schema de Config indisponível" end
 	local defaults = loaded.config.defaults()
@@ -472,8 +457,7 @@ local function startInternal()
 	if not utils.setConfig(defaults) then utils.stop(); return false, "Utils", "setConfig rejeitou a configuração inicial" end
 	if type(utils.loadConfig) == "function" then utils.loadConfig() end
 	if not utils.setModuleURLs(urls) then utils.stop(); return false, "Utils", "setModuleURLs rejeitou as URLs dos módulos" end
-	Exodus.Config = utils.getConfigSnapshot(); Exodus.ModuleURLs = utils.getModuleURLsSnapshot(); utils.setLifecyclePhase("initializing")
-	local modulesReady, failedModule, modulesError = initializeModules(loaded)
+	Exodus.Config = utils.getConfigSnapshot(); Exodus.ModuleURLs = utils.getModuleURLsSnapshot(); utils.setLifecyclePhase("initializing"); local modulesReady, failedModule, modulesError = initializeModules(loaded)
 	if not modulesReady then utils.stop(); return false, failedModule, modulesError end
 	if not utils.setDiagnosticsModules(loaded) then utils.stop(); return false, "Utils", "setDiagnosticsModules rejeitou os módulos" end
 	utils.setLifecyclePhase("binding"); local runtime, runtimeError = bindRuntime(loaded, utils)
@@ -491,8 +475,7 @@ local function startInternal()
 		end,
 	}, loaded.uiconfig)
 	if not uiReady then utils.stop(); return false, uiModule, uiError end
-	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
-	Exodus.Started = true; Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
+	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
 end
 
 -- rollback
@@ -501,9 +484,7 @@ local function rollbackLoaded(loaded)
 	for index = #MODULE_ORDER, 1, -1 do
 		local module = loaded[MODULE_ORDER[index]]
 		if type(module) == "table" then
-			if type(module.teardown) == "function" then module.teardown()
-			elseif type(module.detachCharacter) == "function" then module.detachCharacter()
-			elseif type(module.resetState) == "function" then module.resetState() end
+			if type(module.teardown) == "function" then module.teardown() elseif type(module.detachCharacter) == "function" then module.detachCharacter() elseif type(module.resetState) == "function" then module.resetState() end
 		end
 	end
 	if type(loaded.gameinfo) == "table" and type(loaded.gameinfo.stopMaintenance) == "function" then loaded.gameinfo.stopMaintenance() end
@@ -514,8 +495,7 @@ function Loader.start()
 	if startLock then return false, "Loader", "startup já em andamento" end
 	local ready, reason = validateExecutor()
 	if not ready then return false, "Loader", reason end
-	startLock = true; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules
-	Exodus.Loader = Loader; Modules.Loader = Loader; local started, moduleName, startError = startInternal(); startLock = false
+	startLock = true; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules; Exodus.Loader = Loader; Modules.Loader = Loader; local started, moduleName, startError = startInternal(); startLock = false
 	if started ~= true then rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry(); return started, moduleName, startError end
 	activeLoaded = nil; return started, moduleName, startError
 end
@@ -528,8 +508,7 @@ local function startSafely()
 		Exodus.StartError = startError
 		Exodus.StartErrorModule = moduleName; error(("%s: %s"):format(tostring(moduleName), tostring(startError)), 2)
 	end
-	Loader.lastError = nil; Loader.lastErrorModule = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil
-	return true
+	Loader.lastError = nil; Loader.lastErrorModule = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil; return true
 end
 local started = startSafely()
 Exodus.Started = started == true

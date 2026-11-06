@@ -153,8 +153,7 @@ function GameInfo.bindBallSync(handler)
 		return syncConnection ~= nil and syncConnection.Connected == true
 	end
 	if syncConnection and syncConnection.Connected and syncRemote == candidate then return true end
-	disconnectSync(); local connection = candidate.OnClientEvent:Connect(handler); syncConnection, syncRemote = connection, candidate; utils.trackGlobal(connection)
-	return true
+	disconnectSync(); local connection = candidate.OnClientEvent:Connect(handler); syncConnection, syncRemote = connection, candidate; utils.trackGlobal(connection); return true
 end
 function GameInfo.startMaintenance(options)
 	if type(options) ~= "table" or type(options.isActive) ~= "function" then return false end
@@ -176,11 +175,9 @@ end
 -- setup
 function GameInfo.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
-	GameInfo.stopMaintenance(); disconnect(cooldownConnection); disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil
-	utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
+	GameInfo.stopMaintenance(); disconnect(cooldownConnection); disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil; utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
 	if not players or not world then return false, "dependência ausente: Players ou Workspace" end
-	ball, searchAt, watching = nil, 0, false; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt = nil, nil, 0
-	sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}
+	ball, searchAt, watching = nil, 0, false; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt = nil, nil, 0; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}
 	cooldown = { known = false, active = false, rawActive = false, lastEventAt = -math.huge }; signalAt, heldAt, missingAt, warningAt = 0, 0, nil, 0; GameInfo.getDeflectCooldownState(); return true
 end
 function GameInfo.getBall() return getBall() end
@@ -309,8 +306,7 @@ local function snapshot(time)
 		local elapsed = time - sampledAt; local displacement = position - sampledPosition
 		if displacement.Magnitude > 0.001 then
 			local measured, expected = displacement / elapsed, sync and tonumber(sync.Speed)
-			if elapsed <= T.SAMPLE_MAX_GAP and (not expected or expected <= 0 or measured.Magnitude <= expected * 2.5 + 30) then measuredVelocity, movedAt = measured, time
-			else measuredVelocity, movedAt = Vector3.zero, nil end
+			if elapsed <= T.SAMPLE_MAX_GAP and (not expected or expected <= 0 or measured.Magnitude <= expected * 2.5 + 30) then measuredVelocity, movedAt = measured, time else measuredVelocity, movedAt = Vector3.zero, nil end
 		elseif movedAt and time - movedAt > 0.1 then
 			measuredVelocity = Vector3.zero
 		end
@@ -373,9 +369,7 @@ function GameInfo.getBallSpeedLimits()
 	speedAt = time + T.SPEED_REFRESH; local module = child(child(ts(), "Gameplay"), "GameBall")
 	if module ~= gameBallScript then gameBallScript, gameBall = module, nil end
 	if not gameBall then gameBall = load(module, "GameBall").GameBall end
-	if type(gameBall) ~= "table" or type(gameBall.GetBaseSpeed) ~= "function" or type(gameBall.GetMaxSpeed) ~= "function" then
-		error("API externa ausente: TS.Gameplay.GameBall.GetBaseSpeed/GetMaxSpeed", 2)
-	end
+	if type(gameBall) ~= "table" or type(gameBall.GetBaseSpeed) ~= "function" or type(gameBall.GetMaxSpeed) ~= "function" then error("API externa ausente: TS.Gameplay.GameBall.GetBaseSpeed/GetMaxSpeed", 2) end
 	local low, high = gameBall:GetBaseSpeed(), gameBall:GetMaxSpeed()
 	if not finite(low) or not finite(high) or low <= 0 or high <= low then error("API externa inválida: GameBall retornou limites de velocidade inválidos", 2) end
 	minimumSpeed, maximumSpeed = low, high; return minimumSpeed, maximumSpeed
@@ -408,8 +402,7 @@ function GameInfo.getClashContext()
 	if not partnerId or partnerId <= 0 or partnerId == player.UserId then return nil end
 	local age, currentTarget = world:GetServerTimeNow() - lastAt, world:GetAttribute("GameBallTarget")
 	if age < 0 or (age > 1 and (age > 2.5 or currentTarget ~= target)) then return nil end
-	local partner = players:GetPlayerByUserId(partnerId); local ownRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	local partnerRoot = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
+	local partner = players:GetPlayerByUserId(partnerId); local ownRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart"); local partnerRoot = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
 	if not ownRoot or not partnerRoot or (ownRoot.Position - partnerRoot.Position).Magnitude > 35 then return nil end
 	return { partnerId = partnerId, lastParryAt = lastAt, age = age }
 end

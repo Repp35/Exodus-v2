@@ -214,11 +214,7 @@ local function request(reason)
 		return false
 	end
 	local configured = configuredFactor()
-	if configured > 0 then
-		local geometry = radius(speed, configured); local denominator = speed * geometry.leadTime
-		local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured
-		appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed })
-	end
+	if configured > 0 then local geometry = radius(speed, configured); local denominator = speed * geometry.leadTime; local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured; appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed }) end
 	phase("fired", reason); return true
 end
 local function tick(character, root, generation)
@@ -329,8 +325,7 @@ function AutoParry.getTargetStatus()
 end
 local function rootPosition()
 	if state.root and state.root.Parent then return gameInfo.getRootPosition(state.root) end
-	local character = state.player and state.player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
-	return root and root.Parent and gameInfo.getRootPosition(root) or nil
+	local character = state.player and state.player.Character; local root = character and character:FindFirstChild("HumanoidRootPart"); return root and root.Parent and gameInfo.getRootPosition(root) or nil
 end
 function AutoParry.getTiming(value, time, root, factor, baseWindow)
 	if type(value) ~= "table" then return nil end
@@ -396,10 +391,7 @@ function AutoParry.getPressure()
 	local currentLevel, factorDrop
 	if latest and time >= latest.at and time - latest.at <= 1 and finite(latest.configured) and latest.configured > 0 then
 		local ratio = math.clamp(latest.factor / latest.configured, 0, 1); currentLevel = 1 - ratio
-		if count >= 3 then
-			local previous, older = state.clicks[#state.clicks - 1], state.clicks[#state.clicks - 2]
-			local earlier = (math.clamp(previous.factor / previous.configured, 0, 1) + math.clamp(older.factor / older.configured, 0, 1)) / 2; factorDrop = math.max(0, earlier - ratio)
-		end
+		if count >= 3 then local previous, older = state.clicks[#state.clicks - 1], state.clicks[#state.clicks - 2]; local earlier = (math.clamp(previous.factor / previous.configured, 0, 1) + math.clamp(older.factor / older.configured, 0, 1)) / 2; factorDrop = math.max(0, earlier - ratio) end
 	end
 	return {
 		samples = count,
