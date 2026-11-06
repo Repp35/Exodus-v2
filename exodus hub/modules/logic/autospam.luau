@@ -306,8 +306,8 @@ local function returnAllowance(s, partner, time)
 	if current ~= s or not s.bound then return 0, 0 end
 	local low, high = gameInfo.getBallSpeedLimits()
 	if current ~= s or not s.bound then return 0, 0 end
-	local fraction = finite(low) and finite(high) and high > low and math.clamp((s.speed - low) / (high - low), 0, 1) or 0
-	local base = T.returnSlow + (T.returnFast - T.returnSlow) * fraction; local bonus = 0
+	local fraction = finite(low) and finite(high) and high > low and math.clamp((s.speed - low) / (high - low), 0, 1) or 0; local base = T.returnSlow + (T.returnFast - T.returnSlow) * fraction
+	local bonus = 0
 	if type(autoParry.getPressure) == "function" then
 		local ok, pressure = pcall(autoParry.getPressure)
 		if
