@@ -65,7 +65,7 @@ local function phase(value, reason)
 	if state.phase == value and state.reason == reason then return end
 	local previous = state.phase
 	state.phase, state.reason = value, reason
-	if utils and type(utils.recordTransition) == "function" then utils.recordTransition("AutoParry", previous, value, reason) end
+	if previous ~= value and utils and type(utils.recordTransition) == "function" then utils.recordTransition("AutoParry", previous, value, reason) end
 end
 local function track(connection)
 	state.connections[#state.connections + 1] = connection; utils.trackCharacter(connection)

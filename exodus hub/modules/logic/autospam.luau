@@ -150,7 +150,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 end
 
 -- evaluation
-local function evaluate(s, time, fresh, serverTime)
+local function evaluate(s, time, fresh, serverTime, snapshot)
 	if current ~= s or not s.root.Parent then return end
 	if not utils.isActive() then stopBoth(s, "hub_inactive"); return end
 	if utils.getConfigValue("AutoSpam") ~= true then
@@ -158,7 +158,7 @@ local function evaluate(s, time, fresh, serverTime)
 		s.pending, s.recoveryPartner, s.departedAt, s.departedTo = nil, nil, nil, nil
 	end
 	if s.active and gameInfo.getBallFrozen() == true then stop(s, "frozen", false) end
-	local snapshot = gameInfo.getSnapshotAt(time)
+	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
 	local target = userId(snapshot.targetId)
@@ -243,7 +243,14 @@ function AutoSpam.bindCharacter(character)
 	track(s, players.PlayerAdded, watchPlayer)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
-		local time = now(); dash.tick(time); evaluate(s, time, false)
+		local autoEnabled = utils.getConfigValue("AutoSpam") == true
+		if not autoEnabled and not utils.isManualSpamActive() and not s.active then
+			s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
+			return
+		end
+		local time = now()
+		if autoEnabled then dash.tick(time, true) end
+		evaluate(s, time, false)
 	end)
 	track(s, character.AncestryChanged, function(_, parent)
 		if not parent and current == s then detach("character_removed") end
@@ -270,10 +277,15 @@ function AutoSpam.onBallSync(data)
 		s.target, s.recoveryPartner = nil, nil
 		return
 	end
+	if utils.getConfigValue("AutoSpam") ~= true and not utils.isManualSpamActive() and not s.active then
+		s.target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or s.target
+		s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
+		return
+	end
 	local time = now(); local snapshot = gameInfo.getSnapshotAt(time); local target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or gameInfo.getTargetId(); local serverTime = tonumber(data.ServerTime)
 	if not finite(serverTime) then serverTime = nil end
 	if snapshot and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
-	evaluate(s, time, true, serverTime)
+	evaluate(s, time, true, serverTime, snapshot)
 end
 
 -- api

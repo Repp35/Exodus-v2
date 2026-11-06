@@ -106,13 +106,13 @@ end
 function Dash.setHandler(callback)
 	handler = type(callback) == "function" and callback or nil; return true
 end
-function Dash.tick(time)
+function Dash.tick(time, excludeLocal)
 	if not players then return end
 	time = type(time) == "number" and time or now()
 	if time - lastTick < T.TICK_INTERVAL then return end
 	lastTick = time
 	for player, record in pairs(records) do
-		if player.Parent then observe(player, record, time) end
+		if player.Parent and (not excludeLocal or player ~= players.LocalPlayer) then observe(player, record, time) end
 	end
 end
 function Dash.resetState()

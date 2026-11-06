@@ -88,8 +88,8 @@ local function getReplicator()
 	end
 	return replicator
 end
-local function syncData()
-	local provider = getReplicator()
+local function syncData(provider)
+	if provider == nil then provider = getReplicator() end
 	if packet and os.clock() - packetAt > T.PACKET_AGE then packet = nil end
 	if packet then
 		local sequence = provider and provider.hasState == true and provider.lastSeq
@@ -304,7 +304,7 @@ function GameInfo.getTargetId() return targetId(syncData()) end
 local function snapshot(time)
 	local currentBall = getBall()
 	if not currentBall then return nil end
-	time = type(time) == "number" and time or utils.now(); local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData()
+	time = type(time) == "number" and time or utils.now(); local provider = getReplicator(); local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData(provider or false)
 	if sampledBall ~= currentBall or (sync and sync.Teleported == true) then
 		sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = currentBall, position, time, Vector3.zero, nil
 	elseif sampledPosition and sampledAt and time - sampledAt >= T.SAMPLE_INTERVAL then
@@ -318,7 +318,7 @@ local function snapshot(time)
 		sampledPosition, sampledAt = position, time
 	end
 	if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
-	local target, provider = targetId(sync), getReplicator()
+	local target = targetId(sync)
 	return {
 		schema = 2,
 		generatedAt = time,
@@ -382,8 +382,11 @@ function GameInfo.getBallSpeedLimits()
 	minimumSpeed, maximumSpeed = low, high; return minimumSpeed, maximumSpeed
 end
 function GameInfo.getDeflectWindow(speed)
-	local low, high = GameInfo.getBallSpeedLimits(); local sync = syncData()
-	if not finite(speed) and sync and finite(sync.Speed) then speed = sync.Speed end
+	local low, high = GameInfo.getBallSpeedLimits()
+	if not finite(speed) then
+		local sync = syncData()
+		if sync and finite(sync.Speed) then speed = sync.Speed end
+	end
 	if not finite(speed) or high <= low then return nil end
 	local window = T.WINDOW_BASE - T.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer; local inClash = false
 	if gameBall and player and type(gameBall.IsInClash) == "function" then inClash = gameBall:IsInClash(player) == true end
