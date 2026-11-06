@@ -11,6 +11,11 @@ UIConfig.panelToggles = {
 	},
 	{
 		kind = "toggle",
+		label = "Mini Parry UI",
+		key = "ParryBallVisible",
+	},
+	{
+		kind = "toggle",
 		label = "Auto Spam",
 		key = "AutoSpam",
 	},
@@ -35,6 +40,10 @@ UIConfig.__config = {
 	schema = {
 		AutoParry = "boolean",
 		AutoParryWindowFactor = "rate",
+		CameraSensitivity = "rate",
+		ParryBallVisible = "boolean",
+		ParryBallX = "position",
+		ParryBallY = "position",
 		AutoSpam = "boolean",
 		AutoDark = "boolean",
 		AutoJump = "boolean",
@@ -67,6 +76,8 @@ UIConfig.__config = {
 	defaults = {
 		AutoParry = true,
 		AutoParryWindowFactor = 0.5,
+		CameraSensitivity = 1,
+		ParryBallVisible = false,
 		AutoSpam = true,
 		AutoDark = false,
 		AutoJump = false,

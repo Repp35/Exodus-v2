@@ -23,7 +23,7 @@ local POLICIES = {
 	},
 	gameinfo = {
 		provide = allow(
-			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getLocalPing getDeflectRange getDeflectGeometry getBallFrozen getDeflectAbility getDashAbility getFierceDeflectAbility getDarkSealAbility getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
+			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getLocalPing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectGeometry getBallFrozen getDeflectAbility getDashAbility getFierceDeflectAbility getDarkSealAbility getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
 		),
 		consume = {
 			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace now recordError trackGlobal untrackGlobal"),
@@ -54,7 +54,7 @@ local POLICIES = {
 				"apiVersion getConfig getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
 			),
 			gameinfo = allow(
-				"getBallSpeedLimits getBallFrozen getDeflectGeometry getClashContext getDeflectAbility getDeflectWindow getManifestRemote getSnapshot getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
+				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getClashContext getDeflectAbility getDeflectWindow getManifestRemote getSnapshot getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
 			),
 			dash = allow("setHandler tick"),
 		},
@@ -73,13 +73,14 @@ local POLICIES = {
 		consume = {
 			utils = allow("getConfigValue getRunService getWorkspace trackGlobal untrackGlobal"),
 			remote = allow("fireDark"),
+			gameinfo = allow("areAbilitiesEnabled"),
 		},
 	},
 	movement = {
 		provide = allow("syncJump upDash setup teardown"),
 		consume = {
 			utils = allow("getConfigValue getLocalPlayer getRunService isActive trackGlobal untrackGlobal"),
-			gameinfo = allow("getDashAbility"),
+			gameinfo = allow("getDashAbility areAbilitiesEnabled"),
 			remote = allow("fireDash"),
 		},
 	},
@@ -108,6 +109,7 @@ local POLICIES = {
 				"apiVersion getConfig getConfigValue getLocalPlayer isActive isManualSpamActive name normalizeSpamRate observeConfig observeSpam recordError setConfig setManualSpamActive stop version author"
 			),
 			uiconfig = allow("panelToggles panelComponents"),
+			gameinfo = allow("areAbilitiesEnabled observeAbilityMode"),
 		},
 	},
 }

@@ -4,6 +4,7 @@
 local ExodusUI = {}
 local Utils
 local UIConfig
+local GameInfo
 local Controls: any = {}
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -29,6 +30,7 @@ local setSpam
 local screenGui
 local floatingButton
 local clashBall
+local parryBall
 local darkBall
 local jumpBall
 local upDashBall
@@ -190,7 +192,14 @@ local function btnPos()
 end
 local CLASH_SIZE = 64
 local OFFSCREEN_X = -CLASH_SIZE - 40
-local autoClashTrack, autoClashThumb, autoDarkSetVisual, autoJumpSetVisual
+local autoClashTrack, autoClashThumb, autoParrySetVisual, autoDarkSetVisual, autoJumpSetVisual
+local function paintParryBall(value)
+	if not parryBall or not parryBall.Parent then return end
+	parryBall.Text = value and "PARRY\nON" or "PARRY\nOFF"; parryBall.TextSize = 14; twPlay(parryBall, 0.28, { BackgroundColor3 = value and C.green or C.red }, EASE_SINE, DIR_INOUT)
+end
+local function showParryBall(value)
+	setConfigValue("ParryBallVisible", value); local config = Utils.getConfig(); local x = config.ParryBallX or 14; local y = config.ParryBallY or (viewport().Y / 2 - CLASH_SIZE - 40); twPlay(parryBall, value and 0.22 or 0.18, { Position = value and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
+end
 local function paintClashBall()
 	if not clashBall or not clashBall.Parent then return end
 	twPlay(clashBall, 0.28, { BackgroundColor3 = UIState.clashBallOn and C.green or C.red }, EASE_SINE, DIR_INOUT); clashBall.Text = UIState.clashBallOn and "ON" or "OFF"; clashBall.TextSize = UIState.clashBallOn and 18 or 16
@@ -284,7 +293,7 @@ local function cleanupUI()
 	end
 	local current = screenGui
 	if current then current:Destroy() end
-	screenGui = nil; floatingButton = nil; clashBall = nil; darkBall = nil; jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil; particleLayer = nil; titleBar = nil; closeButton = nil; colLeft = nil; colRight = nil; killBtn = nil; autoClashTrack = nil; autoClashThumb = nil; autoDarkSetVisual = nil; autoJumpSetVisual = nil
+	screenGui = nil; floatingButton = nil; clashBall = nil; parryBall = nil; darkBall = nil; jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil; particleLayer = nil; titleBar = nil; closeButton = nil; colLeft = nil; colRight = nil; killBtn = nil; autoClashTrack = nil; autoClashThumb = nil; autoParrySetVisual = nil; autoDarkSetVisual = nil; autoJumpSetVisual = nil
 	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil end
 end
 
@@ -410,6 +419,7 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
 	})
 	local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
 	if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
+	if configKey == "AutoParry" then autoParrySetVisual = setVisual end
 	if configKey == "AutoDark" then autoDarkSetVisual = setVisual end
 	if configKey == "AutoJump" then autoJumpSetVisual = setVisual end
 	trackConn(inst("TextButton", {
@@ -425,7 +435,7 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
 			if onAfter then onAfter(state) end
 		end
 	end))
-	return nextCardY(yPos, CARD_H)
+	return nextCardY(yPos, CARD_H), f
 end
 local function createActionToggleCard(labelText, yPos, parent, onToggle)
 	local f = cardFrame(yPos, CARD_H, parent); cardLabel(labelText, f); local _, _, setVisual = makeToggle(f, false)
@@ -471,6 +481,28 @@ local function createParryTimingCard(yPos, parent)
 		local value = tonumber(input.Text)
 		if not value or value ~= value or value == math.huge or value == -math.huge then value = (tonumber(Utils.getConfig().AutoParryWindowFactor) or 0.5) * 100 end
 		value = math.clamp(value, 0, 100); setConfigValue("AutoParryWindowFactor", value / 100); input.Text = tostring(value)
+	end))
+	return nextCardY(yPos, CARD_H)
+end
+local function createCameraSensitivityCard(yPos, parent)
+	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Sensibilidade da câmera", f)
+	local input = inst("TextBox", {
+		Size = UDim2.new(0, 62, 0, 30),
+		Position = UDim2.new(1, -74, 0.5, -15),
+		BackgroundColor3 = C.inputBg,
+		Text = tostring(Utils.getConfigValue("CameraSensitivity") or 1),
+		ClearTextOnFocus = false,
+		TextColor3 = C.text,
+		TextSize = 13,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 7,
+		Parent = f,
+	})
+	corner(input, 8); stroke(input, C.border, 1)
+	trackConn(input.FocusLost:Connect(function()
+		local value = tonumber(input.Text)
+		if not value or value ~= value or value == math.huge or value == -math.huge or value < 0 then value = Utils.getConfigValue("CameraSensitivity") or 1 end
+		setConfigValue("CameraSensitivity", value); input.Text = tostring(value)
 	end))
 	return nextCardY(yPos, CARD_H)
 end
@@ -624,10 +656,11 @@ function ExodusUI.setup(deps)
 		or type(deps.UIConfig) ~= "table"
 		or type(deps.UIConfig.panelToggles) ~= "table"
 		or type(deps.UIConfig.panelComponents) ~= "table"
+		or type(deps.GameInfo) ~= "table"
 	then
 		return false, "dependência ausente: Utils, Controls ou UIConfig"
 	end
-	Utils = deps.Utils; UIConfig = deps.UIConfig; Controls = type(deps.Controls) == "table" and deps.Controls or {}
+	Utils = deps.Utils; UIConfig = deps.UIConfig; GameInfo = deps.GameInfo; Controls = type(deps.Controls) == "table" and deps.Controls or {}
 	if type(_G.ExodusUICleanup) == "function" then
 		_G.ExodusUICleanup()
 	else
@@ -676,7 +709,28 @@ function ExodusUI.setup(deps)
 		ZIndex = 8,
 		Parent = screenGui,
 	})
-	corner(clashBall, 999); stroke(clashBall, Color3.new(0, 0, 0), 2); UIState.clashBallOn = config.AutoSpam or false; clashBall.Text = UIState.clashBallOn and "ON" or "OFF"; clashBall.TextSize = UIState.clashBallOn and 18 or 16; clashBall.BackgroundColor3 = UIState.clashBallOn and C.green or C.red
+	corner(clashBall, 999); stroke(clashBall, Color3.new(0, 0, 0), 2); UIState.clashBallOn = config.AutoSpam or false; clashBall.Text = UIState.clashBallOn and "ON" or "OFF"; clashBall.TextSize = UIState.clashBallOn and 18 or 16; clashBall.BackgroundColor3 = UIState.clashBallOn and C.green or C.red; local parryX = config.ParryBallX or 14
+	local parryY = config.ParryBallY or (viewport().Y / 2 - CLASH_SIZE - 40)
+	parryBall = inst("TextButton", {
+		Name = "ExodusParryBall",
+		Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
+		Position = UDim2.new(0, OFFSCREEN_X, 0, parryY),
+		BackgroundColor3 = config.AutoParry and C.green or C.red,
+		Text = config.AutoParry and "PARRY\nON" or "PARRY\nOFF",
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		Active = true,
+		ZIndex = 8,
+		Parent = screenGui,
+	})
+	corner(parryBall, 999); stroke(parryBall, Color3.new(0, 0, 0), 2)
+	local isParryDragging = makeDraggable(parryBall, parryBall, function()
+		setConfigValue("ParryBallX", parryBall.Position.X.Offset); setConfigValue("ParryBallY", parryBall.Position.Y.Offset)
+	end)
+	trackConn(parryBall.Activated:Connect(function()
+		if not isParryDragging() then setConfigValue("AutoParry", Utils.getConfigValue("AutoParry") ~= true) end
+	end))
 	UIState.btnIsDragging = makeDraggable(floatingButton, floatingButton, function()
 		setConfigValue("BtnX", floatingButton.Position.X.Offset); setConfigValue("BtnY", floatingButton.Position.Y.Offset)
 	end)
@@ -971,6 +1025,8 @@ function ExodusUI.setup(deps)
 	trackConn(killBtn.Activated:Connect(function() Utils.stop() end))
 	local yL = 4
 	local toggleCallbacks = {
+		AutoParry = paintParryBall,
+		ParryBallVisible = showParryBall,
 		AutoSpam = function(value)
 			setClashBall(value, true); paintClashBall()
 		end,
@@ -1030,16 +1086,21 @@ function ExodusUI.setup(deps)
 		ZIndex = 6,
 		Parent = pageGroups[4],
 	})
-	local darkYPos = createToggleCard("Auto Dark", "AutoDark", 4, autosLeft, function(value)
+	local darkYPos, darkCard = createToggleCard("Auto Dark", "AutoDark", 4, autosLeft, function(value)
 		paintDarkBall(value)
 		if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
 	end)
-	createToggleCard("Mini Dark UI", "DarkBallVisible", darkYPos, autosLeft, showDarkBall)
+	local _, miniDarkCard = createToggleCard("Mini Dark UI", "DarkBallVisible", darkYPos, autosLeft, showDarkBall)
 	local jumpYPos = createToggleCard("Auto Jump", "AutoJump", 4, autosRight, function(value)
 		paintJumpBall(value)
 		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
 	end)
-	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall); createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); createParryTimingCard(4, settingsLeft)
+	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall); local _, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft)
+	local function updateAbilityVisibility(enabled)
+		darkCard.Visible, miniDarkCard.Visible, upDashCard.Visible = enabled, enabled, enabled
+		darkBall.Visible, upDashBall.Visible = enabled, enabled
+	end
+	updateAbilityVisibility(GameInfo.areAbilitiesEnabled()); trackConn(GameInfo.observeAbilityMode(updateAbilityVisibility))
 
 	-- anti-afk
 	local antiConnection
@@ -1182,6 +1243,7 @@ function ExodusUI.setup(deps)
 	trackConn(previous.Activated:Connect(function() changePage(-1) end))
 	trackConn(nextPage.Activated:Connect(function() changePage(1) end))
 	if config.ClashBallVisible then clashBall.Position = UDim2.new(0, clashX, 0, clashY) end
+	if config.ParryBallVisible then parryBall.Position = UDim2.new(0, parryX, 0, parryY) end
 	if config.DarkBallVisible then darkBall.Position = UDim2.new(0, darkX, 0, darkY) end
 	if config.JumpBallVisible then jumpBall.Position = UDim2.new(0, jumpX, 0, jumpY) end
 	if config.UpDashBallVisible then upDashBall.Position = UDim2.new(0, upDashX, 0, upDashY) end
@@ -1194,12 +1256,17 @@ function ExodusUI.setup(deps)
 	if type(Utils.observeConfig) == "function" then
 		trackConn(Utils.observeConfig(function(changes)
 			if changes.AutoSpam ~= nil then UIState.clashBallOn = changes.AutoSpam == true; paintClashBall(); syncAutoSpamToggle() end
+			if changes.AutoParry ~= nil then
+				paintParryBall(changes.AutoParry == true)
+				if autoParrySetVisual then autoParrySetVisual(changes.AutoParry == true) end
+			end
 		end))
 	end
 	setSpam(Utils.isManualSpamActive()); return true
 end
 
 -- contract
-ExodusUI.__contract = { requires = {}, provides = { "setup" } }
+ExodusUI.__contract =
+	{ requires = { GameInfo = "gameinfo" }, requiresMethods = { GameInfo = { "areAbilitiesEnabled", "observeAbilityMode" } }, provides = { "setup" } }
 
 return ExodusUI

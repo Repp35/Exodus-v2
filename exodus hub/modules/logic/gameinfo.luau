@@ -190,6 +190,10 @@ function GameInfo.getBallPosition(value) return value.Position end
 function GameInfo.getBallVelocity(value) return value.AssemblyLinearVelocity end
 function GameInfo.getRootPosition(root) return root.Position end
 function GameInfo.getLocalPing() return players.LocalPlayer and players.LocalPlayer:GetNetworkPing() or nil end
+function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode") ~= 3 end
+function GameInfo.observeAbilityMode(callback)
+	return world:GetAttributeChangedSignal("CurGamemode"):Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
+end
 function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
 function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
 function GameInfo.getDashAbility() return getAbility(2, "Dash") end
@@ -466,6 +470,8 @@ GameInfo.__contract = {
 		"getBallVelocity",
 		"getRootPosition",
 		"getLocalPing",
+		"areAbilitiesEnabled",
+		"observeAbilityMode",
 		"getDeflectRange",
 		"getDeflectWindow",
 		"getDeflectGeometry",

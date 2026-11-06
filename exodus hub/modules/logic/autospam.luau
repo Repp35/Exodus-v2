@@ -36,6 +36,7 @@ local function userId(value)
 	return finite(value) and value > 0 and value % 1 == 0 and value or nil
 end
 local function now() return utils.now() end
+local function dashActive(s, time) return gameInfo.areAbilitiesEnabled() and time <= s.dashUntil end
 local function elapsed(localStart, serverStart, localNow, serverNow)
 	if finite(serverStart) and finite(serverNow) then
 		if serverNow < serverStart then return nil end
@@ -75,12 +76,12 @@ local function start(s, reason, partner, time, serverTime)
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
-	s.dashEntry = reason == "return_target" and time <= s.dashUntil; utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
+	s.dashEntry = reason == "return_target" and dashActive(s, time); utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function shouldActivate(s, snapshot, time)
 	if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
 	if gameInfo.getBallFrozen() == true or not s.pending then return false end
-	local pending = s.pending; local factor = time <= s.dashUntil and T.ACTIVATION.DASH_RADIUS_FACTOR or T.ACTIVATION.RADIUS_FACTOR; local g = geometry(s, snapshot, factor)
+	local pending = s.pending; local factor = dashActive(s, time) and T.ACTIVATION.DASH_RADIUS_FACTOR or T.ACTIVATION.RADIUS_FACTOR; local g = geometry(s, snapshot, factor)
 	if not g then return false end
 	if pending.recovery then local partnerDistance = distanceToPlayer(s, pending.partner); local normal = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); return normal ~= nil and partnerDistance ~= nil and partnerDistance <= normal.fullRadius end
 	return s.target == localPlayer.UserId and snapshot.targetId == localPlayer.UserId and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
@@ -105,7 +106,7 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if not g then return nil end
 	local outside = (snapshot.position - s.root.Position).Magnitude > g.fullRadius
 	if not outside then s.dashEntry = false end
-	if outside and not (s.dashEntry and time <= s.dashUntil) then return "outside_window" end
+	if outside and not (s.dashEntry and dashActive(s, time)) then return "outside_window" end
 	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime)
 	if fresh and awayElapsed and s.target == s.partner and awayElapsed > returnWindow(window, speed, T.DEACTIVATION.RETURN) then return "return_timeout" end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
@@ -143,7 +144,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		if not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
 		elseif not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt and window then
-			local limit = returnWindow(window, speed, T.ACTIVATION.RETURN) * (time <= s.dashUntil and T.ACTIVATION.DASH_RETURN_MULTIPLIER or 1); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
+			local limit = returnWindow(window, speed, T.ACTIVATION.RETURN) * (dashActive(s, time) and T.ACTIVATION.DASH_RETURN_MULTIPLIER or 1); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
 			if returnElapsed and returnElapsed <= limit then s.pending = { partner = previous } end
 		end
 	end
@@ -198,7 +199,7 @@ function AutoSpam.setup(deps)
 	if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
 	dash.setHandler(function(event)
 		local s = current
-		if not s or not event or event.userId == localPlayer.UserId or not event.position or not event.velocity then return end
+		if not s or not gameInfo.areAbilitiesEnabled() or not event or event.userId == localPlayer.UserId or not event.position or not event.velocity then return end
 		local offset = s.root.Position - event.position
 		if offset.X * event.velocity.X + offset.Z * event.velocity.Z > 0 then s.dashUntil = now() + T.ACTIVATION.DASH_BONUS_DURATION; s.dashData = event end
 	end)
@@ -249,7 +250,11 @@ function AutoSpam.bindCharacter(character)
 			return
 		end
 		local time = now()
-		if autoEnabled then dash.tick(time, true) end
+		if not gameInfo.areAbilitiesEnabled() then
+			s.dashUntil, s.dashData = 0, nil
+		elseif autoEnabled then
+			dash.tick(time, true)
+		end
 		evaluate(s, time, false)
 	end)
 	track(s, character.AncestryChanged, function(_, parent)
@@ -352,6 +357,7 @@ AutoSpam.__contract = {
 			"apiVersion",
 		},
 		GameInfo = {
+			"areAbilitiesEnabled",
 			"getSnapshotAt",
 			"isSnapshotValid",
 			"getDeflectWindow",
