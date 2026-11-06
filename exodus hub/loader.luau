@@ -29,6 +29,7 @@ local MODULE_MANIFEST = {
 	{ name = "autodark", path = "modules/logic/autodark.luau" },
 	{ name = "movement", path = "modules/logic/movement.luau" },
 	{ name = "remote", path = "modules/logic/remote.luau" },
+	{ name = "autofierce", path = "modules/logic/autofierce.luau" },
 	{ name = "autoparry", path = "modules/logic/autoparry.luau" },
 	{ name = "dash", path = "modules/logic/dash.luau" },
 	{ name = "autospam", path = "modules/logic/autospam.luau" },
@@ -120,7 +121,7 @@ local function clearRegistry()
 end
 local function stopPreviousRuntime()
 	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then Modules.gameinfo.stopMaintenance() end
-	for _, name in ipairs({ "character", "spam", "autospam", "autodark", "movement", "dash", "autoparry" }) do
+	for _, name in ipairs({ "character", "spam", "autospam", "autodark", "autofierce", "movement", "dash", "autoparry" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
 			if type(module.teardown) == "function" then module.teardown() elseif type(module.resetState) == "function" then module.resetState() end

@@ -28,7 +28,11 @@ function Remote.fireParry(_flag, guard)
 	return send(ability, "Deflect")
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), "SendEvent", eventId, cameraFrame) end
-function Remote.fireFierce() return send(gameInfo and gameInfo.getFierceDeflectAbility(), "ActivateAndBlock") end
+function Remote.fireFierce(guard)
+	local ability = gameInfo and gameInfo.getFierceDeflectAbility()
+	if type(guard) == "function" and not guard() then return false, "Fierce cancelado" end
+	return send(ability, "ActivateAndBlock")
+end
 function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), "Dash") end
 
 -- contract

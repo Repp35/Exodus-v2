@@ -76,6 +76,14 @@ local POLICIES = {
 			gameinfo = allow("areAbilitiesEnabled"),
 		},
 	},
+	autofierce = {
+		provide = allow("setup teardown"),
+		consume = {
+			utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
+			gameinfo = allow("areAbilitiesEnabled getDeflectServerEvents decodeDeflectServerEvent getDeflectWindow getTargetId"),
+			remote = allow("fireFierce"),
+		},
+	},
 	movement = {
 		provide = allow("syncJump upDash setup teardown"),
 		consume = {
