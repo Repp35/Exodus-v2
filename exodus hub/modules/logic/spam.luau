@@ -1,17 +1,23 @@
 -- [[ spam ]]
 
+-- dependencies
 local Spam = {}
-
 local utils, remote, spamObserver, configObserver
+
+-- state
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
-local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge, cpfFps = 0, cpfClicks = 0 }
+local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
+
+-- configuration
 local function readRate()
 	local config = utils.getConfig(); local mode = config.SpamRateMode == "CPF" and "CPF" or "CPS"; local rate = tonumber(config[mode]) or 0
 	if rate ~= rate or rate <= 0 or rate == math.huge then return mode, 0 end
 	if mode == "CPF" and rate * 60 == math.huge then return mode, 0 end
 	return mode, rate
 end
+
+-- lifecycle
 local function transition(active, reason)
 	local phase = active and "running" or "stopped"
 	if status.phase == phase then return end
@@ -21,6 +27,8 @@ end
 local function cancel(reason)
 	generation += 1; running, currentMode, currentRate = false, nil, nil; transition(false, reason)
 end
+
+-- remote dispatch
 local function request(boundUtils, boundRemote, token)
 	if inFlight then return end
 	inFlight = true; status.lastRequestAt = os.clock()
@@ -38,6 +46,8 @@ local function request(boundUtils, boundRemote, token)
 		if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
 	end
 end
+
+-- CPS / CPF execution
 local function sync()
 	if not utils or not remote then return end
 	local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
@@ -58,6 +68,8 @@ local function sync()
 		if token == generation then cancel("spam_disabled") end
 	end)
 end
+
+-- public API
 function Spam.setup(deps)
 	if
 		type(deps) ~= "table"
@@ -82,7 +94,6 @@ end
 function Spam.resetState()
 	cancel("reset")
 	status.lastError, status.lastErrorAt = nil, -math.huge
-	status.cpfFps, status.cpfClicks = 0, 0
 	local token = generation
 	task.defer(function()
 		if token == generation then sync() end
@@ -102,11 +113,13 @@ function Spam.getStatus()
 		phase = status.phase,
 		lastRequestAt = status.lastRequestAt,
 		lastError = status.lastError,
-		cpfFps = status.cpfFps,
-		cpfClicks = status.cpfClicks,
+		cpfFps = 0,
+		cpfClicks = 0,
 		cpfCompensation = false,
 	}
 end
+
+-- contract
 Spam.__contract = {
 	requires = { Remote = "remote", Utils = "utils" },
 	requiresMethods = {
