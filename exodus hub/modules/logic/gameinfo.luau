@@ -5,7 +5,7 @@ local GameInfo = {}
 local utils, players, world
 local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
-local lastSync, packet, packetAt = nil, nil, 0
+local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 
 -- tuning
@@ -177,7 +177,7 @@ function GameInfo.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
 	GameInfo.stopMaintenance(); disconnect(cooldownConnection); disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil; utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
 	if not players or not world then return false, "dependência ausente: Players ou Workspace" end
-	ball, searchAt, watching = nil, 0, false; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt = nil, nil, 0; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}
+	ball, searchAt, watching = nil, 0, false; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}
 	cooldown = { known = false, active = false, rawActive = false, lastEventAt = -math.huge }; signalAt, heldAt, missingAt, warningAt = 0, 0, nil, 0; GameInfo.getDeflectCooldownState(); return true
 end
 function GameInfo.getBall() return getBall() end
@@ -272,7 +272,7 @@ function GameInfo.applyPacket(value)
 		local delta = (sequence - previous) % 65536
 		if delta == 0 or delta >= 32768 then return false end
 	end
-	packet, packetAt = table.clone(value), os.clock(); return true
+	packet, packetAt = table.clone(value), os.clock(); syncReceivedAt = packetAt; return true
 end
 function GameInfo.decodeBallPacket(value)
 	local provider = getReplicator()
@@ -330,7 +330,7 @@ local function snapshot(time)
 		teleported = sync and sync.Teleported == true or false,
 		grace = sync and sync.Grace == true or false,
 		oldGrace = sync and sync.OldGrace == true or false,
-		syncAt = time,
+		syncAt = syncReceivedAt,
 		syncSequence = syncSequence(sync, provider),
 	}
 end
@@ -351,7 +351,7 @@ function GameInfo.applySync(value)
 	if type(value) == "table" and type(value.syncData) == "table" then value = value.syncData end
 	if type(value) ~= "table" then local provider = getReplicator(); value = provider and provider.syncData end
 	if type(value) ~= "table" then return nil end
-	lastSync = value; return value
+	lastSync, syncReceivedAt = value, os.clock(); return value
 end
 function GameInfo.installBallWatcher(track)
 	if type(track) ~= "function" then return false, "trackConnection invalido" end
@@ -391,6 +391,25 @@ function GameInfo.getDeflectWindow(speed)
 		if finite(scale) and scale > 0 then window *= scale end
 	end
 	return window
+end
+function GameInfo.getBallFrozen()
+	local data = child(world, "BallData")
+	if not data then return nil end
+	return data:GetAttribute("Frozen") == true
+end
+function GameInfo.getDeflectGeometry(speed, window, factor, scaleBase)
+	if not finite(speed) or speed < 0 then return nil end
+	local range = GameInfo.getDeflectRange()
+	if not finite(range) or range <= 0 then range = T.RANGE_BASE end
+	if not finite(window) then window = GameInfo.getDeflectWindow(speed) end
+	if not finite(window) or window <= 0 then return nil end
+	local latency = GameInfo.getLocalPing()
+	if not finite(latency) or latency < 0 then latency = 0 end
+	factor = finite(factor) and math.max(0, factor) or 1
+	local base = scaleBase and range * factor or range
+	return { fullRadius = base + speed * (window + latency) * factor, pureRadius = T.RANGE_BASE,
+		noWindowParryRadius = range, pingRadius = speed * latency * factor, deflectWindow = window,
+		effectiveWindow = (window + latency) * factor, leadTime = window + latency, windowFactor = factor }
 end
 function GameInfo.getManifestRemote() return generatedRemote(9.318024238496386e76) end
 function GameInfo.getClashContext()
@@ -433,6 +452,8 @@ GameInfo.__contract = {
 		"getLocalPing",
 		"getDeflectRange",
 		"getDeflectWindow",
+		"getDeflectGeometry",
+		"getBallFrozen",
 		"getDeflectAbility",
 		"getDeflectServerEvents",
 		"decodeDeflectServerEvent",

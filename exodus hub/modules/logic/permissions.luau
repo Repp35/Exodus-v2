@@ -21,7 +21,7 @@ local POLICIES = {
 	},
 	gameinfo = {
 		provide = allow(
-			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getLocalPing getDeflectRange getDeflectAbility getDashAbility getFierceDeflectAbility getDarkSealAbility getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
+			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getLocalPing getDeflectRange getDeflectGeometry getBallFrozen getDeflectAbility getDashAbility getFierceDeflectAbility getDarkSealAbility getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
 		),
 		consume = {
 			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace now recordError trackGlobal untrackGlobal"),
@@ -38,7 +38,7 @@ local POLICIES = {
 				"apiVersion getConfigValue getLocalPlayer getRunService isActive isSpamActive recordError recordTransition trackCharacter untrackCharacter"
 			),
 			gameinfo = allow(
-				"getBallPosition getBallSpeedLimits getBallVelocity getDeflectCooldownState getDeflectRange getDeflectWindow getLocalPing getRootPosition getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
+				"getBallPosition getBallSpeedLimits getBallVelocity getDeflectCooldownState getDeflectRange getDeflectGeometry getDeflectWindow getLocalPing getRootPosition getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
 			),
 			remote = allow("fireParry"),
 		},
@@ -49,12 +49,11 @@ local POLICIES = {
 		),
 		consume = {
 			utils = allow(
-				"apiVersion getConfig getConfigValue getLocalPlayer getPlayers getRunService isActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
+				"apiVersion getConfig getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
 			),
 			gameinfo = allow(
-				"getBallSpeedLimits getClashContext getDeflectAbility getDeflectWindow getLocalPing getManifestRemote getSnapshot getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
+				"getBallSpeedLimits getBallFrozen getDeflectGeometry getClashContext getDeflectAbility getDeflectWindow getLocalPing getManifestRemote getSnapshot getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
 			),
-			autoparry = allow("getPressure getRadius getStatus"),
 			dash = allow("setHandler tick"),
 		},
 	},

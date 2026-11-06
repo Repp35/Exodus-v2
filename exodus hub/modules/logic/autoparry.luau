@@ -128,17 +128,8 @@ local function radius(speed, factor, baseWindow)
 	end
 	factor = tonumber(factor)
 	if not finite(factor) then factor = configuredFactor() end
-	factor = math.clamp(factor, 0, 1); local ping = finite(state.ping) and math.max(state.ping, 0) or 0; local base = T.BASE_RADIUS + rangeBonus()
-	return {
-		fullRadius = base + speed * (window + ping) * factor,
-		pureRadius = T.BASE_RADIUS,
-		noWindowParryRadius = base,
-		pingRadius = speed * ping * factor,
-		deflectWindow = window,
-		effectiveWindow = (window + ping) * factor,
-		leadTime = window + ping,
-		windowFactor = factor,
-	}
+	factor = math.clamp(factor, 0, 1)
+	return gameInfo.getDeflectGeometry(speed, window, factor, false)
 end
 
 -- telemetry
@@ -480,6 +471,7 @@ AutoParry.__contract = {
 			"getBallVelocity",
 			"getRootPosition",
 			"getBallSpeedLimits",
+			"getDeflectGeometry",
 			"getDeflectWindow",
 		},
 		Utils = {
