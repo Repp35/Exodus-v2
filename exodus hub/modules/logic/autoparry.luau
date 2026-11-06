@@ -97,7 +97,7 @@ end
 -- geometry
 local function rangeBonus()
 	if not state.alive or not state.bound then return 0 end
-	local ok, range = pcall(gameInfo.getDeflectRange); return ok and finite(range) and math.clamp(range - T.BASE_RADIUS, 0, T.BONUS_CAP) or 0
+	local range = gameInfo.getDeflectRange(); return finite(range) and math.clamp(range - T.BASE_RADIUS, 0, T.BONUS_CAP) or 0
 end
 local function resilience()
 	local bonus = rangeBonus()
@@ -144,8 +144,8 @@ end
 -- telemetry
 local function samplePing(time)
 	if time >= state.pingAt and time - state.pingAt < T.PING_SAMPLE_INTERVAL then return end
-	state.pingAt = time; local ok, value = pcall(gameInfo.getLocalPing)
-	if ok and finite(value) and value >= 0 then state.ping = value end
+	state.pingAt = time; local value = gameInfo.getLocalPing()
+	if finite(value) and value >= 0 then state.ping = value end
 end
 local function appendRecent(list, item)
 	list[#list + 1] = item
@@ -206,11 +206,11 @@ local function request(reason)
 			and not boundUtils.isSpamActive()
 			and (reason == "manual_parry" or boundUtils.getConfigValue("AutoParry") ~= false)
 	end
-	local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
+	local sent, detail = boundRemote.fireParry(1, allowed)
 	if not sameCycle() then return false end
-	if not ok or sent ~= true then
+	if sent ~= true then
 		phase("waiting", "parry_attempt_failed"); local now = clock()
-		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(ok and (detail or "Deflect indisponível") or sent)) end
+		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível")) end
 		return false
 	end
 	local configured = configuredFactor()
@@ -262,13 +262,10 @@ function AutoParry.bindCharacter(character)
 	if not signal or not player then return false, "RunService ou jogador indisponível" end
 	state.root, state.character, state.player, state.alive, state.bound = root, character, player, true, true
 	resetTracking(); phase("waiting", "character_bound"); gameInfo.getDeflectCooldownState()
-	local ok, err = pcall(function()
-		track(signal:Connect(function() tick(character, root, generation) end))
-		track(character.AncestryChanged:Connect(function(_, parent)
-			if not parent and generation == state.generation then detach("character_removed") end
-		end))
-	end)
-	if not ok then detach("bind_failed"); return false, tostring(err) end
+	track(signal:Connect(function() tick(character, root, generation) end))
+	track(character.AncestryChanged:Connect(function(_, parent)
+		if not parent and generation == state.generation then detach("character_removed") end
+	end))
 	return true
 end
 function AutoParry.fire()
