@@ -1,6 +1,7 @@
 -- [[ uiconfig ]]
 
 local UIConfig = {}
+-- botões do painel
 UIConfig.panelToggles = {
 	{
 		kind = "toggle",
@@ -18,6 +19,7 @@ UIConfig.panelToggles = {
 		key = "ClashBallVisible",
 	},
 }
+-- componentes configuráveis
 UIConfig.panelComponents = {
 	{
 		kind = "rate_selector",
@@ -29,6 +31,7 @@ UIConfig.panelComponents = {
 		kind = "manual_spam",
 	},
 }
+-- esquema e valores padrão
 UIConfig.__config = {
 	schema = {
 		AutoParry = "boolean",

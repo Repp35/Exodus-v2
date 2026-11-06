@@ -55,6 +55,7 @@ if type(syncData) == "table" then
 else
 	warn("[CurrentValues] BallReplicator.syncData não está disponível")
 end
+-- consulta ao GameInfo
 local gameInfoModule = requirePath("TS", "GameInfo")
 local gameInfo = getNested(gameInfoModule, "GameInfo")
 local ball = gameInfo and gameInfo.BallModel

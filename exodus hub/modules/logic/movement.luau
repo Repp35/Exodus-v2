@@ -5,6 +5,7 @@ local Movement = {}
 local utils, gameInfo, remote
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0
+-- ciclo de vida do Auto Jump
 local function stopJump()
 	epoch += 1; local connection = jumpConnection; jumpConnection, jumpCharacter, jumpHumanoid = nil, nil, nil
 	if not connection then return end
@@ -33,6 +34,7 @@ function Movement.syncJump()
 	end)
 	utils.trackGlobal(jumpConnection); return true
 end
+-- execução do Up Dash
 function Movement.upDash()
 	if not utils or not gameInfo or not remote or not utils.isActive() then return false, "Hub inativo" end
 	local ability = gameInfo.getDashAbility()

@@ -18,6 +18,7 @@ local function send(ability, method, ...)
 	if result == false then return false, method .. " recusado" end
 	return true
 end
+-- envio do Parry
 function Remote.fireParry(_flag, guard)
 	if not gameInfo then return false, "Remote não inicializado" end
 	local ability = gameInfo.getDeflectAbility()
@@ -28,6 +29,7 @@ function Remote.fireParry(_flag, guard)
 	end
 	return send(ability, "Deflect")
 end
+-- envio das demais habilidades
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), "SendEvent", eventId, cameraFrame) end
 function Remote.fireFierce() return send(gameInfo and gameInfo.getFierceDeflectAbility(), "ActivateAndBlock") end
 function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), "Dash") end
