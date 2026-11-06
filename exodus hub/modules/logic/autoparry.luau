@@ -128,8 +128,7 @@ local function radius(speed, factor, baseWindow)
 	end
 	factor = tonumber(factor)
 	if not finite(factor) then factor = configuredFactor() end
-	factor = math.clamp(factor, 0, 1)
-	return gameInfo.getDeflectGeometry(speed, window, factor, false)
+	factor = math.clamp(factor, 0, 1); return gameInfo.getDeflectGeometry(speed, window, factor, false)
 end
 
 -- telemetry
@@ -200,8 +199,7 @@ local function request(reason)
 	local sent, detail = boundRemote.fireParry(1, allowed)
 	if not sameCycle() then return false end
 	if sent ~= true then
-		state.fired = false
-		phase("waiting", "parry_attempt_failed"); local now = clock()
+		state.fired = false; phase("waiting", "parry_attempt_failed"); local now = clock()
 		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível")) end
 		return false
 	end
