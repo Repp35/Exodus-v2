@@ -30,15 +30,14 @@ end
 local function request(boundUtils, boundRemote, token)
 	if inFlight then return end
 	inFlight = true; status.lastRequestAt = os.clock()
-	local ok, result, detail = pcall(
-		boundRemote.fireParry,
+	local result, detail = boundRemote.fireParry(
 		1,
 		function() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
 	)
 	inFlight = false
 	if token ~= generation or utils ~= boundUtils then return end
-	if ok and result == true then status.lastError = nil; return end
-	local message = tostring(ok and (detail or "Remote.fireParry indisponível") or result); status.lastError = message; local time = os.clock()
+	if result == true then status.lastError = nil; return end
+	local message = tostring(detail or "Remote.fireParry indisponível"); status.lastError = message; local time = os.clock()
 	if time - status.lastErrorAt >= 1 then
 		status.lastErrorAt = time
 		if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
