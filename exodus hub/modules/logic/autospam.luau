@@ -95,7 +95,9 @@ local function stop(s, reason, distant)
 	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
 end
 local function stopBoth(s, reason)
-	stop(s, reason, false); s.recoveryPartner, s.manualPartner, s.manualWasActive = nil, nil, false; utils.setManualSpamActive(false)
+	stop(s, reason, false)
+	s.recoveryPartner, s.manualPartner, s.manualWasActive = nil, nil, false
+	utils.setManualSpamActive(false)
 end
 local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if not utils.isActive() then return "hub_inactive" end
@@ -116,11 +118,7 @@ end
 -- target-tracking
 local function syncManualPartner(s)
 	local manual = utils.isManualSpamActive()
-	if manual and not s.manualWasActive then
-		s.manualPartner = s.active and s.partner or nil
-	elseif not manual then
-		s.manualPartner = nil
-	end
+	if manual and not s.manualWasActive then s.manualPartner = s.active and s.partner or nil elseif not manual then s.manualPartner = nil end
 	s.manualWasActive = manual
 end
 local function inspectTarget(s, target, time, snapshot, serverTime)
@@ -129,8 +127,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	local previous, me = s.target, localPlayer.UserId
 	if not s.active and s.pending then s.pending = nil end
 	if utils.isManualSpamActive() and not s.manualPartner then
-		if previous == me and target ~= me then s.manualPartner = target
-		elseif previous and previous ~= me and target == me then s.manualPartner = previous end
+		if previous == me and target ~= me then s.manualPartner = target elseif previous and previous ~= me and target == me then s.manualPartner = previous end
 	end
 	local g, speed, window
 	if snapshot then g, speed, window = geometry(s, snapshot, 1) end
@@ -172,10 +169,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 		s.pending, s.recoveryPartner, s.departedAt, s.departedTo = nil, nil, nil, nil
 	end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then
-		stopBoth(s, "frozen")
-		return
-	end
+	if gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
@@ -289,10 +283,7 @@ function AutoSpam.onBallSync(data)
 	local s = current
 	if not s or type(data) ~= "table" then return end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then
-		stopBoth(s, "frozen")
-		return
-	end
+	if gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
 	local sequence = data.Sequence or data.TeleportSequence
 	if finite(sequence) and finite(s.sequence) then
 		local delta = (sequence - s.sequence) % T.SHARED.SEQUENCE_MODULUS
@@ -311,8 +302,7 @@ function AutoSpam.onBallSync(data)
 	end
 	local time = now(); local target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or gameInfo.getTargetId(); local serverTime = tonumber(data.ServerTime)
 	if not finite(serverTime) then serverTime = nil end
-	local speed = tonumber(data.Speed)
-	local partner = s.active and s.partner or s.manualPartner
+	local speed = tonumber(data.Speed); local partner = s.active and s.partner or s.manualPartner
 	if
 		(s.active or utils.isManualSpamActive())
 		and partner
