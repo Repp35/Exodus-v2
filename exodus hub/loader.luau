@@ -21,6 +21,7 @@ local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local CACHE_BUSTER = tostring(os.time())
 local HttpService = game:GetService("HttpService")
 local MODULE_MANIFEST = {
+	{ name = "permissions", path = "modules/logic/permissions.luau" },
 	{ name = "config", path = "modules/front/config.luau" },
 	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
 	{ name = "utils", path = "modules/logic/utils.luau" },
@@ -40,7 +41,7 @@ local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
 for _, entry in ipairs(MODULE_MANIFEST) do
 	MODULE_BY_NAME[entry.name] = entry
-	if entry.name ~= "ui" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
+	if entry.name ~= "ui" and entry.name ~= "permissions" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
 end
 local ALLOW_LOCAL_FALLBACK = true
 
@@ -115,7 +116,7 @@ local function clearRegistry()
 	for _, name in ipairs(MODULE_ORDER) do
 		Modules[name] = nil
 	end
-	Modules.ui = nil; Modules.Loader = Loader; Exodus.Utils = nil; Exodus.State = nil; Exodus.Config = nil; Exodus.ModuleURLs = nil; Exodus.Runtime = nil; Exodus.Context = nil; Exodus.UI = nil; Exodus.Diagnostics = nil; Exodus.Version = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false; _G.ExodusOnBurst = nil
+	Modules.ui = nil; Modules.permissions = nil; Modules.Loader = Loader; Exodus.Utils = nil; Exodus.State = nil; Exodus.Config = nil; Exodus.ModuleURLs = nil; Exodus.Runtime = nil; Exodus.Context = nil; Exodus.UI = nil; Exodus.Diagnostics = nil; Exodus.Version = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false; _G.ExodusOnBurst = nil
 end
 local function stopPreviousRuntime()
 	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then Modules.gameinfo.stopMaintenance() end
@@ -213,21 +214,34 @@ local function loadModules(urls, localRoot)
 		end
 	end
 	for _, entry in ipairs(MODULE_MANIFEST) do
-		local name = entry.name; local result = results[name]
-		if not result or not result.chunk then error(("%s: %s"):format(name, tostring(result and result.error or "carregamento incompleto")), 2) end
-		local module = execute(name, result.chunk); loaded[name] = register(name, module)
+		local result = results[entry.name]
+		if not result or not result.chunk then error(("%s: %s"):format(entry.name, tostring(result and result.error or "carregamento incompleto")), 2) end
+	end
+	if type(setfenv) ~= "function" or type(getfenv) ~= "function" then error("Permissions: executor sem setfenv/getfenv", 2) end
+	local permissions = execute("permissions", results.permissions.chunk)
+	permissions.validate("permissions", permissions)
+	loaded.permissions = register("permissions", permissions)
+	for _, entry in ipairs(MODULE_MANIFEST) do
+		local name = entry.name
+		if name ~= "permissions" then
+			local chunk = results[name].chunk
+			setfenv(chunk, permissions.environment(name, getfenv(chunk)))
+			local module = execute(name, chunk)
+			permissions.validate(name, module)
+			loaded[name] = register(name, module)
+		end
 	end
 	return loaded
 end
 
 -- setup
-local function resolveDeps(loaded, requires)
+local function resolveDeps(loaded, consumer, requires)
 	local deps = {}
 	if type(requires) ~= "table" then return deps end
 	for depName, sourceKey in pairs(requires) do
 		local dependency = loaded[sourceKey]
 		if dependency == nil then error(("API interna ausente: dependência %s (%s)"):format(tostring(depName), tostring(sourceKey)), 2) end
-		deps[depName] = dependency
+		deps[depName] = loaded.permissions.wrap(consumer, sourceKey, dependency)
 	end
 	return deps
 end
@@ -244,8 +258,8 @@ local function collectCharacterBinds(loaded)
 			if hasBindFlag and hasBindFn and hasDetachFn then
 				binds[#binds + 1] = {
 					name = name,
-					bind = module.bindCharacter,
-					detach = module.detachCharacter,
+					bind = loaded.permissions.wrap("character", name, module).bindCharacter,
+					detach = loaded.permissions.wrap("character", name, module).detachCharacter,
 				}
 			elseif hasBindFlag then
 				return nil, name, "contrato bindCharacter incompleto"
@@ -261,7 +275,7 @@ local function initializeModules(loaded)
 		if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
 			local module = loaded[name]
 			if type(module) ~= "table" or type(module.setup) ~= "function" then error("API interna ausente: " .. name .. ".setup", 2) end
-			local contract = contractOf(module); local deps, missingDependency = resolveDeps(loaded, contract.requires)
+			local contract = contractOf(module); local deps, missingDependency = resolveDeps(loaded, name, contract.requires)
 			if not deps then error(("%s: dependência não carregada: %s"):format(name, tostring(missingDependency)), 2) end
 			if contract.requiresMethods ~= nil then
 				if type(contract.requiresMethods) ~= "table" then error(name .. ": requiresMethods inválido", 2) end
@@ -463,7 +477,7 @@ local function startInternal()
 	utils.setLifecyclePhase("binding"); local runtime, runtimeError = bindRuntime(loaded, utils)
 	if type(runtime) ~= "table" then utils.stop(); return false, "Runtime", runtimeError end
 	Exodus.Runtime = runtime; _G.ExodusOnBurst = loaded.autoparry.fire
-	local uiReady, uiModule, uiError = loadInterface(loaded.ui, utils, {
+	local uiReady, uiModule, uiError = loadInterface(loaded.ui, loaded.permissions.wrap("ui", "utils", utils), {
 		onAutoDarkChanged = function() loaded.autodark.sync() end,
 		onAutoJumpChanged = function() loaded.movement.syncJump() end,
 		onUpDash = function()
@@ -473,7 +487,7 @@ local function startInternal()
 		onPanic = function()
 			loaded.autoparry.resetState(); utils.setAutoSpamActive(false)
 		end,
-	}, loaded.uiconfig)
+	}, loaded.permissions.wrap("ui", "uiconfig", loaded.uiconfig))
 	if not uiReady then utils.stop(); return false, uiModule, uiError end
 	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
 end
