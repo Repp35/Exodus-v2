@@ -19,6 +19,7 @@ local T = {
 	},
 	DEACTIVATION = {
 		RETURN = 0.1,
+		RETURN_MARGIN = 0.01,
 		SWITCH_WINDOW_MARGIN = 0.04,
 	},
 	SHARED = {
@@ -64,12 +65,12 @@ local function returnWindow(window, speed, base)
 end
 local function returnLimit(s, speed, window)
 	local limit = returnWindow(window, speed, T.DEACTIVATION.RETURN); local distance = distanceToPlayer(s, s.partner)
-	if not distance then return limit, false end
+	if not distance then return limit + T.DEACTIVATION.RETURN_MARGIN, false end
 	local ownRange = tonumber(gameInfo.getDeflectRange())
 	if not finite(ownRange) or ownRange <= 0 then ownRange = 8.5 end
 	local ping = gameInfo.getLocalPing()
 	if not finite(ping) or ping < 0 then ping = 0 end
-	local close = distance <= ownRange + 8.5 + speed * ping; local travel = math.max(0, distance - ownRange - 8.5) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping), close
+	local close = distance <= ownRange + 8.5 + speed * ping; local travel = math.max(0, distance - ownRange - 8.5) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping) + T.DEACTIVATION.RETURN_MARGIN, close
 end
 
 -- activation
