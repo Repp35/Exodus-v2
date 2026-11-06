@@ -69,7 +69,7 @@ local function returnLimit(s, speed, window)
 	if not finite(ownRange) or ownRange <= 0 then ownRange = 8.5 end
 	local ping = gameInfo.getLocalPing()
 	if not finite(ping) or ping < 0 then ping = 0 end
-	local close = distance <= ownRange + speed * ping; local travel = math.max(0, distance - ownRange - 8.5) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping), close
+	local close = distance <= ownRange + 8.5 + speed * ping; local travel = math.max(0, distance - ownRange - 8.5) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping), close
 end
 
 -- activation

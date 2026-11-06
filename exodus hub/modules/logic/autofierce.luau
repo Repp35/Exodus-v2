@@ -2,7 +2,7 @@
 
 -- dependencies
 local AutoFierce = {}
-local utils, gameInfo, remote
+local utils, gameInfo, remote, autoParry
 
 -- tuning
 local T = {
@@ -52,15 +52,24 @@ local function update()
 	local attempt = pending
 	if not attempt then return end
 	if now >= attempt.cooldownEnd then pending = nil; return end
-	if now < attempt.deadline or not targeted() then return end
+	if now < attempt.deadline or not targeted() or not gameInfo.isBallWithinDeflectRadius(1) then return end
 	pending = nil
-	remote.fireFierce(function() return enabled() and targeted() and os.clock() < attempt.cooldownEnd end)
+	local token
+	local ok, sent = pcall(function()
+		return remote.fireFierce(function()
+			if not enabled() or not targeted() or os.clock() >= attempt.cooldownEnd or not gameInfo.isBallWithinDeflectRadius(1) then return false end
+			token = autoParry.beginFierce()
+			return true
+		end)
+	end)
+	if not ok or sent ~= true then autoParry.cancelFierce(token) end
+	if not ok then error(sent, 0) end
 end
 
 -- lifecycle
 function AutoFierce.setup(deps)
-	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" then return false, "dependências ausentes: Utils, GameInfo ou Remote" end
-	AutoFierce.teardown(); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote; pending, nextSignalAt = nil, 0; local runService = utils.getRunService()
+	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" or type(deps.AutoParry) ~= "table" then return false, "dependências ausentes: Utils, GameInfo ou Remote" end
+	AutoFierce.teardown(); utils, gameInfo, remote, autoParry = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry; pending, nextSignalAt = nil, 0; local runService = utils.getRunService()
 	if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
 	track(utils.observeConfig(function()
 		if not enabled() then pending = nil end
@@ -72,15 +81,16 @@ function AutoFierce.teardown()
 		if utils then utils.untrackGlobal(connection) end
 		connection:Disconnect()
 	end
-	connections = {}; cooldownConnection, parriedConnection, pending, nextSignalAt = nil, nil, nil, nil; utils, gameInfo, remote = nil, nil, nil
+	connections = {}; cooldownConnection, parriedConnection, pending, nextSignalAt = nil, nil, nil, nil; utils, gameInfo, remote, autoParry = nil, nil, nil, nil
 end
 
 -- contract
 AutoFierce.__contract = {
-	requires = { Utils = "utils", GameInfo = "gameinfo", Remote = "remote" },
+	requires = { Utils = "utils", GameInfo = "gameinfo", Remote = "remote", AutoParry = "autoparry" },
 	requiresMethods = {
 		Utils = { "getConfigValue", "getLocalPlayer", "getRunService", "isActive", "observeConfig", "trackGlobal", "untrackGlobal" },
-		GameInfo = { "areAbilitiesEnabled", "getDeflectServerEvents", "decodeDeflectServerEvent", "getDeflectWindow", "getTargetId" },
+		GameInfo = { "areAbilitiesEnabled", "getDeflectServerEvents", "decodeDeflectServerEvent", "getDeflectWindow", "getTargetId", "isBallWithinDeflectRadius" },
+		AutoParry = { "beginFierce", "cancelFierce" },
 		Remote = { "fireFierce" },
 	},
 

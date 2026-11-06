@@ -254,6 +254,19 @@ function AutoParry.bindCharacter(character)
 	end))
 	return true
 end
+function AutoParry.beginFierce()
+	if not state.alive or not state.bound then return nil end
+	local target = gameInfo.getTargetId()
+	if finite(target) then observeTarget(target, clock()) end
+	local token = { generation = state.generation, cycle = state.cycle, previouslyFired = state.fired }
+	state.fired = true
+	return token
+end
+function AutoParry.cancelFierce(token)
+	if token and state.generation == token.generation and state.cycle == token.cycle and not token.previouslyFired then
+		state.fired = false
+	end
+end
 function AutoParry.fire()
 	if not state.alive or not state.bound or state.fired or state.teleported then return false end
 	if not state.player or state.target ~= state.player.UserId then return false end
@@ -492,6 +505,8 @@ AutoParry.__contract = {
 		"teardown",
 		"onBallSync",
 		"fire",
+		"beginFierce",
+		"cancelFierce",
 		"resetState",
 		"getRadius",
 		"getTiming",

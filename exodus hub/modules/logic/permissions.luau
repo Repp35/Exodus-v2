@@ -23,7 +23,7 @@ local POLICIES = {
 	},
 	gameinfo = {
 		provide = allow(
-			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getLocalPing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectGeometry getBallFrozen getDeflectAbility getDashAbility getFierceDeflectAbility getDarkSealAbility getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
+			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getLocalPing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectGeometry isBallWithinDeflectRadius getBallFrozen getDeflectAbility getDashAbility getFierceDeflectAbility getDarkSealAbility getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
 		),
 		consume = {
 			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace now recordError trackGlobal untrackGlobal"),
@@ -34,7 +34,7 @@ local POLICIES = {
 		consume = { utils = allow(""), gameinfo = allow("getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
 	},
 	autoparry = {
-		provide = allow("setup bindCharacter fire resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"),
+		provide = allow("setup bindCharacter fire beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"),
 		consume = {
 			utils = allow(
 				"apiVersion getConfigValue getLocalPlayer getRunService isActive isSpamActive recordError recordTransition trackCharacter untrackCharacter"
@@ -80,7 +80,8 @@ local POLICIES = {
 		provide = allow("setup teardown"),
 		consume = {
 			utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
-			gameinfo = allow("areAbilitiesEnabled getDeflectServerEvents decodeDeflectServerEvent getDeflectWindow getTargetId"),
+			gameinfo = allow("areAbilitiesEnabled getDeflectServerEvents decodeDeflectServerEvent getDeflectWindow getTargetId isBallWithinDeflectRadius"),
+			autoparry = allow("beginFierce cancelFierce"),
 			remote = allow("fireFierce"),
 		},
 	},

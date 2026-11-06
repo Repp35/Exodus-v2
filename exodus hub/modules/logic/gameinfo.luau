@@ -436,6 +436,19 @@ function GameInfo.getDeflectGeometry(speed, window, factor, scaleBase)
 		windowFactor = factor,
 	}
 end
+function GameInfo.isBallWithinDeflectRadius(factor)
+	local snapshot = GameInfo.getSnapshotAt()
+	if not GameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return false end
+	local player = players.LocalPlayer
+	local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	if not root or not root.Parent then return false end
+	local speed = tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
+	if not finite(speed) or speed <= 0 then return false end
+	local geometry = GameInfo.getDeflectGeometry(speed, nil, factor, true)
+	return geometry ~= nil and (snapshot.position - root.Position).Magnitude <= geometry.fullRadius
+end
+
 function GameInfo.getManifestRemote() return generatedRemote(9.318024238496386e76) end
 function GameInfo.getClashContext()
 	local player = players.LocalPlayer
@@ -481,6 +494,7 @@ GameInfo.__contract = {
 		"getPlayerDistance",
 		"getDeflectWindow",
 		"getDeflectGeometry",
+		"isBallWithinDeflectRadius",
 		"getBallFrozen",
 		"getDeflectAbility",
 		"getDeflectServerEvents",
