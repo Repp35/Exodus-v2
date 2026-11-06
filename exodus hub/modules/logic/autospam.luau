@@ -65,9 +65,7 @@ local function geometry(s, snapshot, factor)
 	if not g then return nil end
 	return g, speed, window
 end
-local function returnWindow(window, speed, base)
-	return math.min(base, window)
-end
+local function returnWindow(window, speed, base) return math.min(base, window) end
 
 -- activation
 local function start(s, reason, partner, time, serverTime)
