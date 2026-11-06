@@ -2,11 +2,11 @@
 
 local Dash = {}
 
--- dependencies and state
 local utils, players, onDetected
 local playerConnections, records, order = {}, {}, {}
 local lastScan, generation = 0, 0
 local MIN_SPEED, MIN_INCREASE, DETECT_WINDOW = 80, 15, 0.25
+
 -- helpers
 local function now()
 	if utils and type(utils.now) == "function" then
@@ -30,6 +30,7 @@ local function dashAnimation(track)
 	local animation = track.Animation; return string.find(string.lower(animation.Name or ""), "dash", 1, true) ~= nil
 		or string.find(string.lower(animation.AnimationId or ""), "dash", 1, true) ~= nil
 end
+
 -- detection
 local function register(player, record, position, velocity, time)
 	if not player.Parent or records[player] ~= record then return end
@@ -46,7 +47,6 @@ local function resetCharacter(record, character)
 	record.character, record.animator, record.animationConnection = character, nil, nil
 	record.speed, record.position, record.positionAt, record.lastDetection = nil, nil, nil, nil
 end
--- character tracking
 local function observeCharacter(player, record, time)
 	local character = player.Character
 	if record.character ~= character then resetCharacter(record, character) end
@@ -80,7 +80,6 @@ local function observeCharacter(player, record, time)
 	if speed >= MIN_SPEED and (previous == nil or previous < MIN_SPEED or speed - previous >= MIN_INCREASE) then register(player, record, position, velocity, time) end
 	record.speed, record.position, record.positionAt = speed, position, time
 end
--- player tracking
 local function addPlayer(player)
 	if records[player] then return end
 	local record = { character = nil }; records[player] = record; table.insert(order, player)
@@ -96,6 +95,7 @@ local function removePlayer(player)
 	local index = table.find(order, player)
 	if index then table.remove(order, index) end
 end
+
 -- setup
 function Dash.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.Utils.getPlayers) ~= "function" then return false, "dependência ausente: Utils" end
@@ -113,7 +113,6 @@ function Dash.setup(deps)
 	end
 	return true
 end
--- public API
 function Dash.setHandler(handler)
 	onDetected = type(handler) == "function" and handler or nil; return true
 end
@@ -142,6 +141,7 @@ end
 function Dash.getStatus()
 	return { schema = utils and utils.apiVersion and utils.apiVersion() or 1, players = players ~= nil, detecting = players ~= nil, playerCount = #order }
 end
+
 -- contract
 Dash.__contract = {
 	requires = { Utils = "utils" },

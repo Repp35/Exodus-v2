@@ -1,11 +1,11 @@
 -- [[ character ]]
 
--- dependencies and state
 local Character = {}
 local utils, spam, binds = nil, nil, {}
 
 local added, removing, currentLife
 local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
+
 -- lifecycle
 local function setPhase(nextPhase, reason)
 	if phase == nextPhase then return end
@@ -27,7 +27,6 @@ local function clearLife()
 	if spam then spam.resetState() end
 end
 local function valid(life) return currentLife == life and utils ~= nil and utils.isActive() and life.character.Parent ~= nil end
--- character binding
 local function startWorker()
 	if workerRunning then return end
 	workerRunning = true
@@ -62,7 +61,6 @@ local function startWorker()
 		if currentLife and not currentLife.attempted then startWorker() end
 	end)
 end
--- character events
 local function setupCharacter(character)
 	if not character or not utils then return end
 	generation += 1; clearLife(); local life = { character = character, bound = {}, attempted = false, humanoids = {} }; currentLife = life
@@ -85,7 +83,6 @@ local function setupCharacter(character)
 	end))
 	startWorker()
 end
--- public API
 function Character.getStatus() return { schema = utils and utils.apiVersion() or nil, phase = phase, generation = generation } end
 function Character.setup(deps)
 	if
@@ -126,6 +123,7 @@ function Character.teardown()
 	end
 	setPhase("stopped", "character_controller_stopped"); added, removing, utils, spam, binds = nil, nil, nil, nil, {}
 end
+
 -- contract
 Character.__contract = {
 	requires = { Spam = "spam", Utils = "utils" },

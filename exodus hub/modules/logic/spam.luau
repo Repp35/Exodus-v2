@@ -27,7 +27,6 @@ end
 local function cancel(reason)
 	generation += 1; running, currentMode, currentRate = false, nil, nil; transition(false, reason)
 end
--- remote dispatch
 local function request(boundUtils, boundRemote, token)
 	if inFlight then return end
 	inFlight = true; status.lastRequestAt = os.clock()
@@ -45,7 +44,6 @@ local function request(boundUtils, boundRemote, token)
 		if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
 	end
 end
--- CPS and CPF scheduler
 local function sync()
 	if not utils or not remote then return end
 	local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
@@ -66,7 +64,6 @@ local function sync()
 		if token == generation then cancel("spam_disabled") end
 	end)
 end
--- public API
 function Spam.setup(deps)
 	if
 		type(deps) ~= "table"

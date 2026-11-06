@@ -28,7 +28,6 @@ function AutoDark.sync()
 	end)
 	utils.trackGlobal(connection); return true
 end
--- public API
 function AutoDark.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.Remote) ~= "table" then return false, "dependências ausentes: Utils ou Remote" end
 	AutoDark.teardown(); utils, remote = deps.Utils, deps.Remote; return AutoDark.sync()

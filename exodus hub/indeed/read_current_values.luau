@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local output = {}
+
 -- helpers
 local function safe(label, fn)
 	local ok, value = pcall(fn)
@@ -25,6 +26,7 @@ local function getNested(module, key)
 	if type(module[key]) == "table" then return module[key] end
 	return module
 end
+
 -- inspection
 print("[CurrentValues] ===== leitura da sessão atual =====")
 safe("PlaceId", function() return game.PlaceId end)

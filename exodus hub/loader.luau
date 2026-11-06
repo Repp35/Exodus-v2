@@ -626,6 +626,7 @@ local function startInternal()
 	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
 	Exodus.Started = true; Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
 end
+
 -- rollback
 local function rollbackLoaded(loaded)
 	if type(loaded) ~= "table" then return end

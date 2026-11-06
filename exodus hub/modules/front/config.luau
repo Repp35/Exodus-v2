@@ -34,6 +34,7 @@ local function copy(source)
 	end
 	return result
 end
+
 -- registration
 function Config.register(name, definition)
 	if type(name) ~= "string" or type(definition) ~= "table" or Registry[name] then return false end
@@ -50,6 +51,7 @@ function Config.register(name, definition)
 	end
 	Registry[name] = { schema = copy(schema), defaults = copy(defaults) }; return true
 end
+
 -- defaults
 function Config.defaults()
 	local result = {}
@@ -60,7 +62,6 @@ function Config.defaults()
 	end
 	return result
 end
--- patch validation
 function Config.validatePatch(patch)
 	if type(patch) ~= "table" then return false, "configuração não é uma tabela" end
 	for key, value in pairs(patch) do
@@ -89,6 +90,7 @@ function Config.getRegistry()
 	end
 	return result
 end
+
 -- contract
 Config.__contract = {
 	provides = { "register", "defaults", "validate", "normalizePatch" },
