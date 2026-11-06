@@ -18,10 +18,6 @@ local POLICIES = {
 			"observeSpam observeConfig ensureDataFolder start stop isActive getStateSnapshot getConfig getConfigValue getConfigSnapshot getModuleURLsSnapshot getLifecycle getDiagnostics setDiagnosticsModules setLifecyclePhase recordTransition recordError isManualSpamActive isAutoSpamActive isSpamActive setManualSpamActive setAutoSpamActive stopAllSpam isFiniteNumber isNonNegativeFiniteNumber normalizeSpamRate setConfig loadConfig setConfigModule setModuleURLs trackGlobal untrackGlobal trackCharacter untrackCharacter disconnectCharacterConnections getPlayers getReplicatedStorage getRunService getWorkspace getLocalPlayer now name version apiVersion author"
 		),
 		consume = {},
-
-
-
-
 	},
 	gameinfo = {
 		provide = allow(
@@ -30,7 +26,6 @@ local POLICIES = {
 		consume = {
 			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace now recordError trackGlobal untrackGlobal"),
 		},
-
 	},
 	remote = {
 		provide = allow("setup fireParry fireDark fireFierce fireDash"),
@@ -62,7 +57,6 @@ local POLICIES = {
 			autoparry = allow("getPressure getRadius getStatus"),
 			dash = allow("setHandler tick"),
 		},
-
 	},
 	spam = {
 		provide = allow("setup resetState teardown getStatus"),
@@ -87,8 +81,6 @@ local POLICIES = {
 			gameinfo = allow("getDashAbility"),
 			remote = allow("fireDash"),
 		},
-
-
 	},
 	dash = {
 		provide = allow("setup setHandler tick resetState teardown getStatus"),
@@ -96,7 +88,6 @@ local POLICIES = {
 			utils = allow("apiVersion getPlayers now"),
 			gameinfo = allow("getDashAbility"),
 		},
-
 	},
 	character = {
 		provide = allow("setup teardown getStatus"),
@@ -117,14 +108,8 @@ local POLICIES = {
 			),
 			uiconfig = allow("panelToggles panelComponents"),
 		},
-
-
-
-
-
 	},
 }
-
 
 -- validation
 local function policy(name)
