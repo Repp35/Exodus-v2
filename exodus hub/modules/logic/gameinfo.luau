@@ -167,14 +167,6 @@ function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
 function GameInfo.getDashAbility() return getAbility(2, "Dash") end
 function GameInfo.getFierceDeflectAbility() return getAbility(19, "ActivateAndBlock") end
 function GameInfo.getDarkSealAbility() return getAbility(20, "SendEvent") end
-function GameInfo.getDeflectUICooldown()
-	local ability = GameInfo.getDeflectAbility()
-	if not ability or type(ability.Interface) ~= "table" or not finite(ability.LastCooldown) or ability.LastCooldown <= 0 then return nil end
-	local bar = ability.Interface.UIAbilityCooldown
-	if not bar then return nil end
-	local ok, scale = pcall(function() return bar.Size.Y.Scale end)
-	return ok and finite(scale) and math.clamp(scale, 0, 1) * ability.LastCooldown or nil
-end
 local function generatedRemote(id)
 	local remotes = child(ts(), "GeneratedNetworkRemotes"); local remote = child(remotes, "RE_" .. tostring(id)); return remote and remote:IsA("RemoteEvent") and remote or nil
 end
@@ -297,7 +289,7 @@ local function snapshot(time)
 		sampledPosition, sampledAt = position, time
 	end
 	if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
-	local target, provider = targetId(sync), getReplicator()
+	local target = targetId(sync)
 	return {
 		schema = 2,
 		generatedAt = time,
@@ -315,7 +307,7 @@ local function snapshot(time)
 		grace = sync and sync.Grace == true or false,
 		oldGrace = sync and sync.OldGrace == true or false,
 		syncAt = time,
-		syncSequence = packet and sync == packet and packet.Sequence or (provider and provider.hasState == true and provider.lastSeq or nil),
+		syncSequence = GameInfo.getSyncSequence(),
 	}
 end
 function GameInfo.getSnapshot(_, time) return snapshot(time) end
@@ -378,7 +370,6 @@ function GameInfo.getDeflectWindow(speed)
 	end
 	return window
 end
-function GameInfo.getHaunterRemote() return generatedRemote(9.150098456648103e76) end
 function GameInfo.getManifestRemote() return generatedRemote(9.318024238496386e76) end
 function GameInfo.getClashContext()
 	local player = players.LocalPlayer
@@ -394,14 +385,11 @@ function GameInfo.getClashContext()
 	if not ownRoot or not partnerRoot or (ownRoot.Position - partnerRoot.Position).Magnitude > 35 then return nil end
 	return { partnerId = partnerId, lastParryAt = lastAt, age = age }
 end
-function GameInfo.getDeflectCD()
-	local ability = GameInfo.getDeflectAbility(); return ability and finite(ability.Cooldown) and ability.Cooldown or nil
-end
 function GameInfo.getStatus()
-	local value = snapshot(utils.now())
+	local now = utils.now(); local value = snapshot(now)
 	return {
 		schema = utils.apiVersion(),
-		generatedAt = utils.now(),
+		generatedAt = now,
 		available = value ~= nil,
 		targetId = value and value.targetId or -1,
 		targeted = value and value.targeted or false,
@@ -429,7 +417,6 @@ GameInfo.__contract = {
 		"getFierceDeflectAbility",
 		"getDarkSealAbility",
 		"getBallSpeedLimits",
-		"getDeflectCD",
 		"getSnapshot",
 		"getSnapshotAt",
 		"isSnapshotValid",
