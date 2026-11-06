@@ -1,6 +1,9 @@
 -- [[ character ]]
 
 local Character = {}
+
+-- tuning
+local T = { BIND_TIMEOUT = 10 }
 local utils, spam, binds = nil, nil, {}
 
 local added, removing, currentLife
@@ -33,7 +36,7 @@ local function startWorker()
 	task.spawn(function()
 		while currentLife and not currentLife.attempted do
 			local life = currentLife; life.attempted = true; setPhase("binding", "character_bind_start"); local root = life.character:FindFirstChild("HumanoidRootPart")
-			local deadline = os.clock() + 10
+			local deadline = os.clock() + T.BIND_TIMEOUT
 			while valid(life) and not root and os.clock() < deadline do
 				task.wait(); root = life.character:FindFirstChild("HumanoidRootPart")
 			end
