@@ -9,7 +9,7 @@ local nextGeneration = 0
 local targetResetToken, returnToken = 0, 0
 
 -- tuning
-local LIMIT = {
+local T = {
 	snapshotGrace = 0.20,
 	pullRecovery = 2.0,
 	returnSlow = 0.15,
@@ -135,7 +135,7 @@ local function setPhase(s, value, reason)
 	if utils and previous ~= value then utils.recordTransition("AutoSpam", previous, value, reason) end
 end
 local function ping(s, time)
-	if time < s.pingAt or time - s.pingAt >= LIMIT.frame then
+	if time < s.pingAt or time - s.pingAt >= T.frame then
 		s.pingAt = time; local ok, value = pcall(gameInfo.getLocalPing)
 		if current ~= s or not s.bound then return s.ping end
 		if ok and finite(value) and value >= 0 then
@@ -278,7 +278,7 @@ local function geometry(s, snapshot, time)
 	if not own or not vector(position) or not vector(velocity) then return nil end
 	local speed = finite(snapshot.speed) and math.max(0, snapshot.speed) or velocity.Magnitude
 	if not finite(speed) then return nil end
-	if s.radiusAt <= 0 or time < s.radiusAt or time - s.radiusAt >= LIMIT.frame or math.abs(speed - s.radiusSpeed) >= 2 then
+	if s.radiusAt <= 0 or time < s.radiusAt or time - s.radiusAt >= T.frame or math.abs(speed - s.radiusSpeed) >= 2 then
 		local ok, full = pcall(autoParry.getRadius, "geometry", 1, speed, "game")
 		if current ~= s or not s.bound then return nil end
 		if ok and type(full) == "table" and finite(full.fullRadius) and full.fullRadius > 0 then s.parryRadius = full.fullRadius end
@@ -307,7 +307,7 @@ local function returnAllowance(s, partner, time)
 	local low, high = gameInfo.getBallSpeedLimits()
 	if current ~= s or not s.bound then return 0, 0 end
 	local fraction = finite(low) and finite(high) and high > low and math.clamp((s.speed - low) / (high - low), 0, 1) or 0
-	local base = LIMIT.returnSlow + (LIMIT.returnFast - LIMIT.returnSlow) * fraction; local bonus = 0
+	local base = T.returnSlow + (T.returnFast - T.returnSlow) * fraction; local bonus = 0
 	if type(autoParry.getPressure) == "function" then
 		local ok, pressure = pcall(autoParry.getPressure)
 		if
@@ -431,7 +431,7 @@ local function snapshotCurrent(s, snapshot, time)
 	if finite(sequence) and finite(s.sequence) then
 		local delta = (sequence - s.sequence) % 65536
 		if delta >= 32768 or (delta == 0 and target and s.target > 0 and target ~= s.target) then return false end
-	elseif sequence == nil and s.syncSource == "event" and target and s.target > 0 and target ~= s.target and time - s.syncAt < LIMIT.snapshotGrace then
+	elseif sequence == nil and s.syncSource == "event" and target and s.target > 0 and target ~= s.target and time - s.syncAt < T.snapshotGrace then
 		return false
 	end
 	return true
@@ -449,7 +449,7 @@ local function readSnapshot(s, time)
 end
 local function missingSnapshot(s, time, reason)
 	if not s.missingSince then s.missingSince = time end
-	if s.active and (time < s.missingSince or time - s.missingSince >= LIMIT.snapshotGrace) then setActive(s, false, reason, nil, time) end
+	if s.active and (time < s.missingSince or time - s.missingSince >= T.snapshotGrace) then setActive(s, false, reason, nil, time) end
 	s.lastGate = reason
 end
 local function radiusAt(s, factor)
@@ -485,7 +485,7 @@ local function trackDash(s, event, time)
 end
 confirmInvalidTarget = function(s, time)
 	local reason = "invalid_target"
-	if s.exitReason ~= reason or time < s.exitSince or time - s.exitLastAt > LIMIT.sampleGap then
+	if s.exitReason ~= reason or time < s.exitSince or time - s.exitLastAt > T.sampleGap then
 		s.exitReason, s.exitSince, s.exitFrames, s.exitLastAt = reason, time, 1, time
 		return false
 	end
@@ -520,9 +520,9 @@ local function evaluate(s, snapshot, time)
 	local targeted = target and target == me or (not target and snapshot.targeted == true); local window = gameInfo.getDeflectWindow(s.speed); local own = rootPosition(s)
 	local distance = prediction.distance; local closing = own and distance > 0 and snapshot.velocity:Dot(own - snapshot.position) / distance or 0
 	local timeToRange = closing > 0 and math.max(0, (distance - (gameInfo.getDeflectAbility().DeflectDistance or 0)) / closing) or math.huge
-	local activationReady = prediction.imminent and finite(window) and timeToRange <= window * LIMIT.activationWindowFactor
+	local activationReady = prediction.imminent and finite(window) and timeToRange <= window * T.activationWindowFactor
 	local aimed = s.target == me and targeted and activationReady
-	if s.pull and time - s.pull.at > LIMIT.pullRecovery then s.pull = nil end
+	if s.pull and time - s.pull.at > T.pullRecovery then s.pull = nil end
 	if s.active then
 		if target and target ~= me and target ~= s.partner and outsideClashRadius(s, target) then setActive(s, false, "target_redirected", nil, time); s.lastGate = "target_redirected"; return end
 		s.lastGate = targeted and "deact_targeted" or "deact_waiting_target_return"; return
