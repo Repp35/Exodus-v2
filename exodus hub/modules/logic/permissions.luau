@@ -62,6 +62,7 @@ local POLICIES = {
 			autoparry = allow("getPressure getRadius getStatus"),
 			dash = allow("setHandler tick"),
 		},
+		objectRead = { getDeflectAbility = allow("DeflectDistance"), getManifestRemote = allow("OnClientEvent") },
 	},
 	spam = {
 		provide = allow("setup resetState teardown getStatus"),
@@ -86,6 +87,8 @@ local POLICIES = {
 			gameinfo = allow("getDashAbility"),
 			remote = allow("fireDash"),
 		},
+		objectRead = { getDashAbility = allow("Dashing") },
+		objectWrite = { getDashAbility = allow("MoveDir") },
 	},
 	dash = {
 		provide = allow("setup setHandler tick resetState teardown getStatus"),
@@ -93,6 +96,7 @@ local POLICIES = {
 			utils = allow("apiVersion getPlayers now"),
 			gameinfo = allow("getDashAbility"),
 		},
+		objectRead = { getDashAbility = allow("Dashing") },
 	},
 	character = {
 		provide = allow("setup teardown getStatus"),
@@ -122,7 +126,7 @@ local POLICIES = {
 }
 
 local GLOBALS = allow(
-	"assert error pcall xpcall print warn type typeof tostring tonumber pairs ipairs next select unpack setmetatable getmetatable rawequal rawget rawset math table string utf8 coroutine os task bit32 buffer Enum Vector2 Vector3 CFrame UDim UDim2 Color3 ColorSequence ColorSequenceKeypoint NumberSequence NumberSequenceKeypoint NumberRange Rect RaycastParams OverlapParams PhysicalProperties TweenInfo Instance Font BrickColor DateTime Random"
+	"assert error pcall xpcall print warn type typeof tostring tonumber pairs ipairs next select unpack setmetatable getmetatable rawequal math table string utf8 coroutine os task bit32 buffer Enum Vector2 Vector3 CFrame UDim UDim2 Color3 ColorSequence ColorSequenceKeypoint NumberSequence NumberSequenceKeypoint NumberRange Rect RaycastParams OverlapParams PhysicalProperties TweenInfo Instance Font BrickColor DateTime Random"
 )
 
 -- validation
@@ -155,6 +159,33 @@ local function validate(name, module)
 end
 
 -- capabilities
+local function readonly(value)
+	if type(value) ~= "table" then return value end
+	local copied = {}
+	for key, item in pairs(value) do copied[key] = readonly(item) end
+	return table.freeze(copied)
+end
+local function objectView(consumer, method, getter, readable, writable)
+	local previous, cached
+	return function(...)
+		local object = getter(...)
+		if object == nil then return nil end
+		if previous == object then return cached end
+		previous = object
+		cached = setmetatable({}, {
+			__index = function(_, field)
+				if not readable[field] then deny(consumer, "game.data.read." .. method .. "." .. tostring(field)) end
+				return object[field]
+			end,
+			__newindex = function(_, field, value)
+				if not (writable and writable[field]) then deny(consumer, "game.data.write." .. method .. "." .. tostring(field)) end
+				object[field] = value
+			end,
+			__metatable = "locked",
+		})
+		return cached
+	end
+end
 local function wrap(consumer, source, provider)
 	local entry = policy(consumer); local allowed = entry.consume[source]
 	if not allowed then deny(consumer, "api.consume." .. source) end
@@ -163,7 +194,13 @@ local function wrap(consumer, source, provider)
 		if not exposed.provide[method] and not (exposed.data and exposed.data[method]) then deny(source, "api.expose." .. method) end
 		local value = provider[method]
 		if value == nil then error(("Permissions: API ausente: %s.%s"):format(source, method), 2) end
-		view[method] = value
+		if exposed.data and exposed.data[method] then
+			view[method] = readonly(value)
+		elseif source == "gameinfo" and entry.objectRead and entry.objectRead[method] then
+			view[method] = objectView(consumer, method, value, entry.objectRead[method], entry.objectWrite and entry.objectWrite[method])
+		else
+			view[method] = value
+		end
 	end
 	setmetatable(view, {
 		__index = function(_, method) deny(consumer, "api.consume." .. source .. "." .. tostring(method)) end,
