@@ -444,8 +444,7 @@ local function bindRuntime(loaded, log)
 	end
 	local syncPriority = { autoclash = 1, autoparry = 2 }
 	table.sort(ballSyncSubscribers, function(a, b)
-		local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3
-		return left == right and a.name < b.name or left < right
+		local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3; return left == right and a.name < b.name or left < right
 	end)
 	local function callSync(name, handler, data)
 		local ok, result, detail = pcall(handler, data)
@@ -477,8 +476,7 @@ local function bindRuntime(loaded, log)
 						local forward = not lastClashPacketSequence or (sequence - lastClashPacketSequence) % 65536
 						local currentDelta = type(current) == "number" and (sequence - current) % 65536 or 0
 						if (forward == true or (forward > 0 and forward < 32768)) and currentDelta < 32768 then
-							lastClashPacketSequence = sequence
-							packet.Source = "packet"
+							lastClashPacketSequence = sequence; packet.Source = "packet"
 							if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
 							if not packet.Teleported then
 								for _, name in ipairs({ "autoclash", "autoparry" }) do
