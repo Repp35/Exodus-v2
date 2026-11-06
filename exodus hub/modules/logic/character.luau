@@ -29,6 +29,7 @@ local function clearLife()
 	if spam then spam.resetState() end
 end
 local function valid(life) return currentLife == life and utils ~= nil and utils.isActive() and life.character.Parent ~= nil end
+-- vinculação dos módulos ao personagem
 local function startWorker()
 	if workerRunning then return end
 	workerRunning = true
@@ -63,6 +64,7 @@ local function startWorker()
 		if currentLife and not currentLife.attempted then startWorker() end
 	end)
 end
+-- observação do personagem
 local function setupCharacter(character)
 	if not character or not utils then return end
 	generation += 1; clearLife(); local life = { character = character, bound = {}, attempted = false, humanoids = {} }; currentLife = life
@@ -85,6 +87,7 @@ local function setupCharacter(character)
 	end))
 	startWorker()
 end
+-- status e inicialização
 function Character.getStatus() return { schema = utils and utils.apiVersion() or nil, phase = phase, generation = generation } end
 function Character.setup(deps)
 	if
@@ -113,6 +116,7 @@ function Character.setup(deps)
 	if player.Character then setupCharacter(player.Character) end
 	return true
 end
+-- desconexão e limpeza
 function Character.teardown()
 	generation += 1; setupEpoch += 1
 	if utils then

@@ -157,6 +157,7 @@ local function ping(s, time)
 	end
 	return s.ping
 end
+-- limpeza dos estados de retorno
 local function clearReturn(s)
 	s.returnFrom, s.returnAt, s.returnServerAt = -1, nil, nil
 	s.returnWindow, s.returnBonus, s.returnExpires, s.returnPending = 0, 0, 0, false
@@ -177,6 +178,7 @@ local function clearExchange(s)
 	s.activation = { source = "none", reason = "none", trigger = "none", at = 0, target = -1, partner = -1, distance = 0, radius = 0, speed = 0 }; targetResetToken += 1
 	s.resetToken = targetResetToken; clearReturn(s)
 end
+-- ativação e desativação
 local function setActive(s, enabled, reason, detail, time, recoveryValidated)
 	if current ~= s or not s.bound then return end
 	enabled = enabled == true
@@ -234,6 +236,7 @@ local function gate(s)
 	if wasActive or s.lastGate ~= reason or s.target ~= -1 or s.returnPending then clearExchange(s) end
 	s.lastGate = reason; return false
 end
+-- limites de alcance
 local function outsideClashRadius(s, userId)
 	local _, root = playerRoot(userId); local own = rootPosition(s); local ability = gameInfo.getDeflectAbility(); local sync = gameInfo.getSyncData()
 	local speed = sync and tonumber(sync.Speed) or s.speed; local range = ability and ability.DeflectDistance
@@ -257,6 +260,7 @@ local function similarRecoveryDistance(s)
 	if not own or not root or not vector(root.Position) then return false end
 	local currentDistance = (own - root.Position).Magnitude; return math.abs(currentDistance - s.recoveryDistance) <= math.max(2, s.recoveryDistance * T.recoveryDistanceFactor)
 end
+-- janela do Deflect
 local function withinDeflectWindow(s, snapshot)
 	local root = rootPosition(s); local ability = gameInfo.getDeflectAbility()
 	if
@@ -282,6 +286,7 @@ local function withinDeflectWindow(s, snapshot)
 	if not finite(closing) or closing <= 0 then return false end
 	local tti = (distance - range) / closing; return finite(tti) and tti >= 0 and tti <= window
 end
+-- geometria e previsão da bola
 local function geometry(s, snapshot, time)
 	local own = rootPosition(s); local position, velocity = snapshot and snapshot.position, snapshot and snapshot.velocity
 	if not own or not vector(position) or not vector(velocity) then return nil end
@@ -310,6 +315,7 @@ local function geometry(s, snapshot, time)
 		imminent = insideWindow,
 	}
 end
+-- tempo de retorno e latência
 local function returnAllowance(s, partner, time)
 	local latency = ping(s, time)
 	if current ~= s or not s.bound then return 0, 0 end
@@ -362,6 +368,7 @@ local function stopForPull(s, position, reason, time)
 	return true
 end
 local confirmInvalidTarget
+-- troca de target
 local function observeTarget(s, target, explicit, serverTime, time)
 	local me = localPlayer.UserId
 	if not target then
@@ -429,6 +436,7 @@ local function observeTarget(s, target, explicit, serverTime, time)
 		clearReturn(s); s.lastGate = target == me and "initial_me" or "initial_not_me"
 	end
 end
+-- sequência de eventos
 local function sequenceAccepted(s, sequence)
 	if sequence == nil then return true end
 	if not finite(sequence) or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return true end
@@ -469,11 +477,13 @@ local function radiusAt(s, factor)
 	if ok and type(value) == "table" and finite(value.fullRadius) and value.fullRadius >= 0 then return value.fullRadius end
 	return s.parryRadius
 end
+-- ajuste de retorno por dash
 local function extendReturnForDash(s, time)
 	if not s.returnAt or s.returnPending then return end
 	local window, bonus = returnAllowance(s, s.returnFrom, time); window *= 1.5; s.returnBonus = bonus
 	if window > s.returnWindow then s.returnWindow = window; s.returnExpires = s.returnAt + window + 2 * ping(s, time) + 1 / 30 end
 end
+-- registro de dash
 local function trackDash(s, event, time)
 	if type(event) ~= "table" or not localPlayer or event.userId == localPlayer.UserId or not vector(event.position) or not vector(event.velocity) then return end
 	local own = rootPosition(s)
@@ -554,6 +564,7 @@ local function evaluate(s, snapshot, time)
 	elseif s.target ~= me then s.lastGate = "target_not_me"
 	else s.lastGate = prediction.activationGate end
 end
+-- processamento dos eventos de sincronização
 local function acceptSync(s, data, time, original)
 	if not gate(s) or type(data) ~= "table" then return end
 	if current ~= s or not s.bound then return end
@@ -591,6 +602,7 @@ local function acceptSync(s, data, time, original)
 		if current == s and snapshot and not snapshot.teleported then evaluate(s, snapshot, time) end
 	end
 end
+-- atualização por frame
 local function updateFrame(s, time)
 	if not gate(s) or not s.root or not s.root.Parent or not s.character.Parent then return end
 	if not s.returnPending and s.returnExpires > 0 and time >= s.returnExpires then clearReturn(s) end
@@ -627,6 +639,7 @@ local function updateFrame(s, time)
 	end
 	if current == s and s.bound then evaluate(s, snapshot, time) end
 end
+-- fila de eventos
 local function dispatch(s, kind, data, time)
 	if current ~= s or not s.bound then return true end
 	if kind == "frame" and s.draining then
@@ -701,6 +714,7 @@ function AutoSpam.setup(deps)
 	end)
 	state.lastGate = "none"; return true
 end
+-- vínculo do personagem
 function AutoSpam.bindCharacter(character)
 	if not utils or not gameInfo or not autoParry or not dash then return false, "dependências não inicializadas" end
 	detach("rebind"); local generation = nextGeneration
@@ -761,6 +775,7 @@ function AutoSpam.teardown()
 	if dash then dash.setHandler(nil) end
 	utils, gameInfo, autoParry, dash, players, runService, localPlayer = nil, nil, nil, nil, nil, nil, nil
 end
+-- recepção do BallSync
 function AutoSpam.onBallSync(data)
 	local s = current
 	if not s or type(data) ~= "table" then return end
@@ -781,6 +796,7 @@ function AutoSpam.onBallSync(data)
 	if copy.Sequence == nil and copy.TeleportSequence == nil and data == gameInfo.getSyncData() then copy.Sequence = gameInfo.getSyncSequence() end
 	return dispatch(s, "sync", { copy = copy, original = data }, clock())
 end
+-- API de controle
 function AutoSpam.isActive() return state.active end
 function AutoSpam.getPullEvent() return state.pullEvent end
 function AutoSpam.stopSpam()

@@ -219,6 +219,7 @@ local function showClashBall(v)
 	setConfigValue("ClashBallVisible", v); local config = Utils.getConfig(); local clashX = config.ClashBallX or 14; local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
 	twPlay(clashBall, (v and 0.22) or 0.18, { Position = v and UDim2.new(0, clashX, 0, clashY) or UDim2.new(0, OFFSCREEN_X, 0, clashY) }, EASE_OUT, DIR_OUT)
 end
+-- botão flutuante do Dark
 local function paintDarkBall(v)
 	if not darkBall or not darkBall.Parent then return end
 	twPlay(darkBall, 0.28, { BackgroundColor3 = v and C.darkOn or C.darkOff }, EASE_SINE, DIR_INOUT); darkBall.Text = v and "ON" or "OFF"; darkBall.TextSize = v and 18 or 16
@@ -235,6 +236,7 @@ local function setDarkBall(v)
 	twPlay(darkBall, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
 	task.delay(0.08, function() twPlay(darkBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
 end
+-- controles flutuantes de movimento
 local function showMovementBall(ball, visible, visibleKey, xKey, yKey, yOffset)
 	setConfigValue(visibleKey, visible); local config = Utils.getConfig(); local x = config[xKey] or (CLASH_SIZE + 22); local y = config[yKey] or (viewport().Y / 2 + yOffset)
 	twPlay(ball, visible and 0.22 or 0.18, { Position = visible and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
@@ -463,6 +465,7 @@ local function createActionToggleCard(labelText, yPos, parent, onToggle)
 	}).Activated:Connect(onToggle))
 	return setVisual
 end
+-- ajuste de janela do Auto Parry
 local function createParryTimingCard(yPos, parent)
 	local f = cardFrame(yPos, CARD_H, parent)
 	inst("TextLabel", {
@@ -499,6 +502,7 @@ local function createParryTimingCard(yPos, parent)
 	end))
 	return nextCardY(yPos, CARD_H)
 end
+-- seleção CPS e CPF
 local function createRateSelector(yPos, parent)
 	local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig(); config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.3917)
 	config.SpamRateMode = config.SpamRateMode == "CPF" and "CPF" or "CPS"
@@ -583,6 +587,7 @@ local function createRateSelector(yPos, parent)
 	end))
 	return nextCardY(yPos, RATE_CARD_H)
 end
+-- seleção das teclas
 local function createKeybindSelector(yPos, parent)
 	local f = cardFrame(yPos, CARD_H, parent)
 	inst("TextLabel", {
@@ -603,6 +608,7 @@ local function createKeybindSelector(yPos, parent)
 	end)
 	return nextCardY(yPos, CARD_H)
 end
+-- controle manual do Spam
 local function createSpamCard(yPos, parent)
 	local f = cardFrame(yPos, SPAM_CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true
 	local visBtn = makeBtn(visible and "Mini UI: Visivel" or "Mini UI: Oculto", 8, 24, COL_W - 16, 30, f, visible and Color3.fromRGB(0, 130, 65) or C.btnDark); visBtn.TextSize = 11
@@ -613,6 +619,7 @@ local function createSpamCard(yPos, parent)
 	end)
 	return nextCardY(yPos, SPAM_CARD_H)
 end
+-- abertura e fechamento do painel
 local function togglePanel()
 	if not configPanel or not configPanel.Parent or not floatingButton or not floatingButton.Parent then return end
 	UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
@@ -666,6 +673,7 @@ function ExodusUI.setup(deps)
 	end
 	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.panelTween = nil
 	UIState.btnTween = nil; _G.ExodusUICleanup = cleanupUI
+	-- interface principal
 	screenGui = inst("ScreenGui", {
 		Name = "ExodusUISystem",
 		ResetOnSpawn = false,
@@ -693,6 +701,7 @@ function ExodusUI.setup(deps)
 		if not floatingButton or not floatingButton.Parent then return end
 		twPlay(floatingButton, 0.38, { BackgroundTransparency = 0.1, TextTransparency = 0 }, EASE_OUT, DIR_OUT); twPlay(floatingStroke, 0.42, { Transparency = 0 }, EASE_OUT, DIR_OUT)
 	end)
+	-- botão flutuante do Auto Spam
 	local config = Utils.getConfig(); local clashX = config.ClashBallX or 14; local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
 	clashBall = inst("TextButton", {
 		Name = "ExodusClashBall",
@@ -722,6 +731,7 @@ function ExodusUI.setup(deps)
 	trackConn(clashBall.Activated:Connect(function()
 		setClashBall(not UIState.clashBallOn); syncAutoSpamToggle()
 	end))
+	-- botão flutuante do Auto Dark
 	local darkX = config.DarkBallX or 14; local darkY = config.DarkBallY or (viewport().Y / 2 + CLASH_SIZE / 2 + 8)
 	darkBall = inst("TextButton", {
 		Name = "ExodusDarkBall",
@@ -744,6 +754,7 @@ function ExodusUI.setup(deps)
 		if isDarkDragging() then return end
 		setDarkBall(Utils.getConfigValue("AutoDark") ~= true)
 	end))
+	-- botões de Auto Jump e Up Dash
 	local function createMovementBall(name, text, color, xKey, yKey, yOffset, onClick)
 		local x = config[xKey] or (CLASH_SIZE + 22); local y = config[yKey] or (viewport().Y / 2 + yOffset)
 		local ball = inst("TextButton", {
@@ -791,6 +802,7 @@ function ExodusUI.setup(deps)
 			task.delay(0.08, function() twPlay(ball, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
 		end
 	)
+	-- minipainel de Spam
 	local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30
 	miniGui = inst("Frame", {
 		Name = "ExodusSpamMini",
@@ -874,6 +886,7 @@ function ExodusUI.setup(deps)
 	makeDraggable(miniTitleBar, miniGui, function()
 		setConfigValue("MiniX", miniGui.Position.X.Offset); setConfigValue("MiniY", miniGui.Position.Y.Offset)
 	end)
+	-- painel de configurações
 	configPanel = inst("CanvasGroup", {
 		Name = "ExodusPanel",
 		Size = UDim2.new(0, PW, 0, PH),
@@ -1001,6 +1014,7 @@ function ExodusUI.setup(deps)
 	})
 	corner(killBtn, 6)
 	trackConn(killBtn.Activated:Connect(function() Utils.stop() end))
+	-- opções da página principal
 	local yL = 4
 	local toggleCallbacks = {
 		AutoSpam = function(value)
@@ -1062,6 +1076,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 6,
 		Parent = pageGroups[4],
 	})
+	-- configurações de automação
 	local darkYPos = createToggleCard("Auto Dark", "AutoDark", 4, autosLeft, function(value)
 		paintDarkBall(value)
 		if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
@@ -1073,6 +1088,7 @@ function ExodusUI.setup(deps)
 	end)
 	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall)
 	createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); createParryTimingCard(4, settingsLeft)
+	-- Anti-AFK
 	local antiConnection
 	local antiGeneration = 0
 	local paintAnti
@@ -1104,6 +1120,7 @@ function ExodusUI.setup(deps)
 		end)
 		paintAnti(true)
 	end)
+	-- Auto Spin
 	local spinActive, spinGeneration, spinButtons = nil, 0, {}; local spinModes = { { "Espada", "SwordCrate" }, { "Emote", "EmoteCrate" }, { "Explosão", "FinisherCrate" } }
 	local function paintSpin()
 		for _, mode in ipairs(spinModes) do
@@ -1137,6 +1154,7 @@ function ExodusUI.setup(deps)
 			end)
 		end)
 	end
+	-- navegação por páginas
 	local page = 1
 	local pageInputShield = inst("TextButton", {
 		Name = "PageInputShield",
@@ -1228,6 +1246,7 @@ function ExodusUI.setup(deps)
 	if config.DarkBallVisible then darkBall.Position = UDim2.new(0, darkX, 0, darkY) end
 	if config.JumpBallVisible then jumpBall.Position = UDim2.new(0, jumpX, 0, jumpY) end
 	if config.UpDashBallVisible then upDashBall.Position = UDim2.new(0, upDashX, 0, upDashY) end
+	-- sincronização dos controles
 	if type(Utils.observeSpam) == "function" then
 		trackConn(Utils.observeSpam(function()
 			local manual = Utils.isManualSpamActive()
@@ -1241,6 +1260,7 @@ function ExodusUI.setup(deps)
 	end
 	setSpam(Utils.isManualSpamActive()); return true
 end
+-- contrato da UI
 ExodusUI.__contract = { requires = {}, provides = { "setup" } }
 
 return ExodusUI

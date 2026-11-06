@@ -61,6 +61,7 @@ local function notify(list, label, value)
 end
 function Utils.observeSpam(observer) return connectObserver(spamObservers, observer) end
 function Utils.observeConfig(observer) return connectObserver(configObservers, observer) end
+-- controle de conexões
 local function track(list, connection)
 	if connection and type(connection.Disconnect) == "function" then list[#list + 1] = connection end
 	return connection
@@ -169,6 +170,7 @@ function Utils.ensureDataFolder()
 	end
 	return true, T.FOLDER
 end
+-- persistência da configuração
 local function saveConfig(config)
 	if not persistenceReady or type(writefile) ~= "function" then return end
 	local ok, folder = Utils.ensureDataFolder()
@@ -232,6 +234,7 @@ function Utils.stop()
 	end
 	state.lifecycle.phase = "stopped"; recordTransition("Utils", previous, "stopped", "stop"); refreshNamespace(); return true
 end
+-- acesso a estado e diagnósticos
 function Utils.isActive() return state.active end
 function Utils.getStateSnapshot() return stateSnapshot() end
 function Utils.getConfig() return snapshot(state.config) end
@@ -255,6 +258,7 @@ function Utils.recordError(source, message)
 	local item = { source = tostring(source or "Unknown"), message = tostring(message or ""), at = os.clock() }; state.diagnostics.lastError = item; append(state.diagnostics.errors, item)
 	warn(("[%s] %s"):format(item.source, item.message)); refreshNamespace(); return true
 end
+-- estado do Spam manual e automático
 function Utils.isManualSpamActive() return state.manualSpam end
 function Utils.isAutoSpamActive() return state.autoSpam end
 function Utils.isSpamActive() return state.manualSpam or state.autoSpam end
@@ -276,6 +280,7 @@ function Utils.isFiniteNumber(value) return type(value) == "number" and value ==
 function Utils.isNonNegativeFiniteNumber(value) return Utils.isFiniteNumber(value) and value >= 0 end
 
 -- config
+-- validação de CPS e CPF
 function Utils.normalizeSpamRate(value, fallback)
 	local rate = tonumber(value)
 	if not Utils.isFiniteNumber(rate) then rate = tonumber(fallback) end
@@ -298,6 +303,7 @@ function Utils.setConfig(patch)
 	if normalized.SpamRateMode ~= nil or normalized.CPF ~= nil then notify(spamObservers, "Spam") end
 	refreshNamespace(); queueSave(); return true
 end
+-- leitura das preferências
 function Utils.loadConfig()
 	if type(isfile) == "function" and type(readfile) == "function" then
 		local ok, folder = Utils.ensureDataFolder()
@@ -339,6 +345,7 @@ function Utils.setModuleURLs(urls)
 	end
 	refreshNamespace(); return true
 end
+-- acesso a conexões e serviços
 function Utils.trackGlobal(connection) return track(state.globalConnections, connection) end
 function Utils.untrackGlobal(connection) return untrack(state.globalConnections, connection) end
 function Utils.trackCharacter(connection) return track(state.characterConnections, connection) end
@@ -350,6 +357,7 @@ function Utils.getRunService() return runService end
 function Utils.getWorkspace() return workspace end
 function Utils.getLocalPlayer() return players.LocalPlayer end
 function Utils.now() return os.clock() end
+-- metadados da API
 function Utils.name() return NAME end
 function Utils.version() return VERSION end
 function Utils.apiVersion() return API_VERSION end
