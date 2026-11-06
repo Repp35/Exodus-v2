@@ -20,12 +20,9 @@ local T = {
 
 -- helpers
 local function now() return utils and utils.now() or os.clock() end
-local function horizontal(v)
-	return math.sqrt(v.X * v.X + v.Z * v.Z)
-end
+local function horizontal(v) return math.sqrt(v.X * v.X + v.Z * v.Z) end
 local function rootOf(player)
-	local character = player.Character
-	return character and character:FindFirstChild("HumanoidRootPart")
+	local character = player.Character; return character and character:FindFirstChild("HumanoidRootPart")
 end
 local function disconnect(connection)
 	if connection then connection:Disconnect() end
@@ -33,8 +30,7 @@ end
 local function dashAnimation(track)
 	local animation = track and track.Animation
 	if not animation then return false end
-	local name = string.lower(animation.Name or "")
-	return name:find("dash", 1, true) ~= nil
+	local name = string.lower(animation.Name or ""); return name:find("dash", 1, true) ~= nil
 end
 local function windEffect(root)
 	local effect = root:FindFirstChild("WindDash")
@@ -51,25 +47,22 @@ local function dashSound(root)
 	end
 	return false
 end
-
--- event dispatch
 local function emit(player, record, position, velocity, previous, time)
 	if time - (record.lastDetection or -math.huge) < T.DETECTION_GAP then return end
 	record.lastDetection = time
-	if handler then handler({
-		player = player,
-		userId = player.UserId,
-		detectedAt = time,
-		position = position,
-		velocity = velocity,
-		previousPosition = previous,
-	}) end
+	if handler then
+		handler({
+			player = player,
+			userId = player.UserId,
+			detectedAt = time,
+			position = position,
+			velocity = velocity,
+			previousPosition = previous,
+		})
+	end
 end
-
--- character lifecycle
 local function resetCharacter(record, character)
-	disconnect(record.animationConnection)
-	disconnect(record.attributeConnection)
+	disconnect(record.animationConnection); disconnect(record.attributeConnection)
 	record.character, record.animator, record.animationConnection, record.attributeConnection = character, nil, nil, nil
 	record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
 	record.lastDetection, record.signalAt, record.signalActive = nil, -math.huge, false
@@ -83,91 +76,59 @@ local function resetCharacter(record, character)
 	end
 end
 local function watchAnimator(player, record, time)
-	local character = record.character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	local character = record.character; local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
 	if animator == record.animator then return end
 	disconnect(record.animationConnection)
 	record.animator, record.animationConnection = animator, nil
 	if not animator then return end
 	local token = generation
 	record.animationConnection = animator.AnimationPlayed:Connect(function(track)
-		if token == generation and records[player] == record and player.Character == character and dashAnimation(track) then
-			record.signalAt = now()
-		end
+		if token == generation and records[player] == record and player.Character == character and dashAnimation(track) then record.signalAt = now() end
 	end)
 	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 		if dashAnimation(track) then record.signalAt = time; break end
 	end
 end
-
--- motion and ability detection
 local function observe(player, record, time)
 	local character = player.Character
 	if record.character ~= character then resetCharacter(record, character) end
 	if not character or not character.Parent then return end
-	watchAnimator(player, record, time)
-
-	local root = rootOf(player)
+	watchAnimator(player, record, time); local root = rootOf(player)
 	if not root then
 		record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
 		return
 	end
-	local position, velocity = root.Position, root.AssemblyLinearVelocity
-	local previous, previousAt = record.position, record.positionAt
-	local delta = previousAt and time - previousAt
+	local position, velocity = root.Position, root.AssemblyLinearVelocity; local previous, previousAt = record.position, record.positionAt; local delta = previousAt and time - previousAt
 	if previous and delta and delta > 0 and delta <= T.MAX_SAMPLE_GAP then
 		local measured = (position - previous) / delta
 		if measured.Magnitude > velocity.Magnitude and measured.Magnitude < T.MAX_MEASURED_SPEED then velocity = measured end
 	end
-
-	-- Replicated IsDashing is sent by CAnimationManager. Local ability state is also available.
-	local attribute = character:GetAttribute("IsDashing") == true
-	local ability = player == players.LocalPlayer and gameInfo and gameInfo.getDashAbility() or nil
-	local localDash = ability and ability.Dashing == true or false
-	local signal = attribute or localDash
+	local attribute = character:GetAttribute("IsDashing") == true; local ability = player == players.LocalPlayer and gameInfo and gameInfo.getDashAbility() or nil
+	local localDash = ability and ability.Dashing == true or false; local signal = attribute or localDash
 	if signal and not record.signalActive then record.signalAt = time end
-	record.signalActive = signal
-
-	local effect = windEffect(root)
-	local sound = dashSound(root)
+	record.signalActive = signal; local effect = windEffect(root); local sound = dashSound(root)
 	if (effect and not record.effectActive) or (sound and not record.soundActive) then record.signalAt = time end
 	record.effectActive, record.soundActive = effect, sound
-
-	local speed, previousSpeed = velocity.Magnitude, record.speed or 0
-	local fast = speed >= T.MIN_SPEED
-	local burst = fast and (not record.fast or speed - previousSpeed >= T.MIN_INCREASE)
+	local speed, previousSpeed = velocity.Magnitude, record.speed or 0; local fast = speed >= T.MIN_SPEED; local burst = fast and (not record.fast or speed - previousSpeed >= T.MIN_INCREASE)
 	local signaled = time - record.signalAt <= T.SIGNAL_GRACE
-	if (burst or (signaled and fast)) and (fast or horizontal(velocity) >= T.MIN_SPEED) then
-		emit(player, record, position, velocity, previous, time)
-	end
+	if (burst or (signaled and fast)) and (fast or horizontal(velocity) >= T.MIN_SPEED) then emit(player, record, position, velocity, previous, time) end
 	record.speed, record.fast, record.position, record.positionAt = speed, fast, position, time
 end
-
--- player tracking
 local function removePlayer(player)
 	local record = records[player]
 	if not record then return end
-	resetCharacter(record, nil)
-	disconnect(record.characterConnection)
-	records[player] = nil
+	resetCharacter(record, nil); disconnect(record.characterConnection); records[player] = nil
 end
 local function addPlayer(player)
 	if records[player] then return end
-	local record = { signalAt = -math.huge }
-	records[player] = record
+	local record = { signalAt = -math.huge }; records[player] = record
 	record.characterConnection = player.CharacterAdded:Connect(function(character)
 		if records[player] == record then resetCharacter(record, character) end
 	end)
 end
-
--- public API
 function Dash.setup(deps)
-	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then
-		return false, "dependências ausentes: Utils ou GameInfo"
-	end
-	Dash.teardown()
-	utils, gameInfo, players = deps.Utils, deps.GameInfo, deps.Utils.getPlayers()
+	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências ausentes: Utils ou GameInfo" end
+	Dash.teardown(); utils, gameInfo, players = deps.Utils, deps.GameInfo, deps.Utils.getPlayers()
 	if not players then return false, "Players indisponível" end
 	local token = generation
 	connections.added = players.PlayerAdded:Connect(function(player)
@@ -176,12 +137,13 @@ function Dash.setup(deps)
 	connections.removing = players.PlayerRemoving:Connect(function(player)
 		if token == generation then removePlayer(player) end
 	end)
-	for _, player in ipairs(players:GetPlayers()) do addPlayer(player) end
+	for _, player in ipairs(players:GetPlayers()) do
+		addPlayer(player)
+	end
 	return true
 end
 function Dash.setHandler(callback)
-	handler = type(callback) == "function" and callback or nil
-	return true
+	handler = type(callback) == "function" and callback or nil; return true
 end
 function Dash.tick(time)
 	if not players then return end
@@ -193,19 +155,20 @@ function Dash.tick(time)
 	end
 end
 function Dash.resetState()
-	generation += 1
-	disconnect(connections.added); disconnect(connections.removing)
-	connections = {}
-	for player in pairs(records) do removePlayer(player) end
+	generation += 1; disconnect(connections.added); disconnect(connections.removing); connections = {}
+	for player in pairs(records) do
+		removePlayer(player)
+	end
 	players, lastTick = nil, -math.huge
 end
 function Dash.teardown()
-	Dash.resetState()
-	utils, gameInfo, handler = nil, nil, nil
+	Dash.resetState(); utils, gameInfo, handler = nil, nil, nil
 end
 function Dash.getStatus()
 	local count = 0
-	for _ in pairs(records) do count += 1 end
+	for _ in pairs(records) do
+		count += 1
+	end
 	return { schema = utils and utils.apiVersion and utils.apiVersion() or 1, players = players ~= nil, detecting = players ~= nil, playerCount = count }
 end
 
