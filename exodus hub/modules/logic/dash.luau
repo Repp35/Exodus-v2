@@ -102,9 +102,8 @@ local function observe(player, record, time)
 	if signal and not record.signalActive then record.signalAt = time end
 	record.signalActive = signal; local effect = windEffect(root)
 	if effect and not record.effectActive then record.signalAt = time end
-	record.effectActive = effect
-	local speed, previousSpeed = velocity.Magnitude, record.speed or 0; local fast = speed >= T.MIN_SPEED; local burst = fast and (not record.fast or speed - previousSpeed >= T.MIN_INCREASE)
-	local signaled = time - record.signalAt <= T.SIGNAL_GRACE
+	record.effectActive = effect; local speed, previousSpeed = velocity.Magnitude, record.speed or 0; local fast = speed >= T.MIN_SPEED
+	local burst = fast and (not record.fast or speed - previousSpeed >= T.MIN_INCREASE); local signaled = time - record.signalAt <= T.SIGNAL_GRACE
 	if (burst or (signaled and fast)) and (fast or horizontal(velocity) >= T.MIN_SPEED) then emit(player, record, position, velocity, previous, time) end
 	record.speed, record.fast, record.position, record.positionAt = speed, fast, position, time
 end
