@@ -385,8 +385,8 @@ local function bindRuntime(loaded, log)
 			local value = select(index, ...)
 			if typeof(value) == "buffer" then
 				if type(gameInfo.decodeBallPacket) == "function" then
-					local decodedOk, packet = pcall(gameInfo.decodeBallPacket, value)
-					if decodedOk and type(packet) == "table" and type(packet.Sequence) == "number" then
+					local packet = gameInfo.decodeBallPacket(value)
+					if type(packet) == "table" and type(packet.Sequence) == "number" then
 						local sequence = packet.Sequence; local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
 						local forward = not lastClashPacketSequence or (sequence - lastClashPacketSequence) % 65536
 						local currentDelta = type(current) == "number" and (sequence - current) % 65536 or 0
@@ -412,8 +412,8 @@ local function bindRuntime(loaded, log)
 					task.defer(function()
 						pendingSyncRefresh = false
 						if type(utils.isActive) == "function" and not utils.isActive() then return end
-						local refreshOk, refreshed = pcall(gameInfo.applySync, nil)
-						if refreshOk and type(refreshed) == "table" then notifyBallSync(refreshed) end
+						local refreshed = gameInfo.applySync(nil)
+						if type(refreshed) == "table" then notifyBallSync(refreshed) end
 					end)
 				end
 				return
@@ -424,37 +424,35 @@ local function bindRuntime(loaded, log)
 				if decodedOk and type(decoded) == "table" then data = decoded; break end
 			end
 		end
-		local ok, decodedData = pcall(gameInfo.applySync, data)
-		if not ok then local entry = MODULE_BY_NAME.gameinfo; printRawError("GameInfo", decodedData, entry and entry.path or "loader.luau"); return end
+		local decodedData = gameInfo.applySync(data)
 		if type(decodedData) ~= "table" then
 			if not pendingSyncRefresh then
 				pendingSyncRefresh = true
 				task.defer(function()
 					pendingSyncRefresh = false
 					if type(utils.isActive) == "function" and not utils.isActive() then return end
-					local retryOk, refreshed = pcall(gameInfo.applySync, nil)
-					if retryOk and type(refreshed) == "table" then notifyBallSync(refreshed) end
+					local refreshed = gameInfo.applySync(nil)
+					if type(refreshed) == "table" then notifyBallSync(refreshed) end
 				end)
 			end
 			return
 		end
 		notifyBallSync(decodedData)
 	end
-	local watcherCallOk, watcherReady = pcall(gameInfo.installBallWatcher, utils.trackGlobal)
-	if not watcherCallOk or watcherReady ~= true then local reason = watcherCallOk and "observador da bola indisponível" or tostring(watcherReady); return nil, "GameInfo: " .. reason end
-	local syncCallOk, syncReady = pcall(gameInfo.bindBallSync, onBallSync)
-	if not syncCallOk then printRawError("GameInfo", syncReady, MODULE_BY_NAME.gameinfo.path) end
-	local maintenanceOk, maintenanceReady = pcall(gameInfo.startMaintenance, {
+	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
+	if watcherReady ~= true then return nil, "GameInfo: observador da bola indisponível" end
+	local syncReady = gameInfo.bindBallSync(onBallSync)
+	local maintenanceReady = gameInfo.startMaintenance({
 		isActive = utils.isActive,
 		onBallSync = onBallSync,
 	})
-	if not maintenanceOk or maintenanceReady ~= true then local message = maintenanceReady; return nil, "GameInfo: " .. tostring(message) end
+	if maintenanceReady ~= true then return nil, "GameInfo: manutenção indisponível" end
 	return {
 		parryRemote = gameInfo.getDeflectAbility() ~= nil,
 		parryInitialized = gameInfo.getDeflectAbility() ~= nil,
-		watcher = watcherCallOk and watcherReady == true,
-		ballSync = syncCallOk and syncReady == true,
-		maintenance = maintenanceOk and maintenanceReady == true,
+		watcher = watcherReady == true,
+		ballSync = syncReady == true,
+		maintenance = maintenanceReady == true,
 		ballSyncSubscribers = #ballSyncSubscribers,
 	}
 end
@@ -513,10 +511,10 @@ local function startInternal()
 		end
 	end
 	if type(utils.setConfigModule) ~= "function" or not utils.setConfigModule(loaded.config) then utils.stop(); return false, "Utils", "schema de Config indisponível" end
-	local defaultsOk, defaults = pcall(loaded.config.defaults)
-	if not defaultsOk or type(defaults) ~= "table" then utils.stop(); return false, "Config", defaults end
-	local configCallOk, configValid, configReason = pcall(loaded.config.validate, defaults)
-	if not configCallOk or configValid ~= true then utils.stop(); return false, "Config", configCallOk and configReason or configValid end
+	local defaults = loaded.config.defaults()
+	if type(defaults) ~= "table" then utils.stop(); return false, "Config", "defaults inválidos" end
+	local configValid, configReason = loaded.config.validate(defaults)
+	if configValid ~= true then utils.stop(); return false, "Config", configReason end
 	utils.setLifecyclePhase("configuring")
 	if not utils.setConfig(defaults) then utils.stop(); return false, "Utils", "setConfig rejeitou a configuração inicial" end
 	if type(utils.loadConfig) == "function" then utils.loadConfig() end
@@ -525,8 +523,8 @@ local function startInternal()
 	local modulesReady, failedModule, modulesError = initializeModules(loaded)
 	if not modulesReady then utils.stop(); return false, failedModule, modulesError end
 	if not utils.setDiagnosticsModules(loaded) then utils.stop(); return false, "Utils", "setDiagnosticsModules rejeitou os módulos" end
-	utils.setLifecyclePhase("binding"); local runtimeOk, runtime, runtimeError = xpcall(bindRuntime, withTrace, loaded, utils)
-	if not runtimeOk or type(runtime) ~= "table" then utils.stop(); return false, "Runtime", runtimeOk and runtimeError or runtime end
+	utils.setLifecyclePhase("binding"); local runtime, runtimeError = bindRuntime(loaded, utils)
+	if type(runtime) ~= "table" then utils.stop(); return false, "Runtime", runtimeError end
 	Exodus.Runtime = runtime; _G.ExodusOnBurst = loaded.autoparry.fire
 	local uiReady, uiModule, uiError = loadInterface(loaded.ui, utils, {
 		onAutoDarkChanged = function() loaded.autodark.sync() end,
