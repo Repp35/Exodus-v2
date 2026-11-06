@@ -429,7 +429,6 @@ local function bindRuntime(loaded, log)
 		return nil, "contrato de runtime incompleto"
 	end
 	local abilityOk, ability = pcall(gameInfo.getDeflectAbility)
-	if remoteCallOk and parryRemote then initCallOk, initialized = pcall(remote.initParry) end
 	local ballSyncSubscribers = {}
 	for _, name in ipairs(MODULE_ORDER) do
 		local module = loaded[name]
