@@ -113,9 +113,7 @@ end
 local function configuredFactor()
 	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
 end
-local function minimumBallSpeed()
-	return T.MIN_PARRY_SPEED
-end
+local function minimumBallSpeed() return T.MIN_PARRY_SPEED end
 local function radius(speed, factor, baseWindow)
 	speed = finite(speed) and math.max(speed, 0) or 0
 	local low, high
