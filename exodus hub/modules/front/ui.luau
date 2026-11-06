@@ -103,14 +103,13 @@ local function attachFlow(s)
 end
 local function twPlay(obj, t, props, style, dir)
 	if not obj or obj.Parent == nil then return nil end
-	local ok, tween = pcall(function() return TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props) end)
-	if not ok or not tween then return nil end
+	local tween = TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props)
 	tween:Play(); return tween
 end
 
 -- safety
 local function safeCancel(t)
-	if t then pcall(function() t:Cancel() end) end
+	if t then t:Cancel() end
 end
 
 -- layout
@@ -124,7 +123,7 @@ local function trackConn(c)
 	if c and type(c.Disconnect) == "function" then UIState.connections[#UIState.connections + 1] = c end
 	return c
 end
-local function safe(fn, ...) return pcall(fn, ...) end
+local function safe(fn, ...) return fn(...) end
 local function untrackConn(c)
 	for i = #UIState.connections, 1, -1 do
 		if UIState.connections[i] == c then table.remove(UIState.connections, i); return end
@@ -300,7 +299,7 @@ local function cleanupUI()
 		safeCancel(flowingTweens[i]); flowingTweens[i] = nil
 	end
 	local current = screenGui
-	if current then pcall(function() current:Destroy() end) end
+	if current then current:Destroy() end
 	screenGui = nil; floatingButton = nil; clashBall = nil; darkBall = nil
 	jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil
 	particleLayer = nil; titleBar = nil; closeButton = nil; colLeft = nil
@@ -659,7 +658,7 @@ function ExodusUI.setup(deps)
 	end
 	Utils = deps.Utils; UIConfig = deps.UIConfig; Controls = type(deps.Controls) == "table" and deps.Controls or {}
 	if type(_G.ExodusUICleanup) == "function" then
-		pcall(_G.ExodusUICleanup)
+		_G.ExodusUICleanup()
 	else
 		local old = CoreGui:FindFirstChild("ExodusUISystem")
 		if old then old:Destroy() end
@@ -1121,19 +1120,12 @@ function ExodusUI.setup(deps)
 			if not spinActive then return end
 			local generation = spinGeneration
 			task.spawn(function()
-				local ok, network = pcall(
-					function()
-						return require(game:GetService("ReplicatedStorage"):WaitForChild("TS"):WaitForChild("Network"):WaitForChild("Network")).Network.new()
-					end
-				)
+				local network = require(game:GetService("ReplicatedStorage"):WaitForChild("TS"):WaitForChild("Network"):WaitForChild("Network")).Network.new()
 				if generation ~= spinGeneration or spinActive ~= crate then return end
-				if not ok then spinActive = nil; paintSpin(); Utils.recordError("AutoSpin", tostring(network)); return end
 				while generation == spinGeneration and spinActive == crate and screenGui and screenGui.Parent and Utils.isActive() do
-					local checked, owned = pcall(network.CSendFunction, network, 4.702176977990345e76, crate)
+					local owned = network:CSendFunction(4.702176977990345e76, crate)
 					if generation ~= spinGeneration or spinActive ~= crate then break end
-					if not checked then spinActive = nil; paintSpin(); Utils.recordError("AutoSpin", tostring(owned)); break end
-					local sent, err = pcall(network.CSendEvent, network, owned == true and 1.796923298985336e75 or 1.0038569313364564e77, crate)
-					if not sent then spinActive = nil; paintSpin(); Utils.recordError("AutoSpin", tostring(err)); break end
+					network:CSendEvent(owned == true and 1.796923298985336e75 or 1.0038569313364564e77, crate)
 					task.wait(0.3)
 				end
 			end)
