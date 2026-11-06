@@ -118,7 +118,12 @@ end
 -- target-tracking
 local function syncManualPartner(s)
 	local manual = utils.isManualSpamActive()
-	if manual and not s.manualWasActive then s.manualPartner = s.active and s.partner or nil elseif not manual then s.manualPartner = nil end
+	if manual and not s.manualWasActive then
+		s.manualPartner = s.active and s.partner or nil
+		s.manualSwitchAt, s.manualSwitchServerAt = now(), nil
+	elseif not manual then
+		s.manualPartner, s.manualSwitchAt, s.manualSwitchServerAt = nil, nil, nil
+	end
 	s.manualWasActive = manual
 end
 local function inspectTarget(s, target, time, snapshot, serverTime)
@@ -141,6 +146,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
 	if switchElapsed then s.intervalMs = switchElapsed * 1000 end
 	s.target, s.lastSwitchAt, s.lastSwitchServerAt = target, time, serverTime
+	if utils.isManualSpamActive() then s.manualSwitchAt, s.manualSwitchServerAt = time, serverTime end
 	if previous == me and target ~= me then
 		s.departedAt, s.departedServerAt, s.departedTo = time, serverTime, target
 		if s.active and target == s.partner then
@@ -181,6 +187,13 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 			if delta >= T.SHARED.SEQUENCE_HALF or (delta == 0 and target and s.target and target ~= s.target) then return end
 		end
 		inspectTarget(s, target, time, snapshot, snapshot.serverTime)
+	end
+	if fresh and utils.isManualSpamActive() then
+		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime)
+		local _, _, window = geometry(s, snapshot, 1)
+		if window and switchElapsed and switchElapsed > math.max(T.DEACTIVATION.SWITCH_WINDOW_MARGIN, window - T.DEACTIVATION.SWITCH_WINDOW_MARGIN) then
+			utils.setManualSpamActive(false)
+		end
 	end
 	if s.active then
 		local reason = shouldDeactivate(s, snapshot, time, fresh, serverTime)
