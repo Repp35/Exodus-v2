@@ -59,7 +59,7 @@ local function resetCharacter(record, character)
 	record.character, record.animator, record.animationConnection = character, nil, nil
 	record.root, record.position, record.positionAt = nil, nil, nil
 	record.speed, record.movingFast, record.animationUntil = nil, false, 0
-	record.previousPosition = nil
+	record.animationDetected, record.previousPosition = false, nil
 end
 local function watchAnimator(player, record, time)
 	local humanoid = record.character and record.character:FindFirstChildOfClass("Humanoid")
