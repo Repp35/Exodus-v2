@@ -204,10 +204,7 @@ function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
 function GameInfo.getAutoSpamDelay()
 	local ability = GameInfo.getDeflectAbility()
 	if not ability then return nil end
-	local time = os.clock()
-	local last = ability.LastPressClock
-	local delay = finite(last) and math.max(0, 0.0301 - (time - last)) or 0
-	local limit = world:GetAttribute("CPS_LIMIT")
+	local time = os.clock(); local last = ability.LastPressClock; local delay = finite(last) and math.max(0, 0.0301 - (time - last)) or 0; local limit = world:GetAttribute("CPS_LIMIT")
 	if not finite(limit) then limit = 50 end
 	limit = math.floor(limit)
 	if limit <= 0 then return nil end
@@ -216,9 +213,7 @@ function GameInfo.getAutoSpamDelay()
 	if #clicks >= limit then
 		local remaining
 		for _, click in ipairs(clicks) do
-			if type(click) == "table" and finite(click.Time) then
-				remaining = remaining and math.min(remaining, click.Time) or click.Time
-			end
+			if type(click) == "table" and finite(click.Time) then remaining = remaining and math.min(remaining, click.Time) or click.Time end
 		end
 		if not remaining then return nil end
 		delay = math.max(delay, remaining > 0 and remaining or 1 / 240)

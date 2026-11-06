@@ -584,7 +584,9 @@ local function createRateSelector(yPos, parent)
 	end
 	trackConn(inputBox.Focused:Connect(function() twPlay(inputStroke, 0.15, { Color = C.accent }) end))
 	trackConn(inputBox.FocusLost:Connect(function()
-		twPlay(inputStroke, 0.15, { Color = C.border }); if currentMode == "Auto" then inputBox.Text = "Auto"; return end; local value = tonumber(inputBox.Text); local key = currentMode; local fallback = config[key]; local normalized = Utils.normalizeSpamRate(value, fallback); setConfigValue(key, normalized); inputBox.Text = tostring(normalized)
+		twPlay(inputStroke, 0.15, { Color = C.border })
+		if currentMode == "Auto" then inputBox.Text = "Auto"; return end
+		local value = tonumber(inputBox.Text); local key = currentMode; local fallback = config[key]; local normalized = Utils.normalizeSpamRate(value, fallback); setConfigValue(key, normalized); inputBox.Text = tostring(normalized)
 	end))
 	return nextCardY(yPos, RATE_CARD_H)
 end

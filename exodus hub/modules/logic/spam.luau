@@ -11,7 +11,9 @@ local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErro
 
 -- config
 local function readRate()
-	local config = utils.getConfig(); local mode = config.SpamRateMode == "Auto" and "Auto" or (config.SpamRateMode == "CPF" and "CPF" or "CPS"); if mode == "Auto" then return mode, 1 end; local rate = tonumber(config[mode]) or 0
+	local config = utils.getConfig(); local mode = config.SpamRateMode == "Auto" and "Auto" or (config.SpamRateMode == "CPF" and "CPF" or "CPS")
+	if mode == "Auto" then return mode, 1 end
+	local rate = tonumber(config[mode]) or 0
 	if rate ~= rate or rate <= 0 or rate == math.huge then return mode, 0 end
 	if mode == "CPF" and rate * 60 == math.huge then return mode, 0 end
 	return mode, rate
