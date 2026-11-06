@@ -736,8 +736,7 @@ end
 function AutoSpam.onBallSync(data)
 	local s = current
 	if not s or type(data) ~= "table" then return end
-	local copy = table.clone(data)
-	local sequence = copy.Sequence or copy.TeleportSequence
+	local copy = table.clone(data); local sequence = copy.Sequence or copy.TeleportSequence
 	if sequence ~= nil then
 		if not finite(sequence) or sequence < 0 or sequence >= 65536 or sequence % 1 ~= 0 then return end
 		if finite(s.sequence) and (sequence - s.sequence) % 65536 >= 32768 then return end
@@ -749,13 +748,9 @@ function AutoSpam.onBallSync(data)
 		rememberDistantRecovery(s, partner)
 		if s.active then setActive(s, false, "distant_target_redirected", nil, clock()) end
 		s.windowPaused, s.windowPartner, s.partner, s.recentPartner = false, nil, -1, -1
-		s.target = target
-		clearReturn(s)
-		s.lastGate = "distant_target_redirected"
+		s.target = target; clearReturn(s); s.lastGate = "distant_target_redirected"
 	end
-	if copy.Sequence == nil and copy.TeleportSequence == nil and data == gameInfo.getSyncData() then
-		copy.Sequence = gameInfo.getSyncSequence()
-	end
+	if copy.Sequence == nil and copy.TeleportSequence == nil and data == gameInfo.getSyncData() then copy.Sequence = gameInfo.getSyncSequence() end
 	return dispatch(s, "sync", { copy = copy, original = data }, clock())
 end
 function AutoSpam.isActive() return state.active end
