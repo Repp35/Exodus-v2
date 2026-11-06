@@ -109,7 +109,7 @@ local function inspectTarget(s, target, time, snapshot)
 		if not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
 		elseif not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt and window then
-			local limit = returnWindow(s, window, speed, previous) * (time <= s.dashUntil and 2.5 or 1)
+			local limit = 0.1 * (time <= s.dashUntil and 2.5 or 1)
 			if time - s.departedAt <= limit then s.pending = { partner = previous } end
 		end
 	end
