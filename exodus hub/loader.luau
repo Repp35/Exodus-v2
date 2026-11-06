@@ -37,82 +37,6 @@ local MODULE_MANIFEST = {
 	{ name = "ui", path = "modules/front/ui.luau" },
 }
 
-local lastApiErrors = {}
-local SINGLE_RESULT_API = {
-	utils = {
-		now = true,
-		isActive = true,
-		isSpamActive = true,
-		isManualSpamActive = true,
-		isAutoSpamActive = true,
-		getConfigValue = true,
-		getConfig = true,
-		getLocalPlayer = true,
-		getReplicatedStorage = true,
-		getRunService = true,
-		getWorkspace = true,
-	},
-	gameinfo = {
-		getBall = true,
-		getSnapshot = true,
-		getSnapshotAt = true,
-		getSyncData = true,
-		getTargetId = true,
-		getBallPosition = true,
-		getBallVelocity = true,
-		getRootPosition = true,
-		getDeflectRange = true,
-		getDeflectAbility = true,
-		getDeflectServerEvents = true,
-		getDeflectCooldownState = true,
-		getDeflectCD = true,
-		isSnapshotValid = true,
-		getLocalPing = true,
-	},
-}
-
-local TWO_RESULT_API = {
-	remote = { fireParry = true },
-	gameinfo = { getBallSpeedLimits = true, decodeDeflectServerEvent = true, getHeldDeflectServerCooldown = true },
-}
-
--- diagnostics
-local function withTrace(err)
-	local message = tostring(err)
-	if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(message, 2) end
-	return message
-end
-local function raiseApiError(name, method, path, err)
-	local message = tostring(err); local fingerprint = name .. "." .. tostring(method) .. ":" .. message; local time = os.clock()
-	if not lastApiErrors[fingerprint] or time - lastApiErrors[fingerprint] >= 2 then lastApiErrors[fingerprint] = time; printRawError(name .. "." .. tostring(method), message, path) end
-	error(message, 0)
-end
-local function instrumentApi(name, module, path)
-	for key, value in pairs(module) do
-		if type(value) == "function" then
-			local original, method = value, key
-			if SINGLE_RESULT_API[name] and SINGLE_RESULT_API[name][key] then
-				module[key] = function(...)
-					local ok, result = xpcall(original, withTrace, ...)
-					if not ok then raiseApiError(name, method, path, result) end
-					return result
-				end
-			elseif TWO_RESULT_API[name] and TWO_RESULT_API[name][key] then
-				module[key] = function(...)
-					local ok, first, second = xpcall(original, withTrace, ...)
-					if not ok then raiseApiError(name, method, path, first) end
-					return first, second
-				end
-			else
-				module[key] = function(...)
-					local results = table.pack(xpcall(original, withTrace, ...))
-					if not results[1] then raiseApiError(name, method, path, results[2]) end
-					return table.unpack(results, 2, results.n)
-				end
-			end
-		end
-	end
-end
 local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
 for _, entry in ipairs(MODULE_MANIFEST) do
@@ -238,8 +162,7 @@ local function compile(name, source)
 	return chunk
 end
 local function execute(name, chunk)
-	local ok, module = xpcall(chunk, withTrace)
-	if not ok then return nil, module end
+	local module = chunk()
 	if type(module) ~= "table" then return nil, name .. " não retornou uma tabela" end
 	return module
 end
@@ -314,8 +237,7 @@ local function loadModules(urls, localRoot)
 		local pending = #names; local deadline = os.clock() + 30
 		for _, name in ipairs(names) do
 			task.spawn(function()
-				local ok, loadError = xpcall(function() load(name) end, function(errorValue) return errorValue end)
-				if not ok then results[name] = { error = loadError } end
+				load(name)
 				pending -= 1
 			end)
 		end
@@ -335,7 +257,7 @@ local function loadModules(urls, localRoot)
 	for _, name in ipairs(names) do
 		local module, executeError = execute(name, results[name].chunk)
 		if not module then clearRegistry(); return nil, name, executeError end
-		instrumentApi(name, module, MODULE_BY_NAME[name].path); loaded[name] = module; register(name, module)
+		loaded[name] = module; register(name, module)
 	end
 	return loaded
 end
@@ -406,8 +328,8 @@ local function initializeModules(loaded)
 				end
 			end
 			if name == "character" then deps.characterBinds = characterBinds end
-			local ok, initialized, setupError = pcall(module.setup, deps)
-			if not ok or initialized ~= true then return false, name, ok and setupError or initialized end
+			local initialized, setupError = module.setup(deps)
+			if initialized ~= true then return false, name, setupError end
 		end
 	end
 	return true
@@ -445,12 +367,8 @@ local function bindRuntime(loaded, log)
 		local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3; return left == right and a.name < b.name or left < right
 	end)
 	local function callSync(name, handler, data)
-		local ok, result, detail = pcall(handler, data)
-		if not ok or result == false then
-			local message = result == false and detail or result
-			if message == nil then message = result end
-			local entry = MODULE_BY_NAME[name]; printRawError(name, message, entry and entry.path or "loader.luau"); return nil
-		end
+		local result, detail = handler(data)
+		if result == false then error(("%s.onBallSync: %s"):format(name, tostring(detail)), 2) end
 		return detail or data
 	end
 	local function notifyBallSync(decodedData)
@@ -546,12 +464,12 @@ end
 local function loadInterface(interface, utils, controls, uiConfig)
 	if type(interface) ~= "table" then return false, "UI", "módulo não carregado" end
 	if type(interface.setup) ~= "function" then return false, "UI", "setup ausente" end
-	local ok, setupResult, setupError = pcall(interface.setup, {
+	local setupResult, setupError = interface.setup({
 		Utils = utils,
 		Controls = controls,
 		UIConfig = uiConfig,
 	})
-	if not ok or setupResult ~= true then return false, "UI", ok and setupError or setupResult end
+	if setupResult ~= true then return false, "UI", setupError end
 	return true
 end
 
@@ -647,17 +565,15 @@ function Loader.start()
 	local ready, reason = validateExecutor()
 	if not ready then return false, "Loader", reason end
 	startLock = true; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules
-	Exodus.Loader = Loader; Modules.Loader = Loader; local ok, started, moduleName, startError = xpcall(startInternal, withTrace); startLock = false
-	if not ok or started ~= true then
+	Exodus.Loader = Loader; Modules.Loader = Loader; local started, moduleName, startError = startInternal(); startLock = false
+	if started ~= true then
 		rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry()
-		if not ok then return false, "Loader", started end
 		return started, moduleName, startError
 	end
 	activeLoaded = nil; return started, moduleName, startError
 end
 local function startSafely()
-	local ok, started, moduleName, startError = xpcall(Loader.start, withTrace)
-	if not ok then startError = started; moduleName = "Loader"; started = false end
+	local started, moduleName, startError = Loader.start()
 	if started ~= true then
 		moduleName = moduleName or "Loader"; startError = startError or started; local entry = MODULE_BY_NAME[moduleName]; printRawError(moduleName, startError, entry and entry.path or "loader.luau")
 		Loader.lastError = startError
