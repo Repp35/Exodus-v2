@@ -239,9 +239,7 @@ local function syncSequence(current, provider)
 	if packet and current == packet then return packet.Sequence end
 	return provider and provider.hasState == true and provider.lastSeq or nil
 end
-function GameInfo.getSyncSequence()
-	return syncSequence(syncData(), getReplicator())
-end
+function GameInfo.getSyncSequence() return syncSequence(syncData(), getReplicator()) end
 function GameInfo.applyPacket(value)
 	if type(value) ~= "table" then return false end
 	local sequence = value.Sequence
