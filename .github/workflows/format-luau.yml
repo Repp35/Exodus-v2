@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - '.github/workflows/format-luau.yml'
+      - 'exodus hub/**/*.luau'
   workflow_dispatch:
 permissions:
   contents: write
