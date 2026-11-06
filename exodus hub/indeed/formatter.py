@@ -433,39 +433,37 @@ def add_final_return_spacing(source: str) -> str:
     return finish_source(lines)
 
 
-def add_title(
-    source: str,
-    file_name: str,
-    custom_title: str | None = None,
-) -> str:
-    """Keep source comments and ensure the familiar title is at the top."""
-    title_text = custom_title if custom_title is not None else normalized_title(file_name)
-    title = f"-- [[ {title_text} ]]"
+def add_title(source: str, file_name: str, custom_title: str | None = None) -> str:
+    """Require exactly one leading title; never guess the title from the filename."""
     lines = source.splitlines()
-    directive_count = 0
-    while directive_count < len(lines) and DIRECTIVE_RE.fullmatch(lines[directive_count].strip()):
-        directive_count += 1
+    titles = [index for index, line in enumerate(lines) if TITLE_RE.fullmatch(line.strip())]
+    if len(titles) > 1:
+        raise FormatterError(f"{file_name}: mais de um título encontrado.")
+    if not titles and custom_title is None:
+        raise FormatterError(
+            f"{file_name}: título obrigatório. Insira '-- [[ título ]]' no arquivo "
+            "ou informe --title ao executar."
+        )
+    title = f"-- [[ {custom_title} ]]" if custom_title is not None else lines[titles[0]].strip()
+    if titles:
+        del lines[titles[0]]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    directive_end = 0
+    while directive_end < len(lines) and DIRECTIVE_RE.fullmatch(lines[directive_end].strip()):
+        directive_end += 1
+    lines[directive_end:directive_end] = [title, ""]
+    return finish_source(lines)
 
-    # Update an existing title in the leading comment block, keeping all other
-    # comments in place. A title deeper in the code is left alone.
-    for index in range(directive_count, len(lines)):
-        line = lines[index]
-        stripped = line.strip()
-        if TITLE_RE.fullmatch(stripped):
-            lines[index] = title
-            if index + 1 < len(lines) and lines[index + 1].strip():
-                lines.insert(index + 1, "")
-            return "\n".join(lines).rstrip() + "\n"
-        if stripped and not stripped.startswith("--"):
-            break
 
-    while directive_count < len(lines) and not lines[directive_count].strip():
-        directive_count += 1
-    prefix = lines[:directive_count]
-    remainder = lines[directive_count:]
-    body = [title, ""]
-    body.extend(remainder)
-    return "\n".join((*prefix, *body)).rstrip() + "\n"
+def require_sections(source: str, file_name: str) -> str:
+    """Reject files without a section supplied in code or via --section."""
+    if not any(section_name_from_comment(line) for line in source.splitlines()):
+        raise FormatterError(
+            f"{file_name}: seção obrigatória. Insira '-- nome-da-seção' no "
+            "código ou informe --section NOME=TRECHO ao executar."
+        )
+    return source
 
 
 def apply_directives(source: str, requested: Sequence[str]) -> str:
@@ -950,14 +948,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="ignora nomes ou caminhos que correspondam ao padrão; pode ser repetido",
     )
     parser.add_argument(
-        "--comments",
-        choices=("clean", "preserve"),
-        default="clean",
-        help="remove comentários comuns ou preserva os comentários; o título ainda é tratado à parte",
-    )
-    parser.add_argument(
         "--title",
-        help="texto do título no comentário inicial; por padrão usa o nome do arquivo",
+        help="título obrigatório quando o código não possuir -- [[ título ]]",
     )
     parser.add_argument(
         "--directive",
@@ -965,11 +957,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("strict", "nonstrict", "nocheck", "native"),
         default=[],
         help="preserva ou adiciona uma diretiva Luau --! no início; pode repetir",
-    )
-    parser.add_argument(
-        "--no-title",
-        action="store_true",
-        help="não adiciona/normaliza o comentário de título",
     )
     parser.add_argument(
         "--section",
@@ -1017,19 +1004,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compact-width",
         type=int,
-        default=200,
-        help="largura máxima para compactação de instruções e blocos simples (padrão: 200)",
+        default=400,
+        help="largura máxima para compactação de instruções e blocos simples (padrão: 400)",
     )
     parser.add_argument(
         "--max-statements",
         type=int,
-        default=4,
+        default=64,
         help="máximo de instruções simples por linha compactada",
-    )
-    parser.add_argument(
-        "--no-compact-runs",
-        action="store_true",
-        help="desativa a compactação customizada de instruções e blocos simples",
     )
     parser.add_argument(
         "--threads",
@@ -1192,8 +1174,6 @@ def format_files(args: argparse.Namespace) -> int:
         args.title = args.title.strip()
         if not args.title or any(char in args.title for char in "\r\n") or "]]" in args.title:
             raise FormatterError("--title precisa ser um título de uma linha, sem ']]'.")
-        if args.no_title:
-            raise FormatterError("Use --title ou --no-title, não os dois.")
     if not args.in_place:
         source_set = set(sources)
         for source_path in sources:
@@ -1228,12 +1208,8 @@ def format_files(args: argparse.Namespace) -> int:
                 raise FormatterError(f"Arquivo não está em UTF-8: {source_path} ({error})") from error
 
             prepared = source
-            if args.comments == "clean":
-                prepared = strip_unwanted_comments(
-                    prepared,
-                    preserve_sections=True,
-                )
-                prepared = remove_empty_lines(prepared)
+            prepared = strip_unwanted_comments(prepared, preserve_sections=True)
+            prepared = remove_empty_lines(prepared)
             if section_edits or section_removals:
                 prepared = edit_sections(
                     prepared,
@@ -1245,12 +1221,11 @@ def format_files(args: argparse.Namespace) -> int:
                 prepared = insert_sections(prepared, sections, source_path)
             prepared = normalize_section_case(prepared, section_case_exceptions)
             prepared = add_section_spacing(prepared)
-            if args.comments == "clean":
-                prepared = add_table_spacing(prepared)
+            prepared = add_table_spacing(prepared)
             prepared = add_final_return_spacing(prepared)
             prepared = apply_directives(prepared, args.directive)
-            if not args.no_title:
-                prepared = add_title(prepared, source_path.name, args.title)
+            prepared = add_title(prepared, source_path.name, args.title)
+            prepared = require_sections(prepared, source_path.name)
             prepared = add_initial_dependency_spacing(prepared)
             staged_path = stage_root / f"{index:05d}_{source_path.name}"
             staged_path.write_text(prepared, encoding="utf-8", newline="\n")
@@ -1270,39 +1245,29 @@ def format_files(args: argparse.Namespace) -> int:
 
         def formatted_content(staged_path: Path, source_path: Path) -> str:
             formatted = staged_path.read_text(encoding="utf-8")
-            if args.comments == "clean":
-                formatted = strip_unwanted_comments(formatted)
-                formatted = remove_empty_lines(formatted)
-                formatted = normalize_section_case(
-                    formatted,
-                    section_case_exceptions,
-                )
-                formatted = add_section_spacing(formatted)
-                formatted = add_table_spacing(formatted)
-                formatted = add_final_return_spacing(formatted)
-                formatted = apply_directives(formatted, args.directive)
-                if not args.no_title:
-                    formatted = add_title(formatted, source_path.name, args.title)
-            else:
-                formatted = normalize_section_case(
-                    formatted,
-                    section_case_exceptions,
-                )
+            formatted = strip_unwanted_comments(formatted)
+            formatted = remove_empty_lines(formatted)
+            formatted = normalize_section_case(formatted, section_case_exceptions)
+            formatted = add_section_spacing(formatted)
+            formatted = add_table_spacing(formatted)
+            formatted = add_final_return_spacing(formatted)
+            formatted = apply_directives(formatted, args.directive)
+            formatted = add_title(formatted, source_path.name, args.title)
+            formatted = require_sections(formatted, source_path.name)
             formatted = add_initial_dependency_spacing(formatted)
-            if not args.no_compact_runs:
-                formatted = compact_simple_if_blocks(
-                    formatted,
-                    max_width=compact_width,
-                    max_statements=args.max_statements,
-                    tab_width=tab_width,
-                    indent_type=configured_indent_type,
-                )
-                formatted = compact_statement_runs(
-                    formatted,
-                    max_width=compact_width,
-                    max_statements=args.max_statements,
-                    tab_width=tab_width,
-                )
+            formatted = compact_simple_if_blocks(
+                formatted,
+                max_width=compact_width,
+                max_statements=args.max_statements,
+                tab_width=tab_width,
+                indent_type=configured_indent_type,
+            )
+            formatted = compact_statement_runs(
+                formatted,
+                max_width=compact_width,
+                max_statements=args.max_statements,
+                tab_width=tab_width,
+            )
             return formatted
 
         if args.check:
