@@ -77,7 +77,7 @@ local function radius(speed, factor, baseWindow)
     elseif finite(baseWindow) and baseWindow > 0 then window = baseWindow end
     factor = tonumber(factor)
     if not finite(factor) then factor = configuredFactor() end
-    factor = math.clamp(factor, 0, baseWindow == nil and 1 or math.max(1, factor))
+    factor = math.clamp(factor, 0, 1)
     local ping = finite(state.ping) and math.max(state.ping, 0) or 0
     local base = BASE_RADIUS + rangeBonus()
     return {
@@ -155,6 +155,7 @@ local function tick(character, root, generation)
     if state.fired then phase("waiting", "target_already_parried"); return end
     local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
     if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
+    if typeof(value.ball) ~= "Instance" or not value.ball.Parent or not value.ball:IsA("BasePart") then return end
     state.lastBall, state.speed = value.ball, velocity.Magnitude
     state.distance = (rootPosition - position).Magnitude
     state.approaching = velocity:Dot(rootPosition - position) > 0
@@ -163,6 +164,13 @@ end
 function AutoParry.setup(deps)
     if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" then
         return false, "dependências inválidas"
+    end
+    for name, methods in pairs(AutoParry.__contract.requiresMethods) do
+        for _, method in ipairs(methods) do
+            if type(deps[name][method]) ~= "function" then
+                return false, "dependência ausente: " .. name .. "." .. method
+            end
+        end
     end
     detach("setup")
     utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote
@@ -305,7 +313,7 @@ function AutoParry.getPressure()
         local ratio = math.clamp(latest.factor / latest.configured, 0, 1)
         currentLevel = 1 - ratio
         if count >= 3 then
-            local previous, older = state.clicks[count - 1], state.clicks[count - 2]
+            local previous, older = state.clicks[#state.clicks - 1], state.clicks[#state.clicks - 2]
             local earlier = (math.clamp(previous.factor / previous.configured, 0, 1) + math.clamp(older.factor / older.configured, 0, 1)) / 2
             factorDrop = math.max(0, earlier - ratio)
         end
@@ -342,7 +350,7 @@ AutoParry.__contract = {
         GameInfo = { "getSnapshot", "getSnapshotAt", "isSnapshotValid", "getBall", "getSyncData", "getSyncSequence", "getTargetId", "getDeflectRange", "getDeflectCooldownState", "getLocalPing", "getBallPosition", "getBallVelocity", "getRootPosition", "getBallSpeedLimits", "getDeflectWindow" },
         Utils = { "getLocalPlayer", "getRunService", "getConfig", "getConfigValue", "isActive", "isSpamActive", "trackCharacter", "untrackCharacter", "trackGlobal", "untrackGlobal" },
     },
-    provides = { "setup", "bindCharacter", "detachCharacter", "onBallSync", "fire", "resetState", "getRadius", "getTiming", "getStatus" },
+    provides = { "setup", "bindCharacter", "detachCharacter", "teardown", "onBallSync", "fire", "resetState", "getRadius", "getTiming", "getTargetStatus", "getPressure", "getStatus" },
     onBallSync = true, bindCharacter = true, version = 10,
 }
 return AutoParry
