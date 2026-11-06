@@ -23,7 +23,7 @@ local state = {
 }
 
 local configModule, modules, persistenceReady = nil, {}, false
-local savePending, saveToken, saveWriting, saveDirty, saveSnapshot = false, 0, false, false, nil
+local savePending, saveToken, saveDirty = false, 0, false
 local refreshPending, refreshing = false, false
 local spamObservers, configObservers = {}, {}
 
@@ -44,24 +44,28 @@ end
 
 -- observers
 local function connectObserver(list, observer)
-	if type(observer) ~= "function" then return nil end
-	if not table.find(list, observer) then table.insert(list, observer) end
-	return {
-		Disconnect = function()
-			local index = table.find(list, observer)
-			if index then table.remove(list, index) end
-		end,
-	}
+	if type(observer) ~= "function" then error("Observer precisa ser uma função", 2) end
+	local connection = { Connected = true }
+	list[#list + 1] = connection
+	connection.callback = observer
+	function connection:Disconnect()
+		if not self.Connected then return end
+		self.Connected = false
+		local index = table.find(list, self)
+		if index then table.remove(list, index) end
+	end
+	return connection
 end
-local function notify(list, label, value)
+local function notify(list, value)
 	for _, observer in ipairs(table.clone(list)) do
-		observer(value)
+		if observer.Connected then observer.callback(value) end
 	end
 end
 function Utils.observeSpam(observer) return connectObserver(spamObservers, observer) end
 function Utils.observeConfig(observer) return connectObserver(configObservers, observer) end
 local function track(list, connection)
-	if connection and type(connection.Disconnect) == "function" then list[#list + 1] = connection end
+	if not connection or type(connection.Disconnect) ~= "function" then error("Conexão inválida", 2) end
+	if not table.find(list, connection) then list[#list + 1] = connection end
 	return connection
 end
 local function untrack(list, connection)
@@ -126,11 +130,13 @@ end
 -- environment
 local function refreshNamespace()
 	if refreshing then return end
-	refreshing = true; local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
+	refreshing = true
+	local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
 	namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author = NAME, "Exodus", VERSION, API_VERSION, AUTHOR
 	namespace.State, namespace.Config, namespace.ModuleURLs, namespace.Diagnostics =
 		stateSnapshot(), snapshot(state.config), snapshot(state.urls), diagnosticsSnapshot()
-	_G.Exodus = namespace; refreshing = false
+	_G.Exodus = namespace
+	refreshing = false
 end
 
 -- diagnostics
@@ -155,45 +161,47 @@ end
 
 -- persistence
 function Utils.ensureDataFolder()
-	if type(makefolder) ~= "function" or type(isfolder) ~= "function" then return false, "APIs de pasta do executor indisponíveis" end
-	local ok, exists = pcall(isfolder, T.FOLDER)
-	if not ok then return false, tostring(exists) end
-	if not exists then
-		local created, err = pcall(makefolder, T.FOLDER)
-		if not created then return false, tostring(err or ("falha ao criar " .. T.FOLDER)) end
-	end
+	if type(makefolder) ~= "function" then error("API externa ausente: makefolder", 2) end
+	if type(isfolder) ~= "function" then error("API externa ausente: isfolder", 2) end
+	if not isfolder(T.FOLDER) then makefolder(T.FOLDER) end
 	return true, T.FOLDER
 end
-local function saveConfig(config)
-	if not persistenceReady or type(writefile) ~= "function" then return end
-	local ok, folder = Utils.ensureDataFolder()
-	if not ok then Utils.recordError("Config", folder); return end
+
+local function serializeConfig(config)
 	local data = {}
 	for key, value in pairs(config) do
 		data[key] = typeof(value) == "EnumItem" and value.EnumType == Enum.KeyCode and { keyCode = value.Name } or value
 	end
-	local encoded, body = pcall(http.JSONEncode, http, data)
-	if not encoded then Utils.recordError("Config", body); return end
-	local written, err = pcall(writefile, folder .. "/config.json", body)
-	if not written or err == false then Utils.recordError("Config", err or "falha ao salvar") end
+	return http:JSONEncode(data)
 end
-local function flushSave()
-	if saveWriting then return end
-	saveWriting = true
-	while saveDirty do
-		local config = saveSnapshot; saveDirty = false; saveConfig(config)
-	end
-	saveWriting = false
+
+local function saveConfig()
+	if not persistenceReady or not saveDirty then return end
+	if type(writefile) ~= "function" then error("API externa ausente: writefile", 2) end
+	local _, folder = Utils.ensureDataFolder()
+	local body = serializeConfig(state.config)
+	writefile(folder .. "/config.json", body)
+	saveDirty = false
 end
+
 local function queueSave()
-	if not persistenceReady or type(writefile) ~= "function" then return end
-	saveSnapshot, saveDirty = snapshot(state.config), true
-	if savePending or saveWriting then return end
-	savePending = true; saveToken += 1; local token = saveToken
+	if not persistenceReady then return end
+	saveDirty = true
+	if savePending then return end
+	savePending = true
+	saveToken += 1
+	local token = saveToken
 	task.delay(0.25, function()
 		if token ~= saveToken then return end
-		savePending = false; flushSave()
+		savePending = false
+		saveConfig()
 	end)
+end
+
+local function flushSave()
+	saveToken += 1
+	savePending = false
+	saveConfig()
 end
 
 -- lifecycle
@@ -206,15 +214,16 @@ function Utils.start()
 end
 function Utils.stop()
 	local previous = state.lifecycle.phase
-	state.active, state.autoSpam = false, false
-	notify(spamObservers, "Spam")
-	if savePending then saveToken += 1; savePending = false end
-	if saveDirty then flushSave() end
+	state.active, state.manualSpam, state.autoSpam = false, false, false
+	notify(spamObservers)
+	flushSave()
 	state.lifecycle.stoppedAt = os.clock()
 	_G.ExodusOnBurst = function() end
 	if type(_G.ExodusUICleanup) == "function" then _G.ExodusUICleanup() end
 	disconnectAll(state.characterConnections); disconnectAll(state.globalConnections)
 	state.config, state.urls, modules = {}, {}, {}
+	persistenceReady = false
+	table.clear(spamObservers); table.clear(configObservers)
 	if type(_G.Exodus) == "table" then
 		local exodus = _G.Exodus
 		exodus.Started, exodus.UIReady, exodus.Runtime, exodus.UI = false, false, nil, nil
@@ -236,8 +245,8 @@ function Utils.getModuleURLsSnapshot() return snapshot(state.urls) end
 function Utils.getLifecycle() return lifecycleSnapshot() end
 function Utils.getDiagnostics() return diagnosticsSnapshot() end
 function Utils.setDiagnosticsModules(value)
-	if type(value) ~= "table" then return false end
-	modules = snapshot(value); refreshNamespace(); return true
+	if type(value) ~= "table" then error("Módulos de diagnóstico inválidos", 2) end
+	modules = table.clone(value); refreshNamespace(); return true
 end
 function Utils.setLifecyclePhase(value)
 	if type(value) ~= "string" or value == "" then return false end
@@ -256,7 +265,7 @@ function Utils.isSpamActive() return state.manualSpam or state.autoSpam end
 local function setSpam(key, value, source, reason)
 	value = value == true
 	if state[key] == value then return false end
-	local previous = state[key]; state[key] = value; notify(spamObservers, "Spam"); recordTransition(source, previous and "active" or "inactive", value and "active" or "inactive", reason)
+	local previous = state[key]; state[key] = value; notify(spamObservers); recordTransition(source, previous and "active" or "inactive", value and "active" or "inactive", reason)
 	return true
 end
 function Utils.setManualSpamActive(value) return setSpam("manualSpam", value, "Spam", "manual_toggle") end
@@ -264,7 +273,7 @@ function Utils.setAutoSpamActive(value) return setSpam("autoSpam", value, "AutoS
 function Utils.stopAllSpam()
 	local changed = state.manualSpam or state.autoSpam
 	state.manualSpam, state.autoSpam = false, false
-	if changed then notify(spamObservers, "Spam") end
+	if changed then notify(spamObservers) end
 	return true
 end
 function Utils.isFiniteNumber(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
@@ -278,56 +287,49 @@ function Utils.normalizeSpamRate(value, fallback)
 	return math.max(rate, 0)
 end
 function Utils.setConfig(patch)
-	if type(patch) ~= "table" then return false end
+	if type(patch) ~= "table" then error("Config patch inválido: esperado table", 2) end
 	local normalized = snapshot(patch)
 	if configModule then
 		local result, reason = configModule.normalizePatch(patch)
-		if type(result) ~= "table" then return false, reason end
+		if type(result) ~= "table" then error("Config inválida: " .. tostring(reason), 2) end
 		normalized = result
 	end
 	for key, value in pairs(normalized) do
 		state.config[key] = value
 	end
-	notify(configObservers, "Config", normalized)
-	if normalized.SpamRateMode ~= nil or normalized.CPF ~= nil then notify(spamObservers, "Spam") end
+	notify(configObservers, normalized)
+	if normalized.SpamRateMode ~= nil or normalized.CPS ~= nil or normalized.CPF ~= nil then notify(spamObservers) end
 	refreshNamespace(); queueSave(); return true
 end
 function Utils.loadConfig()
-	if type(isfile) == "function" and type(readfile) == "function" then
-		local ok, folder = Utils.ensureDataFolder()
-		if ok then
-			local path = folder .. "/config.json"; local existsOk, exists = pcall(isfile, path)
-			if existsOk and exists then
-				local readOk, body = pcall(readfile, path); local decoded, data = false, nil
-				if readOk then decoded, data = pcall(http.JSONDecode, http, body) end
-				if decoded and type(data) == "table" then
-					local keys = {}
-					for key in pairs(data) do
-						if type(key) == "string" then keys[#keys + 1] = key end
-					end
-					table.sort(keys)
-					for _, key in ipairs(keys) do
-						local value = data[key]
-						if type(value) == "table" and type(value.keyCode) == "string" then
-							local found, item = pcall(function() return Enum.KeyCode[value.keyCode] end)
-							value = found and item or nil
-						end
-						if key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" and value ~= nil then Utils.setConfig({ [key] = value }) end
-					end
-				else
-					Utils.recordError("Config", tostring(readOk and data or body))
+	if type(isfile) ~= "function" then error("API externa ausente: isfile", 2) end
+	if type(readfile) ~= "function" then error("API externa ausente: readfile", 2) end
+	local _, folder = Utils.ensureDataFolder()
+	local path = folder .. "/config.json"
+	if isfile(path) then
+		local data = http:JSONDecode(readfile(path))
+		if type(data) ~= "table" then error("Config inválida: config.json deve conter uma tabela", 2) end
+		local patch = {}
+		for key, value in pairs(data) do
+			if key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" then
+				if type(value) == "table" and type(value.keyCode) == "string" then
+					value = Enum.KeyCode[value.keyCode]
+					if not value then error("Config inválida: KeyCode " .. data[key].keyCode, 2) end
 				end
+				patch[key] = value
 			end
 		end
+		Utils.setConfig(patch)
 	end
-	persistenceReady = true; return true
+	persistenceReady = true
+	return true
 end
 function Utils.setConfigModule(module)
 	if type(module) ~= "table" or type(module.normalizePatch) ~= "function" or type(module.validate) ~= "function" then error("API interna ausente: Config.normalizePatch/validate", 2) end
 	configModule = module; return true
 end
 function Utils.setModuleURLs(urls)
-	if type(urls) ~= "table" then return false end
+	if type(urls) ~= "table" then error("URLs de módulos inválidas", 2) end
 	for key, value in pairs(urls) do
 		state.urls[key] = value
 	end
