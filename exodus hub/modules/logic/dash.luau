@@ -27,11 +27,6 @@ end
 local function disconnect(connection)
 	if connection then connection:Disconnect() end
 end
-local function dashAnimation(track)
-	local animation = track and track.Animation
-	if not animation then return false end
-	local name = string.lower(animation.Name or ""); return name:find("dash", 1, true) ~= nil
-end
 local function windEffect(root)
 	local effect = root:FindFirstChild("WindDash")
 	if not effect then return false end
@@ -56,38 +51,17 @@ local function emit(player, record, position, velocity, previous, time)
 	end
 end
 local function resetCharacter(record, character)
-	disconnect(record.animationConnection); disconnect(record.attributeConnection)
-	record.character, record.animator, record.animationConnection, record.attributeConnection = character, nil, nil, nil
+	disconnect(record.attributeConnection)
+	record.character, record.attributeConnection = character, nil
 	record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
 	record.lastDetection, record.signalAt, record.signalActive = nil, -math.huge, false
 	record.effectActive = false
-	if character then
-		record.attributeConnection = character:GetAttributeChangedSignal("IsDashing"):Connect(function()
-			if record.character ~= character then return end
-			if character:GetAttribute("IsDashing") == true then record.signalAt = now() end
-		end)
-		if character:GetAttribute("IsDashing") == true then record.signalAt = now() end
-	end
-end
-local function watchAnimator(player, record, time)
-	local character = record.character; local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-	if animator == record.animator then return end
-	disconnect(record.animationConnection)
-	record.animator, record.animationConnection = animator, nil
-	if not animator then return end
-	local token = generation
-	record.animationConnection = animator.AnimationPlayed:Connect(function(track)
-		if token == generation and records[player] == record and player.Character == character and dashAnimation(track) then record.signalAt = now() end
-	end)
-	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
-		if dashAnimation(track) then record.signalAt = time; break end
-	end
 end
 local function observe(player, record, time)
 	local character = player.Character
 	if record.character ~= character then resetCharacter(record, character) end
 	if not character or not character.Parent then return end
-	watchAnimator(player, record, time); local root = rootOf(player)
+	local root = rootOf(player)
 	if not root then
 		record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
 		return
@@ -97,7 +71,8 @@ local function observe(player, record, time)
 		local measured = (position - previous) / delta
 		if measured.Magnitude > velocity.Magnitude and measured.Magnitude < T.MAX_MEASURED_SPEED then velocity = measured end
 	end
-	local attribute = character:GetAttribute("IsDashing") == true; local ability = player == players.LocalPlayer and gameInfo and gameInfo.getDashAbility() or nil
+	local attribute = player ~= players.LocalPlayer and character:GetAttribute("IsDashing") == true
+	local ability = player == players.LocalPlayer and gameInfo and gameInfo.getDashAbility() or nil
 	local localDash = ability and ability.Dashing == true or false; local signal = attribute or localDash
 	if signal and not record.signalActive then record.signalAt = time end
 	record.signalActive = signal; local effect = windEffect(root)
