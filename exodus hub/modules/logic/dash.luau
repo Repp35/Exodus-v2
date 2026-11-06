@@ -71,8 +71,7 @@ local function observe(player, record, time)
 		local measured = (position - previous) / delta
 		if measured.Magnitude > velocity.Magnitude and measured.Magnitude < T.MAX_MEASURED_SPEED then velocity = measured end
 	end
-	local attribute = player ~= players.LocalPlayer and character:GetAttribute("IsDashing") == true
-	local ability = player == players.LocalPlayer and gameInfo and gameInfo.getDashAbility() or nil
+	local attribute = player ~= players.LocalPlayer and character:GetAttribute("IsDashing") == true; local ability = player == players.LocalPlayer and gameInfo and gameInfo.getDashAbility() or nil
 	local localDash = ability and ability.Dashing == true or false; local signal = attribute or localDash
 	if signal and not record.signalActive then record.signalAt = time end
 	record.signalActive = signal; local effect = windEffect(root)
