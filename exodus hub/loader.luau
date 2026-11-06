@@ -282,7 +282,7 @@ local function initializeModules(loaded)
 			if contract.requiresVersions ~= nil then
 				if type(contract.requiresVersions) ~= "table" then error(name .. ": requiresVersions inválido", 2) end
 				for dependencyName, minimum in pairs(contract.requiresVersions) do
-					local dependency = deps[dependencyName]; local dependencyContract = contractOf(dependency); local version = dependencyContract.version
+					local sourceName = contract.requires[dependencyName]; local dependencyContract = contractOf(loaded[sourceName]); local version = dependencyContract.version
 					if type(minimum) ~= "number" or type(version) ~= "number" or version < minimum then
 						error(
 							("API incompatível: %s requer versão %s; encontrada %s"):format(tostring(dependencyName), tostring(minimum), tostring(version)),
