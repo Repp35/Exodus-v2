@@ -17,8 +17,8 @@ jobs:
       - name: Format all Luau files using repository formatter
         run: |
           chmod +x "exodus hub/indeed/stylua-linux-x86_64"
-          python3 "exodus hub/indeed/formatter.py" --in-place "exodus hub"
-          python3 "exodus hub/indeed/formatter.py" --check "exodus hub"
+          python3 "exodus hub/indeed/formatter.py" --in-place --no-compact-runs "exodus hub"
+          python3 "exodus hub/indeed/formatter.py" --check --no-compact-runs "exodus hub"
       - name: Commit formatted files
         run: |
           if ! git diff --quiet -- 'exodus hub'; then
