@@ -158,12 +158,12 @@ local function wrap(consumer, source, provider)
 		if value == nil then error(("Permissions: API ausente: %s.%s"):format(source, method), 2) end
 		view[method] = exposed.data and exposed.data[method] and readonly(value) or value
 	end
-	setmetatable(view, {
+	local metatable = {
 		__index = function(_, method) deny(consumer, "api.consume." .. source .. "." .. tostring(method)) end,
 		__newindex = function(_, method) deny(consumer, "api.write." .. source .. "." .. tostring(method)) end,
-		__metatable = "locked",
-	})
-	return table.freeze(view)
+	}
+
+	setmetatable(view, metatable); table.freeze(view); metatable.__metatable = "locked"; table.freeze(metatable); return view
 end
 
 -- api
