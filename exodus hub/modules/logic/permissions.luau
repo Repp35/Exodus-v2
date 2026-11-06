@@ -211,7 +211,9 @@ local function environment(name, base)
 		if base[global] ~= nil then env[global] = base[global] end
 	end
 	local optionalGlobals = entry.filesystem and allow("makefolder isfolder isfile readfile writefile") or {}
-	for key in pairs(optionalGlobals) do env[key] = base[key] end
+	for key in pairs(optionalGlobals) do
+		env[key] = base[key]
+	end
 	if entry.imports then env.require = base.require end
 	if entry.services then
 		local proxy = {}
