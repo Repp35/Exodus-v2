@@ -4,6 +4,8 @@ on:
     paths:
       - '.github/workflows/format-luau.yml'
       - 'exodus hub/**/*.luau'
+      - 'exodus hub/indeed/formatter.py'
+      - 'exodus hub/indeed/stylua.toml'
   workflow_dispatch:
 permissions:
   contents: write
