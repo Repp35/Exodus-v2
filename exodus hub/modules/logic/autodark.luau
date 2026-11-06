@@ -2,7 +2,7 @@
 
 local AutoDark = {}
 
-local utils, gameInfo
+local utils, gameInfo, remote
 local connections, watched = {}, {}
 local epoch, sealedCount = 0, 0
 local EVENT = 2.4141700243704228e76
@@ -66,7 +66,10 @@ function AutoDark.sync()
 				return
 			end
 			missing = false; local camera = utils.getWorkspace().CurrentCamera
-			if camera and sealedCount == 0 then ability:SendEvent(EVENT, camera.CFrame) end
+			if camera and sealedCount == 0 then
+				local sent, message = remote.fireDark(EVENT, camera.CFrame)
+				if not sent then error(message) end
+			end
 		end)
 		busy = false
 		if not ok and current == epoch then
@@ -79,17 +82,18 @@ function AutoDark.sync()
 	return true
 end
 function AutoDark.setup(deps)
-	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências ausentes: Utils ou GameInfo" end
-	AutoDark.teardown(); utils, gameInfo = deps.Utils, deps.GameInfo; return AutoDark.sync()
+	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" then return false, "dependências ausentes: Utils ou GameInfo" end
+	AutoDark.teardown(); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote; return AutoDark.sync()
 end
 function AutoDark.teardown()
-	clear(); utils, gameInfo = nil, nil
+	clear(); utils, gameInfo, remote = nil, nil, nil
 end
 AutoDark.__contract = {
-	requires = { Utils = "utils", GameInfo = "gameinfo" },
+	requires = { Utils = "utils", GameInfo = "gameinfo", Remote = "remote" },
 	requiresMethods = {
 		Utils = { "getConfigValue", "getWorkspace", "getPlayers", "getLocalPlayer", "getRunService", "trackGlobal", "untrackGlobal", "isActive", "recordError" },
 		GameInfo = { "getDarkSealAbility" },
+		Remote = { "fireDark" },
 	},
 
 	provides = { "setup", "sync", "teardown" },
