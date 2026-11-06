@@ -4,6 +4,7 @@ local state = {
     phase = "detached", reason = "initial", generation = 0, lifeGeneration = 0, alive = false, bound = false,
     player = nil, character = nil, root = nil, connections = {},
     fired = false, awaySeen = false, cycle = 0, target = -1, targetKnown = false,
+    lastTargeted = false,
     teleported = false, teleportSequence = nil, sequence = nil,
     lastBall = nil, speed = 0, distance = 0, approaching = false, ping = 0, pingAt = 0,
     lastFireAt = 0, lastErrorAt = -math.huge, clicks = {}, returns = {}, awayAt = nil, awayTarget = nil,
@@ -31,7 +32,8 @@ local function disconnect()
     end
 end
 local function resetTracking()
-    state.fired, state.awaySeen, state.cycle, state.target, state.targetKnown = false, false, 0, -1, false
+    state.fired, state.awaySeen, state.cycle = false, false, 0
+    state.target, state.targetKnown, state.lastTargeted = -1, false, false
     state.teleported, state.teleportSequence, state.sequence = false, nil, nil
     state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
     state.ping, state.pingAt, state.lastFireAt = 0, 0, 0
@@ -97,46 +99,97 @@ local function appendRecent(list, item)
     list[#list + 1] = item
     while #list > 100 do table.remove(list, 1) end
 end
+-- Sequence numbers are 16-bit and may wrap; older packets cannot undo a newer target.
+local function sequenceOrder(incoming)
+    if not finite(incoming) or incoming < 0 or incoming >= 65536 or incoming % 1 ~= 0 then
+        return nil
+    end
+    if state.sequence == nil then return "new" end
+    local delta = (incoming - state.sequence) % 65536
+    if delta == 0 then return "same" end
+    return delta < 32768 and "new" or "old"
+end
+
 local function observeTarget(target, time)
-    if not state.player or not finite(target) or target <= 0 then return end
+    if not state.player or not finite(target) then return end
+    if target == state.target and state.targetKnown then return end
+
     local me, previous = state.player.UserId, state.target
+    state.lastTargeted = previous == me
+
     if previous == me and target ~= me then
-        state.awayAt, state.awayTarget = time, target
-    elseif target == me and previous ~= me and state.awayAt and state.awayTarget == previous and time >= state.awayAt then
-        appendRecent(state.returns, { at = time, interval = time - state.awayAt })
+        state.awaySeen = true
+        state.awayAt = time
+        state.awayTarget = target > 0 and target or nil
+    elseif target == me and previous ~= me and state.awaySeen then
+        if state.awayAt and state.awayTarget == previous and time >= state.awayAt then
+            appendRecent(state.returns, { at = time, interval = time - state.awayAt })
+        end
+        state.fired = false
+        state.awaySeen = false
+        state.cycle += 1
         state.awayAt, state.awayTarget = nil, nil
     end
-    if target ~= me then state.awaySeen = true
-    elseif state.awaySeen then state.awaySeen, state.fired = false, false; state.cycle += 1 end
+
     state.target, state.targetKnown = target, true
+end
+
+local function observeSnapshot(snapshot, time)
+    local order = sequenceOrder(snapshot.syncSequence)
+    if order == "old" then return false end
+    -- Same-sequence or unsequenced snapshots must not contradict a newer BallSync.
+    if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then
+        return false
+    end
+    if order == "new" then state.sequence = snapshot.syncSequence end
+    observeTarget(snapshot.targetId, time)
+    return true
 end
 local function request(reason)
     if state.fired or not state.player or state.target ~= state.player.UserId then return false end
-    local generation, boundUtils, boundRemote = state.generation, utils, remote
-    state.fired, state.lastFireAt = true, clock()
-    local function validRequest()
-        return generation == state.generation and utils == boundUtils and remote == boundRemote
-            and state.bound and state.alive and state.player and state.target == state.player.UserId
+
+    local generation, cycle = state.generation, state.cycle
+    local boundUtils, boundRemote = utils, remote
+    local firedAt, speed, distance = clock(), state.speed, state.distance
+
+    -- Lock before invoking Remote: Deflect() may cause reentrant BallSync events.
+    state.fired, state.lastFireAt = true, firedAt
+    local function sameCycle()
+        return state.generation == generation and state.cycle == cycle
+            and utils == boundUtils and remote == boundRemote
+            and state.alive and state.bound and state.fired
+            and state.player ~= nil and state.target == state.player.UserId
+    end
+    local function allowed()
+        return sameCycle() and not state.teleported
             and boundUtils.isActive() and not boundUtils.isSpamActive()
             and (reason == "manual_parry" or boundUtils.getConfigValue("AutoParry") ~= false)
     end
-    local ok, result, detail = pcall(boundRemote.fireParry, 1, validRequest)
-    if generation ~= state.generation or utils ~= boundUtils or remote ~= boundRemote then return false end
-    if not validRequest() then state.fired = false; return false end
-    if not ok or result == false then
+
+    local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
+    if not sameCycle() then return false end
+
+    if not ok or sent ~= true then
+        -- Unlock only when Remote did not dispatch. Never unlock a successful click
+        -- just because the spam/config state changed while Deflect() executed.
         state.fired = false
-        local time = clock()
-        if time - state.lastErrorAt >= 1 then
-            state.lastErrorAt = time
-            utils.recordError("AutoParry", tostring(ok and (detail or "remote indisponível") or result))
+        local now = clock()
+        if now - state.lastErrorAt >= 1 then
+            state.lastErrorAt = now
+            boundUtils.recordError("AutoParry", tostring(ok and (detail or "Deflect indisponível") or sent))
         end
         return false
     end
+
     local configured = configuredFactor()
-    local geometry = radius(state.speed, configured)
-    local denominator = state.speed * geometry.leadTime
-    local used = denominator > 0 and math.clamp((state.distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured
-    if configured > 0 then appendRecent(state.clicks, { at = state.lastFireAt, factor = used, configured = configured, speed = state.speed }) end
+    if configured > 0 then
+        local geometry = radius(speed, configured)
+        local denominator = speed * geometry.leadTime
+        local used = denominator > 0
+            and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured)
+            or configured
+        appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed })
+    end
     phase("fired", reason)
     return true
 end
@@ -148,7 +201,10 @@ local function tick(character, root, generation)
     local value = gameInfo.getSnapshotAt(time)
     if generation ~= state.generation or not state.bound or not state.alive then return end
     if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
-    observeTarget(value.targetId, time)
+    if not observeSnapshot(value, time) then
+        phase("waiting", "stale_snapshot")
+        return
+    end
     if utils.isSpamActive() then phase("waiting", "spam_active"); return end
     if state.teleported or value.teleported then phase("waiting", "teleport_lock"); return end
     if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
@@ -194,10 +250,16 @@ function AutoParry.bindCharacter(character)
     resetTracking()
     phase("waiting", "character_bound")
     gameInfo.getDeflectCooldownState()
-    track(signal:Connect(function() tick(character, root, generation) end))
-    track(character.AncestryChanged:Connect(function(_, parent)
-        if not parent and generation == state.generation then detach("character_removed") end
-    end))
+    local ok, err = pcall(function()
+        track(signal:Connect(function() tick(character, root, generation) end))
+        track(character.AncestryChanged:Connect(function(_, parent)
+            if not parent and generation == state.generation then detach("character_removed") end
+        end))
+    end)
+    if not ok then
+        detach("bind_failed")
+        return false, tostring(err)
+    end
     return true
 end
 function AutoParry.fire()
@@ -211,14 +273,12 @@ function AutoParry.teardown() detach("teardown"); utils, gameInfo, remote, state
 function AutoParry.onBallSync(data)
     if type(data) ~= "table" or not state.alive or not state.bound then return end
     local sequence = data.Sequence or data.TeleportSequence
-    if sequence == nil and gameInfo.getSyncSequence and data == gameInfo.getSyncData() then sequence = gameInfo.getSyncSequence() end
-    if finite(sequence) and sequence >= 0 and sequence < 65536 and sequence % 1 == 0 then
-        if state.sequence ~= nil then
-            local delta = (sequence - state.sequence) % 65536
-            if delta == 0 or delta >= 32768 then return true end
-        end
-        state.sequence = sequence
-    else sequence = nil end
+    if sequence == nil and gameInfo.getSyncSequence and data == gameInfo.getSyncData() then
+        sequence = gameInfo.getSyncSequence()
+    end
+    local order = sequenceOrder(sequence)
+    if order == "same" or order == "old" then return true end
+    if order == "new" then state.sequence = sequence end
     if data.Teleported == true then
         state.teleported, state.teleportSequence, state.fired, state.awaySeen = true, sequence, false, false
         state.cycle += 1
@@ -236,6 +296,10 @@ function AutoParry.onBallSync(data)
     end
     state.teleported, state.teleportSequence = false, nil
     local target = data.TargetPlayerID ~= nil and (tonumber(data.TargetPlayerID) or -1) or gameInfo.getTargetId()
+    -- An unsequenced fallback cannot overturn a newer sequenced observation.
+    if order == nil and state.sequence ~= nil and state.targetKnown and target ~= state.target then
+        return true
+    end
     observeTarget(target, clock())
     if target <= 0 then
         state.target, state.targetKnown = target, true
@@ -247,8 +311,9 @@ function AutoParry.onBallSync(data)
     return true
 end
 function AutoParry.getTargetStatus()
-    return { armed = not state.fired, firedForTarget = state.fired, lastTargeted = state.target == (state.player and state.player.UserId),
-        targeted = state.target == (state.player and state.player.UserId), approaching = state.approaching,
+    return { armed = not state.fired, firedForTarget = state.fired, lastTargeted = state.lastTargeted,
+        targeted = state.targetKnown and state.player ~= nil and state.target == state.player.UserId,
+        approaching = state.approaching,
         targetId = state.target, targetKnown = state.targetKnown, cooldown = gameInfo and gameInfo.getDeflectCooldownState() or nil }
 end
 local function rootPosition()
@@ -347,8 +412,12 @@ AutoParry.__contract = {
     requires = { Remote = "remote", GameInfo = "gameinfo", Utils = "utils" },
     requiresMethods = {
         Remote = { "fireParry" },
-        GameInfo = { "getSnapshot", "getSnapshotAt", "isSnapshotValid", "getBall", "getSyncData", "getSyncSequence", "getTargetId", "getDeflectRange", "getDeflectCooldownState", "getLocalPing", "getBallPosition", "getBallVelocity", "getRootPosition", "getBallSpeedLimits", "getDeflectWindow" },
-        Utils = { "getLocalPlayer", "getRunService", "getConfig", "getConfigValue", "isActive", "isSpamActive", "trackCharacter", "untrackCharacter", "trackGlobal", "untrackGlobal" },
+        GameInfo = { "getSnapshotAt", "isSnapshotValid", "getSyncData", "getTargetId",
+            "getSyncSequence", "getDeflectRange", "getDeflectCooldownState", "getLocalPing",
+            "getBallPosition", "getBallVelocity", "getRootPosition", "getBallSpeedLimits",
+            "getDeflectWindow" },
+        Utils = { "getLocalPlayer", "getRunService", "getConfigValue", "isActive",
+            "isSpamActive", "trackCharacter", "untrackCharacter", "recordError" },
     },
     provides = { "setup", "bindCharacter", "detachCharacter", "teardown", "onBallSync", "fire", "resetState", "getRadius", "getTiming", "getTargetStatus", "getPressure", "getStatus" },
     onBallSync = true, bindCharacter = true, version = 10,
