@@ -283,23 +283,30 @@ end
 function Utils.loadConfig()
 	if type(isfile) ~= "function" then error("API externa ausente: isfile", 2) end
 	if type(readfile) ~= "function" then error("API externa ausente: readfile", 2) end
-	local _, folder = Utils.ensureDataFolder(); local path = folder .. "/config.json"
+	local _, folder = Utils.ensureDataFolder(); local path = folder .. "/config.json"; local migrated = false
 	if isfile(path) then
 		local data = http:JSONDecode(readfile(path))
 		if type(data) ~= "table" then error("Config inválida: config.json deve conter uma tabela", 2) end
+		migrated = data.AutoClash ~= nil or data.AutoClashActivationMs ~= nil or data.AutoClashDeactivationMs ~= nil
+		if data.AutoSpam == nil and type(data.AutoClash) == "boolean" then data.AutoSpam = data.AutoClash end
 		local patch = {}
 		for key, value in pairs(data) do
-			if key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" then
+			if key ~= "AutoClash" and key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" then
 				if type(value) == "table" and type(value.keyCode) == "string" then
-					value = Enum.KeyCode[value.keyCode]
-					if not value then error("Config inválida: KeyCode " .. data[key].keyCode, 2) end
+					local name = value.keyCode; value = Enum.KeyCode[name]
+					if not value then warn("Config ignorada: KeyCode inválido " .. name) end
 				end
-				patch[key] = value
+				if value ~= nil then
+					local valid, reason = configModule.validatePatch({ [key] = value })
+					if valid then patch[key] = value else warn("Config ignorada: " .. tostring(reason)) end
+				end
 			end
 		end
 		Utils.setConfig(patch)
 	end
-	persistenceReady = true; return true
+	persistenceReady = true
+	if migrated then queueSave() end
+	return true
 end
 function Utils.setConfigModule(module)
 	if type(module) ~= "table" or type(module.normalizePatch) ~= "function" or type(module.validate) ~= "function" then error("API interna ausente: Config.normalizePatch/validate", 2) end

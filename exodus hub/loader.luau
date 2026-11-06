@@ -201,7 +201,9 @@ local function loadModules(urls, localRoot)
 		for _, entry in ipairs(MODULE_MANIFEST) do
 			local name = entry.name
 			task.spawn(function()
-				load(name); pending -= 1
+				local ok, err = xpcall(function() load(name) end, function(value) return debug.traceback(tostring(value), 2) end)
+				if not ok then results[name] = { error = err } end
+				pending -= 1
 			end)
 		end
 		while pending > 0 do
@@ -503,10 +505,7 @@ function Loader.start()
 	startLock = true; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules; Exodus.Loader = Loader; Modules.Loader = Loader
 	local ok, started, moduleName, startError = xpcall(startInternal, function(err) return debug.traceback(tostring(err), 2) end)
 	startLock = false
-	if not ok then
-		rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry()
-		return false, "Loader", started
-	end
+	if not ok then rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry(); return false, "Loader", started end
 	if started ~= true then rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry(); return started, moduleName, startError end
 	activeLoaded = nil; return started, moduleName, startError
 end

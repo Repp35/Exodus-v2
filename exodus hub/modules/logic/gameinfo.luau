@@ -55,6 +55,7 @@ local function ts() return child(storage(), "TS") end
 local function getAbilities()
 	local module = child(ts(), "ClientAbilities")
 	if abilityScript ~= module then abilityScript, abilities = module, nil end
+	if not module then return nil end
 	if not abilities then
 		local value = load(module, "ClientAbilities")
 		if type(value.Abilities) ~= "table" then error("API externa ausente: TS.ClientAbilities.Abilities", 2) end
@@ -368,6 +369,7 @@ function GameInfo.getBallSpeedLimits()
 	if time < speedAt then return minimumSpeed, maximumSpeed end
 	speedAt = time + T.SPEED_REFRESH; local module = child(child(ts(), "Gameplay"), "GameBall")
 	if module ~= gameBallScript then gameBallScript, gameBall = module, nil end
+	if not module then return minimumSpeed, maximumSpeed end
 	if not gameBall then gameBall = load(module, "GameBall").GameBall end
 	if type(gameBall) ~= "table" or type(gameBall.GetBaseSpeed) ~= "function" or type(gameBall.GetMaxSpeed) ~= "function" then error("API externa ausente: TS.Gameplay.GameBall.GetBaseSpeed/GetMaxSpeed", 2) end
 	local low, high = gameBall:GetBaseSpeed(), gameBall:GetMaxSpeed()
@@ -405,11 +407,17 @@ function GameInfo.getDeflectGeometry(speed, window, factor, scaleBase)
 	if not finite(window) or window <= 0 then return nil end
 	local latency = GameInfo.getLocalPing()
 	if not finite(latency) or latency < 0 then latency = 0 end
-	factor = finite(factor) and math.max(0, factor) or 1
-	local base = scaleBase and range * factor or range
-	return { fullRadius = base + speed * (window + latency) * factor, pureRadius = T.RANGE_BASE,
-		noWindowParryRadius = range, pingRadius = speed * latency * factor, deflectWindow = window,
-		effectiveWindow = (window + latency) * factor, leadTime = window + latency, windowFactor = factor }
+	factor = finite(factor) and math.max(0, factor) or 1; local base = scaleBase and range * factor or range
+	return {
+		fullRadius = base + speed * (window + latency) * factor,
+		pureRadius = T.RANGE_BASE,
+		noWindowParryRadius = range,
+		pingRadius = speed * latency * factor,
+		deflectWindow = window,
+		effectiveWindow = (window + latency) * factor,
+		leadTime = window + latency,
+		windowFactor = factor,
+	}
 end
 function GameInfo.getManifestRemote() return generatedRemote(9.318024238496386e76) end
 function GameInfo.getClashContext()
