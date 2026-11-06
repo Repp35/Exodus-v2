@@ -1,5 +1,9 @@
+-- [[ autoparry ]]
+
+-- dependencies
 local AutoParry = {}
 local utils, gameInfo, remote
+-- state
 local state = {
     phase = "detached", reason = "initial", generation = 0, lifeGeneration = 0, alive = false, bound = false,
     player = nil, character = nil, root = nil, connections = {},
@@ -9,7 +13,9 @@ local state = {
     lastBall = nil, speed = 0, distance = 0, approaching = false, ping = 0, pingAt = 0,
     lastFireAt = 0, lastErrorAt = -math.huge, clicks = {}, returns = {}, awayAt = nil, awayTarget = nil,
 }
+-- tuning
 local BASE_RADIUS, BASE_WINDOW, MIN_WINDOW, BONUS_CAP = 8.5, 0.50, 0.23, 7.5
+-- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function vector(value) return typeof(value) == "Vector3" end
 local function clock() return os.clock() end
@@ -31,6 +37,7 @@ local function disconnect()
         state.connections[i] = nil
     end
 end
+-- lifecycle
 local function resetTracking()
     state.fired, state.awaySeen, state.cycle = false, false, 0
     state.target, state.targetKnown, state.lastTargeted = -1, false, false
@@ -48,6 +55,7 @@ local function detach(reason)
     resetTracking()
     phase("detached", reason)
 end
+-- geometry
 local function rangeBonus()
     if not state.alive or not state.bound then return 0 end
     local ok, range = pcall(gameInfo.getDeflectRange)
@@ -89,6 +97,7 @@ local function radius(speed, factor, baseWindow)
         leadTime = window + ping, windowFactor = factor,
     }
 end
+-- telemetry
 local function samplePing(time)
     if time >= state.pingAt and time - state.pingAt < 0.25 then return end
     state.pingAt = time
@@ -100,6 +109,7 @@ local function appendRecent(list, item)
     while #list > 100 do table.remove(list, 1) end
 end
 -- Sequence numbers are 16-bit and may wrap; older packets cannot undo a newer target.
+-- target-sync
 local function sequenceOrder(incoming)
     if not finite(incoming) or incoming < 0 or incoming >= 65536 or incoming % 1 ~= 0 then
         return nil
@@ -145,6 +155,7 @@ local function observeSnapshot(snapshot, time)
     observeTarget(snapshot.targetId, time)
     return true
 end
+-- parry
 local function request(reason)
     if state.fired or not state.player or state.target ~= state.player.UserId then return false end
 
@@ -217,6 +228,7 @@ local function tick(character, root, generation)
     state.approaching = velocity:Dot(rootPosition - position) > 0
     if state.distance <= radius(state.speed, configuredFactor()).fullRadius then request("parry_requested") end
 end
+-- setup
 function AutoParry.setup(deps)
     if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" then
         return false, "dependências inválidas"
@@ -270,6 +282,7 @@ end
 function AutoParry.resetState() detach("reset") end
 function AutoParry.detachCharacter() detach("detach") end
 function AutoParry.teardown() detach("teardown"); utils, gameInfo, remote, state.player = nil, nil, nil, nil end
+-- ball-sync
 function AutoParry.onBallSync(data)
     if type(data) ~= "table" or not state.alive or not state.bound then return end
     local sequence = data.Sequence or data.TeleportSequence
@@ -312,6 +325,7 @@ function AutoParry.onBallSync(data)
     end
     return true
 end
+-- public-api
 function AutoParry.getTargetStatus()
     return { armed = not state.fired, firedForTarget = state.fired, lastTargeted = state.lastTargeted,
         targeted = state.targetKnown and state.player ~= nil and state.target == state.player.UserId,
@@ -410,6 +424,7 @@ function AutoParry.getStatus()
         timestamp = clock(),
     }
 end
+-- contract
 AutoParry.__contract = {
     requires = { Remote = "remote", GameInfo = "gameinfo", Utils = "utils" },
     requiresMethods = {
