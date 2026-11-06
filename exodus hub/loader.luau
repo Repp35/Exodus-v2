@@ -46,19 +46,21 @@ local ALLOW_LOCAL_FALLBACK = true
 
 -- http
 local function getRequestFunction()
-	local environment = type(getgenv) == "function" and getgenv() or _G
-	local synApi = type(environment.syn) == "table" and environment.syn or nil
+	local environment = type(getgenv) == "function" and getgenv() or _G; local synApi = type(environment.syn) == "table" and environment.syn or nil
 	local fluxusApi = type(environment.fluxus) == "table" and environment.fluxus or nil
-	for _, candidate in ipairs({ environment.request or false, environment.http_request or false, synApi and synApi.request or false, fluxusApi and fluxusApi.request or false }) do
+	for _, candidate in ipairs({
+		environment.request or false,
+		environment.http_request or false,
+		synApi and synApi.request or false,
+		fluxusApi and fluxusApi.request or false,
+	}) do
 		if type(candidate) == "function" then return candidate end
 	end
 	return nil
 end
 local requestFunction = getRequestFunction()
 local function validateExecutor()
-	if not requestFunction and not (ALLOW_LOCAL_FALLBACK and type(isfile) == "function" and type(readfile) == "function") then
-		return false, "executor sem request ou arquivos locais suportados"
-	end
+	if not requestFunction and not (ALLOW_LOCAL_FALLBACK and type(isfile) == "function" and type(readfile) == "function") then return false, "executor sem request ou arquivos locais suportados" end
 	if type(loadstring) ~= "function" then return false, "executor sem loadstring" end
 	return true
 end
@@ -174,8 +176,7 @@ local function buildCDNURL(url)
 end
 local function loadModule(name, relativePath, url, localRoot)
 	if localRoot then
-		local path = localRoot .. "/" .. relativePath
-		local source = readfile(path)
+		local path = localRoot .. "/" .. relativePath; local source = readfile(path)
 		if type(source) ~= "string" or source == "" then error("Arquivo local inválido: " .. path, 2) end
 		local chunk, compileError = compile(name .. " [local]", source); return chunk, compileError, "local"
 	end
@@ -200,9 +201,7 @@ end
 local function loadModules(urls, localRoot)
 	local loaded, results = {}, {}
 	local function load(name)
-		local entry = MODULE_BY_NAME[name]
-		local chunk, loadError = loadModule(name, entry.path, urls[name], localRoot)
-		results[name] = { chunk = chunk, error = loadError }
+		local entry = MODULE_BY_NAME[name]; local chunk, loadError = loadModule(name, entry.path, urls[name], localRoot); results[name] = { chunk = chunk, error = loadError }
 	end
 	if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
 		local pending = #MODULE_MANIFEST; local deadline = os.clock() + 30
@@ -222,11 +221,9 @@ local function loadModules(urls, localRoot)
 		end
 	end
 	for _, entry in ipairs(MODULE_MANIFEST) do
-		local name = entry.name
-		local result = results[name]
+		local name = entry.name; local result = results[name]
 		if not result or not result.chunk then error(("%s: %s"):format(name, tostring(result and result.error or "carregamento incompleto")), 2) end
-		local module = execute(name, result.chunk)
-		loaded[name] = register(name, module)
+		local module = execute(name, result.chunk); loaded[name] = register(name, module)
 	end
 	return loaded
 end
@@ -336,8 +333,7 @@ local function bindRuntime(loaded)
 	end
 	local syncPriority = { autospam = 1, autoparry = 2 }
 	table.sort(ballSyncSubscribers, function(a, b)
-		local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3
-		return left == right and a.name < b.name or left < right
+		local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3; return left == right and a.name < b.name or left < right
 	end)
 	local function callSync(name, handler, data)
 		local result, detail = handler(data)
@@ -385,8 +381,7 @@ local function bindRuntime(loaded)
 					local sequence = buffer.readu16(value, 1); local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
 					if type(current) ~= "number" or (sequence - current) % 65536 < 32768 then notifyBallSync({ Teleported = true, TeleportSequence = sequence }) end
 				end
-				scheduleSyncRefresh()
-				return
+				scheduleSyncRefresh(); return
 			end
 			if type(value) == "table" then data = value; break end
 			if type(value) == "string" then
@@ -395,10 +390,7 @@ local function bindRuntime(loaded)
 			end
 		end
 		local decodedData = gameInfo.applySync(data)
-		if type(decodedData) ~= "table" then
-			scheduleSyncRefresh()
-			return
-		end
+		if type(decodedData) ~= "table" then scheduleSyncRefresh(); return end
 		notifyBallSync(decodedData)
 	end
 	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
