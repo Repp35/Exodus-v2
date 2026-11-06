@@ -237,7 +237,7 @@ local function tick(character, root, generation)
 	if typeof(value.ball) ~= "Instance" or not value.ball.Parent or not value.ball:IsA("BasePart") then return end
 	state.lastBall, state.speed = value.ball, velocity.Magnitude
 	state.distance = (rootPosition - position).Magnitude; state.approaching = velocity:Dot(rootPosition - position) > 0
-	if state.speed >= minimumBallSpeed() and state.distance <= radius(state.speed, configuredFactor()).fullRadius then request("parry_requested") end
+	if state.distance <= radius(state.speed, configuredFactor()).fullRadius then request("parry_requested") end
 end
 
 -- setup
@@ -273,7 +273,8 @@ function AutoParry.bindCharacter(character)
 end
 function AutoParry.fire()
 	if not state.alive or not state.bound or state.fired or state.teleported then return false end
-	if not state.approaching or state.speed < minimumBallSpeed() then return false end
+	if not state.player or state.target ~= state.player.UserId then return false end
+	if state.distance > radius(state.speed, configuredFactor()).fullRadius then return false end
 	return request("manual_parry")
 end
 function AutoParry.resetState() detach("reset") end
