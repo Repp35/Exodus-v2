@@ -3,11 +3,10 @@
 -- logging
 local function printRawError(moduleName, message, filePath)
 	local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message)); local warned = false
-	if type(warn) == "function" then warned = pcall(warn, output) end
-	if not warned and type(print) == "function" then pcall(print, output) end
+	if type(warn) == "function" then warn(output) elseif type(print) == "function" then print(output) end
 end
 local function printStartup(message)
-	if type(print) == "function" then pcall(print, message) end
+	if type(print) == "function" then print(message) end
 end
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
@@ -142,16 +141,16 @@ local function clearRegistry()
 	Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false; _G.ExodusOnBurst = nil
 end
 local function stopPreviousRuntime()
-	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then pcall(Modules.gameinfo.stopMaintenance) end
+	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then Modules.gameinfo.stopMaintenance() end
 	for _, name in ipairs({ "character", "spam", "autospam", "autodark", "movement", "dash", "autoparry" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
-			if type(module.teardown) == "function" then pcall(module.teardown) elseif type(module.resetState) == "function" then pcall(module.resetState) end
+			if type(module.teardown) == "function" then module.teardown() elseif type(module.resetState) == "function" then module.resetState() end
 		end
 	end
 	local stopped = false
-	if type(_G.ExodusStop) == "function" then local ok = pcall(_G.ExodusStop); stopped = ok == true end
-	if not stopped and type(_G.ExodusUICleanup) == "function" then pcall(_G.ExodusUICleanup) end
+	if type(_G.ExodusStop) == "function" then stopped = _G.ExodusStop() == true end
+	if not stopped and type(_G.ExodusUICleanup) == "function" then _G.ExodusUICleanup() end
 end
 
 -- compiler
@@ -548,13 +547,13 @@ local function rollbackLoaded(loaded)
 	for index = #MODULE_ORDER, 1, -1 do
 		local module = loaded[MODULE_ORDER[index]]
 		if type(module) == "table" then
-			if type(module.teardown) == "function" then pcall(module.teardown)
-			elseif type(module.detachCharacter) == "function" then pcall(module.detachCharacter)
-			elseif type(module.resetState) == "function" then pcall(module.resetState) end
+			if type(module.teardown) == "function" then module.teardown()
+			elseif type(module.detachCharacter) == "function" then module.detachCharacter()
+			elseif type(module.resetState) == "function" then module.resetState() end
 		end
 	end
-	if type(loaded.gameinfo) == "table" and type(loaded.gameinfo.stopMaintenance) == "function" then pcall(loaded.gameinfo.stopMaintenance) end
-	if type(loaded.utils) == "table" and type(loaded.utils.stop) == "function" then pcall(loaded.utils.stop) end
+	if type(loaded.gameinfo) == "table" and type(loaded.gameinfo.stopMaintenance) == "function" then loaded.gameinfo.stopMaintenance() end
+	if type(loaded.utils) == "table" and type(loaded.utils.stop) == "function" then loaded.utils.stop() end
 end
 local startLock = false
 function Loader.start()
