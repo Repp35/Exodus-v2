@@ -210,11 +210,8 @@ local function environment(name, base)
 	for global in pairs(GLOBALS) do
 		if base[global] ~= nil then env[global] = base[global] end
 	end
-	if entry.filesystem then
-		for _, key in ipairs({ "makefolder", "isfolder", "isfile", "readfile", "writefile" }) do
-			env[key] = base[key]
-		end
-	end
+	local optionalGlobals = entry.filesystem and allow("makefolder isfolder isfile readfile writefile") or {}
+	for key in pairs(optionalGlobals) do env[key] = base[key] end
 	if entry.imports then env.require = base.require end
 	if entry.services then
 		local proxy = {}
@@ -243,7 +240,10 @@ local function environment(name, base)
 		})
 	end
 	return setmetatable(env, {
-		__index = function(_, key) deny(name, "global.read." .. tostring(key)) end,
+		__index = function(_, key)
+			if optionalGlobals[key] then return nil end
+			deny(name, "global.read." .. tostring(key))
+		end,
 		__newindex = function(_, key) deny(name, "global.write." .. tostring(key)) end,
 		__metatable = "locked",
 	})
