@@ -52,6 +52,9 @@ end
 local function returnWindow(s, window, speed, partner)
 	local distance = distanceToPlayer(s, partner); local travel = distance and speed > 0 and distance * 2 / speed or window; return math.min(window, math.max(1 / 25, travel + 1 / 25)) + ping() * 0.3
 end
+local function activationReturnWindow(window, speed)
+	local minimum, maximum = gameInfo.getBallSpeedLimits(); local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local base = 0.18 + (1 / 25 - 0.18) * fraction; return math.min(base, window) + ping() * 0.3
+end
 
 -- activation
 local function start(s, reason, partner, time)
@@ -109,7 +112,7 @@ local function inspectTarget(s, target, time, snapshot)
 		if not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
 		elseif not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt and window then
-			local limit = 0.1 * (time <= s.dashUntil and 2.5 or 1)
+			local limit = activationReturnWindow(window, speed) * (time <= s.dashUntil and 2.5 or 1)
 			if time - s.departedAt <= limit then s.pending = { partner = previous } end
 		end
 	end
@@ -288,7 +291,16 @@ AutoSpam.__contract = {
 			"recordTransition",
 			"apiVersion",
 		},
-		GameInfo = { "getSnapshotAt", "isSnapshotValid", "getDeflectWindow", "getDeflectGeometry", "getBallFrozen", "getLocalPing", "getTargetId" },
+		GameInfo = {
+			"getSnapshotAt",
+			"isSnapshotValid",
+			"getDeflectWindow",
+			"getDeflectGeometry",
+			"getBallFrozen",
+			"getLocalPing",
+			"getTargetId",
+			"getBallSpeedLimits",
+		},
 		Dash = { "setHandler", "tick" },
 	},
 
