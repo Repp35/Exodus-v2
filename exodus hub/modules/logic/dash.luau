@@ -51,8 +51,7 @@ local function emit(player, record, position, velocity, previous, time)
 	end
 end
 local function resetCharacter(record, character)
-	disconnect(record.attributeConnection)
-	record.character, record.attributeConnection = character, nil
+	record.character = character
 	record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
 	record.lastDetection, record.signalAt, record.signalActive = nil, -math.huge, false
 	record.effectActive = false
