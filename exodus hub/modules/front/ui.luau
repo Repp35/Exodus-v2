@@ -204,13 +204,13 @@ local function paintClashBall()
 	twPlay(clashBall, 0.28, { BackgroundColor3 = UIState.clashBallOn and C.green or C.red }, EASE_SINE, DIR_INOUT); clashBall.Text = UIState.clashBallOn and "ON" or "OFF"
 	clashBall.TextSize = UIState.clashBallOn and 18 or 16
 end
-local function syncAutoClashToggle()
+local function syncAutoSpamToggle()
 	if not (autoClashTrack and autoClashThumb) then return end
 	local v = UIState.clashBallOn; twPlay(autoClashTrack, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT)
 	twPlay(autoClashThumb, 0.32, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_OUT, DIR_OUT)
 end
 local function setClashBall(v, silent)
-	UIState.clashBallOn = v; setConfigValue("AutoClash", v)
+	UIState.clashBallOn = v; setConfigValue("AutoSpam", v)
 	if silent then return end
 	paintClashBall(); twPlay(clashBall, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
 	task.delay(0.08, function() twPlay(clashBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
@@ -293,8 +293,8 @@ local function cleanupUI()
 	for _, tween in ipairs(UIState.pageTweens) do
 		safeCancel(tween)
 	end
-	UIState.pageTweens = {}; UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false
-	if Utils then Utils.setManualSpamActive(false) end
+	UIState.pageTweens = {}; UIState.panelOpen = false; UIState.clashBallOn = false
+	-- Limpeza da UI não interfere no estado do spam manual.
 	UIState.panelTween = nil; UIState.btnTween = nil
 	UIState.btnIsDragging = function() return false end
 	for i = #flowingTweens, 1, -1 do
@@ -435,7 +435,7 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
 		Parent = f,
 	})
 	local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
-	if configKey == "AutoClash" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
+	if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
 	if configKey == "AutoDark" then autoDarkSetVisual = setVisual end
 	if configKey == "AutoJump" then autoJumpSetVisual = setVisual end
 	trackConn(inst("TextButton", {
@@ -708,7 +708,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 8,
 		Parent = screenGui,
 	})
-	corner(clashBall, 999); stroke(clashBall, Color3.new(0, 0, 0), 2); UIState.clashBallOn = config.AutoClash or false; clashBall.Text = UIState.clashBallOn and "ON" or "OFF"
+	corner(clashBall, 999); stroke(clashBall, Color3.new(0, 0, 0), 2); UIState.clashBallOn = config.AutoSpam or false; clashBall.Text = UIState.clashBallOn and "ON" or "OFF"
 	clashBall.TextSize = UIState.clashBallOn and 18 or 16; clashBall.BackgroundColor3 = UIState.clashBallOn and C.green or C.red
 	UIState.btnIsDragging = makeDraggable(floatingButton, floatingButton, function()
 		setConfigValue("BtnX", floatingButton.Position.X.Offset); setConfigValue("BtnY", floatingButton.Position.Y.Offset)
@@ -721,7 +721,7 @@ function ExodusUI.setup(deps)
 		setConfigValue("ClashBallX", clashBall.Position.X.Offset); setConfigValue("ClashBallY", clashBall.Position.Y.Offset)
 	end)
 	trackConn(clashBall.Activated:Connect(function()
-		setClashBall(not UIState.clashBallOn); syncAutoClashToggle()
+		setClashBall(not UIState.clashBallOn); syncAutoSpamToggle()
 	end))
 	local darkX = config.DarkBallX or 14; local darkY = config.DarkBallY or (viewport().Y / 2 + CLASH_SIZE / 2 + 8)
 	darkBall = inst("TextButton", {
@@ -1004,7 +1004,7 @@ function ExodusUI.setup(deps)
 	trackConn(killBtn.Activated:Connect(function() Utils.stop() end))
 	local yL = 4
 	local toggleCallbacks = {
-		AutoClash = function(value)
+		AutoSpam = function(value)
 			setClashBall(value, true); paintClashBall()
 		end,
 		ClashBallVisible = showClashBall,
@@ -1232,7 +1232,7 @@ function ExodusUI.setup(deps)
 	if type(Utils.observeSpam) == "function" then trackConn(Utils.observeSpam(function() setSpam(Utils.isManualSpamActive()) end)) end
 	if type(Utils.observeConfig) == "function" then
 		trackConn(Utils.observeConfig(function(changes)
-			if changes.AutoClash ~= nil then UIState.clashBallOn = changes.AutoClash == true; paintClashBall(); syncAutoClashToggle() end
+			if changes.AutoSpam ~= nil then UIState.clashBallOn = changes.AutoSpam == true; paintClashBall(); syncAutoSpamToggle() end
 		end))
 	end
 	setSpam(Utils.isManualSpamActive()); return true
