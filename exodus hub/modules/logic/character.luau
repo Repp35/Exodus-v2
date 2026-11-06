@@ -5,7 +5,6 @@ local Character = {}
 -- tuning
 local T = { BIND_TIMEOUT = 10 }
 local utils, spam, binds = nil, nil, {}
-
 local added, removing, currentLife
 local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
 
