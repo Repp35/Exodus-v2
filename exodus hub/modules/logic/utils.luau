@@ -45,13 +45,10 @@ end
 -- observers
 local function connectObserver(list, observer)
 	if type(observer) ~= "function" then error("Observer precisa ser uma função", 2) end
-	local connection = { Connected = true }
-	list[#list + 1] = connection
-	connection.callback = observer
+	local connection = { Connected = true }; list[#list + 1] = connection; connection.callback = observer
 	function connection:Disconnect()
 		if not self.Connected then return end
-		self.Connected = false
-		local index = table.find(list, self)
+		self.Connected = false; local index = table.find(list, self)
 		if index then table.remove(list, index) end
 	end
 	return connection
@@ -130,13 +127,11 @@ end
 -- environment
 local function refreshNamespace()
 	if refreshing then return end
-	refreshing = true
-	local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
+	refreshing = true; local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
 	namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author = NAME, "Exodus", VERSION, API_VERSION, AUTHOR
 	namespace.State, namespace.Config, namespace.ModuleURLs, namespace.Diagnostics =
 		stateSnapshot(), snapshot(state.config), snapshot(state.urls), diagnosticsSnapshot()
-	_G.Exodus = namespace
-	refreshing = false
+	_G.Exodus = namespace; refreshing = false
 end
 
 -- diagnostics
@@ -166,7 +161,6 @@ function Utils.ensureDataFolder()
 	if not isfolder(T.FOLDER) then makefolder(T.FOLDER) end
 	return true, T.FOLDER
 end
-
 local function serializeConfig(config)
 	local data = {}
 	for key, value in pairs(config) do
@@ -174,34 +168,23 @@ local function serializeConfig(config)
 	end
 	return http:JSONEncode(data)
 end
-
 local function saveConfig()
 	if not persistenceReady or not saveDirty then return end
 	if type(writefile) ~= "function" then error("API externa ausente: writefile", 2) end
-	local _, folder = Utils.ensureDataFolder()
-	local body = serializeConfig(state.config)
-	writefile(folder .. "/config.json", body)
-	saveDirty = false
+	local _, folder = Utils.ensureDataFolder(); local body = serializeConfig(state.config); writefile(folder .. "/config.json", body); saveDirty = false
 end
-
 local function queueSave()
 	if not persistenceReady then return end
 	saveDirty = true
 	if savePending then return end
-	savePending = true
-	saveToken += 1
-	local token = saveToken
+	savePending = true; saveToken += 1; local token = saveToken
 	task.delay(0.25, function()
 		if token ~= saveToken then return end
-		savePending = false
-		saveConfig()
+		savePending = false; saveConfig()
 	end)
 end
-
 local function flushSave()
-	saveToken += 1
-	savePending = false
-	saveConfig()
+	saveToken += 1; savePending = false; saveConfig()
 end
 
 -- lifecycle
@@ -215,15 +198,12 @@ end
 function Utils.stop()
 	local previous = state.lifecycle.phase
 	state.active, state.manualSpam, state.autoSpam = false, false, false
-	notify(spamObservers)
-	flushSave()
-	state.lifecycle.stoppedAt = os.clock()
+	notify(spamObservers); flushSave(); state.lifecycle.stoppedAt = os.clock()
 	_G.ExodusOnBurst = function() end
 	if type(_G.ExodusUICleanup) == "function" then _G.ExodusUICleanup() end
 	disconnectAll(state.characterConnections); disconnectAll(state.globalConnections)
 	state.config, state.urls, modules = {}, {}, {}
-	persistenceReady = false
-	table.clear(spamObservers); table.clear(configObservers)
+	persistenceReady = false; table.clear(spamObservers); table.clear(configObservers)
 	if type(_G.Exodus) == "table" then
 		local exodus = _G.Exodus
 		exodus.Started, exodus.UIReady, exodus.Runtime, exodus.UI = false, false, nil, nil
@@ -304,8 +284,7 @@ end
 function Utils.loadConfig()
 	if type(isfile) ~= "function" then error("API externa ausente: isfile", 2) end
 	if type(readfile) ~= "function" then error("API externa ausente: readfile", 2) end
-	local _, folder = Utils.ensureDataFolder()
-	local path = folder .. "/config.json"
+	local _, folder = Utils.ensureDataFolder(); local path = folder .. "/config.json"
 	if isfile(path) then
 		local data = http:JSONDecode(readfile(path))
 		if type(data) ~= "table" then error("Config inválida: config.json deve conter uma tabela", 2) end
@@ -321,8 +300,7 @@ function Utils.loadConfig()
 		end
 		Utils.setConfig(patch)
 	end
-	persistenceReady = true
-	return true
+	persistenceReady = true; return true
 end
 function Utils.setConfigModule(module)
 	if type(module) ~= "table" or type(module.normalizePatch) ~= "function" or type(module.validate) ~= "function" then error("API interna ausente: Config.normalizePatch/validate", 2) end
