@@ -145,13 +145,12 @@ local function setPhase(s, value, reason)
 end
 local function ping(s, time)
 	if time < s.pingAt or time - s.pingAt >= T.frame then
-		s.pingAt = time; local ok, value = pcall(gameInfo.getLocalPing)
+		s.pingAt = time; local value = gameInfo.getLocalPing()
 		if current ~= s or not s.bound then return s.ping end
-		if ok and finite(value) and value >= 0 then
+		if finite(value) and value >= 0 then
 			s.ping = value
 		else
-			if not ok then report(s, "GameInfo.getLocalPing", value, time) end
-			local statusOk, status = pcall(autoParry.getStatus); local fallback = statusOk and type(status) == "table" and type(status.ping) == "table" and tonumber(status.ping.oneWay)
+			local status = autoParry.getStatus(); local fallback = type(status) == "table" and type(status.ping) == "table" and tonumber(status.ping.oneWay)
 			if finite(fallback) and fallback >= 0 then s.ping = fallback else s.ping = 0 end
 		end
 	end
@@ -201,8 +200,8 @@ local function setActive(s, enabled, reason, detail, time, recoveryValidated)
 		if s.partner == -1 and s.target ~= localPlayer.UserId and s.target ~= -1 then s.partner = s.target end
 		local activationRadius = s.activationRadius
 		if time < s.dashBonusUntil then
-			local ok, value = pcall(autoParry.getRadius, "geometry", 1, s.speed, "game")
-			if ok and type(value) == "table" and finite(value.fullRadius) then activationRadius = value.fullRadius end
+			local value = autoParry.getRadius("geometry", 1, s.speed, "game")
+			if type(value) == "table" and finite(value.fullRadius) then activationRadius = value.fullRadius end
 		end
 		s.activation = {
 			source = time < s.dashBonusUntil and "anti_dash" or "normal",
@@ -288,13 +287,13 @@ local function geometry(s, snapshot, time)
 	local speed = finite(snapshot.speed) and math.max(0, snapshot.speed) or velocity.Magnitude
 	if not finite(speed) then return nil end
 	if s.radiusAt <= 0 or time < s.radiusAt or time - s.radiusAt >= T.frame or math.abs(speed - s.radiusSpeed) >= 2 then
-		local ok, full = pcall(autoParry.getRadius, "geometry", 1, speed, "game")
+		local full = autoParry.getRadius("geometry", 1, speed, "game")
 		if current ~= s or not s.bound then return nil end
-		if ok and type(full) == "table" and finite(full.fullRadius) and full.fullRadius > 0 then s.parryRadius = full.fullRadius end
+		if type(full) == "table" and finite(full.fullRadius) and full.fullRadius > 0 then s.parryRadius = full.fullRadius end
 		if not s.active then
-			local radiusOk, activation = pcall(autoParry.getRadius, "geometry", 0.8, speed, "game")
+			local activation = autoParry.getRadius("geometry", 0.8, speed, "game")
 			if current ~= s or not s.bound then return nil end
-			s.activationRadius = radiusOk and type(activation) == "table" and finite(activation.fullRadius) and activation.fullRadius or s.parryRadius
+			s.activationRadius = type(activation) == "table" and finite(activation.fullRadius) and activation.fullRadius or s.parryRadius
 		end
 		s.radiusAt, s.radiusSpeed = time, speed
 	end
@@ -318,10 +317,9 @@ local function returnAllowance(s, partner, time)
 	local fraction = finite(low) and finite(high) and high > low and math.clamp((s.speed - low) / (high - low), 0, 1) or 0; local base = T.returnSlow + (T.returnFast - T.returnSlow) * fraction
 	local bonus = 0
 	if type(autoParry.getPressure) == "function" then
-		local ok, pressure = pcall(autoParry.getPressure)
+		local pressure = autoParry.getPressure()
 		if
-			ok
-			and type(pressure) == "table"
+			type(pressure) == "table"
 			and finite(pressure.currentLevel)
 			and finite(pressure.latestReturnTime)
 			and pressure.latestReturnTime > 0
@@ -452,10 +450,8 @@ end
 -- snapshots
 local function readSnapshot(s, time)
 	local method = type(gameInfo.getSnapshotAt) == "function" and gameInfo.getSnapshotAt or function(t) return gameInfo.getSnapshot(nil, t) end
-	local ok, value = pcall(method, time)
-	if not ok then report(s, "GameInfo.getSnapshot", value, time); return nil end
-	local validOk, valid = pcall(gameInfo.isSnapshotValid, value, time)
-	if not validOk then report(s, "GameInfo.isSnapshotValid", valid, time); return nil end
+	local value = method(time)
+	local valid = gameInfo.isSnapshotValid(value, time)
 	if valid ~= true then return nil end
 	return value
 end
@@ -465,8 +461,8 @@ local function missingSnapshot(s, time, reason)
 	s.lastGate = reason
 end
 local function radiusAt(s, factor)
-	local ok, value = pcall(autoParry.getRadius, "geometry", factor, s.speed, "game")
-	if ok and type(value) == "table" and finite(value.fullRadius) and value.fullRadius >= 0 then return value.fullRadius end
+	local value = autoParry.getRadius("geometry", factor, s.speed, "game")
+	if type(value) == "table" and finite(value.fullRadius) and value.fullRadius >= 0 then return value.fullRadius end
 	return s.parryRadius
 end
 local function extendReturnForDash(s, time)
@@ -540,8 +536,8 @@ local function evaluate(s, snapshot, time)
 		s.lastGate = targeted and "deact_targeted" or "deact_waiting_target_return"; return
 	end
 	if aimed and not s.hasActivated and not s.distantRecovery and type(autoParry.getPressure) == "function" then
-		local ok, pressure = pcall(autoParry.getPressure)
-		if ok and type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= T.pressureBoostThreshold then
+		local pressure = autoParry.getPressure()
+		if type(pressure) == "table" and finite(pressure.currentLevel) and pressure.currentLevel >= T.pressureBoostThreshold then
 			clearReturn(s); setActive(s, true, "ap_pressure", "auto_parry_pressure", time); return
 		end
 	end
@@ -600,8 +596,7 @@ local function updateFrame(s, time)
 		if s.active then s.windowPartner = s.partner; setActive(s, false, "snapshot_missing", nil, time); s.windowPaused = true end
 		missingSnapshot(s, time, "snapshot_missing"); return
 	end
-	s.dashOwner = coroutine.running(); local dashOk, dashError = pcall(dash.tick, time); s.dashOwner = nil
-	if not dashOk then error(dashError, 0) end
+	s.dashOwner = coroutine.running(); dash.tick(time); s.dashOwner = nil
 	if current ~= s or not s.bound then return end
 	if snapshot.teleported then
 		if s.active then s.windowPartner = s.partner; setActive(s, false, "teleported", nil, time); s.windowPaused = true end
@@ -639,18 +634,10 @@ local function dispatch(s, kind, data, time)
 	s.draining = true
 	while current == s and s.bound and s.queueHead <= #s.queue do
 		local item = s.queue[s.queueHead]; s.queueHead += 1
-		local ok, err = xpcall(function()
-			if item.kind == "sync" then acceptSync(s, item.data.copy, item.at, item.data.original)
-			elseif item.kind == "frame" then updateFrame(s, item.at)
-			elseif item.kind == "dash" then trackDash(s, item.data, item.at)
-			elseif item.kind == "pull" then stopForPull(s, item.data.position, item.data.reason, item.at) end
-		end, function(value)
-			if type(debug) == "table" and type(debug.traceback) == "function" then return debug.traceback(tostring(value), 2) end
-			return tostring(value)
-		end)
-		if not ok then
-			if current == s and s.bound then report(s, "AutoSpam", err, item.at) end
-		end
+		if item.kind == "sync" then acceptSync(s, item.data.copy, item.at, item.data.original)
+		elseif item.kind == "frame" then updateFrame(s, item.at)
+		elseif item.kind == "dash" then trackDash(s, item.data, item.at)
+		elseif item.kind == "pull" then stopForPull(s, item.data.position, item.data.reason, item.at) end
 	end
 	s.queue, s.queueHead, s.draining = {}, 1, false
 	return true
@@ -817,8 +804,7 @@ end
 function AutoSpam.getStatus()
 	local s, value, context = state, state.activation, nil
 	if gameInfo and type(gameInfo.getClashContext) == "function" then
-		local ok, result = pcall(gameInfo.getClashContext)
-		if ok then context = result elseif utils then report(s, "GameInfo.getClashContext", result, clock()) end
+		context = gameInfo.getClashContext()
 	end
 	return {
 		schema = utils and utils.apiVersion() or nil,
