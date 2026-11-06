@@ -217,7 +217,7 @@ local function clearRegistry()
 	Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false; _G.ExodusOnBurst = nil
 end
 local function stopPreviousRuntime()
-	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then pcall(Modules.gameinfo.stopMaintenance) end
+	if type(Modules.remote) == "table" and type(Modules.remote.stopMaintenance) == "function" then pcall(Modules.remote.stopMaintenance) end
 	for _, name in ipairs({ "character", "autofierce", "spam", "autospam", "autodark", "movement", "dash", "autoparry" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
@@ -421,14 +421,16 @@ local function bindRuntime(loaded, log)
 		or type(gameInfo.installBallWatcher) ~= "function"
 		or type(gameInfo.getSyncData) ~= "function"
 		or type(remote) ~= "table"
-		or type(gameInfo.bindBallSync) ~= "function"
-		or type(gameInfo.startMaintenance) ~= "function"
-		or type(gameInfo.stopMaintenance) ~= "function"
-		or type(remote.fireParry) ~= "function"
+		or type(remote.bindBallSync) ~= "function"
+		or type(remote.getRemote) ~= "function"
+		or type(remote.initParry) ~= "function"
+		or type(remote.startMaintenance) ~= "function"
 	then
 		return nil, "contrato de runtime incompleto"
 	end
-	local abilityOk, ability = pcall(gameInfo.getDeflectAbility); local ballSyncSubscribers = {}
+	local remoteCallOk, parryRemote = pcall(remote.getRemote); local initCallOk, initialized = false, false
+	if remoteCallOk and parryRemote then initCallOk, initialized = pcall(remote.initParry) end
+	local ballSyncSubscribers = {}
 	for _, name in ipairs(MODULE_ORDER) do
 		local module = loaded[name]
 		if name ~= "utils" and type(module) == "table" then
@@ -525,16 +527,16 @@ local function bindRuntime(loaded, log)
 	end
 	local watcherCallOk, watcherReady = pcall(gameInfo.installBallWatcher, utils.trackGlobal)
 	if not watcherCallOk or watcherReady ~= true then local reason = watcherCallOk and "observador da bola indisponível" or tostring(watcherReady); return nil, "GameInfo: " .. reason end
-	local syncCallOk, syncReady = pcall(gameInfo.bindBallSync, onBallSync)
-	if not syncCallOk then printRawError("GameInfo", syncReady, MODULE_BY_NAME.gameinfo.path) end
-	local maintenanceOk, maintenanceReady = pcall(gameInfo.startMaintenance, {
+	local syncCallOk, syncReady = pcall(remote.bindBallSync, onBallSync)
+	if not syncCallOk then printRawError("Remote", syncReady, MODULE_BY_NAME.remote.path) end
+	local maintenanceOk, maintenanceReady = pcall(remote.startMaintenance, {
 		isActive = utils.isActive,
 		onBallSync = onBallSync,
 	})
-	if not maintenanceOk or maintenanceReady ~= true then local message = maintenanceReady; return nil, "GameInfo: " .. tostring(message) end
+	if not maintenanceOk or maintenanceReady ~= true then local message = maintenanceReady; return nil, "Remote: " .. tostring(message) end
 	return {
-		parryRemote = abilityOk and ability ~= nil,
-		parryInitialized = abilityOk and ability ~= nil,
+		parryRemote = remoteCallOk and parryRemote ~= nil,
+		parryInitialized = initCallOk and initialized == true,
 		watcher = watcherCallOk and watcherReady == true,
 		ballSync = syncCallOk and syncReady == true,
 		maintenance = maintenanceOk and maintenanceReady == true,
@@ -636,7 +638,7 @@ local function rollbackLoaded(loaded)
 			elseif type(module.resetState) == "function" then pcall(module.resetState) end
 		end
 	end
-	if type(loaded.gameinfo) == "table" and type(loaded.gameinfo.stopMaintenance) == "function" then pcall(loaded.gameinfo.stopMaintenance) end
+	if type(loaded.remote) == "table" and type(loaded.remote.stopMaintenance) == "function" then pcall(loaded.remote.stopMaintenance) end
 	if type(loaded.utils) == "table" and type(loaded.utils.stop) == "function" then pcall(loaded.utils.stop) end
 end
 local startLock = false
