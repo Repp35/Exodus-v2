@@ -266,7 +266,7 @@ local function resolveDeps(loaded, requires)
 	if type(requires) ~= "table" then return deps end
 	for depName, sourceKey in pairs(requires) do
 		local dependency = loaded[sourceKey]
-		if dependency == nil then return nil, sourceKey end
+		if dependency == nil then error(("API interna ausente: dependência %s (%s)"):format(tostring(depName), tostring(sourceKey)), 2) end
 		deps[depName] = dependency
 	end
 	return deps
@@ -297,37 +297,35 @@ local function collectCharacterBinds(loaded)
 end
 local function initializeModules(loaded)
 	local characterBinds, bindModule, bindError = collectCharacterBinds(loaded)
-	if not characterBinds then return false, bindModule, bindError end
+	if not characterBinds then error(("%s: %s"):format(tostring(bindModule), tostring(bindError)), 2) end
 	for _, name in ipairs(MODULE_ORDER) do
 		if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
 			local module = loaded[name]
-			if type(module) ~= "table" or type(module.setup) ~= "function" then return false, name, "setup ausente" end
+			if type(module) ~= "table" or type(module.setup) ~= "function" then error("API interna ausente: " .. name .. ".setup", 2) end
 			local contract = contractOf(module); local deps, missingDependency = resolveDeps(loaded, contract.requires)
-			if not deps then local message = ("%s depende de %s, mas esse módulo não foi carregado"):format(name, tostring(missingDependency)); return false, name, message end
+			if not deps then error(("%s: dependência não carregada: %s"):format(name, tostring(missingDependency)), 2) end
 			if contract.requiresMethods ~= nil then
-				if type(contract.requiresMethods) ~= "table" then return false, name, "contrato requiresMethods inválido" end
+				if type(contract.requiresMethods) ~= "table" then error(name .. ": requiresMethods inválido", 2) end
 				for dependencyName, methods in pairs(contract.requiresMethods) do
 					local dependency = deps[dependencyName]
-					if type(dependency) ~= "table" or type(methods) ~= "table" then return false, name, "contrato de dependência inválido: " .. tostring(dependencyName) end
+					if type(dependency) ~= "table" or type(methods) ~= "table" then error(name .. ": dependência inválida: " .. tostring(dependencyName), 2) end
 					for _, method in ipairs(methods) do
-						if type(method) ~= "string" or type(dependency[method]) ~= "function" then return false, name, "API interna ausente: " .. tostring(dependencyName) .. "." .. tostring(method) end
+						if type(method) ~= "string" or type(dependency[method]) ~= "function" then error(("API interna ausente: %s.%s (exigida por %s)"):format(tostring(dependencyName), tostring(method), name), 2) end
 					end
 				end
 			end
 			if contract.requiresVersions ~= nil then
-				if type(contract.requiresVersions) ~= "table" then return false, name, "contrato requiresVersions inválido" end
+				if type(contract.requiresVersions) ~= "table" then error(name .. ": requiresVersions inválido", 2) end
 				for dependencyName, minimum in pairs(contract.requiresVersions) do
 					local dependency = deps[dependencyName]; local dependencyContract = contractOf(dependency); local version = dependencyContract.version
 					if type(minimum) ~= "number" or type(version) ~= "number" or version < minimum then
-						return false,
-							name,
-							("API incompatível: %s requer versão %s; encontrada %s"):format(tostring(dependencyName), tostring(minimum), tostring(version))
+						error(("API incompatível: %s requer versão %s; encontrada %s"):format(tostring(dependencyName), tostring(minimum), tostring(version)), 2)
 					end
 				end
 			end
 			if name == "character" then deps.characterBinds = characterBinds end
 			local initialized, setupError = module.setup(deps)
-			if initialized ~= true then return false, name, setupError end
+			if initialized ~= true then error(("%s.setup falhou: %s"):format(name, tostring(setupError or initialized)), 2) end
 		end
 	end
 	return true
@@ -495,9 +493,9 @@ local function startInternal()
 	activeLoaded = loaded
 	for _, entry in ipairs(MODULE_MANIFEST) do
 		local name = entry.name; local module = loaded[name]; local contract = module and module.__contract; local methods = type(contract) == "table" and contract.provides or nil
-		if type(methods) ~= "table" then return false, name, "contrato provides ausente ou inválido" end
+		if type(methods) ~= "table" then error(name .. ": contrato provides ausente ou inválido", 2) end
 		for _, method in ipairs(methods) do
-			if type(module) ~= "table" or type(module[method]) ~= "function" then return false, name, "API interna ausente: " .. name .. "." .. method end
+			if type(module) ~= "table" or type(module[method]) ~= "function" then error("API interna ausente: " .. name .. "." .. tostring(method), 2) end
 		end
 	end
 	local utils = loaded.utils
@@ -572,7 +570,7 @@ local function startSafely()
 		Loader.lastError = startError
 		Loader.lastErrorModule = moduleName
 		Exodus.StartError = startError
-		Exodus.StartErrorModule = moduleName; return false
+		Exodus.StartErrorModule = moduleName; error(("%s: %s"):format(tostring(moduleName), tostring(startError)), 2)
 	end
 	Loader.lastError = nil; Loader.lastErrorModule = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil
 	return true

@@ -323,7 +323,7 @@ function Utils.loadConfig()
 	persistenceReady = true; return true
 end
 function Utils.setConfigModule(module)
-	if type(module) ~= "table" or type(module.normalizePatch) ~= "function" or type(module.validate) ~= "function" then return false end
+	if type(module) ~= "table" or type(module.normalizePatch) ~= "function" or type(module.validate) ~= "function" then error("API interna ausente: Config.normalizePatch/validate", 2) end
 	configModule = module; return true
 end
 function Utils.setModuleURLs(urls)

@@ -12,7 +12,8 @@ end
 
 -- dispatch
 local function send(ability, method, ...)
-	if not ability or type(ability[method]) ~= "function" then return false, method .. " indisponível" end
+	if ability == nil then return false, method .. " não equipado ou indisponível" end
+	if type(ability[method]) ~= "function" then error("API externa ausente: habilidade." .. method, 2) end
 	local result = ability[method](ability, ...)
 	if result == false then return false, method .. " recusado" end
 	return true

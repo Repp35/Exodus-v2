@@ -449,8 +449,7 @@ end
 
 -- snapshots
 local function readSnapshot(s, time)
-	local method = type(gameInfo.getSnapshotAt) == "function" and gameInfo.getSnapshotAt or function(t) return gameInfo.getSnapshot(nil, t) end
-	local value = method(time); local valid = gameInfo.isSnapshotValid(value, time)
+	local value = gameInfo.getSnapshotAt(time); local valid = gameInfo.isSnapshotValid(value, time)
 	if valid ~= true then return nil end
 	return value
 end

@@ -43,9 +43,9 @@ local function report(name, message)
 	if utils and type(utils.recordError) == "function" then utils.recordError("GameInfo", detail) else warn("[GameInfo] " .. detail) end
 end
 local function load(module, name)
-	if not module or not module:IsA("ModuleScript") then return nil end
+	if not module or not module:IsA("ModuleScript") then error("API externa ausente: TS." .. tostring(name), 2) end
 	local result = require(module)
-	if type(result) ~= "table" then return nil end
+	if type(result) ~= "table" then error("API externa inválida: TS." .. tostring(name) .. " não retornou tabela", 2) end
 	return result
 end
 local function storage() return utils and utils.getReplicatedStorage() end
@@ -55,16 +55,18 @@ local function ts() return child(storage(), "TS") end
 local function getAbilities()
 	local module = child(ts(), "ClientAbilities")
 	if abilityScript ~= module then abilityScript, abilities = module, nil end
-	if not abilities and module then
+	if not abilities then
 		local value = load(module, "ClientAbilities")
-		if value and type(value.Abilities) == "table" then abilities = value.Abilities elseif value then report("ClientAbilities", "Abilities ausente ou inválido") end
+		if type(value.Abilities) ~= "table" then error("API externa ausente: TS.ClientAbilities.Abilities", 2) end
+		abilities = value.Abilities
 	end
 	return abilities
 end
 local function getAbility(index, method)
 	local list = getAbilities(); local ability = list and list[index]
-	if type(ability) == "table" and type(ability[method]) == "function" then return ability end
-	return nil
+	if ability == nil then return nil end
+	if type(ability) ~= "table" or type(ability[method]) ~= "function" then error(("API externa ausente: ClientAbilities[%d].%s"):format(index, method), 2) end
+	return ability
 end
 local function getReplicator()
 	local folder = child(ts(), "BallReplicator"); local module = folder and (folder:IsA("ModuleScript") and folder or child(folder, "BallReplicator"))
@@ -277,7 +279,7 @@ function GameInfo.applyPacket(value)
 end
 function GameInfo.decodeBallPacket(value)
 	local provider = getReplicator()
-	if not provider or type(provider.Decode) ~= "function" then return nil end
+	if not provider or type(provider.Decode) ~= "function" then error("API externa ausente: BallReplicator.Decode", 2) end
 	local decoded = provider:Decode(value)
 	if type(decoded) ~= "table" then return nil end
 	return {
@@ -370,12 +372,13 @@ function GameInfo.getBallSpeedLimits()
 	if time < speedAt then return minimumSpeed, maximumSpeed end
 	speedAt = time + T.SPEED_REFRESH; local module = child(child(ts(), "Gameplay"), "GameBall")
 	if module ~= gameBallScript then gameBallScript, gameBall = module, nil end
-	if not gameBall then local value = load(module, "GameBall"); gameBall = value and value.GameBall end
+	if not gameBall then gameBall = load(module, "GameBall").GameBall end
 	if type(gameBall) ~= "table" or type(gameBall.GetBaseSpeed) ~= "function" or type(gameBall.GetMaxSpeed) ~= "function" then
-		report("GameBall", "API de velocidade indisponível; usando últimos limites conhecidos"); return minimumSpeed, maximumSpeed
+		error("API externa ausente: TS.Gameplay.GameBall.GetBaseSpeed/GetMaxSpeed", 2)
 	end
 	local low, high = gameBall:GetBaseSpeed(), gameBall:GetMaxSpeed()
-	if finite(low) and finite(high) and low > 0 and high > low then minimumSpeed, maximumSpeed = low, high end
+	if not finite(low) or not finite(high) or low <= 0 or high <= low then error("API externa inválida: GameBall retornou limites de velocidade inválidos", 2) end
+	minimumSpeed, maximumSpeed = low, high
 	return minimumSpeed, maximumSpeed
 end
 function GameInfo.getDeflectWindow(speed)
