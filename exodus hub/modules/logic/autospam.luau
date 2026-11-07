@@ -221,8 +221,7 @@ local function start(s, reason, partner, time, serverTime)
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason, s.activeSince = time, serverTime, reason, time
-	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
-	watchTimeout(s, time)
+	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason); watchTimeout(s, time)
 end
 local function shouldActivate(s, snapshot, time)
 	if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
@@ -260,16 +259,12 @@ local function shouldDeactivate(s, time)
 	if s.activeSince and time - s.activeSince >= T.DEACTIVATION.CLASH_DELAY and s.lastSwitchAt and time - s.lastSwitchAt >= T.DEACTIVATION.NO_SWITCH then return "no_target_switch" end
 	return nil
 end
-
--- Wait independently of incoming packets and frame updates.
 watchTimeout = function(s, startedAt)
 	task.spawn(function()
 		while current == s and s.active and s.activeSince == startedAt do
-			local time = now()
-			local reason = shouldDeactivate(s, time)
+			local time = now(); local reason = shouldDeactivate(s, time)
 			if reason then stop(s, reason, false); return end
-			local deadline = math.max(startedAt + T.DEACTIVATION.CLASH_DELAY, s.lastSwitchAt + T.DEACTIVATION.NO_SWITCH)
-			task.wait(math.max(0, deadline - time))
+			local deadline = math.max(startedAt + T.DEACTIVATION.CLASH_DELAY, s.lastSwitchAt + T.DEACTIVATION.NO_SWITCH); task.wait(math.max(0, deadline - time))
 		end
 	end)
 end
@@ -562,7 +557,6 @@ function AutoSpam.onBallSync(data)
 		snapshot.teleported = false
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
-	-- Check the previous interval before a new target can reset the timer.
 	if s.active and shouldDeactivate(s, time) == "no_target_switch" then
 		if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then observeClashStats(s, snapshot, time, true) end
 		stop(s, "no_target_switch", false)
