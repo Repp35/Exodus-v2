@@ -231,8 +231,7 @@ function AutoSpam.setup(deps)
 		local s = current
 		if not s or not gameInfo.areAbilitiesEnabled() or not event or event.userId == localPlayer.UserId or not event.position or not event.velocity then return end
 		if utils.isActive() and utils.getConfigValue("AutoClashUpDash") == true then
-			local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local velocity = event.velocity
-			local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
+			local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local velocity = event.velocity; local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
 			if partner == event.userId and velocity.Y >= 72 and horizontalSpeed <= velocity.Y * 0.5 then movement.upDash() end
 		end
 		local offset = s.root.Position - event.position
