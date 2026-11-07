@@ -174,8 +174,7 @@ function Utils.createClashLog(partnerId, startedDate)
 	while isfile(path) do
 		index += 1; path = prefix .. "_" .. index .. ".txt"
 	end
-	local header = "EXODUS - CLASH\nData (UTC): " .. (startedDate or os.date("!%Y-%m-%d %H:%M:%S")) .. "\n"
-	writefile(path, header)
+	local header = "EXODUS - CLASH\nData (UTC): " .. (startedDate or os.date("!%Y-%m-%d %H:%M:%S")) .. "\n"; writefile(path, header)
 	local content
 	if type(appendfile) ~= "function" then content = header end
 	return { path = path, content = content }

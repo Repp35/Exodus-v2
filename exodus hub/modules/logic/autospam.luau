@@ -83,7 +83,10 @@ local function formatSample(title, sample)
 	if not sample then return title .. ": indisponível\n" end
 	return string.format(
 		"%s\nMinha posição: %s\nPosição do oponente: %s\nPosição da bola: %s\nDistância: %s studs\nVelocidade: %s\n",
-		title, formatPoint(sample.own), formatPoint(sample.opponent), formatPoint(sample.ball),
+		title,
+		formatPoint(sample.own),
+		formatPoint(sample.opponent),
+		formatPoint(sample.ball),
 		sample.distance and string.format("%.2f", sample.distance) or "?",
 		sample.speed and string.format("%.2f", sample.speed) or "?"
 	)
@@ -92,36 +95,48 @@ local function finishClashStats(reason, time)
 	local stats = clashStats
 	if not stats or stats.frozen then return end
 	stats.frozen, stats.waitingForClash = true, false
-	stats.duration = math.max(0, time - stats.startedAt)
-	stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0
-	stats.endReason = reason
+	stats.duration = math.max(0, time - stats.startedAt); stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0; stats.endReason = reason
 	if reason ~= "jogador morreu" then return end
 	local opponent = players:GetPlayerByUserId(stats.partnerId)
 	local ok, result = pcall(function()
 		local log = utils.createClashLog(stats.partnerId, stats.startedDate)
-		utils.appendClashLog(log, string.format(
-			"Oponente: %s\nVencedor: %s\nDuração: %.3f s\nCPS médio: %.2f\n\n%s\n%s",
-			opponent and opponent.Name or tostring(stats.partnerId),
-			opponent and opponent.Name or tostring(stats.partnerId),
-			stats.duration, stats.cps, formatSample("INÍCIO", stats.startSample), formatSample("FIM", stats.endSample)
-		))
+		utils.appendClashLog(
+			log,
+			string.format(
+				"Oponente: %s\nVencedor: %s\nDuração: %.3f s\nCPS médio: %.2f\n\n%s\n%s",
+				opponent and opponent.Name or tostring(stats.partnerId),
+				opponent and opponent.Name or tostring(stats.partnerId),
+				stats.duration,
+				stats.cps,
+				formatSample("INÍCIO", stats.startSample),
+				formatSample("FIM", stats.endSample)
+			)
+		)
 	end)
 	if not ok then utils.recordError("ClashLog", tostring(result)) end
 end
 local function beginClashStats(partner, time)
 	if clashStats and not clashStats.frozen then finishClashStats("novo clash", clashStats.lastObserved) end
 	clashStats = {
-		partnerId = partner, cps = 0, lastObserved = time, startedAt = time, startedDate = os.date("!%Y-%m-%d %H:%M:%S"),
-		totalSwitches = 0, frozen = false,
+		partnerId = partner,
+		cps = 0,
+		lastObserved = time,
+		startedAt = time,
+		startedDate = os.date("!%Y-%m-%d %H:%M:%S"),
+		totalSwitches = 0,
+		frozen = false,
 	}
+
 end
 local function observeClashStats(s, snapshot, time, fresh)
-	local context = gameInfo.getClashContext()
-	local partner = s.active and s.partner or (context and context.partnerId)
-	local target = userId(snapshot.targetId)
-	if not partner and clashStats and not clashStats.frozen
+	local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local target = userId(snapshot.targetId)
+	if
+		not partner
+		and clashStats
+		and not clashStats.frozen
 		and time - (clashStats.lastSwitchAt or clashStats.startedAt) <= 1.5
-		and (target == localPlayer.UserId or target == clashStats.partnerId) then
+		and (target == localPlayer.UserId or target == clashStats.partnerId)
+	then
 		partner = clashStats.partnerId
 	end
 	if not partner then
@@ -134,34 +149,30 @@ local function observeClashStats(s, snapshot, time, fresh)
 	elseif not clashStats or clashStats.partnerId ~= partner or time - clashStats.lastObserved > 1.5 then
 		beginClashStats(partner, time)
 	end
-	local stats = clashStats
-	-- A packet is authoritative; avoid counting the same change again from an older sampled snapshot.
-	local observeTarget = fresh or not stats.lastPacketAt or time - stats.lastPacketAt > 0.5
+	local stats = clashStats; local observeTarget = fresh or not stats.lastPacketAt or time - stats.lastPacketAt > 0.5
 	if fresh then stats.lastPacketAt = time end
 	if observeTarget and target then
 		local me = localPlayer.UserId
-		if (stats.lastTarget == me and target == partner) or (stats.lastTarget == partner and target == me) then
-			stats.totalSwitches += 1
-			stats.lastSwitchAt = time
-		end
+		if (stats.lastTarget == me and target == partner) or (stats.lastTarget == partner and target == me) then stats.totalSwitches += 1; stats.lastSwitchAt = time end
 		stats.lastTarget = target
 	end
-	local duration = time - stats.startedAt
-	stats.cps = duration > 0 and stats.totalSwitches / duration or 0
-	local speed = tonumber(snapshot.syncSpeed)
+	local duration = time - stats.startedAt; stats.cps = duration > 0 and stats.totalSwitches / duration or 0; local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
 	if finite(speed) and speed >= 0 then stats.speed = speed end
-	local other = gameInfo.getPlayerMotion(partner)
-	local own = s.root.Position
-	local distance = typeof(other) == "Vector3" and (other - own).Magnitude or nil
+	local other = gameInfo.getPlayerMotion(partner); local own = s.root.Position; local distance = typeof(other) == "Vector3" and (other - own).Magnitude or nil
 	if finite(distance) then stats.distance = distance end
 	stats.lastObserved = time
 	local sample = {
-		time = math.max(0, time - stats.startedAt), distance = distance,
-		speed = stats.speed, cps = stats.cps, own = own, opponent = other, ball = snapshot.position,
+		time = math.max(0, time - stats.startedAt),
+		distance = distance,
+		speed = stats.speed,
+		cps = stats.cps,
+		own = own,
+		opponent = other,
+		ball = snapshot.position,
 	}
-	stats.startSample = stats.startSample or sample
-	stats.endSample = sample
+
+	stats.startSample = stats.startSample or sample; stats.endSample = sample
 end
 local function freezeClashStats(playerId)
 	if not clashStats or clashStats.frozen then return end
@@ -174,6 +185,7 @@ local function freezeClashStats(playerId)
 	end
 	finishClashStats(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", now())
 end
+
 -- activation
 local function start(s, reason, partner, time, serverTime)
 	if s.active then return end
