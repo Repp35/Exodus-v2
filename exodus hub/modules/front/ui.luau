@@ -718,7 +718,13 @@ function ExodusUI.setup(deps)
 		local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true; travelLabel.Visible = visible; local time = os.clock()
 		if not visible or time < nextTravelUpdate then return end
 		nextTravelUpdate = time + 0.05; local status = AutoSpam.getStatus(); local stats = status and status.clashStats
-		if not stats then travelLabel.Text = "Tempo da bola: —"; return end
+		local snapshot = GameInfo.getSnapshotAt(time); local speed
+		if GameInfo.isSnapshotValid(snapshot) then
+			speed = tonumber(snapshot.syncSpeed)
+			if not speed or speed ~= speed or speed <= 0 or speed == math.huge then speed = snapshot.speed end
+		end
+		local speedText = type(speed) == "number" and speed == speed and speed >= 0 and speed < math.huge and string.format("%.0f", speed) or "—"
+		if not stats then travelLabel.Text = "SPD atual: " .. speedText .. "\nTempo da bola: —"; return end
 		local me = Players.LocalPlayer and Players.LocalPlayer.UserId
 		if stats.frozen then
 			if stats.deceasedId then
@@ -731,6 +737,7 @@ function ExodusUI.setup(deps)
 			local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"; local who = stats.travelTarget == me and "Você" or (stats.travelTarget == stats.partnerId and "Oponente" or "—"); local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
 			local lastWho = stats.lastTravelTarget == me and "você" or (stats.lastTravelTarget == stats.partnerId and "oponente" or "—"); travelLabel.Text = "Target: " .. who .. " | Tempo: " .. value .. "\nÚltima troca (" .. lastWho .. "): " .. last
 		end
+		travelLabel.Text = "SPD atual: " .. speedText .. "\n" .. travelLabel.Text
 	end))
 	corner(distanceLabel, 8); local nextDistanceUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
