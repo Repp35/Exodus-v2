@@ -408,7 +408,7 @@ local function bindRuntime(loaded)
 end
 
 -- interface
-local function loadInterface(interface, utils, controls, uiConfig, gameInfo)
+local function loadInterface(interface, utils, controls, uiConfig, gameInfo, autoSpam)
 	if type(interface) ~= "table" then return false, "UI", "módulo não carregado" end
 	if type(interface.setup) ~= "function" then return false, "UI", "setup ausente" end
 	local setupResult, setupError = interface.setup({
@@ -416,6 +416,7 @@ local function loadInterface(interface, utils, controls, uiConfig, gameInfo)
 		Controls = controls,
 		UIConfig = uiConfig,
 		GameInfo = gameInfo,
+		AutoSpam = autoSpam,
 	})
 	if setupResult ~= true then return false, "UI", setupError end
 	return true
@@ -482,7 +483,7 @@ local function startInternal()
 		onPanic = function()
 			loaded.autoparry.resetState(); loaded.autospam.stopSpam()
 		end,
-	}, loaded.permissions.wrap("ui", "uiconfig", loaded.uiconfig), loaded.permissions.wrap("ui", "gameinfo", loaded.gameinfo))
+	}, loaded.permissions.wrap("ui", "uiconfig", loaded.uiconfig), loaded.permissions.wrap("ui", "gameinfo", loaded.gameinfo), loaded.permissions.wrap("ui", "autospam", loaded.autospam))
 	if not uiReady then utils.stop(); return false, uiModule, uiError end
 	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
 end

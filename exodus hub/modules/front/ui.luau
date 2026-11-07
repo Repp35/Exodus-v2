@@ -5,9 +5,11 @@ local ExodusUI = {}
 local Utils
 local UIConfig
 local GameInfo
+local AutoSpam
 local Controls: any = {}
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local Camera = workspace.CurrentCamera
 local _wait = task.wait
@@ -411,7 +413,7 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter)
 		BackgroundTransparency = 1,
 		Text = labelText,
 		TextColor3 = C.text,
-		TextSize = labelText == "Auto Deflexo Feroz" and 11 or 14,
+		TextSize = (labelText == "Auto Deflexo Feroz" or labelText == "Distância do clash") and 11 or 14,
 		Font = Enum.Font.GothamSemibold,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 7,
@@ -660,10 +662,11 @@ function ExodusUI.setup(deps)
 		or type(deps.UIConfig.panelToggles) ~= "table"
 		or type(deps.UIConfig.panelComponents) ~= "table"
 		or type(deps.GameInfo) ~= "table"
+		or type(deps.AutoSpam) ~= "table"
 	then
 		return false, "dependência ausente: Utils, Controls ou UIConfig"
 	end
-	Utils = deps.Utils; UIConfig = deps.UIConfig; GameInfo = deps.GameInfo; Controls = type(deps.Controls) == "table" and deps.Controls or {}
+	Utils = deps.Utils; UIConfig = deps.UIConfig; GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam; Controls = type(deps.Controls) == "table" and deps.Controls or {}
 	if type(_G.ExodusUICleanup) == "function" then
 		_G.ExodusUICleanup()
 	else
@@ -678,6 +681,39 @@ function ExodusUI.setup(deps)
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		Parent = CoreGui,
 	})
+	local distanceLabel = inst("TextLabel", {
+		Name = "ClashDistance",
+		Size = UDim2.new(0, 166, 0, 32),
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -16, 1, -100),
+		BackgroundColor3 = C.header,
+		BackgroundTransparency = 0.2,
+		Text = "Clash: —",
+		TextColor3 = C.text,
+		TextSize = 14,
+		Font = Enum.Font.GothamSemibold,
+		Visible = Utils.getConfigValue("ClashDistanceVisible") == true,
+		ZIndex = 20,
+		Parent = screenGui,
+	})
+	corner(distanceLabel, 8)
+	local nextDistanceUpdate = 0
+	trackConn(RunService.Heartbeat:Connect(function()
+		if not distanceLabel.Parent then return end
+		local visible = Utils.getConfigValue("ClashDistanceVisible") == true
+		distanceLabel.Visible = visible
+		local time = os.clock()
+		if not visible or time < nextDistanceUpdate then return end
+		nextDistanceUpdate = time + 0.1
+		local status = AutoSpam.getStatus()
+		local partner = status and status.active and status.clashPartnerId
+		if not partner or partner <= 0 then
+			local context = GameInfo.getClashContext()
+			partner = context and context.partnerId
+		end
+		local distance = partner and GameInfo.getPlayerDistance(partner)
+		distanceLabel.Text = type(distance) == "number" and string.format("Clash: %.1f studs", distance) or "Clash: —"
+	end))
 	bindInput()
 	floatingButton = inst("TextButton", {
 		Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE),
@@ -1100,6 +1136,7 @@ function ExodusUI.setup(deps)
 	end)
 	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall); local upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); local _, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft)
 	createCameraSensitivityCard(parryYPos, settingsLeft)
+	createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight)
 	local function updateAbilityVisibility(enabled)
 		darkCard.Visible, miniDarkCard.Visible, upDashCard.Visible, fierceCard.Visible, autoUpDashCard.Visible = enabled, enabled, enabled, enabled, enabled
 		darkBall.Visible, upDashBall.Visible = enabled, enabled
@@ -1271,6 +1308,6 @@ end
 
 -- contract
 ExodusUI.__contract =
-	{ requires = { GameInfo = "gameinfo" }, requiresMethods = { GameInfo = { "areAbilitiesEnabled", "observeAbilityMode" } }, provides = { "setup" } }
+	{ requires = { GameInfo = "gameinfo", AutoSpam = "autospam" }, requiresMethods = { GameInfo = { "areAbilitiesEnabled", "observeAbilityMode", "getClashContext", "getPlayerDistance" }, AutoSpam = { "getStatus" } }, provides = { "setup" } }
 
 return ExodusUI
