@@ -255,10 +255,7 @@ local function shouldDeactivate(s, time)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	if s.activeSince and time - s.activeSince >= T.DEACTIVATION.CLASH_DELAY
-		and s.lastSwitchAt and time - s.lastSwitchAt >= T.DEACTIVATION.NO_SWITCH then
-		return "no_target_switch"
-	end
+	if s.activeSince and time - s.activeSince >= T.DEACTIVATION.CLASH_DELAY and s.lastSwitchAt and time - s.lastSwitchAt >= T.DEACTIVATION.NO_SWITCH then return "no_target_switch" end
 	return nil
 end
 
