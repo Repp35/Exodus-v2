@@ -75,14 +75,9 @@ local function returnLimit(s, speed, window)
 	if not finite(ping) or ping < 0 then ping = 0 end
 	local close = distance <= ownRange + 8.5 + speed * ping; local travel = math.max(0, distance - ownRange - 8.5) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping) + T.DEACTIVATION.RETURN_MARGIN, close
 end
-
--- clash display
-local function beginClashStats(partner, time)
-	clashStats = { partnerId = partner, switches = {}, cps = 0, lastObserved = time, frozen = false }
-end
+local function beginClashStats(partner, time) clashStats = { partnerId = partner, switches = {}, cps = 0, lastObserved = time, frozen = false } end
 local function observeClashStats(s, snapshot, time)
-	local context = gameInfo.getClashContext()
-	local partner = s.active and s.partner or (context and context.partnerId)
+	local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId)
 	if not partner then
 		if clashStats and clashStats.frozen then clashStats.waitingForClash = true end
 		return
@@ -93,18 +88,16 @@ local function observeClashStats(s, snapshot, time)
 	elseif not clashStats or clashStats.partnerId ~= partner or time - clashStats.lastObserved > 1.5 then
 		beginClashStats(partner, time)
 	end
-	local stats = clashStats
-	local target = userId(snapshot.targetId)
+	local stats = clashStats; local target = userId(snapshot.targetId)
 	if stats.lastTarget and target and stats.lastTarget ~= target then
 		local me = localPlayer.UserId
-		if (stats.lastTarget == me and target == partner) or (stats.lastTarget == partner and target == me) then
-			stats.switches[#stats.switches + 1] = time
-		end
+		if (stats.lastTarget == me and target == partner) or (stats.lastTarget == partner and target == me) then stats.switches[#stats.switches + 1] = time end
 	end
 	if target then stats.lastTarget = target end
-	while #stats.switches > 0 and (time < stats.switches[1] or time - stats.switches[1] > 1) do table.remove(stats.switches, 1) end
-	stats.cps = #stats.switches
-	local speed = tonumber(snapshot.syncSpeed)
+	while #stats.switches > 0 and (time < stats.switches[1] or time - stats.switches[1] > 1) do
+		table.remove(stats.switches, 1)
+	end
+	stats.cps = #stats.switches; local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
 	if finite(speed) and speed >= 0 then stats.speed = speed end
 	local distance = distanceToPlayer(s, partner)
@@ -317,9 +310,11 @@ function AutoSpam.bindCharacter(character)
 	current = s
 	local function watchCharacter(player, model)
 		local function watchHumanoid(humanoid)
-			if humanoid:IsA("Humanoid") then track(s, humanoid.Died, function()
-				if current == s then freezeClashStats(player.UserId); stopBoth(s, "player_died") end
-			end) end
+			if humanoid:IsA("Humanoid") then
+				track(s, humanoid.Died, function()
+					if current == s then freezeClashStats(player.UserId); stopBoth(s, "player_died") end
+				end)
+			end
 		end
 		for _, child in ipairs(model:GetChildren()) do
 			watchHumanoid(child)
@@ -436,7 +431,13 @@ function AutoSpam.getStatus()
 		active = s ~= nil and s.active,
 		lastGate = s and s.reason or "detached",
 		clashPartnerId = s and s.partner or -1,
-		clashStats = clashStats and { partnerId = clashStats.partnerId, distance = clashStats.distance, cps = clashStats.cps, speed = clashStats.speed, frozen = clashStats.frozen } or nil,
+		clashStats = clashStats and {
+			partnerId = clashStats.partnerId,
+			distance = clashStats.distance,
+			cps = clashStats.cps,
+			speed = clashStats.speed,
+			frozen = clashStats.frozen,
+		} or nil,
 	}
 end
 

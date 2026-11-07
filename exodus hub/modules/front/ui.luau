@@ -701,13 +701,9 @@ function ExodusUI.setup(deps)
 		if not distanceLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashDistanceVisible") == true; distanceLabel.Visible = visible; local time = os.clock()
 		if not visible or time < nextDistanceUpdate then return end
-		nextDistanceUpdate = time + 0.1
-		local status = AutoSpam.getStatus()
-		local stats = status and status.clashStats
+		nextDistanceUpdate = time + 0.1; local status = AutoSpam.getStatus(); local stats = status and status.clashStats
 		if stats then
-			local distance = type(stats.distance) == "number" and string.format("%.1f studs", stats.distance) or "—"
-			local cps = type(stats.cps) == "number" and tostring(stats.cps) or "—"
-			local speed = type(stats.speed) == "number" and string.format("%.0f", stats.speed) or "—"
+			local distance = type(stats.distance) == "number" and string.format("%.1f studs", stats.distance) or "—"; local cps = type(stats.cps) == "number" and tostring(stats.cps) or "—"; local speed = type(stats.speed) == "number" and string.format("%.0f", stats.speed) or "—"
 			distanceLabel.Text = string.format("%s: %s\nCPS: %s  |  SPD: %s", stats.frozen and "Último" or "Clash", distance, cps, speed)
 		else
 			distanceLabel.Text = "Clash: —\nCPS: —  |  SPD: —"
