@@ -240,9 +240,11 @@ function AutoSpam.setup(deps)
 		local offset = s.root.Position - event.position; local velocity = event.velocity; local distance, speed = offset.Magnitude, velocity.Magnitude
 		if distance > 0 and speed > 0 and velocity:Dot(offset) / (speed * distance) >= T.ACTIVATION.DASH_TOWARD_COSINE then s.dashUntil = now() + T.ACTIVATION.DASH_BONUS_DURATION; s.dashData = event end
 		if not utils.isActive() then return end
-		local context = gameInfo.getClashContext()
-		local partner = s.active and s.partner or (context and context.partnerId)
-		if partner == event.userId and distance > 0 and speed > 0
+		local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId)
+		if
+			partner == event.userId
+			and distance > 0
+			and speed > 0
 			and -velocity:Dot(offset) / (speed * distance) >= T.ACTIVATION.DASH_AWAY_COSINE
 			and velocity.Y / speed < 0.5
 		then
