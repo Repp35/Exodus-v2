@@ -166,7 +166,7 @@ function Utils.ensureDataFolder()
 	if not isfolder(T.FOLDER) then makefolder(T.FOLDER) end
 	return true, T.FOLDER
 end
-function Utils.createClashLog(partnerId)
+function Utils.createClashLog(partnerId, startedDate)
 	if type(writefile) ~= "function" or type(isfile) ~= "function" then error("APIs externas ausentes: writefile/isfile", 2) end
 	local _, folder = Utils.ensureDataFolder(); local directory = folder .. "/Clashes"
 	if not isfolder(directory) then makefolder(directory) end
@@ -174,11 +174,7 @@ function Utils.createClashLog(partnerId)
 	while isfile(path) do
 		index += 1; path = prefix .. "_" .. index .. ".txt"
 	end
-	local header = "EXODUS - CLASH\nInício (UTC): "
-		.. os.date("!%Y-%m-%d %H:%M:%S")
-		.. "\nOponente ID: "
-		.. tostring(partnerId)
-		.. "\nCPS médio: trocas de alvo entre os jogadores divididas pela duração do clash\n\n"
+	local header = "EXODUS - CLASH\nData (UTC): " .. (startedDate or os.date("!%Y-%m-%d %H:%M:%S")) .. "\n"
 	writefile(path, header)
 	local content
 	if type(appendfile) ~= "function" then content = header end
