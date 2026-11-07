@@ -22,6 +22,10 @@ local T = {
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
+	DEACTIVATION = {
+		SWITCH_TIMEOUT = 0.09,
+		START_DELAY = 0.12,
+	},
 	SHARED = {
 		MIN_RETURN = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
@@ -218,6 +222,7 @@ local function start(s, reason, partner, time, serverTime)
 	if s.active or opponentTooFar(s, partner) then return end
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
+	s.activatedAt = time
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
 	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
@@ -243,7 +248,7 @@ local function stop(s, reason, distant)
 	if current ~= s then return end
 	if distant and s.partner then s.recoveryPartner = s.partner end
 	if s.active then s.active = false; utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
-	s.reason, s.pending, s.awayAt, s.partner = reason, nil, nil, nil
+	s.reason, s.pending, s.awayAt, s.partner, s.activatedAt = reason, nil, nil, nil, nil
 	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
 end
 local function stopBoth(s, reason)
@@ -255,6 +260,10 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
+	if s.activatedAt and time - s.activatedAt >= T.DEACTIVATION.START_DELAY
+		and s.lastSwitchAt and time - s.lastSwitchAt > T.DEACTIVATION.SWITCH_TIMEOUT then
+		return "switch_timeout"
+	end
 	local target = snapshot and userId(snapshot.targetId) or s.target
 	if targetChanged and target and target ~= localPlayer.UserId and target ~= s.partner and snapshot then
 		local g = geometry(s, snapshot, 1)
