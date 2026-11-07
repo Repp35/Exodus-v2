@@ -683,12 +683,12 @@ function ExodusUI.setup(deps)
 	})
 	local distanceLabel = inst("TextLabel", {
 		Name = "ClashDistance",
-		Size = UDim2.new(0, 166, 0, 32),
+		Size = UDim2.new(0, 180, 0, 62),
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -16, 1, -100),
 		BackgroundColor3 = C.header,
 		BackgroundTransparency = 0.2,
-		Text = "Clash: —",
+		Text = "Clash: —\nCPS: —  |  SPD: —",
 		TextColor3 = C.text,
 		TextSize = 14,
 		Font = Enum.Font.GothamSemibold,
@@ -701,9 +701,17 @@ function ExodusUI.setup(deps)
 		if not distanceLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashDistanceVisible") == true; distanceLabel.Visible = visible; local time = os.clock()
 		if not visible or time < nextDistanceUpdate then return end
-		nextDistanceUpdate = time + 0.1; local status = AutoSpam.getStatus(); local partner = status and status.active and status.clashPartnerId
-		if not partner or partner <= 0 then local context = GameInfo.getClashContext(); partner = context and context.partnerId end
-		local distance = partner and GameInfo.getPlayerDistance(partner); distanceLabel.Text = type(distance) == "number" and string.format("Clash: %.1f studs", distance) or "Clash: —"
+		nextDistanceUpdate = time + 0.1
+		local status = AutoSpam.getStatus()
+		local stats = status and status.clashStats
+		if stats then
+			local distance = type(stats.distance) == "number" and string.format("%.1f studs", stats.distance) or "—"
+			local cps = type(stats.cps) == "number" and tostring(stats.cps) or "—"
+			local speed = type(stats.speed) == "number" and string.format("%.0f", stats.speed) or "—"
+			distanceLabel.Text = string.format("%s: %s\nCPS: %s  |  SPD: %s", stats.frozen and "Último" or "Clash", distance, cps, speed)
+		else
+			distanceLabel.Text = "Clash: —\nCPS: —  |  SPD: —"
+		end
 	end))
 	bindInput()
 	floatingButton = inst("TextButton", {
@@ -1299,7 +1307,7 @@ end
 -- contract
 ExodusUI.__contract = {
 	requires = { GameInfo = "gameinfo", AutoSpam = "autospam" },
-	requiresMethods = { GameInfo = { "areAbilitiesEnabled", "observeAbilityMode", "getClashContext", "getPlayerDistance" }, AutoSpam = { "getStatus" } },
+	requiresMethods = { GameInfo = { "areAbilitiesEnabled", "observeAbilityMode" }, AutoSpam = { "getStatus" } },
 	provides = { "setup" },
 }
 

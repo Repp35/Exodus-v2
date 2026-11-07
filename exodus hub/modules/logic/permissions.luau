@@ -124,7 +124,7 @@ local POLICIES = {
 				"apiVersion getConfig getConfigValue getLocalPlayer isActive isManualSpamActive name normalizeSpamRate observeConfig observeSpam recordError setConfig setManualSpamActive stop version author"
 			),
 			uiconfig = allow("panelToggles panelComponents"),
-			gameinfo = allow("areAbilitiesEnabled observeAbilityMode getClashContext getPlayerDistance"),
+			gameinfo = allow("areAbilitiesEnabled observeAbilityMode"),
 			autospam = allow("getStatus"),
 		},
 	},

@@ -7,6 +7,7 @@ local utils, gameInfo, dash, movement, players, runService, localPlayer
 
 -- state
 local current, generation = nil, 0
+local clashStats
 
 -- tuning
 local T = {
@@ -75,9 +76,51 @@ local function returnLimit(s, speed, window)
 	local close = distance <= ownRange + 8.5 + speed * ping; local travel = math.max(0, distance - ownRange - 8.5) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping) + T.DEACTIVATION.RETURN_MARGIN, close
 end
 
+-- clash display
+local function beginClashStats(partner, time)
+	clashStats = { partnerId = partner, switches = {}, cps = 0, lastObserved = time, frozen = false }
+end
+local function observeClashStats(s, snapshot, time)
+	local context = gameInfo.getClashContext()
+	local partner = s.active and s.partner or (context and context.partnerId)
+	if not partner then
+		if clashStats and clashStats.frozen then clashStats.waitingForClash = true end
+		return
+	end
+	if clashStats and clashStats.frozen then
+		if not clashStats.waitingForClash then return end
+		beginClashStats(partner, time)
+	elseif not clashStats or clashStats.partnerId ~= partner or time - clashStats.lastObserved > 1.5 then
+		beginClashStats(partner, time)
+	end
+	local stats = clashStats
+	local target = userId(snapshot.targetId)
+	if stats.lastTarget and target and stats.lastTarget ~= target then
+		local me = localPlayer.UserId
+		if (stats.lastTarget == me and target == partner) or (stats.lastTarget == partner and target == me) then
+			stats.switches[#stats.switches + 1] = time
+		end
+	end
+	if target then stats.lastTarget = target end
+	while #stats.switches > 0 and (time < stats.switches[1] or time - stats.switches[1] > 1) do table.remove(stats.switches, 1) end
+	stats.cps = #stats.switches
+	local speed = tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
+	if finite(speed) and speed >= 0 then stats.speed = speed end
+	local distance = distanceToPlayer(s, partner)
+	if finite(distance) then stats.distance = distance end
+	stats.lastObserved = time
+end
+local function freezeClashStats(playerId)
+	if not clashStats or clashStats.frozen then return end
+	if playerId ~= localPlayer.UserId and playerId ~= clashStats.partnerId then return end
+	clashStats.frozen, clashStats.waitingForClash = true, false
+end
+
 -- activation
 local function start(s, reason, partner, time, serverTime)
 	if s.active then return end
+	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
@@ -200,6 +243,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 		end
 		inspectTarget(s, target, time, snapshot, snapshot.serverTime)
 	end
+	observeClashStats(s, snapshot, time)
 	if fresh and utils.isManualSpamActive() then
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
 		if window and switchElapsed and switchElapsed > math.max(T.DEACTIVATION.SWITCH_WINDOW_MARGIN, window - T.DEACTIVATION.SWITCH_WINDOW_MARGIN) then utils.setManualSpamActive(false) end
@@ -271,10 +315,10 @@ function AutoSpam.bindCharacter(character)
 	}
 
 	current = s
-	local function watchCharacter(model)
+	local function watchCharacter(player, model)
 		local function watchHumanoid(humanoid)
 			if humanoid:IsA("Humanoid") then track(s, humanoid.Died, function()
-				if current == s then stopBoth(s, "player_died") end
+				if current == s then freezeClashStats(player.UserId); stopBoth(s, "player_died") end
 			end) end
 		end
 		for _, child in ipairs(model:GetChildren()) do
@@ -283,8 +327,8 @@ function AutoSpam.bindCharacter(character)
 		track(s, model.ChildAdded, watchHumanoid)
 	end
 	local function watchPlayer(player)
-		if player.Character then watchCharacter(player.Character) end
-		track(s, player.CharacterAdded, watchCharacter)
+		if player.Character then watchCharacter(player, player.Character) end
+		track(s, player.CharacterAdded, function(character) watchCharacter(player, character) end)
 	end
 	for _, player in ipairs(players:GetPlayers()) do
 		watchPlayer(player)
@@ -294,6 +338,7 @@ function AutoSpam.bindCharacter(character)
 		if current ~= s then return end
 		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext()
 		if not autoEnabled and not upDashEnabled and not utils.isManualSpamActive() and not s.active and not clashContext then
+			if clashStats and clashStats.frozen then clashStats.waitingForClash = true end
 			s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
 			return
 		end
@@ -391,6 +436,7 @@ function AutoSpam.getStatus()
 		active = s ~= nil and s.active,
 		lastGate = s and s.reason or "detached",
 		clashPartnerId = s and s.partner or -1,
+		clashStats = clashStats and { partnerId = clashStats.partnerId, distance = clashStats.distance, cps = clashStats.cps, speed = clashStats.speed, frozen = clashStats.frozen } or nil,
 	}
 end
 
