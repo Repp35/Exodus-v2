@@ -117,7 +117,7 @@ local function clearRegistry()
 	for _, name in ipairs(MODULE_ORDER) do
 		Modules[name] = nil
 	end
-	Modules.ui = nil; Modules.permissions = nil; Modules.Loader = Loader; Exodus.Utils = nil; Exodus.State = nil; Exodus.Config = nil; Exodus.ModuleURLs = nil; Exodus.Runtime = nil; Exodus.Context = nil; Exodus.UI = nil; Exodus.Diagnostics = nil; Exodus.Version = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false; _G.ExodusOnBurst = nil
+	Modules.ui = nil; Modules.permissions = nil; Modules.Loader = Loader; Exodus.Utils = nil; Exodus.State = nil; Exodus.Config = nil; Exodus.ModuleURLs = nil; Exodus.Runtime = nil; Exodus.Context = nil; Exodus.UI = nil; Exodus.Diagnostics = nil; Exodus.Version = nil; Exodus.Revision = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false; _G.ExodusOnBurst = nil
 end
 local function stopPreviousRuntime()
 	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then Modules.gameinfo.stopMaintenance() end
@@ -492,7 +492,7 @@ local function startInternal()
 		loaded.permissions.wrap("ui", "autospam", loaded.autospam)
 	)
 	if not uiReady then utils.stop(); return false, uiModule, uiError end
-	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
+	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); Exodus.Revision = version; printStartup("Exodus: iniciado"); return true
 end
 
 -- rollback
@@ -532,5 +532,18 @@ local function startSafely()
 end
 local started = startSafely()
 Exodus.Started = started == true
+if started and Exodus.Revision then
+	local revision = Exodus.Revision
+	task.spawn(function()
+		local source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "updater.luau")
+		if not source then warn("[Exodus Updater] " .. tostring(fetchError)); return end
+		if not Exodus.Started or Exodus.Revision ~= revision then return end
+		local chunk, compileError = loadstring(source, "Exodus updater")
+		if not chunk then warn("[Exodus Updater] " .. tostring(compileError)); return end
+		local ok, updater = pcall(chunk)
+		if not ok or type(updater) ~= "function" then warn("[Exodus Updater] " .. tostring(updater)); return end
+		updater(revision, request)
+	end)
+end
 
 return Loader
