@@ -22,6 +22,7 @@ local T = {
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
+	DEACTIVATION = { SWITCH_TIMEOUT = 0.1, CLASH_DELAY = 0.5 },
 	SHARED = {
 		MIN_RETURN = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
@@ -218,7 +219,7 @@ local function start(s, reason, partner, time, serverTime)
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
-	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
+	s.lastSwitchAt, s.lastSwitchServerAt, s.reason, s.activeSince = time, serverTime, reason, time
 	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function shouldActivate(s, snapshot, time)
@@ -242,7 +243,7 @@ local function stop(s, reason, distant)
 	if current ~= s then return end
 	if distant and s.partner then s.recoveryPartner = s.partner end
 	if s.active then s.active = false; utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
-	s.reason, s.pending, s.awayAt, s.partner = reason, nil, nil, nil
+	s.reason, s.pending, s.awayAt, s.partner, s.activeSince = reason, nil, nil, nil, nil
 	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
 end
 local function stopBoth(s, reason)
@@ -254,13 +255,10 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	local speed = tonumber(snapshot.syncSpeed)
-	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
-	if not finite(speed) or speed <= 0 then return nil end
-	local window = gameInfo.getDeflectWindow(speed)
-	if not finite(window) or window <= 0 then return nil end
+	local activeElapsed = finite(s.activeSince) and time - s.activeSince or nil
+	if not fresh or not activeElapsed or activeElapsed < T.DEACTIVATION.CLASH_DELAY then return nil end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
-	if fresh and switchElapsed and switchElapsed > window then return "no_target_switch" end
+	if switchElapsed and math.min(switchElapsed, activeElapsed - T.DEACTIVATION.CLASH_DELAY) >= T.DEACTIVATION.SWITCH_TIMEOUT then return "no_target_switch" end
 	return nil
 end
 
