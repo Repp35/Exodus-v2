@@ -22,7 +22,7 @@ local T = {
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
-	DEACTIVATION = { SWITCH_TIMEOUT = 0.1, CLASH_DELAY = 0.5 },
+	DEACTIVATION = { BALL_TTI = 0.1, CLASH_DELAY = 0.5 },
 	SHARED = {
 		MIN_RETURN = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
@@ -257,8 +257,15 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if gameInfo.getBallFrozen() == true then return "frozen" end
 	local activeElapsed = finite(s.activeSince) and time - s.activeSince or nil
 	if not fresh or not activeElapsed or activeElapsed < T.DEACTIVATION.CLASH_DELAY then return nil end
-	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
-	if switchElapsed and math.min(switchElapsed, activeElapsed - T.DEACTIVATION.CLASH_DELAY) >= T.DEACTIVATION.SWITCH_TIMEOUT then return "no_target_switch" end
+	if not snapshot or not s.root or not s.root.Parent then return nil end
+	local position = snapshot.ttiPosition or snapshot.position
+	local speed = tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
+	if typeof(position) ~= "Vector3" or not finite(speed) or speed <= 0 then return nil end
+	local range = tonumber(gameInfo.getDeflectRange())
+	if not finite(range) or range < 0 then range = 8.5 end
+	local tti = math.max(0, (position - s.root.Position).Magnitude - range) / speed
+	if tti >= T.DEACTIVATION.BALL_TTI then return "ball_tti" end
 	return nil
 end
 
@@ -542,16 +549,17 @@ function AutoSpam.onBallSync(data)
 		if g and distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
 	end
 	local snapshot = gameInfo.getSnapshotAt(time)
-	if snapshot and data.Source == "packet" and userId(target) then
+	if snapshot and data.Source == "packet" then
 		snapshot = table.clone(snapshot)
-		snapshot.targetId, snapshot.targeted = target, target == localPlayer.UserId
+		if userId(target) then snapshot.targetId, snapshot.targeted = target, target == localPlayer.UserId end
 		snapshot.syncAt, snapshot.serverTime, snapshot.syncSequence = time, serverTime, sequence
 		snapshot.teleported = false
+		if typeof(data.RealPosition) == "Vector3" then snapshot.ttiPosition = data.RealPosition end
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
-	if s.active and shouldDeactivate(s, snapshot, time, true, serverTime) == "no_target_switch" then
+	if s.active and shouldDeactivate(s, snapshot, time, true, serverTime) == "ball_tti" then
 		if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then observeClashStats(s, snapshot, time, true) end
-		stop(s, "no_target_switch", false)
+		stop(s, "ball_tti", false)
 		if userId(target) then s.target = target end
 		return
 	end
