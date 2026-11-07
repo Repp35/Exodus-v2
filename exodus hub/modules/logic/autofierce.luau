@@ -23,13 +23,11 @@ local function enabled() return utils and utils.isActive() and utils.getConfigVa
 
 -- tracking
 local function onParried()
-	graceHandled = true
-	parryGeneration += 1
+	graceHandled = true; parryGeneration += 1
 end
 local function connectSignals(now)
 	if now < nextSignalAt or parriedConnection then return end
-	nextSignalAt = now + T.SIGNAL_RETRY
-	local signals = gameInfo.getDeflectServerEvents()
+	nextSignalAt = now + T.SIGNAL_RETRY; local signals = gameInfo.getDeflectServerEvents()
 	if signals and signals.parried then parriedConnection = track(signals.parried:Connect(onParried)) end
 end
 local function graceDanger(now)
@@ -37,11 +35,7 @@ local function graceDanger(now)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return false, nil end
 	local fresh = type(snapshot.syncAt) == "number" and snapshot.syncAt > 0 and now >= snapshot.syncAt and now - snapshot.syncAt <= T.SYNC_MAX_AGE
 	if not fresh then return false, nil end
-	local grace = snapshot.grace == true
-	local player = utils.getLocalPlayer()
-	local danger = grace and player ~= nil and snapshot.targetId == player.UserId
-		and gameInfo.getBallFrozen() ~= true and gameInfo.isBallWithinDeflectRadius(1)
-	return danger, grace
+	local grace = snapshot.grace == true; local player = utils.getLocalPlayer(); local danger = grace and player ~= nil and snapshot.targetId == player.UserId and gameInfo.getBallFrozen() ~= true and gameInfo.isBallWithinDeflectRadius(1); return danger, grace
 end
 
 -- activation
@@ -54,8 +48,7 @@ local function update()
 	if grace == nil then return end
 	if not grace then graceHandled = false; return end
 	if not danger or graceHandled then return end
-	graceHandled = true
-	local generation = parryGeneration
+	graceHandled = true; local generation = parryGeneration
 	local token
 	local ok, sent = pcall(function()
 		return remote.fireFierce(function()
