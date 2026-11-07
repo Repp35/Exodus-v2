@@ -22,7 +22,7 @@ local T = {
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
-	DEACTIVATION = { BALL_TTI = 0.06 },
+	DEACTIVATION = { BALL_TTI = 0.06, NO_SWITCH = 0.06, TARGET_RETURN = 0.06 },
 	SHARED = {
 		MIN_RETURN = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
@@ -269,6 +269,7 @@ local function shouldDeactivate(s, time, snapshot)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
+	if s.lastSwitchAt and time - s.lastSwitchAt >= T.DEACTIVATION.NO_SWITCH then return "no_target_switch" end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	local tti = ballTTI(s, snapshot)
 	if tti and tti >= T.DEACTIVATION.BALL_TTI then return "ball_tti" end
@@ -563,10 +564,19 @@ function AutoSpam.onBallSync(data)
 		snapshot.teleported = false
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
-	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
-	if s.active and shouldDeactivate(s, time, snapshot) == "ball_tti" then
-		if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then observeClashStats(s, snapshot, time, true) end
-		stop(s, "ball_tti", false)
+	local validTarget = gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target)
+	local reason
+	if s.active then
+		if validTarget and s.target == s.partner and target == localPlayer.UserId and s.awayAt then
+			local duration = elapsed(s.awayAt, s.awayServerAt, time, serverTime)
+			if duration and duration >= T.DEACTIVATION.TARGET_RETURN then reason = "slow_target_return" end
+		end
+		reason = reason or shouldDeactivate(s, time, snapshot)
+	end
+	if validTarget then inspectTarget(s, target, time, snapshot, serverTime) end
+	if reason then
+		if validTarget then observeClashStats(s, snapshot, time, true) end
+		stop(s, reason, false)
 		return
 	end
 	evaluate(s, time, true, serverTime, snapshot)
