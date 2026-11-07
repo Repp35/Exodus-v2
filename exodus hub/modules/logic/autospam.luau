@@ -161,8 +161,7 @@ local function observeClashStats(s, snapshot, time, fresh)
 	if finite(speed) and speed >= 0 then stats.speed = speed end
 	local other = gameInfo.getPlayerMotion(partner); local own = s.root.Position; local distance = typeof(other) == "Vector3" and (other - own).Magnitude or nil
 	if finite(distance) then stats.distance = distance end
-	stats.lastObserved = time
-	local sample = stats.endSample or {}
+	stats.lastObserved = time; local sample = stats.endSample or {}
 	sample.time, sample.distance, sample.speed, sample.cps = math.max(0, time - stats.startedAt), distance, stats.speed, stats.cps
 	sample.own, sample.opponent, sample.ball = own, other, snapshot.position
 	if not stats.startSample then stats.startSample = table.clone(sample) end
