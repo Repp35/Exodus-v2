@@ -97,12 +97,13 @@ local function finishClashStats(reason, time)
 		utils.appendClashLog(
 			log,
 			string.format(
-				"Oponente: %s\nVencedor: %s\nDuração: %.3f s\nCPS médio: %.2f\nTempo do target até a morte observada: %s\n\n%s\n%s",
+				"Oponente: %s\nVencedor: %s\nDuração: %.3f s\nCPS médio: %.2f\nTempo do target até a morte observada: %s\nPenúltimo target: %s\n\n%s\n%s",
 				opponent and opponent.Name or tostring(stats.partnerId),
 				reason == "jogador morreu" and (opponent and opponent.Name or tostring(stats.partnerId)) or localPlayer.Name,
 				stats.duration,
 				stats.cps,
 				stats.fatalTravelTime and string.format("%.3f s (%.0f ms)", stats.fatalTravelTime, stats.fatalTravelTime * 1000) or "indisponível",
+				stats.penultimateTravelTime and string.format("%s — %.3f s (%.0f ms)", stats.penultimateTarget == localPlayer.UserId and localPlayer.Name or (opponent and opponent.Name or tostring(stats.partnerId)), stats.penultimateTravelTime, stats.penultimateTravelTime * 1000) or "indisponível",
 				formatSample("INÍCIO", stats.startSample),
 				formatSample("FIM", stats.endSample)
 			)
@@ -153,7 +154,11 @@ local function observeClashStats(s, snapshot, time, fresh)
 		if fresh then
 			local previousTarget = stats.travelObservedTarget
 			if previousTarget and previousTarget ~= target then
-				if stats.travelTarget == previousTarget and stats.travelStartedAt then stats.lastTravelTime = math.max(0, time - stats.travelStartedAt); stats.lastTravelTarget = previousTarget end
+				if stats.travelTarget == previousTarget and stats.travelStartedAt then
+					stats.lastTravelTime, stats.lastTravelTarget = math.max(0, time - stats.travelStartedAt), previousTarget
+				else
+					stats.lastTravelTime, stats.lastTravelTarget = nil, nil
+				end
 				if (previousTarget == me or previousTarget == partner) and (target == me or target == partner) then
 					stats.travelTarget, stats.travelStartedAt = target, time
 				else
@@ -187,7 +192,10 @@ local function freezeClashStats(playerId)
 	if not clashStats or clashStats.frozen then return end
 	if playerId ~= localPlayer.UserId and playerId ~= clashStats.partnerId then return end
 	local time = now()
-	if clashStats.travelTarget == playerId and clashStats.travelStartedAt then clashStats.fatalTravelTime = math.max(0, time - clashStats.travelStartedAt) end
+	if clashStats.travelTarget == playerId and clashStats.travelStartedAt then
+		clashStats.fatalTravelTime = math.max(0, time - clashStats.travelStartedAt)
+		clashStats.penultimateTravelTime, clashStats.penultimateTarget = clashStats.lastTravelTime, clashStats.lastTravelTarget
+	end
 	clashStats.deceasedId = playerId; local sample, s = clashStats.endSample, current
 	if sample and s and s.root and s.root.Parent then
 		local other = gameInfo.getPlayerMotion(clashStats.partnerId)
@@ -582,6 +590,8 @@ function AutoSpam.getStatus()
 			lastTravelTime = clashStats.lastTravelTime,
 			lastTravelTarget = clashStats.lastTravelTarget,
 			fatalTravelTime = clashStats.fatalTravelTime,
+			penultimateTravelTime = clashStats.penultimateTravelTime,
+			penultimateTarget = clashStats.penultimateTarget,
 			deceasedId = clashStats.deceasedId,
 		} or nil,
 	}

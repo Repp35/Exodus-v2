@@ -698,7 +698,7 @@ function ExodusUI.setup(deps)
 	})
 	local travelLabel = inst("TextLabel", {
 		Name = "ClashTravelTime",
-		Size = UDim2.new(0, 270, 0, 70),
+		Size = UDim2.new(0, 270, 0, 90),
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -20),
 		BackgroundColor3 = C.header,
@@ -720,7 +720,15 @@ function ExodusUI.setup(deps)
 		if not stats then travelLabel.Text = "Tempo da bola: —"; return end
 		local me = Players.LocalPlayer and Players.LocalPlayer.UserId
 		if stats.frozen then
-			if stats.deceasedId then local who = stats.deceasedId == me and "Você" or "Oponente"; local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "indisponível"; travelLabel.Text = who .. " morreu\nTarget até a morte: " .. value else travelLabel.Text = "Clash encerrado\nTempo final: indisponível" end
+			if stats.deceasedId then
+				local who = stats.deceasedId == me and "Você" or "Oponente"
+				local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "indisponível"
+				local previousWho = stats.penultimateTarget == me and "você" or (stats.penultimateTarget == stats.partnerId and "oponente" or "—")
+				local previous = stats.penultimateTravelTime and string.format("%.0f ms", stats.penultimateTravelTime * 1000) or "indisponível"
+				travelLabel.Text = who .. " morreu\nTarget até a morte: " .. value .. "\nPenúltimo (" .. previousWho .. "): " .. previous
+			else
+				travelLabel.Text = "Clash encerrado\nTempo final: indisponível"
+			end
 		else
 			local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"; local who = stats.travelTarget == me and "Você" or (stats.travelTarget == stats.partnerId and "Oponente" or "—"); local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
 			local lastWho = stats.lastTravelTarget == me and "você" or (stats.lastTravelTarget == stats.partnerId and "oponente" or "—"); travelLabel.Text = "Target: " .. who .. " | Tempo: " .. value .. "\nÚltima troca (" .. lastWho .. "): " .. last
