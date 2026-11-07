@@ -13,6 +13,7 @@ local clashStats
 local T = {
 	ACTIVATION = {
 		RETURN = 0.13,
+		MIN_TTI = 0.1,
 		RADIUS_FACTOR = 0.8,
 		DASH_RADIUS_FACTOR = 1.5,
 		DASH_RETURN_MULTIPLIER = 2.5,
@@ -225,8 +226,7 @@ end
 local function start(s, reason, partner, time, serverTime)
 	if s.active or opponentTooFar(s, partner) then return end
 	local tti = ballTTI(s, gameInfo.getSnapshotAt(time))
-	if tti and tti >= T.DEACTIVATION.BALL_TTI then s.ttiBlocked = true; return end
-	if s.ttiBlocked and not tti then return end
+	if not tti or tti < T.ACTIVATION.MIN_TTI then return end
 	s.ttiBlocked = false
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
