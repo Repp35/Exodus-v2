@@ -666,8 +666,7 @@ function ExodusUI.setup(deps)
 	then
 		return false, "dependência ausente: Utils, Controls ou UIConfig"
 	end
-	Utils = deps.Utils; UIConfig = deps.UIConfig; GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam; Controls = type(deps.Controls) == "table" and deps.Controls or {}
-	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	Utils = deps.Utils; UIConfig = deps.UIConfig; GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam; Controls = type(deps.Controls) == "table" and deps.Controls or {}; local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	if type(_G.ExodusUICleanup) == "function" then
 		_G.ExodusUICleanup()
 	else
