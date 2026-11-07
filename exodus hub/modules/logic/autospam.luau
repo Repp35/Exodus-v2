@@ -189,7 +189,8 @@ local function observeClashStats(s, snapshot, time, fresh)
 				stats.totalSwitches += 1
 				if stats.lastCycleAt and time > stats.lastCycleAt then
 					stats.cycleInterval = time - stats.lastCycleAt
-					stats.currentCps = math.min(35, 1 / stats.cycleInterval)
+					local sample = math.min(35, 1 / stats.cycleInterval)
+					stats.currentCps = stats.currentCps and (stats.currentCps + 0.2 * (sample - stats.currentCps)) or sample
 				end
 				stats.lastCycleAt = time
 			end
@@ -615,7 +616,7 @@ function AutoSpam.getStatus()
 			partnerId = clashStats.partnerId,
 			distance = clashStats.distance,
 			cps = clashStats.cps,
-			currentCps = clashStats.currentCps and (clashStats.frozen and clashStats.currentCps or math.min(35, 1 / math.max(clashStats.cycleInterval, now() - clashStats.lastCycleAt))) or nil,
+			currentCps = clashStats.currentCps and (clashStats.frozen and clashStats.currentCps or math.min(clashStats.currentCps, 1 / math.max(clashStats.cycleInterval, now() - clashStats.lastCycleAt))) or nil,
 			startSample = clashStats.startSample,
 			endSample = clashStats.endSample,
 			endReason = clashStats.endReason,
