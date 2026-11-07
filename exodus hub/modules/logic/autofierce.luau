@@ -14,7 +14,7 @@ local T = {
 -- state
 local connections = {}
 local parriedConnection
-local nextSignalAt, graceHandled, parryGeneration
+local nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt
 
 -- helpers
 local function track(connection)
@@ -24,7 +24,7 @@ local function enabled() return utils and utils.isActive() and utils.getConfigVa
 
 -- tracking
 local function onParried()
-	graceHandled = true; parryGeneration += 1
+	graceHandled = true; parryGeneration += 1; lastParriedAt = os.clock()
 end
 local function connectSignals(now)
 	if now < nextSignalAt or parriedConnection then return end
@@ -41,7 +41,7 @@ end
 local function deflectPending(now)
 	local pressedAt = gameInfo.getLastDeflectPressAt()
 	if type(pressedAt) ~= "number" or pressedAt ~= pressedAt then return true end
-	if pressedAt <= 0 then return false end
+	if pressedAt <= 0 or pressedAt <= lastParriedAt or pressedAt <= lastFiercePressAt then return true end
 	if pressedAt > now then return true end
 	local window = gameInfo.getDeflectWindow()
 	if type(window) ~= "number" or window ~= window or window <= 0 then return true end
@@ -60,7 +60,7 @@ local function update()
 	if grace == nil then return end
 	if not grace then graceHandled = false; return end
 	if not danger or graceHandled or deflectPending(now) then return end
-	graceHandled = true; local generation = parryGeneration
+	graceHandled = true; local generation = parryGeneration; local pressedAt = gameInfo.getLastDeflectPressAt()
 	local token
 	local ok, sent = pcall(function()
 		return remote.fireFierce(function()
@@ -70,6 +70,7 @@ local function update()
 			token = autoParry.beginFierce(); return true
 		end)
 	end)
+	if ok and sent == true then lastFiercePressAt = pressedAt end
 	if not ok or sent ~= true then
 		autoParry.cancelFierce(token)
 		if parryGeneration == generation then graceHandled = false end
@@ -88,7 +89,7 @@ function AutoFierce.setup(deps)
 	then
 		return false, "dependências ausentes: Utils, GameInfo ou Remote"
 	end
-	AutoFierce.teardown(); utils, gameInfo, remote, autoParry = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry; nextSignalAt, graceHandled, parryGeneration = 0, false, 0; local runService = utils.getRunService()
+	AutoFierce.teardown(); utils, gameInfo, remote, autoParry = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry; nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt = 0, false, 0, 0, 0; local runService = utils.getRunService()
 	if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
 	track(utils.observeConfig(function()
 		if not enabled() then graceHandled = false end
@@ -100,7 +101,7 @@ function AutoFierce.teardown()
 		if utils then utils.untrackGlobal(connection) end
 		connection:Disconnect()
 	end
-	connections = {}; parriedConnection, nextSignalAt, graceHandled, parryGeneration = nil, nil, nil, nil; utils, gameInfo, remote, autoParry = nil, nil, nil, nil
+	connections = {}; parriedConnection, nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt = nil, nil, nil, nil, nil, nil; utils, gameInfo, remote, autoParry = nil, nil, nil, nil
 end
 
 -- contract
