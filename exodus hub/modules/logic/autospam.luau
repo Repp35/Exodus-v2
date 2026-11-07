@@ -302,19 +302,12 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 		s.pending, s.recoveryPartner, s.departedAt, s.departedTo = nil, nil, nil, nil
 	end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
+	if fresh and gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
 	local target = userId(snapshot.targetId)
-	if not fresh then
-		local sequence = snapshot.syncSequence
-		if finite(sequence) and finite(s.sequence) then
-			local delta = (sequence - s.sequence) % T.SHARED.SEQUENCE_MODULUS
-			if delta >= T.SHARED.SEQUENCE_HALF or (delta == 0 and target and s.target and target ~= s.target) then return end
-		end
-		inspectTarget(s, target, time, snapshot, snapshot.serverTime)
-	end
+
 	observeClashStats(s, snapshot, time, fresh)
 	if utils.getConfigValue("AutoClashUpDash") == true and gameInfo.areAbilitiesEnabled() then
 		local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local g = partner and geometry(s, snapshot, 1); local position = g and gameInfo.getPlayerMotion(partner)
@@ -328,8 +321,10 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 		if window and switchElapsed and switchElapsed > math.max(T.DEACTIVATION.SWITCH_WINDOW_MARGIN, window - T.DEACTIVATION.SWITCH_WINDOW_MARGIN) then utils.setManualSpamActive(false) end
 	end
 	if s.active then
-		local reason = shouldDeactivate(s, snapshot, time, fresh, serverTime)
-		if reason then stop(s, reason, false) end
+		if fresh then
+			local reason = shouldDeactivate(s, snapshot, time, true, serverTime)
+			if reason then stop(s, reason, false) end
+		end
 	elseif shouldActivate(s, snapshot, time) then
 		local activationServerTime = serverTime
 		if not fresh then activationServerTime = snapshot.serverTime end
@@ -456,6 +451,7 @@ end
 function AutoSpam.onBallSync(data)
 	local s = current
 	if not s or type(data) ~= "table" then return end
+	if data.Source ~= "packet" and data.Teleported ~= true then return end
 	syncManualPartner(s)
 	if gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
 	local sequence = data.Sequence or data.TeleportSequence
