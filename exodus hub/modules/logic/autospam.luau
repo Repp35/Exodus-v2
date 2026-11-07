@@ -144,7 +144,14 @@ local function observeClashStats(s, snapshot, time, fresh)
 	if fresh then stats.lastPacketAt = time end
 	if observeTarget and target then
 		local me = localPlayer.UserId
-		if (stats.lastTarget == me and target == partner) or (stats.lastTarget == partner and target == me) then stats.totalSwitches += 1; stats.lastSwitchAt = time end
+		if stats.lastTarget == me and target == partner then
+			stats.cycleArmed = true; stats.lastSwitchAt = time
+		elseif stats.lastTarget == partner and target == me then
+			if stats.cycleArmed then stats.totalSwitches += 1 end
+			stats.cycleArmed = false; stats.lastSwitchAt = time
+		elseif target ~= me and target ~= partner then
+			stats.cycleArmed = false
+		end
 		stats.lastTarget = target
 	end
 	local duration = time - stats.startedAt; stats.cps = duration > 0 and stats.totalSwitches / duration or 0; local speed = tonumber(snapshot.syncSpeed)
