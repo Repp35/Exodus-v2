@@ -220,7 +220,6 @@ local function start(s, reason, partner, time, serverTime)
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
-	s.deactivationWindow = nil
 	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function shouldActivate(s, snapshot, time)
@@ -256,24 +255,11 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	if opponentTooFar(s, s.partner) then return "opponent_distance" end
 	local target = snapshot and userId(snapshot.targetId) or s.target
 	if targetChanged and target and target ~= localPlayer.UserId and target ~= s.partner and snapshot then
 		local g = geometry(s, snapshot, 1)
 		local distance = distanceToPlayer(s, target)
 		if g and distance and distance > g.fullRadius then return "distant_target" end
-	end
-	local speed = snapshot and tonumber(snapshot.syncSpeed)
-	if not finite(speed) or speed <= 0 then speed = snapshot and snapshot.speed end
-	if finite(speed) and speed > 0 then
-		local window = gameInfo.getDeflectWindow(speed)
-		if finite(window) and window > 0 then s.deactivationWindow = window end
-	end
-	local window = s.deactivationWindow
-	if not window then return nil end
-	if targetChanged and finite(s.lastSwitchServerAt) and finite(serverTime) then
-		local switchElapsed = serverTime - s.lastSwitchServerAt
-		if switchElapsed >= 0 and switchElapsed > window then return "no_target_switch" end
 	end
 	return nil
 end
