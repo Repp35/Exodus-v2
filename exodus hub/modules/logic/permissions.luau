@@ -23,7 +23,7 @@ local POLICIES = {
 	},
 	gameinfo = {
 		provide = allow(
-			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getLocalPing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectGeometry isBallWithinDeflectRadius getBallFrozen getDeflectAbility getAutoSpamDelay getDashAbility getFierceDeflectAbility getDarkSealAbility getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
+			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getLocalPing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectGeometry isBallWithinDeflectRadius getBallFrozen getDeflectAbility getAutoSpamDelay getDashAbility isPlayerDashing getFierceDeflectAbility getDarkSealAbility getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
 		),
 		consume = {
 			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace now recordError trackGlobal untrackGlobal"),
@@ -101,7 +101,7 @@ local POLICIES = {
 		provide = allow("setup setHandler tick resetState teardown getStatus"),
 		consume = {
 			utils = allow("apiVersion getPlayers now trackGlobal untrackGlobal"),
-			gameinfo = allow("getDashAbility"),
+			gameinfo = allow("isPlayerDashing"),
 		},
 	},
 	character = {
