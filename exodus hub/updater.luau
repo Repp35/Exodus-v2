@@ -20,10 +20,9 @@ return function(loadedRevision, request)
 		local player = players.LocalPlayer
 		if not player or not info or not auto then return false end
 		if type(info.getTargetId) ~= "function" or type(info.getClashContext) ~= "function"
-			or type(info.getBall) ~= "function" or type(auto.isActive) ~= "function" then return false end
+			or type(auto.isActive) ~= "function" then return false end
 		local target = info.getTargetId()
 		if target == player.UserId or workspace:GetAttribute("GameBallTarget") == player.UserId then return false end
-		if info.getBall() and (type(target) ~= "number" or target <= 0) then return false end
 		if auto.isActive() or info.getClashContext() then return false end
 		return true
 	end
