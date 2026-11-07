@@ -103,7 +103,14 @@ local function finishClashStats(reason, time)
 				stats.duration,
 				stats.cps,
 				stats.fatalTravelTime and string.format("%.3f s (%.0f ms)", stats.fatalTravelTime, stats.fatalTravelTime * 1000) or "indisponível",
-				stats.penultimateTravelTime and string.format("%s — %.3f s (%.0f ms)", stats.penultimateTarget == localPlayer.UserId and localPlayer.Name or (opponent and opponent.Name or tostring(stats.partnerId)), stats.penultimateTravelTime, stats.penultimateTravelTime * 1000) or "indisponível",
+				stats.penultimateTravelTime
+						and string.format(
+							"%s — %.3f s (%.0f ms)",
+							stats.penultimateTarget == localPlayer.UserId and localPlayer.Name or (opponent and opponent.Name or tostring(stats.partnerId)),
+							stats.penultimateTravelTime,
+							stats.penultimateTravelTime * 1000
+						)
+					or "indisponível",
 				formatSample("INÍCIO", stats.startSample),
 				formatSample("FIM", stats.endSample)
 			)

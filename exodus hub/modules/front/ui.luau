@@ -721,11 +721,8 @@ function ExodusUI.setup(deps)
 		local me = Players.LocalPlayer and Players.LocalPlayer.UserId
 		if stats.frozen then
 			if stats.deceasedId then
-				local who = stats.deceasedId == me and "Você" or "Oponente"
-				local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "indisponível"
-				local previousWho = stats.penultimateTarget == me and "você" or (stats.penultimateTarget == stats.partnerId and "oponente" or "—")
-				local previous = stats.penultimateTravelTime and string.format("%.0f ms", stats.penultimateTravelTime * 1000) or "indisponível"
-				travelLabel.Text = who .. " morreu\nTarget até a morte: " .. value .. "\nPenúltimo (" .. previousWho .. "): " .. previous
+				local who = stats.deceasedId == me and "Você" or "Oponente"; local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "indisponível"; local previousWho = stats.penultimateTarget == me and "você" or (stats.penultimateTarget == stats.partnerId and "oponente" or "—")
+				local previous = stats.penultimateTravelTime and string.format("%.0f ms", stats.penultimateTravelTime * 1000) or "indisponível"; travelLabel.Text = who .. " morreu\nTarget até a morte: " .. value .. "\nPenúltimo (" .. previousWho .. "): " .. previous
 			else
 				travelLabel.Text = "Clash encerrado\nTempo final: indisponível"
 			end
