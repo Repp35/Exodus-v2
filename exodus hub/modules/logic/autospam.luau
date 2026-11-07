@@ -392,10 +392,7 @@ function AutoSpam.bindCharacter(character)
 	local function connectHaunter()
 		local event = gameInfo.getHaunterEvent()
 		if event == haunterRemote and haunterConnection and haunterConnection.Connected then return end
-		if haunterConnection then
-			utils.untrackCharacter(haunterConnection); haunterConnection:Disconnect()
-			haunterConnection, haunterRemote = nil, nil
-		end
+		if haunterConnection then utils.untrackCharacter(haunterConnection); haunterConnection:Disconnect(); haunterConnection, haunterRemote = nil, nil end
 		if not event then return end
 		haunterRemote = event
 		haunterConnection = track(s, event.OnClientEvent, function(from, destination)

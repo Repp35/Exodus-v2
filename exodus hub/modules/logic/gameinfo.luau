@@ -195,9 +195,7 @@ function GameInfo.observeAbilityMode(callback)
 	return world:GetAttributeChangedSignal("CurGamemode"):Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
 end
 function GameInfo.getHaunterEvent()
-	local folder = child(child(storage(), "TS"), "GeneratedNetworkRemotes")
-	local event = child(folder, "RE_" .. tostring(9.150098456648103e76))
-	return event and event:IsA("RemoteEvent") and event or nil
+	local folder = child(child(storage(), "TS"), "GeneratedNetworkRemotes"); local event = child(folder, "RE_" .. tostring(9.150098456648103e76)); return event and event:IsA("RemoteEvent") and event or nil
 end
 function GameInfo.getPlayerMotion(id)
 	local player = type(id) == "number" and players:GetPlayerByUserId(id); local character = player and player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
