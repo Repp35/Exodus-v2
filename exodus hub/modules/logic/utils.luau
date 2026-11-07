@@ -293,6 +293,9 @@ function Utils.loadConfig()
 		if type(data) ~= "table" then error("Config inválida: config.json deve conter uma tabela", 2) end
 		migrated = data.AutoClash ~= nil or data.AutoClashActivationMs ~= nil or data.AutoClashDeactivationMs ~= nil
 		if data.AutoSpam == nil and type(data.AutoClash) == "boolean" then data.AutoSpam = data.AutoClash end
+		if data.AutoParryFactor04Applied ~= true then
+			data.AutoParryWindowFactor, data.AutoParryFactor04Applied, migrated = 0.4, true, true
+		end
 		local patch = {}
 		for key, value in pairs(data) do
 			if key ~= "AutoClash" and key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" then

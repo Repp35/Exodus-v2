@@ -40,6 +40,7 @@ UIConfig.__config = {
 	schema = {
 		AutoParry = "boolean",
 		AutoParryWindowFactor = "rate",
+		AutoParryFactor04Applied = "boolean",
 		CameraSensitivity = "rate",
 		ParryBallVisible = "boolean",
 		ParryBallX = "position",
@@ -77,7 +78,8 @@ UIConfig.__config = {
 
 	defaults = {
 		AutoParry = true,
-		AutoParryWindowFactor = 0.5,
+		AutoParryWindowFactor = 0.4,
+		AutoParryFactor04Applied = true,
 		CameraSensitivity = 1,
 		ParryBallVisible = false,
 		AutoSpam = true,
