@@ -232,9 +232,10 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if not g then return nil end
 	local outside = (snapshot.position - s.root.Position).Magnitude > g.fullRadius
 	if not outside then s.dashEntry = false end
+	if partnerIsClose(s, speed) then return nil end
 	if outside and not (s.dashEntry and dashActive(s, time)) then return "outside_window" end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
-	if fresh and switchElapsed and switchElapsed > window and not partnerIsClose(s, speed) then return "no_target_switch" end
+	if fresh and switchElapsed and switchElapsed > window then return "no_target_switch" end
 	return nil
 end
 
@@ -262,7 +263,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	local partner = s.active and s.partner or s.manualPartner
 	if (s.active or utils.isManualSpamActive()) and target ~= me and target ~= partner and partner and g then
 		local distance = distanceToPlayer(s, target)
-		if distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
+		if distance and distance > g.fullRadius and not (s.active and partnerIsClose(s, speed)) then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
 	end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
 	if switchElapsed then s.intervalMs = switchElapsed * 1000 end
@@ -510,7 +511,7 @@ function AutoSpam.onBallSync(data)
 		and speed > 0
 	then
 		local g = gameInfo.getDeflectGeometry(speed, nil, 1, true); local distance = distanceToPlayer(s, target)
-		if g and distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
+		if g and distance and distance > g.fullRadius and not (s.active and partnerIsClose(s, speed)) then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
 	end
 	local snapshot = gameInfo.getSnapshotAt(time)
 	if snapshot and data.Source == "packet" and userId(target) then
