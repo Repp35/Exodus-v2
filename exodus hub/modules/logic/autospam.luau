@@ -50,6 +50,10 @@ local function track(s, signal, callback)
 	local connection = signal:Connect(callback); s.connections[#s.connections + 1] = connection; utils.trackCharacter(connection); return connection
 end
 local function distanceToPlayer(s, id) return id and gameInfo.getPlayerDistance(id) or nil end
+local function opponentTooFar(s, partner)
+	local distance = distanceToPlayer(s, partner)
+	return finite(distance) and distance > 70
+end
 local function playerIsAlive(id)
 	local player = id and players:GetPlayerByUserId(id); local character = player and player.Character; local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid"); return humanoid ~= nil and humanoid.Health > 0
 end
@@ -181,7 +185,7 @@ end
 
 -- activation
 local function start(s, reason, partner, time, serverTime)
-	if s.active then return end
+	if s.active or opponentTooFar(s, partner) then return end
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
@@ -429,6 +433,7 @@ function AutoSpam.bindCharacter(character)
 	track(s, players.PlayerAdded, watchPlayer)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
+		if s.active and opponentTooFar(s, s.partner) then stop(s, "opponent_distance", false); return end
 		if not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent then connectHaunter() end
 		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now()
 		if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then finishClashStats("clash encerrado", clashStats.lastObserved) end
@@ -492,10 +497,7 @@ function AutoSpam.onBallSync(data)
 	end
 	local time = now(); local target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or gameInfo.getTargetId(); local serverTime = tonumber(data.ServerTime)
 	if not finite(serverTime) then serverTime = nil end
-	if s.active then
-		local distance = distanceToPlayer(s, s.partner)
-		if finite(distance) and distance > 70 then stop(s, "opponent_distance", false); return end
-	end
+	if s.active and opponentTooFar(s, s.partner) then stop(s, "opponent_distance", false); return end
 	local speed = tonumber(data.Speed); local partner = s.active and s.partner or s.manualPartner
 	if
 		(s.active or utils.isManualSpamActive())
