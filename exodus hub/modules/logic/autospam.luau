@@ -549,7 +549,6 @@ function AutoSpam.onBallSync(data)
 		snapshot.teleported = false
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
-	-- Check the previous target before the new one resets its timestamp.
 	if s.active and shouldDeactivate(s, snapshot, time, true, serverTime) == "no_target_switch" then
 		if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then observeClashStats(s, snapshot, time, true) end
 		stop(s, "no_target_switch", false)
