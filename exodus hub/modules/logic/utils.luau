@@ -178,7 +178,7 @@ function Utils.createClashLog(partnerId)
 		.. os.date("!%Y-%m-%d %H:%M:%S")
 		.. "\nOponente ID: "
 		.. tostring(partnerId)
-		.. "\nCPS: trocas de alvo entre os jogadores no último segundo\n\n"
+		.. "\nCPS médio: trocas de alvo entre os jogadores divididas pela duração do clash\n\n"
 	writefile(path, header)
 	local content
 	if type(appendfile) ~= "function" then content = header end
