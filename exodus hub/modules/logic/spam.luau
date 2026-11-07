@@ -78,7 +78,14 @@ local function sync()
 				local interval = 1 / (mode == "CPF" and rate * 60 or rate); local due = os.clock()
 				while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
 					local time = os.clock()
-					if time >= due then local pending = math.floor((time - due) / interval) + 1; request(boundUtils, boundRemote, token); due += pending * interval end
+					if time >= due then
+						local pending = math.floor((time - due) / interval) + 1
+						for _ = 1, pending do
+							if token ~= generation or not boundUtils.isActive() or not (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) then break end
+							request(boundUtils, boundRemote, token)
+						end
+						due += pending * interval
+					end
 					if token == generation then task.wait(math.max(0, due - os.clock())) end
 				end
 			end
