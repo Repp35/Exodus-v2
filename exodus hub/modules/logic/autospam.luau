@@ -23,7 +23,7 @@ local T = {
 		DASH_TOWARD_COSINE = 0.5,
 	},
 	DEACTIVATION = {
-		SWITCH_TIMEOUT = 0.09,
+		SWITCH_TIMEOUT = 0.07,
 		START_DELAY = 0.12,
 	},
 	SHARED = {
