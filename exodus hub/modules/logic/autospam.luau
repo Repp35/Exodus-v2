@@ -236,17 +236,10 @@ function AutoSpam.setup(deps)
 			local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local velocity = event.velocity; local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
 			if partner == event.userId and velocity.Y >= 72 and horizontalSpeed <= velocity.Y * 0.5 then movement.upDash() end
 		end
-		local offset = s.root.Position - event.position
-		local velocity = event.velocity
-		local distance, speed = offset.Magnitude, velocity.Magnitude
-		if distance > 0 and speed > 0 and velocity:Dot(offset) / (speed * distance) >= T.ACTIVATION.DASH_TOWARD_COSINE then
-			s.dashUntil = now() + T.ACTIVATION.DASH_BONUS_DURATION; s.dashData = event
-		end
+		local offset = s.root.Position - event.position; local velocity = event.velocity; local distance, speed = offset.Magnitude, velocity.Magnitude
+		if distance > 0 and speed > 0 and velocity:Dot(offset) / (speed * distance) >= T.ACTIVATION.DASH_TOWARD_COSINE then s.dashUntil = now() + T.ACTIVATION.DASH_BONUS_DURATION; s.dashData = event end
 		if not utils.isActive() then return end
-		local context = gameInfo.getClashContext()
-		local partner = s.active and s.partner or (context and context.partnerId)
-		local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
-		local upward = velocity.Y >= 72 and horizontalSpeed <= velocity.Y * 0.5
+		local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z); local upward = velocity.Y >= 72 and horizontalSpeed <= velocity.Y * 0.5
 		if partner == event.userId and not upward and not s.pursuit and now() - (s.pursuitHandledAt or -math.huge) > T.ACTIVATION.PURSUIT_TIME then
 			local position, _, character = gameInfo.getPlayerMotion(partner)
 			if position and character then s.pursuit = { partner = partner, character = character, deadline = now() + T.ACTIVATION.PURSUIT_TIME } end
@@ -293,8 +286,7 @@ function AutoSpam.bindCharacter(character)
 	track(s, players.PlayerAdded, watchPlayer)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
-		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
-		local clashContext = gameInfo.getClashContext()
+		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext()
 		if not autoEnabled and not upDashEnabled and not utils.isManualSpamActive() and not s.active and not clashContext and not s.pursuit then
 			s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
 			return
@@ -307,19 +299,27 @@ function AutoSpam.bindCharacter(character)
 		end
 		local pursuit = s.pursuit
 		if pursuit then
-			local snapshot = gameInfo.getSnapshotAt(time)
-			local position, velocity, character = gameInfo.getPlayerMotion(pursuit.partner)
-			local ownPosition, ownVelocity = gameInfo.getPlayerMotion(localPlayer.UserId)
-			local target = snapshot and userId(snapshot.targetId)
-			if not utils.isActive() or not gameInfo.areAbilitiesEnabled() or time > pursuit.deadline or character ~= pursuit.character
-				or gameInfo.getBallFrozen() == true or (snapshot and snapshot.teleported) or (target and target ~= localPlayer.UserId and target ~= pursuit.partner)
+			local snapshot = gameInfo.getSnapshotAt(time); local position, velocity, character = gameInfo.getPlayerMotion(pursuit.partner); local ownPosition, ownVelocity = gameInfo.getPlayerMotion(localPlayer.UserId); local target = snapshot and userId(snapshot.targetId)
+			if
+				not utils.isActive()
+				or not gameInfo.areAbilitiesEnabled()
+				or time > pursuit.deadline
+				or character ~= pursuit.character
+				or gameInfo.getBallFrozen() == true
+				or (snapshot and snapshot.teleported)
+				or (target and target ~= localPlayer.UserId and target ~= pursuit.partner)
 			then
 				s.pursuit = nil
-			elseif position and velocity and ownPosition and ownVelocity and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported
+			elseif
+				position
+				and velocity
+				and ownPosition
+				and ownVelocity
+				and gameInfo.isSnapshotValid(snapshot)
+				and not snapshot.teleported
 				and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or time - snapshot.syncAt <= T.SHARED.SNAPSHOT_MAX_AGE)
 			then
-				local offset = position - ownPosition
-				local g = geometry(s, snapshot, 1)
+				local offset = position - ownPosition; local g = geometry(s, snapshot, 1)
 				if g and offset.Magnitude > g.fullRadius and (velocity - ownVelocity):Dot(offset) > 0 then
 					s.pursuit, s.pursuitHandledAt = nil, time
 					movement.dashToward(offset)

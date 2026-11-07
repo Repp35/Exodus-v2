@@ -195,9 +195,7 @@ function GameInfo.observeAbilityMode(callback)
 	return world:GetAttributeChangedSignal("CurGamemode"):Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
 end
 function GameInfo.getPlayerMotion(id)
-	local player = type(id) == "number" and players:GetPlayerByUserId(id)
-	local character = player and player.Character
-	local root = character and character:FindFirstChild("HumanoidRootPart")
+	local player = type(id) == "number" and players:GetPlayerByUserId(id); local character = player and player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
 	if not root or not root.Parent then return nil end
 	return root.Position, root.AssemblyLinearVelocity, character
 end
