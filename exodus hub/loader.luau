@@ -473,17 +473,24 @@ local function startInternal()
 	utils.setLifecyclePhase("binding"); local runtime, runtimeError = bindRuntime(loaded, utils)
 	if type(runtime) ~= "table" then utils.stop(); return false, "Runtime", runtimeError end
 	Exodus.Runtime = runtime; _G.ExodusOnBurst = loaded.autoparry.fire
-	local uiReady, uiModule, uiError = loadInterface(loaded.ui, loaded.permissions.wrap("ui", "utils", utils), {
-		onAutoDarkChanged = function() loaded.autodark.sync() end,
-		onAutoJumpChanged = function() loaded.movement.syncJump() end,
-		onUpDash = function()
-			local ok, err = loaded.movement.upDash()
-			if not ok then utils.recordError("UpDash", err or "Dash indisponível") end
-		end,
-		onPanic = function()
-			loaded.autoparry.resetState(); loaded.autospam.stopSpam()
-		end,
-	}, loaded.permissions.wrap("ui", "uiconfig", loaded.uiconfig), loaded.permissions.wrap("ui", "gameinfo", loaded.gameinfo), loaded.permissions.wrap("ui", "autospam", loaded.autospam))
+	local uiReady, uiModule, uiError = loadInterface(
+		loaded.ui,
+		loaded.permissions.wrap("ui", "utils", utils),
+		{
+			onAutoDarkChanged = function() loaded.autodark.sync() end,
+			onAutoJumpChanged = function() loaded.movement.syncJump() end,
+			onUpDash = function()
+				local ok, err = loaded.movement.upDash()
+				if not ok then utils.recordError("UpDash", err or "Dash indisponível") end
+			end,
+			onPanic = function()
+				loaded.autoparry.resetState(); loaded.autospam.stopSpam()
+			end,
+		},
+		loaded.permissions.wrap("ui", "uiconfig", loaded.uiconfig),
+		loaded.permissions.wrap("ui", "gameinfo", loaded.gameinfo),
+		loaded.permissions.wrap("ui", "autospam", loaded.autospam)
+	)
 	if not uiReady then utils.stop(); return false, uiModule, uiError end
 	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); printStartup("Exodus: iniciado"); return true
 end

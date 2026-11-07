@@ -696,23 +696,14 @@ function ExodusUI.setup(deps)
 		ZIndex = 20,
 		Parent = screenGui,
 	})
-	corner(distanceLabel, 8)
-	local nextDistanceUpdate = 0
+	corner(distanceLabel, 8); local nextDistanceUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not distanceLabel.Parent then return end
-		local visible = Utils.getConfigValue("ClashDistanceVisible") == true
-		distanceLabel.Visible = visible
-		local time = os.clock()
+		local visible = Utils.getConfigValue("ClashDistanceVisible") == true; distanceLabel.Visible = visible; local time = os.clock()
 		if not visible or time < nextDistanceUpdate then return end
-		nextDistanceUpdate = time + 0.1
-		local status = AutoSpam.getStatus()
-		local partner = status and status.active and status.clashPartnerId
-		if not partner or partner <= 0 then
-			local context = GameInfo.getClashContext()
-			partner = context and context.partnerId
-		end
-		local distance = partner and GameInfo.getPlayerDistance(partner)
-		distanceLabel.Text = type(distance) == "number" and string.format("Clash: %.1f studs", distance) or "Clash: —"
+		nextDistanceUpdate = time + 0.1; local status = AutoSpam.getStatus(); local partner = status and status.active and status.clashPartnerId
+		if not partner or partner <= 0 then local context = GameInfo.getClashContext(); partner = context and context.partnerId end
+		local distance = partner and GameInfo.getPlayerDistance(partner); distanceLabel.Text = type(distance) == "number" and string.format("Clash: %.1f studs", distance) or "Clash: —"
 	end))
 	bindInput()
 	floatingButton = inst("TextButton", {
@@ -1135,8 +1126,7 @@ function ExodusUI.setup(deps)
 		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
 	end)
 	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall); local upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); local _, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft)
-	createCameraSensitivityCard(parryYPos, settingsLeft)
-	createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight)
+	createCameraSensitivityCard(parryYPos, settingsLeft); createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight)
 	local function updateAbilityVisibility(enabled)
 		darkCard.Visible, miniDarkCard.Visible, upDashCard.Visible, fierceCard.Visible, autoUpDashCard.Visible = enabled, enabled, enabled, enabled, enabled
 		darkBall.Visible, upDashBall.Visible = enabled, enabled
@@ -1307,7 +1297,10 @@ function ExodusUI.setup(deps)
 end
 
 -- contract
-ExodusUI.__contract =
-	{ requires = { GameInfo = "gameinfo", AutoSpam = "autospam" }, requiresMethods = { GameInfo = { "areAbilitiesEnabled", "observeAbilityMode", "getClashContext", "getPlayerDistance" }, AutoSpam = { "getStatus" } }, provides = { "setup" } }
+ExodusUI.__contract = {
+	requires = { GameInfo = "gameinfo", AutoSpam = "autospam" },
+	requiresMethods = { GameInfo = { "areAbilitiesEnabled", "observeAbilityMode", "getClashContext", "getPlayerDistance" }, AutoSpam = { "getStatus" } },
+	provides = { "setup" },
+}
 
 return ExodusUI
