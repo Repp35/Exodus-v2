@@ -90,18 +90,19 @@ local function finishClashStats(reason, time)
 	if not stats or stats.frozen then return end
 	stats.frozen, stats.waitingForClash = true, false
 	stats.duration = math.max(0, time - stats.startedAt); stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0; stats.endReason = reason
-	if reason ~= "jogador morreu" then return end
+	if reason ~= "jogador morreu" and reason ~= "oponente morreu" then return end
 	local opponent = players:GetPlayerByUserId(stats.partnerId)
 	local ok, result = pcall(function()
 		local log = utils.createClashLog(stats.partnerId, stats.startedDate)
 		utils.appendClashLog(
 			log,
 			string.format(
-				"Oponente: %s\nVencedor: %s\nDuração: %.3f s\nCPS médio: %.2f\n\n%s\n%s",
+				"Oponente: %s\nVencedor: %s\nDuração: %.3f s\nCPS médio: %.2f\nTempo do target até a morte observada: %s\n\n%s\n%s",
 				opponent and opponent.Name or tostring(stats.partnerId),
-				opponent and opponent.Name or tostring(stats.partnerId),
+				reason == "jogador morreu" and (opponent and opponent.Name or tostring(stats.partnerId)) or localPlayer.Name,
 				stats.duration,
 				stats.cps,
+				stats.fatalTravelTime and string.format("%.3f s (%.0f ms)", stats.fatalTravelTime, stats.fatalTravelTime * 1000) or "indisponível",
 				formatSample("INÍCIO", stats.startSample),
 				formatSample("FIM", stats.endSample)
 			)
@@ -149,6 +150,21 @@ local function observeClashStats(s, snapshot, time, fresh)
 	if fresh then stats.lastPacketAt = time end
 	if observeTarget and target then
 		local me = localPlayer.UserId
+		if fresh then
+			local previousTarget = stats.travelObservedTarget
+			if previousTarget and previousTarget ~= target then
+				if stats.travelTarget == previousTarget and stats.travelStartedAt then
+					stats.lastTravelTime = math.max(0, time - stats.travelStartedAt)
+					stats.lastTravelTarget = previousTarget
+				end
+				if (previousTarget == me or previousTarget == partner) and (target == me or target == partner) then
+					stats.travelTarget, stats.travelStartedAt = target, time
+				else
+					stats.travelTarget, stats.travelStartedAt = nil, nil
+				end
+			end
+			stats.travelObservedTarget = target
+		end
 		if stats.lastTarget == me and target == partner then
 			stats.cycleArmed = true; stats.lastSwitchAt = time
 		elseif stats.lastTarget == partner and target == me then
@@ -173,13 +189,18 @@ end
 local function freezeClashStats(playerId)
 	if not clashStats or clashStats.frozen then return end
 	if playerId ~= localPlayer.UserId and playerId ~= clashStats.partnerId then return end
+	local time = now()
+	if clashStats.travelTarget == playerId and clashStats.travelStartedAt then
+		clashStats.fatalTravelTime = math.max(0, time - clashStats.travelStartedAt)
+	end
+	clashStats.deceasedId = playerId
 	local sample, s = clashStats.endSample, current
 	if sample and s and s.root and s.root.Parent then
 		local other = gameInfo.getPlayerMotion(clashStats.partnerId)
 		sample.own, sample.opponent = s.root.Position, other
 		if typeof(other) == "Vector3" then sample.distance = (other - sample.own).Magnitude end
 	end
-	finishClashStats(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", now())
+	finishClashStats(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", time)
 end
 
 -- activation
@@ -332,7 +353,10 @@ end
 local function detach(reason)
 	local s = current
 	if s then
-		if clashStats and not clashStats.frozen then finishClashStats(reason, now()) end
+		if clashStats and not clashStats.frozen then
+			local humanoid = s.character and s.character:FindFirstChildOfClass("Humanoid")
+			if humanoid and humanoid.Health <= 0 then freezeClashStats(localPlayer.UserId) else finishClashStats(reason, now()) end
+		end
 		stop(s, reason, false); current = nil; disconnect(s)
 	end
 	generation += 1
@@ -559,6 +583,12 @@ function AutoSpam.getStatus()
 			speed = clashStats.speed,
 			frozen = clashStats.frozen,
 			duration = clashStats.duration or math.max(0, now() - clashStats.startedAt),
+			travelTarget = clashStats.travelTarget,
+			travelStartedAt = not clashStats.frozen and clashStats.travelStartedAt or nil,
+			lastTravelTime = clashStats.lastTravelTime,
+			lastTravelTarget = clashStats.lastTravelTarget,
+			fatalTravelTime = clashStats.fatalTravelTime,
+			deceasedId = clashStats.deceasedId,
 		} or nil,
 	}
 end

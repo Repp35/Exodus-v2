@@ -696,6 +696,49 @@ function ExodusUI.setup(deps)
 		ZIndex = 20,
 		Parent = screenGui,
 	})
+	local travelLabel = inst("TextLabel", {
+		Name = "ClashTravelTime",
+		Size = UDim2.new(0, 270, 0, 70),
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -20),
+		BackgroundColor3 = C.header,
+		BackgroundTransparency = 0.2,
+		Text = "Tempo da bola: —",
+		TextColor3 = C.text,
+		TextSize = 14,
+		Font = Enum.Font.GothamSemibold,
+		Visible = Utils.getConfigValue("ClashTravelTimeVisible") == true,
+		ZIndex = 20,
+		Parent = screenGui,
+	})
+	corner(travelLabel, 8)
+	local nextTravelUpdate = 0
+	trackConn(RunService.Heartbeat:Connect(function()
+		if not travelLabel.Parent then return end
+		local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true
+		travelLabel.Visible = visible
+		local time = os.clock()
+		if not visible or time < nextTravelUpdate then return end
+		nextTravelUpdate = time + 0.05
+		local status = AutoSpam.getStatus(); local stats = status and status.clashStats
+		if not stats then travelLabel.Text = "Tempo da bola: —"; return end
+		local me = Players.LocalPlayer and Players.LocalPlayer.UserId
+		if stats.frozen then
+			if stats.deceasedId then
+				local who = stats.deceasedId == me and "Você" or "Oponente"
+				local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "indisponível"
+				travelLabel.Text = who .. " morreu\nTarget até a morte: " .. value
+			else
+				travelLabel.Text = "Clash encerrado\nTempo final: indisponível"
+			end
+		else
+			local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"
+			local who = stats.travelTarget == me and "Você" or (stats.travelTarget == stats.partnerId and "Oponente" or "—")
+			local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
+			local lastWho = stats.lastTravelTarget == me and "você" or (stats.lastTravelTarget == stats.partnerId and "oponente" or "—")
+			travelLabel.Text = "Target: " .. who .. " | Tempo: " .. value .. "\nÚltima troca (" .. lastWho .. "): " .. last
+		end
+	end))
 	corner(distanceLabel, 8); local nextDistanceUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not distanceLabel.Parent then return end
@@ -1149,7 +1192,7 @@ function ExodusUI.setup(deps)
 		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
 	end)
 	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall); local upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); local _, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft)
-	createCameraSensitivityCard(parryYPos, settingsLeft); createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight)
+	createCameraSensitivityCard(parryYPos, settingsLeft); local travelYPos = createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight); createToggleCard("Tempo da bola", "ClashTravelTimeVisible", travelYPos, settingsRight)
 	local function updateAbilityVisibility(enabled)
 		darkCard.Visible, miniDarkCard.Visible, upDashCard.Visible, fierceCard.Visible, autoUpDashCard.Visible = enabled, enabled, enabled, enabled, enabled
 		darkBall.Visible, upDashBall.Visible = enabled, enabled
