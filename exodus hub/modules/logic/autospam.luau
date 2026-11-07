@@ -323,6 +323,16 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 		inspectTarget(s, target, time, snapshot, snapshot.serverTime)
 	end
 	observeClashStats(s, snapshot, time)
+	if utils.getConfigValue("AutoClashUpDash") == true and gameInfo.areAbilitiesEnabled() then
+		local context = gameInfo.getClashContext()
+		local partner = s.active and s.partner or (context and context.partnerId)
+		local g = partner and geometry(s, snapshot, 1)
+		local position = g and gameInfo.getPlayerMotion(partner)
+		if typeof(position) == "Vector3" then
+			local direction = position - s.root.Position
+			if direction.Magnitude > g.fullRadius then movement.dashToward(direction) end
+		end
+	end
 	if fresh and utils.isManualSpamActive() then
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
 		if window and switchElapsed and switchElapsed > math.max(T.DEACTIVATION.SWITCH_WINDOW_MARGIN, window - T.DEACTIVATION.SWITCH_WINDOW_MARGIN) then utils.setManualSpamActive(false) end
