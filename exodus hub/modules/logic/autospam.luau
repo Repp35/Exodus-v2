@@ -199,9 +199,11 @@ local function shouldActivate(s, snapshot, time)
 	local pending = s.pending; local factor = dashActive(s, time) and T.ACTIVATION.DASH_RADIUS_FACTOR or T.ACTIVATION.RADIUS_FACTOR; local g = geometry(s, snapshot, factor)
 	if not g then return false end
 	if pending.recovery then
-		local partnerDistance = distanceToPlayer(s, pending.partner); local normal = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR)
-		return normal ~= nil and partnerDistance ~= nil and partnerDistance <= normal.fullRadius
-			and (s.target == localPlayer.UserId or s.target == pending.partner) and snapshot.targetId == s.target
+		local partnerDistance = distanceToPlayer(s, pending.partner); local normal = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); return normal ~= nil
+			and partnerDistance ~= nil
+			and partnerDistance <= normal.fullRadius
+			and (s.target == localPlayer.UserId or s.target == pending.partner)
+			and snapshot.targetId == s.target
 			and (snapshot.position - s.root.Position).Magnitude <= normal.fullRadius
 	end
 	return s.target == localPlayer.UserId and snapshot.targetId == localPlayer.UserId and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
