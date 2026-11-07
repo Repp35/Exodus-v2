@@ -494,7 +494,7 @@ function AutoSpam.onBallSync(data)
 	if not finite(serverTime) then serverTime = nil end
 	if s.active then
 		local distance = distanceToPlayer(s, s.partner)
-		if finite(distance) and distance > 89 then stop(s, "opponent_distance", false); return end
+		if finite(distance) and distance > 70 then stop(s, "opponent_distance", false); return end
 	end
 	local speed = tonumber(data.Speed); local partner = s.active and s.partner or s.manualPartner
 	if
