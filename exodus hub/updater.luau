@@ -21,15 +21,11 @@ return function(loadedRevision, request)
 		local player = players.LocalPlayer
 		if not player or not info or not auto then return false end
 		if type(info.getTargetId) ~= "function" or type(info.getClashContext) ~= "function"
-			or type(info.getBall) ~= "function" or type(auto.isActive) ~= "function"
-			or type(auto.getStatus) ~= "function" then return false end
+			or type(info.getBall) ~= "function" or type(auto.isActive) ~= "function" then return false end
 		local target = info.getTargetId()
 		if target == player.UserId or workspace:GetAttribute("GameBallTarget") == player.UserId then return false end
 		if info.getBall() and (type(target) ~= "number" or target <= 0) then return false end
 		if auto.isActive() or info.getClashContext() then return false end
-		local status = auto.getStatus()
-		if not status then return false end
-		if status.clashStats and not status.clashStats.frozen then return false end
 		return true
 	end
 
@@ -46,10 +42,10 @@ return function(loadedRevision, request)
 	end
 
 	task.spawn(function()
-		local pending, chunk, nextCheck = nil, nil, os.clock() + 120
+		local pending, chunk, nextCheck = nil, nil, 0
 		while running() do
 			if os.clock() >= nextCheck then
-				nextCheck = os.clock() + 120
+				nextCheck = os.clock() + 60
 				local revision, err = latestRevision()
 				if not running() then return end
 				if revision then
