@@ -153,10 +153,7 @@ local function observeClashStats(s, snapshot, time, fresh)
 		if fresh then
 			local previousTarget = stats.travelObservedTarget
 			if previousTarget and previousTarget ~= target then
-				if stats.travelTarget == previousTarget and stats.travelStartedAt then
-					stats.lastTravelTime = math.max(0, time - stats.travelStartedAt)
-					stats.lastTravelTarget = previousTarget
-				end
+				if stats.travelTarget == previousTarget and stats.travelStartedAt then stats.lastTravelTime = math.max(0, time - stats.travelStartedAt); stats.lastTravelTarget = previousTarget end
 				if (previousTarget == me or previousTarget == partner) and (target == me or target == partner) then
 					stats.travelTarget, stats.travelStartedAt = target, time
 				else
@@ -190,11 +187,8 @@ local function freezeClashStats(playerId)
 	if not clashStats or clashStats.frozen then return end
 	if playerId ~= localPlayer.UserId and playerId ~= clashStats.partnerId then return end
 	local time = now()
-	if clashStats.travelTarget == playerId and clashStats.travelStartedAt then
-		clashStats.fatalTravelTime = math.max(0, time - clashStats.travelStartedAt)
-	end
-	clashStats.deceasedId = playerId
-	local sample, s = clashStats.endSample, current
+	if clashStats.travelTarget == playerId and clashStats.travelStartedAt then clashStats.fatalTravelTime = math.max(0, time - clashStats.travelStartedAt) end
+	clashStats.deceasedId = playerId; local sample, s = clashStats.endSample, current
 	if sample and s and s.root and s.root.Parent then
 		local other = gameInfo.getPlayerMotion(clashStats.partnerId)
 		sample.own, sample.opponent = s.root.Position, other

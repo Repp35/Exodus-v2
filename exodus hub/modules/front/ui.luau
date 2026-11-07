@@ -711,32 +711,19 @@ function ExodusUI.setup(deps)
 		ZIndex = 20,
 		Parent = screenGui,
 	})
-	corner(travelLabel, 8)
-	local nextTravelUpdate = 0
+	corner(travelLabel, 8); local nextTravelUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not travelLabel.Parent then return end
-		local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true
-		travelLabel.Visible = visible
-		local time = os.clock()
+		local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true; travelLabel.Visible = visible; local time = os.clock()
 		if not visible or time < nextTravelUpdate then return end
-		nextTravelUpdate = time + 0.05
-		local status = AutoSpam.getStatus(); local stats = status and status.clashStats
+		nextTravelUpdate = time + 0.05; local status = AutoSpam.getStatus(); local stats = status and status.clashStats
 		if not stats then travelLabel.Text = "Tempo da bola: —"; return end
 		local me = Players.LocalPlayer and Players.LocalPlayer.UserId
 		if stats.frozen then
-			if stats.deceasedId then
-				local who = stats.deceasedId == me and "Você" or "Oponente"
-				local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "indisponível"
-				travelLabel.Text = who .. " morreu\nTarget até a morte: " .. value
-			else
-				travelLabel.Text = "Clash encerrado\nTempo final: indisponível"
-			end
+			if stats.deceasedId then local who = stats.deceasedId == me and "Você" or "Oponente"; local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "indisponível"; travelLabel.Text = who .. " morreu\nTarget até a morte: " .. value else travelLabel.Text = "Clash encerrado\nTempo final: indisponível" end
 		else
-			local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"
-			local who = stats.travelTarget == me and "Você" or (stats.travelTarget == stats.partnerId and "Oponente" or "—")
-			local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
-			local lastWho = stats.lastTravelTarget == me and "você" or (stats.lastTravelTarget == stats.partnerId and "oponente" or "—")
-			travelLabel.Text = "Target: " .. who .. " | Tempo: " .. value .. "\nÚltima troca (" .. lastWho .. "): " .. last
+			local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"; local who = stats.travelTarget == me and "Você" or (stats.travelTarget == stats.partnerId and "Oponente" or "—"); local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
+			local lastWho = stats.lastTravelTarget == me and "você" or (stats.lastTravelTarget == stats.partnerId and "oponente" or "—"); travelLabel.Text = "Target: " .. who .. " | Tempo: " .. value .. "\nÚltima troca (" .. lastWho .. "): " .. last
 		end
 	end))
 	corner(distanceLabel, 8); local nextDistanceUpdate = 0
