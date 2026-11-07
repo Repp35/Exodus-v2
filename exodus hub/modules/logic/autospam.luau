@@ -20,11 +20,6 @@ local T = {
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
-	DEACTIVATION = {
-		RETURN = 0.1,
-		RETURN_MARGIN = 0.01,
-		SWITCH_WINDOW_MARGIN = 0.04,
-	},
 	SHARED = {
 		MIN_RETURN = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
@@ -69,14 +64,14 @@ end
 local function returnWindow(window, speed, base)
 	local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0; return math.max(T.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
 end
-local function returnLimit(s, speed, window)
-	local limit = returnWindow(window, speed, T.DEACTIVATION.RETURN); local distance = distanceToPlayer(s, s.partner)
-	if not distance then return limit + T.DEACTIVATION.RETURN_MARGIN, false end
+local function partnerIsClose(s, speed)
+	local distance = distanceToPlayer(s, s.partner)
+	if not distance then return false end
 	local ownRange = tonumber(gameInfo.getDeflectRange())
 	if not finite(ownRange) or ownRange <= 0 then ownRange = 8.5 end
 	local ping = gameInfo.getLocalPing()
 	if not finite(ping) or ping < 0 then ping = 0 end
-	local close = distance <= ownRange + 8.5 + speed * ping; local travel = math.max(0, distance - ownRange - 8.5) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping) + T.DEACTIVATION.RETURN_MARGIN, close
+	return distance <= ownRange + 8.5 + speed * ping
 end
 local function formatPoint(point)
 	if typeof(point) ~= "Vector3" then return "indisponível" end
@@ -203,7 +198,12 @@ local function shouldActivate(s, snapshot, time)
 	if gameInfo.getBallFrozen() == true or not s.pending then return false end
 	local pending = s.pending; local factor = dashActive(s, time) and T.ACTIVATION.DASH_RADIUS_FACTOR or T.ACTIVATION.RADIUS_FACTOR; local g = geometry(s, snapshot, factor)
 	if not g then return false end
-	if pending.recovery then local partnerDistance = distanceToPlayer(s, pending.partner); local normal = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); return normal ~= nil and partnerDistance ~= nil and partnerDistance <= normal.fullRadius end
+	if pending.recovery then
+		local partnerDistance = distanceToPlayer(s, pending.partner); local normal = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR)
+		return normal ~= nil and partnerDistance ~= nil and partnerDistance <= normal.fullRadius
+			and (s.target == localPlayer.UserId or s.target == pending.partner) and snapshot.targetId == s.target
+			and (snapshot.position - s.root.Position).Magnitude <= normal.fullRadius
+	end
 	return s.target == localPlayer.UserId and snapshot.targetId == localPlayer.UserId and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
 end
 
@@ -229,10 +229,8 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	local outside = (snapshot.position - s.root.Position).Magnitude > g.fullRadius
 	if not outside then s.dashEntry = false end
 	if outside and not (s.dashEntry and dashActive(s, time)) then return "outside_window" end
-	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime); local limit, close = returnLimit(s, speed, window)
-	if fresh and awayElapsed and s.target == s.partner and not close and awayElapsed > limit then return "return_timeout" end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
-	if fresh and switchElapsed and switchElapsed > math.max(T.DEACTIVATION.SWITCH_WINDOW_MARGIN, window - T.DEACTIVATION.SWITCH_WINDOW_MARGIN) then return "no_target_switch" end
+	if fresh and switchElapsed and switchElapsed > window and not partnerIsClose(s, speed) then return "no_target_switch" end
 	return nil
 end
 
@@ -261,11 +259,6 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	if (s.active or utils.isManualSpamActive()) and target ~= me and target ~= partner and partner and g then
 		local distance = distanceToPlayer(s, target)
 		if distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
-	end
-	local awayElapsed = elapsed(s.awayAt, s.awayServerAt, time, serverTime)
-	if s.active and awayElapsed and previous == s.partner and target == me and window then
-		local limit, close = returnLimit(s, speed, window)
-		if not close and awayElapsed > limit then stop(s, "return_timeout", false) end
 	end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
 	if switchElapsed then s.intervalMs = switchElapsed * 1000 end
@@ -316,7 +309,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 	end
 	if fresh and utils.isManualSpamActive() then
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
-		if window and switchElapsed and switchElapsed > math.max(T.DEACTIVATION.SWITCH_WINDOW_MARGIN, window - T.DEACTIVATION.SWITCH_WINDOW_MARGIN) then utils.setManualSpamActive(false) end
+		if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
 	end
 	if s.active then
 		if fresh then
@@ -497,7 +490,7 @@ function AutoSpam.onBallSync(data)
 		snapshot.teleported = false
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
-	if snapshot and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
+	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
 	evaluate(s, time, true, serverTime, snapshot)
 end
 
