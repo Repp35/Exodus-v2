@@ -476,9 +476,14 @@ function AutoSpam.bindCharacter(character)
 	track(s, players.PlayerAdded, watchPlayer)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
+		local time = now()
+		if s.active then
+			local reason = shouldDeactivate(s, time)
+			if reason then stop(s, reason, false); return end
+		end
 		if s.active and opponentTooFar(s, s.partner) then stop(s, "opponent_distance", false); return end
 		if not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent then connectHaunter() end
-		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now()
+		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext()
 		if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then finishClashStats("clash encerrado", clashStats.lastObserved) end
 		if
 			not autoEnabled
