@@ -42,8 +42,8 @@ local state = {
 -- tuning
 local T = {
 	BASE_RADIUS = 8.5,
-	BASE_WINDOW = 0.50,
-	MIN_WINDOW = 0.23,
+	BASE_WINDOW = 0.85,
+	MIN_WINDOW = 0.20,
 	BONUS_CAP = 7.5,
 	RESILIENCE_STEP = 0.225,
 	DEFAULT_WINDOW_FACTOR = 0.50,
@@ -120,7 +120,7 @@ local function radius(speed, factor, baseWindow)
 	if gameInfo then low, high = gameInfo.getBallSpeedLimits() end
 	if not finite(low) or not finite(high) or high <= low then low, high = T.FALLBACK_MIN_SPEED, T.FALLBACK_MAX_SPEED end
 	local fraction = math.clamp((speed - low) / (high - low), 0, 1); local window = T.BASE_WINDOW + (T.MIN_WINDOW - T.BASE_WINDOW) * fraction
-	if baseWindow == "game" and gameInfo then
+	if (baseWindow == nil or baseWindow == "game") and gameInfo then
 		local actual = gameInfo.getDeflectWindow(speed)
 		if finite(actual) and actual > 0 then window = actual end
 	elseif finite(baseWindow) and baseWindow > 0 then
