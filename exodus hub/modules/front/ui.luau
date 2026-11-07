@@ -685,7 +685,7 @@ function ExodusUI.setup(deps)
 		Name = "ClashDistance",
 		Size = UDim2.new(0, 240, 0, 110),
 		AnchorPoint = Vector2.new(0.5, 0),
-		Position = UDim2.new(0.5, 0, 0, 60),
+		Position = UDim2.new(0.5, 0, 0, 0),
 		BackgroundColor3 = C.header,
 		BackgroundTransparency = 0.2,
 		Text = "SPD atual: —\nClash: —\nCPS: —",
