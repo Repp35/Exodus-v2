@@ -185,10 +185,17 @@ local function observeClashStats(s, snapshot, time, fresh)
 		if stats.lastTarget == me and target == partner then
 			stats.cycleArmed = true; stats.lastSwitchAt = time
 		elseif stats.lastTarget == partner and target == me then
-			if stats.cycleArmed then stats.totalSwitches += 1 end
+			if stats.cycleArmed then
+				stats.totalSwitches += 1
+				if stats.lastCycleAt and time > stats.lastCycleAt then
+					stats.cycleInterval = time - stats.lastCycleAt
+					stats.currentCps = math.min(35, 1 / stats.cycleInterval)
+				end
+				stats.lastCycleAt = time
+			end
 			stats.cycleArmed = false; stats.lastSwitchAt = time
 		elseif target ~= me and target ~= partner then
-			stats.cycleArmed = false
+			stats.cycleArmed, stats.lastCycleAt, stats.cycleInterval, stats.currentCps = false, nil, nil, nil
 		end
 		stats.lastTarget = target
 	end
@@ -608,6 +615,7 @@ function AutoSpam.getStatus()
 			partnerId = clashStats.partnerId,
 			distance = clashStats.distance,
 			cps = clashStats.cps,
+			currentCps = clashStats.currentCps and (clashStats.frozen and clashStats.currentCps or math.min(35, 1 / math.max(clashStats.cycleInterval, now() - clashStats.lastCycleAt))) or nil,
 			startSample = clashStats.startSample,
 			endSample = clashStats.endSample,
 			endReason = clashStats.endReason,
