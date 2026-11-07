@@ -22,7 +22,6 @@ local T = {
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
-	DEACTIVATION = { BALL_TTI = 0.1, CLASH_DELAY = 0.5 },
 	SHARED = {
 		MIN_RETURN = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
@@ -52,7 +51,8 @@ local function track(s, signal, callback)
 end
 local function distanceToPlayer(s, id) return id and gameInfo.getPlayerDistance(id) or nil end
 local function opponentTooFar(s, partner)
-	local distance = distanceToPlayer(s, partner); return finite(distance) and distance > 70
+	local distance = distanceToPlayer(s, partner)
+	return finite(distance) and distance > 70
 end
 local function playerIsAlive(id)
 	local player = id and players:GetPlayerByUserId(id); local character = player and player.Character; local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid"); return humanoid ~= nil and humanoid.Health > 0
@@ -91,27 +91,18 @@ local function finishClashStats(reason, time)
 	if not stats or stats.frozen then return end
 	stats.frozen, stats.waitingForClash = true, false
 	stats.duration = math.max(0, time - stats.startedAt); stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0; stats.endReason = reason
-	if reason ~= "jogador morreu" and reason ~= "oponente morreu" then return end
+	if reason ~= "jogador morreu" then return end
 	local opponent = players:GetPlayerByUserId(stats.partnerId)
 	local ok, result = pcall(function()
 		local log = utils.createClashLog(stats.partnerId, stats.startedDate)
 		utils.appendClashLog(
 			log,
 			string.format(
-				"Oponente: %s\nVencedor: %s\nDuração: %.3f s\nCPS médio: %.2f\nTempo do target até a morte observada: %s\nPenúltimo target: %s\n\n%s\n%s",
+				"Oponente: %s\nVencedor: %s\nDuração: %.3f s\nCPS médio: %.2f\n\n%s\n%s",
 				opponent and opponent.Name or tostring(stats.partnerId),
-				reason == "jogador morreu" and (opponent and opponent.Name or tostring(stats.partnerId)) or localPlayer.Name,
+				opponent and opponent.Name or tostring(stats.partnerId),
 				stats.duration,
 				stats.cps,
-				stats.fatalTravelTime and string.format("%.3f s (%.0f ms)", stats.fatalTravelTime, stats.fatalTravelTime * 1000) or "indisponível",
-				stats.penultimateTravelTime
-						and string.format(
-							"%s — %.3f s (%.0f ms)",
-							stats.penultimateTarget == localPlayer.UserId and localPlayer.Name or (opponent and opponent.Name or tostring(stats.partnerId)),
-							stats.penultimateTravelTime,
-							stats.penultimateTravelTime * 1000
-						)
-					or "indisponível",
 				formatSample("INÍCIO", stats.startSample),
 				formatSample("FIM", stats.endSample)
 			)
@@ -159,22 +150,6 @@ local function observeClashStats(s, snapshot, time, fresh)
 	if fresh then stats.lastPacketAt = time end
 	if observeTarget and target then
 		local me = localPlayer.UserId
-		if fresh then
-			local previousTarget = stats.travelObservedTarget
-			if previousTarget and previousTarget ~= target then
-				if stats.travelTarget == previousTarget and stats.travelStartedAt then
-					stats.lastTravelTime, stats.lastTravelTarget = math.max(0, time - stats.travelStartedAt), previousTarget
-				else
-					stats.lastTravelTime, stats.lastTravelTarget = nil, nil
-				end
-				if (previousTarget == me or previousTarget == partner) and (target == me or target == partner) then
-					stats.travelTarget, stats.travelStartedAt = target, time
-				else
-					stats.travelTarget, stats.travelStartedAt = nil, nil
-				end
-			end
-			stats.travelObservedTarget = target
-		end
 		if stats.lastTarget == me and target == partner then
 			stats.cycleArmed = true; stats.lastSwitchAt = time
 		elseif stats.lastTarget == partner and target == me then
@@ -199,18 +174,13 @@ end
 local function freezeClashStats(playerId)
 	if not clashStats or clashStats.frozen then return end
 	if playerId ~= localPlayer.UserId and playerId ~= clashStats.partnerId then return end
-	local time = now()
-	if clashStats.travelTarget == playerId and clashStats.travelStartedAt then
-		clashStats.fatalTravelTime = math.max(0, time - clashStats.travelStartedAt)
-		clashStats.penultimateTravelTime, clashStats.penultimateTarget = clashStats.lastTravelTime, clashStats.lastTravelTarget
-	end
-	clashStats.deceasedId = playerId; local sample, s = clashStats.endSample, current
+	local sample, s = clashStats.endSample, current
 	if sample and s and s.root and s.root.Parent then
 		local other = gameInfo.getPlayerMotion(clashStats.partnerId)
 		sample.own, sample.opponent = s.root.Position, other
 		if typeof(other) == "Vector3" then sample.distance = (other - sample.own).Magnitude end
 	end
-	finishClashStats(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", time)
+	finishClashStats(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", now())
 end
 
 -- activation
@@ -219,7 +189,7 @@ local function start(s, reason, partner, time, serverTime)
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
-	s.lastSwitchAt, s.lastSwitchServerAt, s.reason, s.activeSince = time, serverTime, reason, time
+	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
 	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function shouldActivate(s, snapshot, time)
@@ -243,7 +213,7 @@ local function stop(s, reason, distant)
 	if current ~= s then return end
 	if distant and s.partner then s.recoveryPartner = s.partner end
 	if s.active then s.active = false; utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
-	s.reason, s.pending, s.awayAt, s.partner, s.activeSince = reason, nil, nil, nil, nil
+	s.reason, s.pending, s.awayAt, s.partner = reason, nil, nil, nil
 	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
 end
 local function stopBoth(s, reason)
@@ -255,16 +225,13 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	local activeElapsed = finite(s.activeSince) and time - s.activeSince or nil
-	if not fresh or not activeElapsed or activeElapsed < T.DEACTIVATION.CLASH_DELAY then return nil end
-	if not snapshot or not s.root or not s.root.Parent then return nil end
-	local position = snapshot.ttiPosition or snapshot.position; local speed = tonumber(snapshot.syncSpeed)
+	local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
-	if typeof(position) ~= "Vector3" or not finite(speed) or speed <= 0 then return nil end
-	local range = tonumber(gameInfo.getDeflectRange())
-	if not finite(range) or range < 0 then range = 8.5 end
-	local tti = math.max(0, (position - s.root.Position).Magnitude - range) / speed
-	if tti >= T.DEACTIVATION.BALL_TTI then return "ball_tti" end
+	if not finite(speed) or speed <= 0 then return nil end
+	local window = gameInfo.getDeflectWindow(speed)
+	if not finite(window) or window <= 0 then return nil end
+	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
+	if fresh and switchElapsed and switchElapsed > window then return "no_target_switch" end
 	return nil
 end
 
@@ -366,10 +333,7 @@ end
 local function detach(reason)
 	local s = current
 	if s then
-		if clashStats and not clashStats.frozen then
-			local humanoid = s.character and s.character:FindFirstChildOfClass("Humanoid")
-			if humanoid and humanoid.Health <= 0 then freezeClashStats(localPlayer.UserId) else finishClashStats(reason, now()) end
-		end
+		if clashStats and not clashStats.frozen then finishClashStats(reason, now()) end
 		stop(s, reason, false); current = nil; disconnect(s)
 	end
 	generation += 1
@@ -548,21 +512,12 @@ function AutoSpam.onBallSync(data)
 		if g and distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
 	end
 	local snapshot = gameInfo.getSnapshotAt(time)
-	if snapshot and data.Source == "packet" then
+	if snapshot and data.Source == "packet" and userId(target) then
 		snapshot = table.clone(snapshot)
-		if userId(target) then
-			snapshot.targetId, snapshot.targeted = target, target == localPlayer.UserId
-		end
+		snapshot.targetId, snapshot.targeted = target, target == localPlayer.UserId
 		snapshot.syncAt, snapshot.serverTime, snapshot.syncSequence = time, serverTime, sequence
 		snapshot.teleported = false
-		if typeof(data.RealPosition) == "Vector3" then snapshot.ttiPosition = data.RealPosition end
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
-	end
-	if s.active and shouldDeactivate(s, snapshot, time, true, serverTime) == "ball_tti" then
-		if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then observeClashStats(s, snapshot, time, true) end
-		stop(s, "ball_tti", false)
-		if userId(target) then s.target = target end
-		return
 	end
 	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
 	evaluate(s, time, true, serverTime, snapshot)
@@ -605,14 +560,6 @@ function AutoSpam.getStatus()
 			speed = clashStats.speed,
 			frozen = clashStats.frozen,
 			duration = clashStats.duration or math.max(0, now() - clashStats.startedAt),
-			travelTarget = clashStats.travelTarget,
-			travelStartedAt = not clashStats.frozen and clashStats.travelStartedAt or nil,
-			lastTravelTime = clashStats.lastTravelTime,
-			lastTravelTarget = clashStats.lastTravelTarget,
-			fatalTravelTime = clashStats.fatalTravelTime,
-			penultimateTravelTime = clashStats.penultimateTravelTime,
-			penultimateTarget = clashStats.penultimateTarget,
-			deceasedId = clashStats.deceasedId,
 		} or nil,
 	}
 end
