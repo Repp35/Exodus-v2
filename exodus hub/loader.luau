@@ -386,8 +386,7 @@ local function bindRuntime(loaded)
 		end
 		local decodedData = gameInfo.applySync(data)
 		if type(decodedData) ~= "table" then scheduleSyncRefresh(); return end
-		decodedData = table.clone(decodedData); decodedData.Source = "packet"
-		notifyBallSync(decodedData)
+		decodedData = table.clone(decodedData); decodedData.Source = "packet"; notifyBallSync(decodedData)
 	end
 	local watcherReady = gameInfo.installBallWatcher(utils.trackGlobal)
 	if watcherReady ~= true then error("GameInfo.installBallWatcher falhou", 2) end

@@ -306,9 +306,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
-	local target = userId(snapshot.targetId)
-
-	observeClashStats(s, snapshot, time, fresh)
+	local target = userId(snapshot.targetId); observeClashStats(s, snapshot, time, fresh)
 	if utils.getConfigValue("AutoClashUpDash") == true and gameInfo.areAbilitiesEnabled() then
 		local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local g = partner and geometry(s, snapshot, 1); local position = g and gameInfo.getPlayerMotion(partner)
 		if typeof(position) == "Vector3" then
