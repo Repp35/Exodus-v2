@@ -36,7 +36,7 @@ local function graceDanger(now)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return false, nil end
 	local fresh = type(snapshot.syncAt) == "number" and snapshot.syncAt > 0 and now >= snapshot.syncAt and now - snapshot.syncAt <= T.SYNC_MAX_AGE
 	if not fresh then return false, nil end
-	local grace = snapshot.grace == true; local player = utils.getLocalPlayer(); local danger = grace and player ~= nil and snapshot.targetId == player.UserId and gameInfo.getBallFrozen() ~= true and gameInfo.isBallWithinDeflectRadius(1); return danger, grace
+	local grace = snapshot.grace == true; local player = utils.getLocalPlayer(); local danger = grace and player ~= nil and snapshot.targetId == player.UserId and gameInfo.getBallFrozen() ~= true; return danger, grace
 end
 local function deflectPending(now)
 	local pressedAt = gameInfo.getLastDeflectPressAt()
@@ -117,7 +117,6 @@ AutoFierce.__contract = {
 			"getSnapshotAt",
 			"isSnapshotValid",
 			"getBallFrozen",
-			"isBallWithinDeflectRadius",
 		},
 		AutoParry = { "beginFierce", "cancelFierce" },
 		Remote = { "fireFierce" },

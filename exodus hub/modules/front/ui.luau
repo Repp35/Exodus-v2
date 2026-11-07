@@ -683,7 +683,7 @@ function ExodusUI.setup(deps)
 	})
 	local distanceLabel = inst("TextLabel", {
 		Name = "ClashDistance",
-		Size = UDim2.new(0, 240, 0, 110),
+		Size = UDim2.new(0, 260, 0, 150),
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -16, 1, -100),
 		BackgroundColor3 = C.header,
@@ -715,8 +715,15 @@ function ExodusUI.setup(deps)
 				local distance = type(sample.distance) == "number" and string.format("%.1f", sample.distance) or "?"; local speed = type(sample.speed) == "number" and string.format("%.0f", sample.speed) or "?"; return distance .. " studs | SPD " .. speed
 			end
 			local cps = type(stats.cps) == "number" and string.format("%.2f", stats.cps) or "—"
+			local opponent = type(stats.partnerId) == "number" and Players:GetPlayerByUserId(stats.partnerId)
+			local opponentName = opponent and opponent.Name or tostring(stats.partnerId or "—")
+			local sample = stats.endSample
+			local distance = sample and type(sample.distance) == "number" and string.format("%.1f studs", sample.distance) or "—"
 			distanceLabel.Text = string.format(
-				"SPD atual: %s\nInício: %s\n%s: %s\nCPS médio: %s | %.2fs",
+				"Oponente: %s\nDistância %s: %s\nSPD atual: %s\nInício: %s\n%s: %s\nCPS médio: %s | %.2fs",
+				opponentName,
+				stats.frozen and "final" or "atual",
+				distance,
 				speedText,
 				sampleText(stats.startSample),
 				stats.frozen and (stats.endReason or "Fim") or "Atual",
