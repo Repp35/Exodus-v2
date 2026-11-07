@@ -194,6 +194,13 @@ function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode")
 function GameInfo.observeAbilityMode(callback)
 	return world:GetAttributeChangedSignal("CurGamemode"):Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
 end
+function GameInfo.getPlayerMotion(id)
+	local player = type(id) == "number" and players:GetPlayerByUserId(id)
+	local character = player and player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or not root.Parent then return nil end
+	return root.Position, root.AssemblyLinearVelocity, character
+end
 function GameInfo.getPlayerDistance(id)
 	local own = players.LocalPlayer; local other = type(id) == "number" and players:GetPlayerByUserId(id); local ownRoot = own and own.Character and own.Character:FindFirstChild("HumanoidRootPart"); local otherRoot = other and other.Character and other.Character:FindFirstChild("HumanoidRootPart")
 	if not ownRoot or not otherRoot or not ownRoot.Parent or not otherRoot.Parent then return nil end
@@ -522,6 +529,7 @@ GameInfo.__contract = {
 		"observeAbilityMode",
 		"getDeflectRange",
 		"getPlayerDistance",
+		"getPlayerMotion",
 		"getDeflectWindow",
 		"getDeflectGeometry",
 		"isBallWithinDeflectRadius",
