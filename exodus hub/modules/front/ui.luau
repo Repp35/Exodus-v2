@@ -683,12 +683,12 @@ function ExodusUI.setup(deps)
 	})
 	local distanceLabel = inst("TextLabel", {
 		Name = "ClashDistance",
-		Size = UDim2.new(0, 180, 0, 62),
+		Size = UDim2.new(0, 195, 0, 78),
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -16, 1, -100),
 		BackgroundColor3 = C.header,
 		BackgroundTransparency = 0.2,
-		Text = "Clash: —\nCPS: —  |  SPD: —",
+		Text = "SPD atual: —\nClash: —\nCPS: —",
 		TextColor3 = C.text,
 		TextSize = 14,
 		Font = Enum.Font.GothamSemibold,
@@ -702,11 +702,20 @@ function ExodusUI.setup(deps)
 		local visible = Utils.getConfigValue("ClashDistanceVisible") == true; distanceLabel.Visible = visible; local time = os.clock()
 		if not visible or time < nextDistanceUpdate then return end
 		nextDistanceUpdate = time + 0.1; local status = AutoSpam.getStatus(); local stats = status and status.clashStats
+		local snapshot = GameInfo.getSnapshotAt(time)
+		local currentSpeed
+		if GameInfo.isSnapshotValid(snapshot) then
+			currentSpeed = tonumber(snapshot.syncSpeed)
+			if not currentSpeed or currentSpeed ~= currentSpeed or currentSpeed <= 0 or currentSpeed == math.huge then currentSpeed = snapshot.speed end
+		end
+		local speedText = type(currentSpeed) == "number" and currentSpeed == currentSpeed and currentSpeed < math.huge and string.format("%.0f", currentSpeed) or "—"
 		if stats then
-			local distance = type(stats.distance) == "number" and string.format("%.1f studs", stats.distance) or "—"; local cps = type(stats.cps) == "number" and tostring(stats.cps) or "—"; local speed = type(stats.speed) == "number" and string.format("%.0f", stats.speed) or "—"
-			distanceLabel.Text = string.format("%s: %s\nCPS: %s  |  SPD: %s", stats.frozen and "Último" or "Clash", distance, cps, speed)
+			local distance = type(stats.distance) == "number" and string.format("%.1f studs", stats.distance) or "—"
+			local cps = type(stats.cps) == "number" and tostring(stats.cps) or "—"
+			local clashSpeed = type(stats.speed) == "number" and string.format("%.0f", stats.speed) or "—"
+			distanceLabel.Text = string.format("SPD atual: %s\n%s: %s  |  CPS: %s\nSPD clash: %s", speedText, stats.frozen and "Último" or "Clash", distance, cps, clashSpeed)
 		else
-			distanceLabel.Text = "Clash: —\nCPS: —  |  SPD: —"
+			distanceLabel.Text = "SPD atual: " .. speedText .. "\nClash: —  |  CPS: —\nSPD clash: —"
 		end
 	end))
 	bindInput()
@@ -1303,7 +1312,7 @@ end
 -- contract
 ExodusUI.__contract = {
 	requires = { GameInfo = "gameinfo", AutoSpam = "autospam" },
-	requiresMethods = { GameInfo = { "areAbilitiesEnabled", "observeAbilityMode" }, AutoSpam = { "getStatus" } },
+	requiresMethods = { GameInfo = { "areAbilitiesEnabled", "observeAbilityMode", "getSnapshotAt", "isSnapshotValid" }, AutoSpam = { "getStatus" } },
 	provides = { "setup" },
 }
 

@@ -17,7 +17,7 @@ local POLICIES = {
 	uiconfig = { provide = allow(""), consume = {}, data = allow("panelToggles panelComponents") },
 	utils = {
 		provide = allow(
-			"observeSpam observeConfig ensureDataFolder start stop isActive getStateSnapshot getConfig getConfigValue getConfigSnapshot getModuleURLsSnapshot getLifecycle getDiagnostics setDiagnosticsModules setLifecyclePhase recordTransition recordError isManualSpamActive isAutoSpamActive isSpamActive setManualSpamActive setAutoSpamActive stopAllSpam isFiniteNumber isNonNegativeFiniteNumber normalizeSpamRate setConfig loadConfig setConfigModule setModuleURLs trackGlobal untrackGlobal trackCharacter untrackCharacter disconnectCharacterConnections getPlayers getReplicatedStorage getRunService getWorkspace getLocalPlayer now name version apiVersion author"
+			"observeSpam observeConfig ensureDataFolder createClashLog appendClashLog start stop isActive getStateSnapshot getConfig getConfigValue getConfigSnapshot getModuleURLsSnapshot getLifecycle getDiagnostics setDiagnosticsModules setLifecyclePhase recordTransition recordError isManualSpamActive isAutoSpamActive isSpamActive setManualSpamActive setAutoSpamActive stopAllSpam isFiniteNumber isNonNegativeFiniteNumber normalizeSpamRate setConfig loadConfig setConfigModule setModuleURLs trackGlobal untrackGlobal trackCharacter untrackCharacter disconnectCharacterConnections getPlayers getReplicatedStorage getRunService getWorkspace getLocalPlayer now name version apiVersion author"
 		),
 		consume = {},
 	},
@@ -53,10 +53,10 @@ local POLICIES = {
 		),
 		consume = {
 			utils = allow(
-				"apiVersion getConfig getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
+				"apiVersion createClashLog appendClashLog getConfig getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
 			),
 			gameinfo = allow(
-				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRange getLocalPing getPlayerDistance getClashContext getDeflectAbility getDeflectWindow getManifestRemote getSnapshot getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
+				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRange getLocalPing getPlayerDistance getPlayerMotion getClashContext getDeflectAbility getDeflectWindow getManifestRemote getSnapshot getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
 			),
 			dash = allow("setHandler tick"),
 			movement = allow("upDash dashToward"),
@@ -124,7 +124,7 @@ local POLICIES = {
 				"apiVersion getConfig getConfigValue getLocalPlayer isActive isManualSpamActive name normalizeSpamRate observeConfig observeSpam recordError setConfig setManualSpamActive stop version author"
 			),
 			uiconfig = allow("panelToggles panelComponents"),
-			gameinfo = allow("areAbilitiesEnabled observeAbilityMode"),
+			gameinfo = allow("areAbilitiesEnabled observeAbilityMode getSnapshotAt isSnapshotValid"),
 			autospam = allow("getStatus"),
 		},
 	},
