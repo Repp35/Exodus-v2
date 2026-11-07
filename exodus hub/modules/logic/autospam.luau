@@ -257,7 +257,8 @@ local function stop(s, reason, distant)
 	if s.active and reason == "ball_tti" then s.ttiBlocked = true end
 	if s.active then s.active = false; utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
 	s.reason, s.pending, s.awayAt, s.partner, s.activeSince = reason, nil, nil, nil, nil
-	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
+	if reason ~= "ball_tti" then s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil end
+	s.awayServerAt = nil
 end
 local function stopBoth(s, reason)
 	stop(s, reason, false)
@@ -562,13 +563,12 @@ function AutoSpam.onBallSync(data)
 		snapshot.teleported = false
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
+	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
 	if s.active and shouldDeactivate(s, time, snapshot) == "ball_tti" then
 		if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then observeClashStats(s, snapshot, time, true) end
 		stop(s, "ball_tti", false)
-		if target then s.target = target end
 		return
 	end
-	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
 	evaluate(s, time, true, serverTime, snapshot)
 end
 
