@@ -25,6 +25,7 @@ local T = {
 	DEACTIVATION = {
 		MIN_SPEED_DISTANCE = 20,
 		MAX_SPEED_DISTANCE = 51,
+		DIRECTION_ALIGNMENT = 0.9,
 		MIN_SPEED_TIMEOUT = 0.2975,
 		MAX_SPEED_TIMEOUT = 0.07,
 		START_DELAY = 0.12,
@@ -73,6 +74,15 @@ local function geometry(s, snapshot, factor)
 	local window = gameInfo.getDeflectWindow(speed); local g = gameInfo.getDeflectGeometry(speed, window, factor, true)
 	if not g then return nil end
 	return g, speed, window
+end
+local function closeRadius(snapshot)
+	if not snapshot then return nil end
+	local speed = tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
+	if not finite(speed) or speed <= 0 then return nil end
+	local ping = gameInfo.getLocalPing()
+	if not finite(ping) or ping < 0 then ping = 0 end
+	return 8.5 + speed * ping
 end
 local function returnWindow(window, speed, base)
 	local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0; return math.max(T.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
@@ -241,7 +251,13 @@ end
 local function shouldActivate(s, snapshot, time)
 	if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
 	if gameInfo.getBallFrozen() == true or not s.pending then return false end
-	local pending = s.pending; local factor = dashActive(s, time) and T.ACTIVATION.DASH_RADIUS_FACTOR or T.ACTIVATION.RADIUS_FACTOR; local g = geometry(s, snapshot, factor)
+	local pending = s.pending
+	if pending.closeReturn then
+		local radius = closeRadius(snapshot)
+		return radius ~= nil and s.target == localPlayer.UserId and snapshot.targetId == localPlayer.UserId
+			and (snapshot.position - s.root.Position).Magnitude <= radius
+	end
+	local factor = dashActive(s, time) and T.ACTIVATION.DASH_RADIUS_FACTOR or T.ACTIVATION.RADIUS_FACTOR; local g = geometry(s, snapshot, factor)
 	if not g then return false end
 	if pending.recovery then
 		local partnerDistance = distanceToPlayer(s, pending.partner); local normal = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); return normal ~= nil
@@ -287,6 +303,24 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		and s.lastSwitchAt and s.switchTimeout and time - s.lastSwitchAt > s.switchTimeout then
 		return "switch_timeout"
 	end
+	if snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported
+		and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt <= T.SHARED.SNAPSHOT_MAX_AGE then
+		local radius = closeRadius(snapshot)
+		local partnerPosition = gameInfo.getPlayerMotion(s.partner)
+		if radius and typeof(partnerPosition) == "Vector3" then
+			local ownPosition = s.root.Position
+			local axis = partnerPosition - ownPosition
+			local fromBallToMe = ownPosition - snapshot.position
+			local fromBallToPartner = partnerPosition - snapshot.position
+			local velocity = snapshot.velocity
+			if axis.Magnitude > 0 and axis.Magnitude <= radius and fromBallToMe.Magnitude > radius
+				and velocity.Magnitude > 1
+				and math.abs(velocity:Dot(axis) / (velocity.Magnitude * axis.Magnitude)) < T.DEACTIVATION.DIRECTION_ALIGNMENT
+				and velocity:Dot(fromBallToMe) < 0 and velocity:Dot(fromBallToPartner) < 0 then
+				return "ball_diverted"
+			end
+		end
+	end
 	local target = snapshot and userId(snapshot.targetId) or s.target
 	if targetChanged and target and target ~= localPlayer.UserId and target ~= s.partner and snapshot then
 		local g = geometry(s, snapshot, 1)
@@ -300,8 +334,9 @@ local function applyDeactivation(s, snapshot, time, serverTime, targetChanged)
 	if not s.active then return false end
 	local reason = shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not reason then return false end
-	stop(s, reason, reason == "distant_target")
-	if reason == "distant_target" then utils.setManualSpamActive(false) end
+	local redirected = reason == "distant_target" or reason == "ball_diverted"
+	stop(s, reason, redirected)
+	if redirected then utils.setManualSpamActive(false) end
 	return true
 end
 
@@ -348,7 +383,10 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		if s.active and previous == s.partner then
 			s.awayAt, s.awayServerAt = nil, nil
 		end
-		if not s.active and s.recoveryPartner == previous then
+		local radius = snapshot and closeRadius(snapshot)
+		if not s.active and radius and (snapshot.position - s.root.Position).Magnitude <= radius then
+			s.pending = { partner = previous, closeReturn = true }
+		elseif not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
 		elseif not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt and window then
 			local limit = returnWindow(window, speed, T.ACTIVATION.RETURN) * (dashActive(s, time) and T.ACTIVATION.DASH_RETURN_MULTIPLIER or 1); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
@@ -387,7 +425,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	if not s.active and not blockedActivation and shouldActivate(s, snapshot, time) then
 		local activationServerTime = serverTime
 		if not fresh then activationServerTime = snapshot.serverTime end
-		start(s, s.pending.recovery and "recovery" or "return_target", s.pending.partner, time, activationServerTime)
+		start(s, s.pending.closeReturn and "close_return" or (s.pending.recovery and "recovery" or "return_target"), s.pending.partner, time, activationServerTime)
 	end
 end
 
