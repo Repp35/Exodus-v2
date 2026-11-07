@@ -455,7 +455,7 @@ function AutoSpam.onBallSync(data)
 	local sequence = data.Sequence or data.TeleportSequence
 	if finite(sequence) and finite(s.sequence) then
 		local delta = (sequence - s.sequence) % T.SHARED.SEQUENCE_MODULUS
-		if delta >= T.SHARED.SEQUENCE_HALF or (delta == 0 and data.Teleported ~= true) then return end
+		if delta >= T.SHARED.SEQUENCE_HALF then return end
 	end
 	if finite(sequence) then s.sequence = sequence end
 	if data.Teleported == true then

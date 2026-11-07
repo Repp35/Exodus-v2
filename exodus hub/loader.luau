@@ -365,7 +365,7 @@ local function bindRuntime(loaded)
 					local packet = gameInfo.decodeBallPacket(value)
 					if type(packet) == "table" and type(packet.Sequence) == "number" then
 						local sequence = packet.Sequence; local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence(); local forward = not lastClashPacketSequence or (sequence - lastClashPacketSequence) % 65536; local currentDelta = type(current) == "number" and (sequence - current) % 65536 or 0
-						if (forward == true or (forward > 0 and forward < 32768)) and currentDelta < 32768 then
+						if (forward == true or forward < 32768) and currentDelta < 32768 then
 							lastClashPacketSequence = sequence; packet.Source = "packet"
 							if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
 							if not packet.Teleported then notifyBallSync(packet) end
