@@ -3,7 +3,7 @@
 local AutoSpam = {}
 
 -- dependencies
-local utils, gameInfo, dash, players, runService, localPlayer
+local utils, gameInfo, dash, movement, players, runService, localPlayer
 
 -- state
 local current, generation = nil, 0
@@ -223,13 +223,21 @@ local function detach(reason)
 	generation += 1
 end
 function AutoSpam.setup(deps)
-	if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.Dash then return false, "dependências ausentes" end
+	if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.Dash or not deps.Movement then return false, "dependências ausentes" end
 	if current then detach("setup") end
-	utils, gameInfo, dash = deps.Utils, deps.GameInfo, deps.Dash; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
+	utils, gameInfo, dash, movement = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
 	if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
 	dash.setHandler(function(event)
 		local s = current
 		if not s or not gameInfo.areAbilitiesEnabled() or not event or event.userId == localPlayer.UserId or not event.position or not event.velocity then return end
+		if utils.isActive() and utils.getConfigValue("AutoClashUpDash") == true then
+			local context = gameInfo.getClashContext()
+			local partner = s.active and s.partner or (context and context.partnerId)
+			local velocity = event.velocity
+			if partner == event.userId and velocity.Y >= 60 and velocity.Magnitude > 0 and velocity.Y / velocity.Magnitude >= 0.5 then
+				movement.upDash()
+			end
+		end
 		local offset = s.root.Position - event.position
 		if offset.X * event.velocity.X + offset.Z * event.velocity.Z > 0 then s.dashUntil = now() + T.ACTIVATION.DASH_BONUS_DURATION; s.dashData = event end
 	end)
@@ -275,14 +283,15 @@ function AutoSpam.bindCharacter(character)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
 		local autoEnabled = utils.getConfigValue("AutoSpam") == true
-		if not autoEnabled and not utils.isManualSpamActive() and not s.active then
+		local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
+		if not autoEnabled and not upDashEnabled and not utils.isManualSpamActive() and not s.active then
 			s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
 			return
 		end
 		local time = now()
 		if not gameInfo.areAbilitiesEnabled() then
 			s.dashUntil, s.dashData = 0, nil
-		elseif autoEnabled then
+		elseif autoEnabled or upDashEnabled then
 			dash.tick(time, true)
 		end
 		evaluate(s, time, false)
@@ -296,7 +305,7 @@ function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
 	detach("teardown")
 	if dash then dash.setHandler(nil) end
-	utils, gameInfo, dash, players, runService, localPlayer = nil, nil, nil, nil, nil, nil
+	utils, gameInfo, dash, movement, players, runService, localPlayer = nil, nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
 	local s = current
@@ -371,7 +380,7 @@ end
 
 -- contract
 AutoSpam.__contract = {
-	requires = { Utils = "utils", GameInfo = "gameinfo", Dash = "dash" },
+	requires = { Utils = "utils", GameInfo = "gameinfo", Dash = "dash", Movement = "movement" },
 	requiresMethods = {
 		Utils = {
 			"now",
@@ -400,8 +409,10 @@ AutoSpam.__contract = {
 			"getBallFrozen",
 			"getTargetId",
 			"getBallSpeedLimits",
+			"getClashContext",
 		},
 		Dash = { "setHandler", "tick" },
+		Movement = { "upDash" },
 	},
 
 	provides = {

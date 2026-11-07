@@ -59,6 +59,7 @@ local POLICIES = {
 				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRange getLocalPing getPlayerDistance getClashContext getDeflectAbility getDeflectWindow getManifestRemote getSnapshot getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
 			),
 			dash = allow("setHandler tick"),
+			movement = allow("upDash"),
 		},
 	},
 	spam = {
