@@ -252,13 +252,13 @@ local function stopBoth(s, reason)
 	s.recoveryPartner, s.manualPartner, s.manualWasActive = nil, nil, false
 	utils.setManualSpamActive(false)
 end
-local function shouldDeactivate(s, snapshot, time, serverTime)
+local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
 	if opponentTooFar(s, s.partner) then return "opponent_distance" end
 	local target = snapshot and userId(snapshot.targetId) or s.target
-	if target and target ~= localPlayer.UserId and target ~= s.partner and snapshot then
+	if targetChanged and target and target ~= localPlayer.UserId and target ~= s.partner and snapshot then
 		local g = geometry(s, snapshot, 1)
 		local distance = distanceToPlayer(s, target)
 		if g and distance and distance > g.fullRadius then return "distant_target" end
@@ -271,14 +271,16 @@ local function shouldDeactivate(s, snapshot, time, serverTime)
 	end
 	local window = s.deactivationWindow
 	if not window then return nil end
-	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
-	if switchElapsed and switchElapsed > window then return "no_target_switch" end
+	if targetChanged and finite(s.lastSwitchServerAt) and finite(serverTime) then
+		local switchElapsed = serverTime - s.lastSwitchServerAt
+		if switchElapsed >= 0 and switchElapsed > window then return "no_target_switch" end
+	end
 	return nil
 end
 
-local function applyDeactivation(s, snapshot, time, serverTime)
+local function applyDeactivation(s, snapshot, time, serverTime, targetChanged)
 	if not s.active then return false end
-	local reason = shouldDeactivate(s, snapshot, time, serverTime)
+	local reason = shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not reason then return false end
 	stop(s, reason, reason == "distant_target")
 	if reason == "distant_target" then utils.setManualSpamActive(false) end
@@ -338,7 +340,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 end
 
 -- evaluation
-local function evaluate(s, time, fresh, serverTime, snapshot)
+local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	if current ~= s or not s.root.Parent then return end
 	if not utils.isActive() then stopBoth(s, "hub_inactive"); return end
 	if utils.getConfigValue("AutoSpam") ~= true then
@@ -349,7 +351,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 	if gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	-- Deactivation runs on every Heartbeat, regardless of sync packets.
-	local blockedActivation = not fresh and applyDeactivation(s, snapshot, time, nil)
+	if not fresh and applyDeactivation(s, snapshot, time, nil, false) then blockedActivation = true end
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
 	local target = userId(snapshot.targetId); observeClashStats(s, snapshot, time, fresh)
@@ -555,8 +557,14 @@ function AutoSpam.onBallSync(data)
 		snapshot.teleported = false
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
-	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
-	evaluate(s, time, true, serverTime, snapshot)
+	local stopped = false
+	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then
+		if target ~= s.target then
+			stopped = applyDeactivation(s, snapshot, time, serverTime, true)
+		end
+		inspectTarget(s, target, time, snapshot, serverTime)
+	end
+	evaluate(s, time, true, serverTime, snapshot, stopped)
 end
 
 -- api
