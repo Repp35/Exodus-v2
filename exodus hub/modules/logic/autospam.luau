@@ -213,9 +213,22 @@ local function freezeClashStats(playerId)
 	finishClashStats(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", time)
 end
 
+local function ballTTI(s, snapshot)
+	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return nil end
+	local speed = tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
+	if not finite(speed) or speed <= 0 then return nil end
+	return (snapshot.position - s.root.Position).Magnitude / speed
+end
+
 -- activation
 local function start(s, reason, partner, time, serverTime)
 	if s.active or opponentTooFar(s, partner) then return end
+	if s.ttiBlocked then
+		local tti = ballTTI(s, gameInfo.getSnapshotAt(time))
+		if not tti or tti >= T.DEACTIVATION.BALL_TTI then return end
+		s.ttiBlocked = false
+	end
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
@@ -242,6 +255,7 @@ end
 local function stop(s, reason, distant)
 	if current ~= s then return end
 	if distant and s.partner then s.recoveryPartner = s.partner end
+	if s.active and reason == "ball_tti" then s.ttiBlocked = true end
 	if s.active then s.active = false; utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
 	s.reason, s.pending, s.awayAt, s.partner, s.activeSince = reason, nil, nil, nil, nil
 	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
@@ -257,12 +271,8 @@ local function shouldDeactivate(s, time, snapshot)
 	if gameInfo.getBallFrozen() == true then return "frozen" end
 	if not s.activeSince or time - s.activeSince < T.DEACTIVATION.CLASH_DELAY then return nil end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
-	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return nil end
-	local speed = tonumber(snapshot.syncSpeed)
-	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
-	if not finite(speed) or speed <= 0 then return nil end
-	local tti = (snapshot.position - s.root.Position).Magnitude / speed
-	if tti >= T.DEACTIVATION.BALL_TTI then return "ball_tti" end
+	local tti = ballTTI(s, snapshot)
+	if tti and tti >= T.DEACTIVATION.BALL_TTI then return "ball_tti" end
 	return nil
 end
 
@@ -514,7 +524,7 @@ function AutoSpam.onBallSync(data)
 	if finite(sequence) then s.sequence = sequence end
 	if data.Teleported == true then
 		stop(s, "teleported", false)
-		s.target, s.recoveryPartner = nil, nil
+		s.target, s.recoveryPartner, s.ttiBlocked = nil, nil, false
 		return
 	end
 	if
