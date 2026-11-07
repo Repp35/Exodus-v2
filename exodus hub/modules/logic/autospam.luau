@@ -120,7 +120,9 @@ local function beginClashStats(partner, time)
 
 end
 local function observeClashStats(s, snapshot, time, fresh)
-	local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local target = userId(snapshot.targetId)
+	local partner = s.active and s.partner
+	if not partner then local context = gameInfo.getClashContext(); partner = context and context.partnerId end
+	local target = userId(snapshot.targetId)
 	if
 		not partner
 		and clashStats
@@ -160,17 +162,11 @@ local function observeClashStats(s, snapshot, time, fresh)
 	local other = gameInfo.getPlayerMotion(partner); local own = s.root.Position; local distance = typeof(other) == "Vector3" and (other - own).Magnitude or nil
 	if finite(distance) then stats.distance = distance end
 	stats.lastObserved = time
-	local sample = {
-		time = math.max(0, time - stats.startedAt),
-		distance = distance,
-		speed = stats.speed,
-		cps = stats.cps,
-		own = own,
-		opponent = other,
-		ball = snapshot.position,
-	}
-
-	stats.startSample = stats.startSample or sample; stats.endSample = sample
+	local sample = stats.endSample or {}
+	sample.time, sample.distance, sample.speed, sample.cps = math.max(0, time - stats.startedAt), distance, stats.speed, stats.cps
+	sample.own, sample.opponent, sample.ball = own, other, snapshot.position
+	if not stats.startSample then stats.startSample = table.clone(sample) end
+	stats.endSample = sample
 end
 local function freezeClashStats(playerId)
 	if not clashStats or clashStats.frozen then return end
@@ -226,8 +222,11 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	local g, speed, window = geometry(s, snapshot, 1)
-	if not g then return nil end
+	local speed = tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
+	if not finite(speed) or speed <= 0 then return nil end
+	local window = gameInfo.getDeflectWindow(speed)
+	if not finite(window) or window <= 0 then return nil end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
 	if fresh and switchElapsed and switchElapsed > window then return "no_target_switch" end
 	return nil
@@ -253,8 +252,8 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		if previous == me and target ~= me then s.manualPartner = target elseif previous and previous ~= me and target == me then s.manualPartner = previous end
 	end
 	local g, speed, window
-	if snapshot then g, speed, window = geometry(s, snapshot, 1) end
 	local partner = s.active and s.partner or s.manualPartner
+	if snapshot and (not s.active or (partner and target ~= me and target ~= partner)) then g, speed, window = geometry(s, snapshot, 1) end
 	if (s.active or utils.isManualSpamActive()) and target ~= me and target ~= partner and partner and g then
 		local distance = distanceToPlayer(s, target)
 		if distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
