@@ -23,7 +23,8 @@ local T = {
 		DASH_TOWARD_COSINE = 0.5,
 	},
 	DEACTIVATION = {
-		SWITCH_TIMEOUT = 0.07,
+		MIN_SPEED_TIMEOUT = 0.2975,
+		MAX_SPEED_TIMEOUT = 0.07,
 		START_DELAY = 0.12,
 	},
 	SHARED = {
@@ -222,7 +223,7 @@ local function start(s, reason, partner, time, serverTime)
 	if s.active or opponentTooFar(s, partner) then return end
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
-	s.activatedAt = time
+	s.activatedAt, s.switchTimeout = time, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
 	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
@@ -260,8 +261,17 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
+	local speed = snapshot and tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot and snapshot.speed end
+	if finite(speed) and speed > 0 then
+		local minimum, maximum = gameInfo.getBallSpeedLimits()
+		if finite(minimum) and finite(maximum) and maximum > minimum then
+			local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
+			s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
+		end
+	end
 	if s.activatedAt and time - s.activatedAt >= T.DEACTIVATION.START_DELAY
-		and s.lastSwitchAt and time - s.lastSwitchAt > T.DEACTIVATION.SWITCH_TIMEOUT then
+		and s.lastSwitchAt and s.switchTimeout and time - s.lastSwitchAt > s.switchTimeout then
 		return "switch_timeout"
 	end
 	local target = snapshot and userId(snapshot.targetId) or s.target
