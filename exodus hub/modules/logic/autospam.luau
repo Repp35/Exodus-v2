@@ -22,7 +22,7 @@ local T = {
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
-	DEACTIVATION = { BALL_TTI = 0.09, CLASH_DELAY = 0.5 },
+	DEACTIVATION = { BALL_TTI = 0.09 },
 	SHARED = {
 		MIN_RETURN = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
@@ -269,7 +269,6 @@ local function shouldDeactivate(s, time, snapshot)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	if not s.activeSince or time - s.activeSince < T.DEACTIVATION.CLASH_DELAY then return nil end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	local tti = ballTTI(s, snapshot)
 	if tti and tti >= T.DEACTIVATION.BALL_TTI then return "ball_tti" end
