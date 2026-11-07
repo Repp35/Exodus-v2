@@ -159,6 +159,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		s.manualSwitchAt, s.manualSwitchServerAt = time, serverTime
 	end
 	if previous == me and target ~= me then
+		if not s.active and s.recoveryPartner and target ~= s.recoveryPartner then s.recoveryPartner = nil end
 		s.departedAt, s.departedServerAt, s.departedTo = time, serverTime, target
 		if s.active and target == s.partner then
 			s.awayAt, s.awayServerAt = time, serverTime
@@ -376,6 +377,13 @@ function AutoSpam.onBallSync(data)
 		if g and distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
 	end
 	local snapshot = gameInfo.getSnapshotAt(time)
+	if snapshot and data.Source == "packet" and userId(target) then
+		snapshot = table.clone(snapshot)
+		snapshot.targetId, snapshot.targeted = target, target == localPlayer.UserId
+		snapshot.syncAt, snapshot.serverTime, snapshot.syncSequence = time, serverTime, sequence
+		snapshot.teleported = false
+		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
+	end
 	if snapshot and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
 	evaluate(s, time, true, serverTime, snapshot)
 end
