@@ -17,6 +17,8 @@ local T = {
 		DASH_RADIUS_FACTOR = 1.5,
 		DASH_RETURN_MULTIPLIER = 2.5,
 		DASH_BONUS_DURATION = 0.3,
+		HAUNTER_RANGE = 11,
+		HAUNTER_MATCH_RADIUS = 5,
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
@@ -386,6 +388,34 @@ function AutoSpam.bindCharacter(character)
 	}
 
 	current = s
+	local haunterConnection, haunterRemote
+	local function connectHaunter()
+		local event = gameInfo.getHaunterEvent()
+		if event == haunterRemote and haunterConnection and haunterConnection.Connected then return end
+		if haunterConnection then
+			utils.untrackCharacter(haunterConnection); haunterConnection:Disconnect()
+			haunterConnection, haunterRemote = nil, nil
+		end
+		if not event then return end
+		haunterRemote = event
+		haunterConnection = track(s, event.OnClientEvent, function(from, destination)
+			if current ~= s or s.active or not s.root.Parent or not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return end
+			if not gameInfo.areAbilitiesEnabled() or gameInfo.getBallFrozen() == true then return end
+			if typeof(from) ~= "CFrame" or typeof(destination) ~= "CFrame" then return end
+			if (destination.Position - s.root.Position).Magnitude > T.ACTIVATION.HAUNTER_RANGE then return end
+			local caster, best
+			for _, player in ipairs(players:GetPlayers()) do
+				local position = gameInfo.getPlayerMotion(player.UserId)
+				if typeof(position) == "Vector3" and playerIsAlive(player.UserId) then
+					local distance = math.min((position - from.Position).Magnitude, (position - destination.Position).Magnitude)
+					if distance <= T.ACTIVATION.HAUNTER_MATCH_RADIUS and (not best or distance < best) then caster, best = player, distance end
+				end
+			end
+			if not caster or caster == localPlayer then return end
+			start(s, "haunter", caster.UserId, now(), nil)
+		end)
+	end
+	connectHaunter()
 	local function watchCharacter(player, model)
 		local function watchHumanoid(humanoid)
 			if humanoid:IsA("Humanoid") then
@@ -409,6 +439,7 @@ function AutoSpam.bindCharacter(character)
 	track(s, players.PlayerAdded, watchPlayer)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
+		if not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent then connectHaunter() end
 		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now()
 		if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then finishClashStats("clash encerrado", clashStats.lastObserved) end
 		if
@@ -567,6 +598,7 @@ AutoSpam.__contract = {
 			"getDeflectRange",
 			"getPlayerDistance",
 			"getPlayerMotion",
+			"getHaunterEvent",
 			"getLocalPing",
 			"getDeflectGeometry",
 			"getBallFrozen",
