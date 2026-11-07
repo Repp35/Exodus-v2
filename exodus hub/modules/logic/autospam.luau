@@ -234,7 +234,6 @@ function AutoSpam.setup(deps)
 			local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local velocity = event.velocity
 			if
 				partner == event.userId
-				and event.confirmed == true
 				and velocity.Y >= 60
 				and velocity.Magnitude > 0
 				and velocity.Y / velocity.Magnitude >= 0.5
