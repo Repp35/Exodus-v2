@@ -193,7 +193,7 @@ local function start(s, reason, partner, time, serverTime)
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
-	s.dashEntry = reason == "return_target" and dashActive(s, time); utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
+	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function shouldActivate(s, snapshot, time)
 	if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
@@ -230,12 +230,7 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if gameInfo.getBallFrozen() == true then return "frozen" end
 	local g, speed, window = geometry(s, snapshot, 1)
 	if not g then return nil end
-	local outside = (snapshot.position - s.root.Position).Magnitude > g.fullRadius
-	if not outside then s.dashEntry = false end
 	if partnerIsClose(s, speed) then return nil end
-	local partnerDistance = distanceToPlayer(s, s.partner)
-	if fresh and finite(partnerDistance) and partnerDistance / speed > g.fullRadius / speed then return "opponent_outside_window" end
-	if outside and not (s.dashEntry and dashActive(s, time)) then return "outside_window" end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
 	if fresh and switchElapsed and switchElapsed > window then return "no_target_switch" end
 	return nil
