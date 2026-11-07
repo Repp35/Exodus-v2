@@ -709,7 +709,7 @@ function ExodusUI.setup(deps)
 		end
 		local speedText = type(currentSpeed) == "number" and currentSpeed == currentSpeed and currentSpeed < math.huge and string.format("%.0f", currentSpeed)
 			or "—"
-		if stats then
+		if stats and (not stats.frozen or stats.endReason == "jogador morreu") then
 			local function sampleText(sample)
 				if not sample then return "—" end
 				local distance = type(sample.distance) == "number" and string.format("%.1f", sample.distance) or "?"; local speed = type(sample.speed) == "number" and string.format("%.0f", sample.speed) or "?"; return distance .. " studs | SPD " .. speed
