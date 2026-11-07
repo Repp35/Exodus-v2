@@ -22,7 +22,7 @@ local T = {
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
-	DEACTIVATION = { BALL_TTI = 0.09 },
+	DEACTIVATION = { BALL_TTI = 0.08 },
 	SHARED = {
 		MIN_RETURN = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
@@ -224,11 +224,10 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime)
 	if s.active or opponentTooFar(s, partner) then return end
-	if s.ttiBlocked then
-		local tti = ballTTI(s, gameInfo.getSnapshotAt(time))
-		if not tti or tti >= T.DEACTIVATION.BALL_TTI then return end
-		s.ttiBlocked = false
-	end
+	local tti = ballTTI(s, gameInfo.getSnapshotAt(time))
+	if tti and tti >= T.DEACTIVATION.BALL_TTI then s.ttiBlocked = true; return end
+	if s.ttiBlocked and not tti then return end
+	s.ttiBlocked = false
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
