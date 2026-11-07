@@ -13,7 +13,6 @@ local clashStats
 local T = {
 	ACTIVATION = {
 		RETURN = 0.13,
-		MAX_TTI = 0.1,
 		RADIUS_FACTOR = 0.8,
 		DASH_RADIUS_FACTOR = 1.5,
 		DASH_RETURN_MULTIPLIER = 2.5,
@@ -23,7 +22,7 @@ local T = {
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
-	DEACTIVATION = { BALL_TTI = 0.09, NO_SWITCH = 0.09, TARGET_RETURN = 0.09 },
+	DEACTIVATION = { BALL_TTI = 0.1, CLASH_DELAY = 0.5 },
 	SHARED = {
 		MIN_RETURN = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
@@ -92,7 +91,7 @@ local function finishClashStats(reason, time)
 	if not stats or stats.frozen then return end
 	stats.frozen, stats.waitingForClash = true, false
 	stats.duration = math.max(0, time - stats.startedAt); stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0; stats.endReason = reason
-	if reason ~= "jogador morreu" then return end
+	if reason ~= "jogador morreu" and reason ~= "oponente morreu" then return end
 	local opponent = players:GetPlayerByUserId(stats.partnerId)
 	local ok, result = pcall(function()
 		local log = utils.createClashLog(stats.partnerId, stats.startedDate)
@@ -214,34 +213,9 @@ local function freezeClashStats(playerId)
 	finishClashStats(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", time)
 end
 
--- Escala relativa à janela base: 850 ms no SPD mínimo, 200 ms no máximo.
--- Os limites configurados foram medidos no SPD máximo.
-local function speedScale(s, snapshot)
-	local speed = snapshot and tonumber(snapshot.syncSpeed)
-	if not finite(speed) or speed <= 0 then speed = snapshot and snapshot.speed end
-	if finite(speed) and speed > 0 then s.lastSpeed = speed else speed = s.lastSpeed end
-	if not finite(speed) or speed <= 0 then return nil end
-	local minimum, maximum = gameInfo.getBallSpeedLimits()
-	if maximum <= minimum then return nil end
-	local progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
-	return (0.85 - 0.65 * progress) / 0.2
-end
-
-local function ballTTI(s, snapshot)
-	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return nil end
-	local speed = tonumber(snapshot.syncSpeed)
-	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
-	if not finite(speed) or speed <= 0 then return nil end
-	return (snapshot.position - s.root.Position).Magnitude / speed
-end
-
 -- activation
 local function start(s, reason, partner, time, serverTime)
 	if s.active or opponentTooFar(s, partner) then return end
-	local snapshot = gameInfo.getSnapshotAt(time)
-	local scale, tti = speedScale(s, snapshot), ballTTI(s, snapshot)
-	if not scale or not tti or tti > T.ACTIVATION.MAX_TTI * scale or tti >= T.DEACTIVATION.BALL_TTI * scale then return end
-	s.ttiBlocked = false
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
@@ -268,27 +242,29 @@ end
 local function stop(s, reason, distant)
 	if current ~= s then return end
 	if distant and s.partner then s.recoveryPartner = s.partner end
-	if s.active and reason == "ball_tti" then s.ttiBlocked = true end
 	if s.active then s.active = false; utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
 	s.reason, s.pending, s.awayAt, s.partner, s.activeSince = reason, nil, nil, nil, nil
-	if reason ~= "ball_tti" then s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil end
-	s.awayServerAt = nil
+	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
 end
 local function stopBoth(s, reason)
 	stop(s, reason, false)
 	s.recoveryPartner, s.manualPartner, s.manualWasActive = nil, nil, false
 	utils.setManualSpamActive(false)
 end
-local function shouldDeactivate(s, time, snapshot)
+local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	snapshot = snapshot or gameInfo.getSnapshotAt(time)
-	local scale = speedScale(s, snapshot)
-	if not scale then return nil end
-	if s.lastSwitchAt and time - s.lastSwitchAt >= T.DEACTIVATION.NO_SWITCH * scale then return "no_target_switch" end
-	local tti = ballTTI(s, snapshot)
-	if tti and tti >= T.DEACTIVATION.BALL_TTI * scale then return "ball_tti" end
+	local activeElapsed = finite(s.activeSince) and time - s.activeSince or nil
+	if not fresh or not activeElapsed or activeElapsed < T.DEACTIVATION.CLASH_DELAY then return nil end
+	if not snapshot or not s.root or not s.root.Parent then return nil end
+	local position = snapshot.ttiPosition or snapshot.position; local speed = tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
+	if typeof(position) ~= "Vector3" or not finite(speed) or speed <= 0 then return nil end
+	local range = tonumber(gameInfo.getDeflectRange())
+	if not finite(range) or range < 0 then range = 8.5 end
+	local tti = math.max(0, (position - s.root.Position).Magnitude - range) / speed
+	if tti >= T.DEACTIVATION.BALL_TTI then return "ball_tti" end
 	return nil
 end
 
@@ -353,11 +329,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 		s.pending, s.recoveryPartner, s.departedAt, s.departedTo = nil, nil, nil, nil
 	end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
-	if s.active then
-		local reason = shouldDeactivate(s, time, snapshot)
-		if reason then stop(s, reason, false); return end
-	end
+	if fresh and gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
@@ -373,7 +345,12 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
 		if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
 	end
-	if not s.active and shouldActivate(s, snapshot, time) then
+	if s.active then
+		if fresh then
+			local reason = shouldDeactivate(s, snapshot, time, true, serverTime)
+			if reason then stop(s, reason, false) end
+		end
+	elseif shouldActivate(s, snapshot, time) then
 		local activationServerTime = serverTime
 		if not fresh then activationServerTime = snapshot.serverTime end
 		start(s, s.pending.recovery and "recovery" or "return_target", s.pending.partner, time, activationServerTime)
@@ -492,14 +469,9 @@ function AutoSpam.bindCharacter(character)
 	track(s, players.PlayerAdded, watchPlayer)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
-		local time = now()
-		if s.active then
-			local reason = shouldDeactivate(s, time)
-			if reason then stop(s, reason, false); return end
-		end
 		if s.active and opponentTooFar(s, s.partner) then stop(s, "opponent_distance", false); return end
 		if not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent then connectHaunter() end
-		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext()
+		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now()
 		if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then finishClashStats("clash encerrado", clashStats.lastObserved) end
 		if
 			not autoEnabled
@@ -545,7 +517,7 @@ function AutoSpam.onBallSync(data)
 	if finite(sequence) then s.sequence = sequence end
 	if data.Teleported == true then
 		stop(s, "teleported", false)
-		s.target, s.recoveryPartner, s.ttiBlocked = nil, nil, false
+		s.target, s.recoveryPartner = nil, nil
 		return
 	end
 	if
@@ -583,24 +555,16 @@ function AutoSpam.onBallSync(data)
 		end
 		snapshot.syncAt, snapshot.serverTime, snapshot.syncSequence = time, serverTime, sequence
 		snapshot.teleported = false
+		if typeof(data.RealPosition) == "Vector3" then snapshot.ttiPosition = data.RealPosition end
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
-	local validTarget = gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target)
-	local reason
-	if s.active then
-		if validTarget and s.target == s.partner and target == localPlayer.UserId and s.awayAt then
-			local duration = elapsed(s.awayAt, s.awayServerAt, time, serverTime)
-			local scale = speedScale(s, snapshot)
-			if duration and scale and duration >= T.DEACTIVATION.TARGET_RETURN * scale then reason = "slow_target_return" end
-		end
-		reason = reason or shouldDeactivate(s, time, snapshot)
-	end
-	if validTarget then inspectTarget(s, target, time, snapshot, serverTime) end
-	if reason then
-		if validTarget then observeClashStats(s, snapshot, time, true) end
-		stop(s, reason, false)
+	if s.active and shouldDeactivate(s, snapshot, time, true, serverTime) == "ball_tti" then
+		if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then observeClashStats(s, snapshot, time, true) end
+		stop(s, "ball_tti", false)
+		if userId(target) then s.target = target end
 		return
 	end
+	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then inspectTarget(s, target, time, snapshot, serverTime) end
 	evaluate(s, time, true, serverTime, snapshot)
 end
 
