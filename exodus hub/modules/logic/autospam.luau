@@ -214,6 +214,19 @@ local function freezeClashStats(playerId)
 	finishClashStats(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", time)
 end
 
+-- Escala relativa à janela base: 850 ms no SPD mínimo, 200 ms no máximo.
+-- Os limites configurados foram medidos no SPD máximo.
+local function speedScale(s, snapshot)
+	local speed = snapshot and tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot and snapshot.speed end
+	if finite(speed) and speed > 0 then s.lastSpeed = speed else speed = s.lastSpeed end
+	if not finite(speed) or speed <= 0 then return nil end
+	local minimum, maximum = gameInfo.getBallSpeedLimits()
+	if maximum <= minimum then return nil end
+	local progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
+	return (0.85 - 0.65 * progress) / 0.2
+end
+
 local function ballTTI(s, snapshot)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return nil end
 	local speed = tonumber(snapshot.syncSpeed)
@@ -225,8 +238,9 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime)
 	if s.active or opponentTooFar(s, partner) then return end
-	local tti = ballTTI(s, gameInfo.getSnapshotAt(time))
-	if not tti or tti > T.ACTIVATION.MAX_TTI or tti >= T.DEACTIVATION.BALL_TTI then return end
+	local snapshot = gameInfo.getSnapshotAt(time)
+	local scale, tti = speedScale(s, snapshot), ballTTI(s, snapshot)
+	if not scale or not tti or tti > T.ACTIVATION.MAX_TTI * scale or tti >= T.DEACTIVATION.BALL_TTI * scale then return end
 	s.ttiBlocked = false
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
@@ -269,10 +283,12 @@ local function shouldDeactivate(s, time, snapshot)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	if s.lastSwitchAt and time - s.lastSwitchAt >= T.DEACTIVATION.NO_SWITCH then return "no_target_switch" end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
+	local scale = speedScale(s, snapshot)
+	if not scale then return nil end
+	if s.lastSwitchAt and time - s.lastSwitchAt >= T.DEACTIVATION.NO_SWITCH * scale then return "no_target_switch" end
 	local tti = ballTTI(s, snapshot)
-	if tti and tti >= T.DEACTIVATION.BALL_TTI then return "ball_tti" end
+	if tti and tti >= T.DEACTIVATION.BALL_TTI * scale then return "ball_tti" end
 	return nil
 end
 
@@ -574,7 +590,8 @@ function AutoSpam.onBallSync(data)
 	if s.active then
 		if validTarget and s.target == s.partner and target == localPlayer.UserId and s.awayAt then
 			local duration = elapsed(s.awayAt, s.awayServerAt, time, serverTime)
-			if duration and duration >= T.DEACTIVATION.TARGET_RETURN then reason = "slow_target_return" end
+			local scale = speedScale(s, snapshot)
+			if duration and scale and duration >= T.DEACTIVATION.TARGET_RETURN * scale then reason = "slow_target_return" end
 		end
 		reason = reason or shouldDeactivate(s, time, snapshot)
 	end
