@@ -683,7 +683,7 @@ function ExodusUI.setup(deps)
 	})
 	local distanceLabel = inst("TextLabel", {
 		Name = "ClashDistance",
-		Size = UDim2.new(0, 195, 0, 78),
+		Size = UDim2.new(0, 240, 0, 110),
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -16, 1, -100),
 		BackgroundColor3 = C.header,
@@ -710,11 +710,18 @@ function ExodusUI.setup(deps)
 		local speedText = type(currentSpeed) == "number" and currentSpeed == currentSpeed and currentSpeed < math.huge and string.format("%.0f", currentSpeed)
 			or "—"
 		if stats then
-			local distance = type(stats.distance) == "number" and string.format("%.1f studs", stats.distance) or "—"; local cps = type(stats.cps) == "number" and tostring(stats.cps) or "—"; local clashSpeed = type(stats.speed) == "number" and string.format("%.0f", stats.speed) or "—"
-			distanceLabel.Text =
-				string.format("SPD atual: %s\n%s: %s  |  CPS: %s\nSPD clash: %s", speedText, stats.frozen and "Último" or "Clash", distance, cps, clashSpeed)
+			local function sampleText(sample)
+				if not sample then return "—" end
+				local distance = type(sample.distance) == "number" and string.format("%.1f", sample.distance) or "?"
+				local speed = type(sample.speed) == "number" and string.format("%.0f", sample.speed) or "?"
+				return distance .. " studs | SPD " .. speed
+			end
+			local cps = type(stats.cps) == "number" and string.format("%.2f", stats.cps) or "—"
+			distanceLabel.Text = string.format("SPD atual: %s\nInício: %s\n%s: %s\nCPS médio: %s | %.2fs",
+				speedText, sampleText(stats.startSample), stats.frozen and (stats.endReason or "Fim") or "Atual",
+				sampleText(stats.endSample), cps, stats.duration or 0)
 		else
-			distanceLabel.Text = "SPD atual: " .. speedText .. "\nClash: —  |  CPS: —\nSPD clash: —"
+			distanceLabel.Text = "SPD atual: " .. speedText .. "\nClash: —\nCPS médio: —"
 		end
 	end))
 	bindInput()
