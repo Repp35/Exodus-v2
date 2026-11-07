@@ -1,7 +1,6 @@
 -- [[ atualização automática ]]
 
 return function(loadedRevision, request)
-	local http = game:GetService("HttpService")
 	local players = game:GetService("Players")
 	local workspace = game:GetService("Workspace")
 	local token = {}
@@ -30,31 +29,34 @@ return function(loadedRevision, request)
 	end
 
 	local function latestRevision()
-		local body, err = request("https://api.github.com/repos/Repp35/Exodus-v2/commits/main?exodus_cache=" .. tostring(os.time()), {
-			["Accept"] = "application/vnd.github+json",
+		local body, err = request("https://github.com/Repp35/Exodus-v2/commits/main.atom?exodus_cache=" .. tostring(os.time()), {
+			["Accept"] = "application/atom+xml",
 			["User-Agent"] = "Exodus-Hub-Updater",
 		})
 		if not body then return nil, err end
-		local ok, result = pcall(http.JSONDecode, http, body)
-		if not ok or type(result) ~= "table" or type(result.sha) ~= "string"
-			or #result.sha ~= 40 or not result.sha:match("^[%x]+$") then return nil, "SHA inválido" end
-		return result.sha
+		local entry = body:match("<entry[%s>].-</entry>")
+		local sha = entry and entry:match("Grit::Commit/([%x]+)")
+		if not sha or #sha ~= 40 then return nil, "Feed de commits inválido" end
+		return sha
 	end
 
 	task.spawn(function()
-		local pending, chunk, nextCheck = nil, nil, 0
+		local pending, chunk, nextCheck, failures = nil, nil, 0, 0
 		while running() do
 			if os.clock() >= nextCheck then
-				nextCheck = os.clock() + 60
+				nextCheck = os.clock() + 5
 				local revision, err = latestRevision()
 				if not running() then return end
 				if revision then
+					failures = 0
 					if revision ~= loadedRevision then
 						if pending ~= revision then pending, chunk = revision, nil end
 					else
 						pending, chunk = nil, nil
 					end
 				else
+					failures += 1
+					nextCheck = os.clock() + math.min(300, 15 * 2 ^ math.min(failures - 1, 5))
 					warn("[Exodus Updater] Falha ao verificar atualização: " .. tostring(err))
 				end
 			end
