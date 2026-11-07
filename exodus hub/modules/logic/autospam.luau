@@ -91,17 +91,21 @@ local function finishClashStats(reason, time)
 	local stats = clashStats
 	if not stats or stats.frozen then return end
 	stats.frozen, stats.waitingForClash = true, false
-	stats.duration = math.max(0, time - stats.startedAt)
-	stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0
-	stats.endReason = reason
+	stats.duration = math.max(0, time - stats.startedAt); stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0; stats.endReason = reason
 	local function summary(label, sample)
 		if not sample then return label .. ": indisponível" end
-		return string.format("%s: tempo=%.3fs | distância=%s studs | velocidade=%s | CPS médio=%.2f | ping=%s ms | alvo=%s",
-			label, sample.time, sample.distance and string.format("%.2f", sample.distance) or "?", sample.speed and string.format("%.2f", sample.speed) or "?", sample.cps,
-			sample.ping and string.format("%.1f", sample.ping * 1000) or "?", tostring(sample.target or "?"))
+		return string.format(
+			"%s: tempo=%.3fs | distância=%s studs | velocidade=%s | CPS médio=%.2f | ping=%s ms | alvo=%s",
+			label,
+			sample.time,
+			sample.distance and string.format("%.2f", sample.distance) or "?",
+			sample.speed and string.format("%.2f", sample.speed) or "?",
+			sample.cps,
+			sample.ping and string.format("%.1f", sample.ping * 1000) or "?",
+			tostring(sample.target or "?")
+		)
 	end
-	appendClashLog(stats, "\n" .. summary("INÍCIO", stats.startSample))
-	appendClashLog(stats, summary("ÚLTIMA AMOSTRA ANTES DO FIM", stats.endSample))
+	appendClashLog(stats, "\n" .. summary("INÍCIO", stats.startSample)); appendClashLog(stats, summary("ÚLTIMA AMOSTRA ANTES DO FIM", stats.endSample))
 	appendClashLog(
 		stats,
 		string.format(
@@ -146,9 +150,16 @@ local function beginClashStats(partner, time)
 	end
 end
 local function observeClashStats(s, snapshot, time)
-	local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId)
-	local target = userId(snapshot.targetId)
-	if not partner and clashStats and not clashStats.frozen and time - (clashStats.lastSwitchAt or clashStats.startedAt) <= 1.5 and (target == localPlayer.UserId or target == clashStats.partnerId) then partner = clashStats.partnerId end
+	local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local target = userId(snapshot.targetId)
+	if
+		not partner
+		and clashStats
+		and not clashStats.frozen
+		and time - (clashStats.lastSwitchAt or clashStats.startedAt) <= 1.5
+		and (target == localPlayer.UserId or target == clashStats.partnerId)
+	then
+		partner = clashStats.partnerId
+	end
 	if not partner then
 		if clashStats and clashStats.frozen then clashStats.waitingForClash = true end
 		return
@@ -173,8 +184,16 @@ local function observeClashStats(s, snapshot, time)
 	if finite(speed) and speed >= 0 then stats.speed = speed; stats.maxSpeed = math.max(stats.maxSpeed, speed) end
 	local distance = distanceToPlayer(s, partner)
 	if finite(distance) then stats.distance = distance; stats.minDistance = stats.minDistance and math.min(stats.minDistance, distance) or distance end
-	stats.lastObserved = time
-	local ping = gameInfo.getLocalPing(); local sample = { time = math.max(0, time - stats.startedAt), distance = stats.distance, speed = stats.speed, cps = stats.cps, ping = finite(ping) and ping or nil, target = target }
+	stats.lastObserved = time; local ping = gameInfo.getLocalPing()
+	local sample = {
+		time = math.max(0, time - stats.startedAt),
+		distance = stats.distance,
+		speed = stats.speed,
+		cps = stats.cps,
+		ping = finite(ping) and ping or nil,
+		target = target,
+	}
+
 	stats.startSample = stats.startSample or sample; stats.endSample = sample
 	if time - stats.lastSample >= 0.1 then
 		local ping = gameInfo.getLocalPing(); local ball, own = snapshot.position, s.root.Position; local other = gameInfo.getPlayerMotion(partner)
@@ -444,7 +463,14 @@ function AutoSpam.bindCharacter(character)
 		if current ~= s then return end
 		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now()
 		if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then finishClashStats("clash encerrado", clashStats.lastObserved) end
-		if not autoEnabled and not upDashEnabled and not utils.isManualSpamActive() and not s.active and not clashContext and (not clashStats or clashStats.frozen) then
+		if
+			not autoEnabled
+			and not upDashEnabled
+			and not utils.isManualSpamActive()
+			and not s.active
+			and not clashContext
+			and (not clashStats or clashStats.frozen)
+		then
 			if clashStats and clashStats.frozen then clashStats.waitingForClash = true end
 			s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
 			return
@@ -483,7 +509,13 @@ function AutoSpam.onBallSync(data)
 		s.target, s.recoveryPartner = nil, nil
 		return
 	end
- 	if utils.getConfigValue("AutoSpam") ~= true and not utils.isManualSpamActive() and not s.active and (not clashStats or clashStats.frozen) and not gameInfo.getClashContext() then
+	if
+		utils.getConfigValue("AutoSpam") ~= true
+		and not utils.isManualSpamActive()
+		and not s.active
+		and (not clashStats or clashStats.frozen)
+		and not gameInfo.getClashContext()
+	then
 		s.target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or s.target
 		s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
 		return

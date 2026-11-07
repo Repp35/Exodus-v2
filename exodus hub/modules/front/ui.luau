@@ -712,14 +712,18 @@ function ExodusUI.setup(deps)
 		if stats then
 			local function sampleText(sample)
 				if not sample then return "—" end
-				local distance = type(sample.distance) == "number" and string.format("%.1f", sample.distance) or "?"
-				local speed = type(sample.speed) == "number" and string.format("%.0f", sample.speed) or "?"
-				return distance .. " studs | SPD " .. speed
+				local distance = type(sample.distance) == "number" and string.format("%.1f", sample.distance) or "?"; local speed = type(sample.speed) == "number" and string.format("%.0f", sample.speed) or "?"; return distance .. " studs | SPD " .. speed
 			end
 			local cps = type(stats.cps) == "number" and string.format("%.2f", stats.cps) or "—"
-			distanceLabel.Text = string.format("SPD atual: %s\nInício: %s\n%s: %s\nCPS médio: %s | %.2fs",
-				speedText, sampleText(stats.startSample), stats.frozen and (stats.endReason or "Fim") or "Atual",
-				sampleText(stats.endSample), cps, stats.duration or 0)
+			distanceLabel.Text = string.format(
+				"SPD atual: %s\nInício: %s\n%s: %s\nCPS médio: %s | %.2fs",
+				speedText,
+				sampleText(stats.startSample),
+				stats.frozen and (stats.endReason or "Fim") or "Atual",
+				sampleText(stats.endSample),
+				cps,
+				stats.duration or 0
+			)
 		else
 			distanceLabel.Text = "SPD atual: " .. speedText .. "\nClash: —\nCPS médio: —"
 		end
