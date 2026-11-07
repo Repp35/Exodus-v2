@@ -23,7 +23,7 @@ local POLICIES = {
 	},
 	gameinfo = {
 		provide = allow(
-			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getPlayerMotion getLocalPing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectGeometry isBallWithinDeflectRadius getBallFrozen getDeflectAbility getAutoSpamDelay getDashAbility isPlayerDashing getFierceDeflectAbility getDarkSealAbility getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
+			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getPlayerMotion getLocalPing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectGeometry isBallWithinDeflectRadius getBallFrozen getDeflectAbility getLastDeflectPressAt getAutoSpamDelay getDashAbility isPlayerDashing getFierceDeflectAbility getDarkSealAbility getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
 		),
 		consume = {
 			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace now recordError trackGlobal untrackGlobal"),
@@ -84,7 +84,7 @@ local POLICIES = {
 		provide = allow("setup teardown"),
 		consume = {
 			utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
-			gameinfo = allow("areAbilitiesEnabled getDeflectServerEvents getSnapshotAt isSnapshotValid getBallFrozen isBallWithinDeflectRadius"),
+			gameinfo = allow("areAbilitiesEnabled getDeflectServerEvents getLastDeflectPressAt getDeflectWindow getLocalPing getSnapshotAt isSnapshotValid getBallFrozen isBallWithinDeflectRadius"),
 			autoparry = allow("beginFierce cancelFierce"),
 			remote = allow("fireFierce"),
 		},

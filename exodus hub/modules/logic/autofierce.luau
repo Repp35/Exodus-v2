@@ -8,6 +8,7 @@ local utils, gameInfo, remote, autoParry
 local T = {
 	SIGNAL_RETRY = 0.5,
 	SYNC_MAX_AGE = 0.25,
+	NOOB_WINDOW_EXTRA = 0.15,
 }
 
 -- state
@@ -38,6 +39,18 @@ local function graceDanger(now)
 	local grace = snapshot.grace == true; local player = utils.getLocalPlayer(); local danger = grace and player ~= nil and snapshot.targetId == player.UserId and gameInfo.getBallFrozen() ~= true and gameInfo.isBallWithinDeflectRadius(1); return danger, grace
 end
 
+local function deflectPending(now)
+	local pressedAt = gameInfo.getLastDeflectPressAt()
+	if type(pressedAt) ~= "number" or pressedAt ~= pressedAt then return true end
+	if pressedAt <= 0 then return false end
+	if pressedAt > now then return true end
+	local window = gameInfo.getDeflectWindow()
+	if type(window) ~= "number" or window ~= window or window <= 0 then return true end
+	local ping = gameInfo.getLocalPing()
+	if type(ping) ~= "number" or ping ~= ping or ping < 0 then ping = 0 end
+	return now - pressedAt <= window + T.NOOB_WINDOW_EXTRA + 2 * ping
+end
+
 -- activation
 local function update()
 	local now = os.clock()
@@ -47,12 +60,12 @@ local function update()
 	local danger, grace = graceDanger(now)
 	if grace == nil then return end
 	if not grace then graceHandled = false; return end
-	if not danger or graceHandled then return end
+	if not danger or graceHandled or deflectPending(now) then return end
 	graceHandled = true; local generation = parryGeneration
 	local token
 	local ok, sent = pcall(function()
 		return remote.fireFierce(function()
-			if not enabled() or parryGeneration ~= generation then return false end
+			if not enabled() or parryGeneration ~= generation or deflectPending(os.clock()) then return false end
 			local stillDanger = graceDanger(os.clock())
 			if not stillDanger then return false end
 			token = autoParry.beginFierce(); return true
@@ -96,6 +109,9 @@ AutoFierce.__contract = {
 		GameInfo = {
 			"areAbilitiesEnabled",
 			"getDeflectServerEvents",
+			"getLastDeflectPressAt",
+			"getDeflectWindow",
+			"getLocalPing",
 			"getSnapshotAt",
 			"isSnapshotValid",
 			"getBallFrozen",

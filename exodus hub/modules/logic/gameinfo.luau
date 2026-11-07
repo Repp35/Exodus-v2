@@ -206,6 +206,13 @@ function GameInfo.getPlayerDistance(id)
 end
 function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
 function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
+function GameInfo.getLastDeflectPressAt()
+	local ability = GameInfo.getDeflectAbility()
+	if not ability then return nil end
+	local pressedAt = ability.LastPressClock
+	if not finite(pressedAt) or pressedAt <= 0 then return 0 end
+	return pressedAt
+end
 function GameInfo.getAutoSpamDelay()
 	local ability = GameInfo.getDeflectAbility()
 	if not ability then return nil end
@@ -533,6 +540,7 @@ GameInfo.__contract = {
 		"isBallWithinDeflectRadius",
 		"getBallFrozen",
 		"getDeflectAbility",
+		"getLastDeflectPressAt",
 		"getAutoSpamDelay",
 		"getDeflectServerEvents",
 		"decodeDeflectServerEvent",
