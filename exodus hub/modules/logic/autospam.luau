@@ -23,6 +23,8 @@ local T = {
 		DASH_TOWARD_COSINE = 0.5,
 	},
 	DEACTIVATION = {
+		MIN_SPEED_DISTANCE = 20,
+		MAX_SPEED_DISTANCE = 60,
 		MIN_SPEED_TIMEOUT = 0.2975,
 		MAX_SPEED_TIMEOUT = 0.07,
 		START_DELAY = 0.12,
@@ -267,6 +269,9 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		local minimum, maximum = gameInfo.getBallSpeedLimits()
 		if finite(minimum) and finite(maximum) and maximum > minimum then
 			local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
+			local limit = T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor
+			local distance = distanceToPlayer(s, s.partner)
+			if finite(distance) and distance > limit then return "opponent_distance" end
 			s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
 		end
 	end
