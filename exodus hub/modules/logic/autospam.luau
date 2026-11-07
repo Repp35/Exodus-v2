@@ -231,12 +231,8 @@ function AutoSpam.setup(deps)
 		local s = current
 		if not s or not gameInfo.areAbilitiesEnabled() or not event or event.userId == localPlayer.UserId or not event.position or not event.velocity then return end
 		if utils.isActive() and utils.getConfigValue("AutoClashUpDash") == true then
-			local context = gameInfo.getClashContext()
-			local partner = s.active and s.partner or (context and context.partnerId)
-			local velocity = event.velocity
-			if partner == event.userId and velocity.Y >= 60 and velocity.Magnitude > 0 and velocity.Y / velocity.Magnitude >= 0.5 then
-				movement.upDash()
-			end
+			local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local velocity = event.velocity
+			if partner == event.userId and velocity.Y >= 60 and velocity.Magnitude > 0 and velocity.Y / velocity.Magnitude >= 0.5 then movement.upDash() end
 		end
 		local offset = s.root.Position - event.position
 		if offset.X * event.velocity.X + offset.Z * event.velocity.Z > 0 then s.dashUntil = now() + T.ACTIVATION.DASH_BONUS_DURATION; s.dashData = event end
@@ -282,8 +278,7 @@ function AutoSpam.bindCharacter(character)
 	track(s, players.PlayerAdded, watchPlayer)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
-		local autoEnabled = utils.getConfigValue("AutoSpam") == true
-		local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
+		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
 		if not autoEnabled and not upDashEnabled and not utils.isManualSpamActive() and not s.active then
 			s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
 			return

@@ -1098,7 +1098,8 @@ function ExodusUI.setup(deps)
 		paintJumpBall(value)
 		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
 	end)
-	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall); local upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); local _, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft)
+	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall); local upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); local _, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft)
+	createCameraSensitivityCard(parryYPos, settingsLeft)
 	local function updateAbilityVisibility(enabled)
 		darkCard.Visible, miniDarkCard.Visible, upDashCard.Visible, fierceCard.Visible, autoUpDashCard.Visible = enabled, enabled, enabled, enabled, enabled
 		darkBall.Visible, upDashBall.Visible = enabled, enabled
