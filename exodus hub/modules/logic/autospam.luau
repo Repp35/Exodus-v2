@@ -66,15 +66,6 @@ end
 local function returnWindow(window, speed, base)
 	local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0; return math.max(T.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
 end
-local function partnerIsClose(s, speed)
-	local distance = distanceToPlayer(s, s.partner)
-	if not distance then return false end
-	local ownRange = tonumber(gameInfo.getDeflectRange())
-	if not finite(ownRange) or ownRange <= 0 then ownRange = 8.5 end
-	local ping = gameInfo.getLocalPing()
-	if not finite(ping) or ping < 0 then ping = 0 end
-	return distance <= ownRange + 8.5 + speed * ping
-end
 local function formatPoint(point)
 	if typeof(point) ~= "Vector3" then return "indisponível" end
 	return string.format("%.2f, %.2f, %.2f", point.X, point.Y, point.Z)
@@ -230,7 +221,6 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	if gameInfo.getBallFrozen() == true then return "frozen" end
 	local g, speed, window = geometry(s, snapshot, 1)
 	if not g then return nil end
-	if partnerIsClose(s, speed) then return nil end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
 	if fresh and switchElapsed and switchElapsed > window then return "no_target_switch" end
 	return nil
@@ -260,7 +250,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	local partner = s.active and s.partner or s.manualPartner
 	if (s.active or utils.isManualSpamActive()) and target ~= me and target ~= partner and partner and g then
 		local distance = distanceToPlayer(s, target)
-		if distance and distance > g.fullRadius and not (s.active and partnerIsClose(s, speed)) then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
+		if distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
 	end
 	local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
 	if switchElapsed then s.intervalMs = switchElapsed * 1000 end
@@ -508,7 +498,7 @@ function AutoSpam.onBallSync(data)
 		and speed > 0
 	then
 		local g = gameInfo.getDeflectGeometry(speed, nil, 1, true); local distance = distanceToPlayer(s, target)
-		if g and distance and distance > g.fullRadius and not (s.active and partnerIsClose(s, speed)) then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
+		if g and distance and distance > g.fullRadius then stop(s, "distant_target", true); utils.setManualSpamActive(false) end
 	end
 	local snapshot = gameInfo.getSnapshotAt(time)
 	if snapshot and data.Source == "packet" and userId(target) then
