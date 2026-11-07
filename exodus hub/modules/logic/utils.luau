@@ -168,14 +168,17 @@ function Utils.ensureDataFolder()
 end
 function Utils.createClashLog(partnerId)
 	if type(writefile) ~= "function" or type(isfile) ~= "function" then error("APIs externas ausentes: writefile/isfile", 2) end
-	local _, folder = Utils.ensureDataFolder()
-	local directory = folder .. "/Clashes"
+	local _, folder = Utils.ensureDataFolder(); local directory = folder .. "/Clashes"
 	if not isfolder(directory) then makefolder(directory) end
-	local stamp = os.date("!%Y%m%d_%H%M%S")
-	local prefix = directory .. "/clash_" .. stamp .. "_" .. tostring(partnerId)
-	local index, path = 1, prefix .. ".txt"
-	while isfile(path) do index += 1; path = prefix .. "_" .. index .. ".txt" end
-	local header = "EXODUS - CLASH\nInício (UTC): " .. os.date("!%Y-%m-%d %H:%M:%S") .. "\nOponente ID: " .. tostring(partnerId) .. "\nCPS: trocas de alvo entre os jogadores no último segundo\n\n"
+	local stamp = os.date("!%Y%m%d_%H%M%S"); local prefix = directory .. "/clash_" .. stamp .. "_" .. tostring(partnerId); local index, path = 1, prefix .. ".txt"
+	while isfile(path) do
+		index += 1; path = prefix .. "_" .. index .. ".txt"
+	end
+	local header = "EXODUS - CLASH\nInício (UTC): "
+		.. os.date("!%Y-%m-%d %H:%M:%S")
+		.. "\nOponente ID: "
+		.. tostring(partnerId)
+		.. "\nCPS: trocas de alvo entre os jogadores no último segundo\n\n"
 	writefile(path, header)
 	local content
 	if type(appendfile) ~= "function" then content = header end
@@ -183,15 +186,9 @@ function Utils.createClashLog(partnerId)
 end
 function Utils.appendClashLog(log, value)
 	if type(log) ~= "table" or type(log.path) ~= "string" or type(value) ~= "string" then error("Dados inválidos para o registro de clash", 2) end
-	if type(appendfile) == "function" and log.content == nil then
-		appendfile(log.path, value)
-	else
-		log.content = (log.content or "") .. value
-		writefile(log.path, log.content)
-	end
+	if type(appendfile) == "function" and log.content == nil then appendfile(log.path, value) else log.content = (log.content or "") .. value; writefile(log.path, log.content) end
 	return true
 end
-
 local function serializeConfig(config)
 	local data = {}
 	for key, value in pairs(config) do

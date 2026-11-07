@@ -76,13 +76,11 @@ local function returnLimit(s, speed, window)
 	local close = distance <= ownRange + 8.5 + speed * ping; local travel = math.max(0, distance - ownRange - 8.5) / speed; return math.max(limit, travel + T.SHARED.MIN_RETURN + ping) + T.DEACTIVATION.RETURN_MARGIN, close
 end
 local function reportClashLogError(stats, message)
-	stats.logFailed = true
-	utils.recordError("ClashLog", tostring(message))
+	stats.logFailed = true; utils.recordError("ClashLog", tostring(message))
 end
 local function flushClashLog(stats)
 	if stats.logFailed or not stats.log or #stats.logBuffer == 0 then return end
-	local chunk = table.concat(stats.logBuffer)
-	local ok, err = pcall(utils.appendClashLog, stats.log, chunk)
+	local chunk = table.concat(stats.logBuffer); local ok, err = pcall(utils.appendClashLog, stats.log, chunk)
 	if not ok then reportClashLogError(stats, err); return end
 	table.clear(stats.logBuffer)
 end
@@ -94,25 +92,44 @@ local function finishClashStats(reason, time)
 	if not stats or stats.frozen then return end
 	stats.frozen, stats.waitingForClash = true, false
 	stats.duration = math.max(0, time - stats.startedAt)
-	appendClashLog(stats, string.format("\nFIM: %s\nDuração: %.3f s\nTrocas de alvo: %d\nMaior CPS observado: %d\nMaior velocidade observada: %.2f\nMenor distância observada: %s\n",
-		reason, stats.duration, stats.totalSwitches, stats.maxCps, stats.maxSpeed,
-		stats.minDistance and string.format("%.2f studs", stats.minDistance) or "indisponível"))
+	appendClashLog(
+		stats,
+		string.format(
+			"\nFIM: %s\nDuração: %.3f s\nTrocas de alvo: %d\nMaior CPS observado: %d\nMaior velocidade observada: %.2f\nMenor distância observada: %s\n",
+			reason,
+			stats.duration,
+			stats.totalSwitches,
+			stats.maxCps,
+			stats.maxSpeed,
+			stats.minDistance and string.format("%.2f studs", stats.minDistance) or "indisponível"
+		)
+	)
 	flushClashLog(stats)
 end
 local function beginClashStats(partner, time)
 	if clashStats and not clashStats.frozen then finishClashStats("novo clash", clashStats.lastObserved) end
 	local stats = {
-		partnerId = partner, switches = {}, cps = 0, lastObserved = time, startedAt = time,
-		totalSwitches = 0, maxCps = 0, maxSpeed = 0, frozen = false,
-		logBuffer = {}, lastLogFlush = time, lastSample = -math.huge,
+		partnerId = partner,
+		switches = {},
+		cps = 0,
+		lastObserved = time,
+		startedAt = time,
+		totalSwitches = 0,
+		maxCps = 0,
+		maxSpeed = 0,
+		frozen = false,
+		logBuffer = {},
+		lastLogFlush = time,
+		lastSample = -math.huge,
 	}
-	clashStats = stats
-	local ok, result = pcall(utils.createClashLog, partner)
+
+	clashStats = stats; local ok, result = pcall(utils.createClashLog, partner)
 	if ok then
-		stats.log = result
-		local opponent = players:GetPlayerByUserId(partner)
-		appendClashLog(stats, "Oponente: " .. (opponent and opponent.Name or tostring(partner)))
-		appendClashLog(stats, "AMOSTRA;tempo_s;velocidade;distância_studs;cps;alvo_id;ping_ms;grace;bola_x;bola_y;bola_z;meu_x;meu_y;meu_z;oponente_x;oponente_y;oponente_z")
+		stats.log = result; local opponent = players:GetPlayerByUserId(partner); appendClashLog(stats, "Oponente: " .. (opponent and opponent.Name or tostring(partner)))
+		appendClashLog(
+			stats,
+			"AMOSTRA;tempo_s;velocidade;distância_studs;cps;alvo_id;ping_ms;grace;bola_x;bola_y;bola_z;meu_x;meu_y;meu_z;oponente_x;oponente_y;oponente_z"
+		)
 	else
 		reportClashLogError(stats, result)
 	end
@@ -132,35 +149,43 @@ local function observeClashStats(s, snapshot, time)
 	local stats = clashStats; local target = userId(snapshot.targetId)
 	if stats.lastTarget and target and stats.lastTarget ~= target then
 		local me = localPlayer.UserId
-		if (stats.lastTarget == me and target == partner) or (stats.lastTarget == partner and target == me) then
-			stats.switches[#stats.switches + 1] = time
-			stats.totalSwitches += 1
-			appendClashLog(stats, string.format("TROCA;%.3f;%d;%d", math.max(0, time - stats.startedAt), stats.lastTarget, target))
-		end
+		if (stats.lastTarget == me and target == partner) or (stats.lastTarget == partner and target == me) then stats.switches[#stats.switches + 1] = time; stats.totalSwitches += 1; appendClashLog(stats, string.format("TROCA;%.3f;%d;%d", math.max(0, time - stats.startedAt), stats.lastTarget, target)) end
 	end
 	if target then stats.lastTarget = target end
-	while #stats.switches > 0 and (time < stats.switches[1] or time - stats.switches[1] > 1) do table.remove(stats.switches, 1) end
-	stats.cps = #stats.switches; stats.maxCps = math.max(stats.maxCps, stats.cps)
-	local speed = tonumber(snapshot.syncSpeed)
+	while #stats.switches > 0 and (time < stats.switches[1] or time - stats.switches[1] > 1) do
+		table.remove(stats.switches, 1)
+	end
+	stats.cps = #stats.switches; stats.maxCps = math.max(stats.maxCps, stats.cps); local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
 	if finite(speed) and speed >= 0 then stats.speed = speed; stats.maxSpeed = math.max(stats.maxSpeed, speed) end
 	local distance = distanceToPlayer(s, partner)
 	if finite(distance) then stats.distance = distance; stats.minDistance = stats.minDistance and math.min(stats.minDistance, distance) or distance end
 	stats.lastObserved = time
 	if time - stats.lastSample >= 0.1 then
-		local ping = gameInfo.getLocalPing()
-		local ball, own = snapshot.position, s.root.Position
-		local other = gameInfo.getPlayerMotion(partner)
+		local ping = gameInfo.getLocalPing(); local ball, own = snapshot.position, s.root.Position; local other = gameInfo.getPlayerMotion(partner)
 		local function coordinate(point, axis) return typeof(point) == "Vector3" and string.format("%.2f", point[axis]) or "?" end
-		appendClashLog(stats, string.format("AMOSTRA;%.3f;%s;%s;%d;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s",
-			math.max(0, time - stats.startedAt),
-			stats.speed and string.format("%.2f", stats.speed) or "?",
-			stats.distance and string.format("%.2f", stats.distance) or "?",
-			stats.cps, target and tostring(target) or "?",
-			finite(ping) and string.format("%.1f", ping * 1000) or "?", tostring(snapshot.grace == true),
-			coordinate(ball,"X"), coordinate(ball,"Y"), coordinate(ball,"Z"),
-			coordinate(own,"X"), coordinate(own,"Y"), coordinate(own,"Z"),
-			coordinate(other,"X"), coordinate(other,"Y"), coordinate(other,"Z")))
+		appendClashLog(
+			stats,
+			string.format(
+				"AMOSTRA;%.3f;%s;%s;%d;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s;%s",
+				math.max(0, time - stats.startedAt),
+				stats.speed and string.format("%.2f", stats.speed) or "?",
+				stats.distance and string.format("%.2f", stats.distance) or "?",
+				stats.cps,
+				target and tostring(target) or "?",
+				finite(ping) and string.format("%.1f", ping * 1000) or "?",
+				tostring(snapshot.grace == true),
+				coordinate(ball, "X"),
+				coordinate(ball, "Y"),
+				coordinate(ball, "Z"),
+				coordinate(own, "X"),
+				coordinate(own, "Y"),
+				coordinate(own, "Z"),
+				coordinate(other, "X"),
+				coordinate(other, "Y"),
+				coordinate(other, "Z")
+			)
+		)
 		stats.lastSample = time
 	end
 	if time - stats.lastLogFlush >= 0.5 then flushClashLog(stats); stats.lastLogFlush = time end
@@ -395,11 +420,8 @@ function AutoSpam.bindCharacter(character)
 	track(s, players.PlayerAdded, watchPlayer)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
-		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext()
-		local time = now()
-		if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then
-			finishClashStats("clash encerrado", clashStats.lastObserved)
-		end
+		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now()
+		if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then finishClashStats("clash encerrado", clashStats.lastObserved) end
 		if not autoEnabled and not upDashEnabled and not utils.isManualSpamActive() and not s.active and not clashContext then
 			if clashStats and clashStats.frozen then clashStats.waitingForClash = true end
 			s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
