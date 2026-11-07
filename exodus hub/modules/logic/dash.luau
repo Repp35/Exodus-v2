@@ -32,8 +32,10 @@ local function disconnect(connection)
 		connection:Disconnect()
 	end
 end
-local function emit(player, record, position, velocity, previous, time)
-	if time - (record.lastDetection or -math.huge) < T.DETECTION_GAP then return end
+local function emit(player, record, position, velocity, previous, time, confirmed)
+	local newConfirmation = confirmed and record.confirmedSignalAt ~= record.signalAt
+	if not newConfirmation and time - (record.lastDetection or -math.huge) < T.DETECTION_GAP then return end
+	if confirmed then record.confirmedSignalAt = record.signalAt end
 	record.lastDetection = time
 	if handler then
 		handler({
@@ -42,6 +44,7 @@ local function emit(player, record, position, velocity, previous, time)
 			detectedAt = time,
 			position = position,
 			velocity = velocity,
+			confirmed = confirmed,
 			previousPosition = previous,
 		})
 	end
@@ -49,7 +52,7 @@ end
 local function resetCharacter(record, character)
 	record.character = character
 	record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
-	record.lastDetection, record.signalAt, record.signalActive = nil, -math.huge, false
+	record.lastDetection, record.signalAt, record.signalActive, record.confirmedSignalAt = nil, -math.huge, false, nil
 end
 local function observe(player, record, time)
 	local character = player.Character
@@ -68,7 +71,7 @@ local function observe(player, record, time)
 	local attribute = player ~= players.LocalPlayer and character:GetAttribute("IsDashing") == true; local ability = player == players.LocalPlayer and gameInfo and gameInfo.getDashAbility() or nil; local localDash = ability and ability.Dashing == true or false; local signal = attribute or localDash
 	if signal and not record.signalActive then record.signalAt = time end
 	record.signalActive = signal; local speed, previousSpeed = velocity.Magnitude, record.speed or 0; local fast = speed >= T.MIN_SPEED; local burst = fast and (not record.fast or speed - previousSpeed >= T.MIN_INCREASE); local signaled = time - record.signalAt <= T.SIGNAL_GRACE
-	if (burst or (signaled and fast)) and (fast or horizontal(velocity) >= T.MIN_SPEED) then emit(player, record, position, velocity, previous, time) end
+	if (burst or (signaled and fast)) and (fast or horizontal(velocity) >= T.MIN_SPEED) then emit(player, record, position, velocity, previous, time, signaled) end
 	record.speed, record.fast, record.position, record.positionAt = speed, fast, position, time
 end
 
