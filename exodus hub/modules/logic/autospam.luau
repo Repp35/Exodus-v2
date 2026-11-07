@@ -324,10 +324,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 	end
 	observeClashStats(s, snapshot, time)
 	if utils.getConfigValue("AutoClashUpDash") == true and gameInfo.areAbilitiesEnabled() then
-		local context = gameInfo.getClashContext()
-		local partner = s.active and s.partner or (context and context.partnerId)
-		local g = partner and geometry(s, snapshot, 1)
-		local position = g and gameInfo.getPlayerMotion(partner)
+		local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local g = partner and geometry(s, snapshot, 1); local position = g and gameInfo.getPlayerMotion(partner)
 		if typeof(position) == "Vector3" then
 			local direction = position - s.root.Position
 			if direction.Magnitude > g.fullRadius then movement.dashToward(direction) end
