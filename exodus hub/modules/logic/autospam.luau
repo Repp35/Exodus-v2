@@ -53,6 +53,12 @@ local function track(s, signal, callback)
 	local connection = signal:Connect(callback); s.connections[#s.connections + 1] = connection; utils.trackCharacter(connection); return connection
 end
 local function distanceToPlayer(s, id) return id and gameInfo.getPlayerDistance(id) or nil end
+local function playerIsAlive(id)
+	local player = id and players:GetPlayerByUserId(id)
+	local character = player and player.Character
+	local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid")
+	return humanoid ~= nil and humanoid.Health > 0
+end
 
 -- geometry
 local function geometry(s, snapshot, factor)
@@ -317,7 +323,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 		local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local g = partner and geometry(s, snapshot, 1); local position = g and gameInfo.getPlayerMotion(partner)
 		if typeof(position) == "Vector3" then
 			local direction = position - s.root.Position
-			if direction.Magnitude > g.fullRadius then movement.dashToward(direction) end
+			if direction.Magnitude > g.fullRadius and playerIsAlive(partner) then movement.dashToward(direction) end
 		end
 	end
 	if fresh and utils.isManualSpamActive() then
@@ -366,6 +372,7 @@ function AutoSpam.setup(deps)
 		local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId)
 		if
 			partner == event.userId
+			and playerIsAlive(partner)
 			and distance > 0
 			and speed > 0
 			and -velocity:Dot(offset) / (speed * distance) >= T.ACTIVATION.DASH_AWAY_COSINE
