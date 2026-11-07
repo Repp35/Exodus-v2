@@ -22,7 +22,7 @@ local T = {
 		DASH_AWAY_COSINE = 0.98,
 		DASH_TOWARD_COSINE = 0.5,
 	},
-	DEACTIVATION = { NO_SWITCH = 0.1, CLASH_DELAY = 0.5 },
+	DEACTIVATION = { BALL_TTI = 0.1, CLASH_DELAY = 0.5 },
 	SHARED = {
 		MIN_RETURN = 1 / 25,
 		SNAPSHOT_MAX_AGE = 0.5,
@@ -214,14 +214,13 @@ local function freezeClashStats(playerId)
 end
 
 -- activation
-local watchTimeout
 local function start(s, reason, partner, time, serverTime)
 	if s.active or opponentTooFar(s, partner) then return end
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason, s.activeSince = time, serverTime, reason, time
-	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason); watchTimeout(s, time)
+	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function shouldActivate(s, snapshot, time)
 	if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
@@ -252,21 +251,19 @@ local function stopBoth(s, reason)
 	s.recoveryPartner, s.manualPartner, s.manualWasActive = nil, nil, false
 	utils.setManualSpamActive(false)
 end
-local function shouldDeactivate(s, time)
+local function shouldDeactivate(s, time, snapshot)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	if s.activeSince and time - s.activeSince >= T.DEACTIVATION.CLASH_DELAY and s.lastSwitchAt and time - s.lastSwitchAt >= T.DEACTIVATION.NO_SWITCH then return "no_target_switch" end
+	if not s.activeSince or time - s.activeSince < T.DEACTIVATION.CLASH_DELAY then return nil end
+	snapshot = snapshot or gameInfo.getSnapshotAt(time)
+	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return nil end
+	local speed = tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
+	if not finite(speed) or speed <= 0 then return nil end
+	local tti = (snapshot.position - s.root.Position).Magnitude / speed
+	if tti >= T.DEACTIVATION.BALL_TTI then return "ball_tti" end
 	return nil
-end
-watchTimeout = function(s, startedAt)
-	task.spawn(function()
-		while current == s and s.active and s.activeSince == startedAt do
-			local time = now(); local reason = shouldDeactivate(s, time)
-			if reason then stop(s, reason, false); return end
-			local deadline = math.max(startedAt + T.DEACTIVATION.CLASH_DELAY, s.lastSwitchAt + T.DEACTIVATION.NO_SWITCH); task.wait(math.max(0, deadline - time))
-		end
-	end)
 end
 
 -- target-tracking
@@ -332,7 +329,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot)
 	syncManualPartner(s)
 	if gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
 	if s.active then
-		local reason = shouldDeactivate(s, time)
+		local reason = shouldDeactivate(s, time, snapshot)
 		if reason then stop(s, reason, false); return end
 	end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
@@ -557,9 +554,9 @@ function AutoSpam.onBallSync(data)
 		snapshot.teleported = false
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
-	if s.active and shouldDeactivate(s, time) == "no_target_switch" then
+	if s.active and shouldDeactivate(s, time, snapshot) == "ball_tti" then
 		if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then observeClashStats(s, snapshot, time, true) end
-		stop(s, "no_target_switch", false)
+		stop(s, "ball_tti", false)
 		if target then s.target = target end
 		return
 	end
