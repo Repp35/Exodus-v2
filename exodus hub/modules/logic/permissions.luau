@@ -84,7 +84,9 @@ local POLICIES = {
 		provide = allow("setup teardown"),
 		consume = {
 			utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
-			gameinfo = allow("areAbilitiesEnabled getDeflectServerEvents getLastDeflectPressAt getDeflectWindow getLocalPing getSnapshotAt isSnapshotValid getBallFrozen isBallWithinDeflectRadius"),
+			gameinfo = allow(
+				"areAbilitiesEnabled getDeflectServerEvents getLastDeflectPressAt getDeflectWindow getLocalPing getSnapshotAt isSnapshotValid getBallFrozen isBallWithinDeflectRadius"
+			),
 			autoparry = allow("beginFierce cancelFierce"),
 			remote = allow("fireFierce"),
 		},

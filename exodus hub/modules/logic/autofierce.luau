@@ -38,7 +38,6 @@ local function graceDanger(now)
 	if not fresh then return false, nil end
 	local grace = snapshot.grace == true; local player = utils.getLocalPlayer(); local danger = grace and player ~= nil and snapshot.targetId == player.UserId and gameInfo.getBallFrozen() ~= true and gameInfo.isBallWithinDeflectRadius(1); return danger, grace
 end
-
 local function deflectPending(now)
 	local pressedAt = gameInfo.getLastDeflectPressAt()
 	if type(pressedAt) ~= "number" or pressedAt ~= pressedAt then return true end
