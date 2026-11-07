@@ -223,19 +223,11 @@ end
 function GameInfo.getDashAbility() return getAbility(2, "Dash") end
 function GameInfo.isPlayerDashing(player)
 	if not player then return false end
-	if player == players.LocalPlayer then
-		local ability = GameInfo.getDashAbility()
-		return ability ~= nil and ability.Dashing == true
-	end
+	if player == players.LocalPlayer then local ability = GameInfo.getDashAbility(); return ability ~= nil and ability.Dashing == true end
 	local character = player.Character
 	if not character or not character.Parent then return false end
 	if character:GetAttribute("IsDashing") == true then return true end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-	local replicated = storage()
-	local animations = replicated and replicated:FindFirstChild("Animations")
-	local movement = animations and animations:FindFirstChild("Movement")
-	local dashAnimation = movement and movement:FindFirstChild("Dash")
+	local humanoid = character:FindFirstChildOfClass("Humanoid"); local animator = humanoid and humanoid:FindFirstChildOfClass("Animator"); local replicated = storage(); local animations = replicated and replicated:FindFirstChild("Animations"); local movement = animations and animations:FindFirstChild("Movement"); local dashAnimation = movement and movement:FindFirstChild("Dash")
 	if not animator or not dashAnimation or not dashAnimation:IsA("Animation") or dashAnimation.AnimationId == "" then return false end
 	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 		local animation = track.Animation
