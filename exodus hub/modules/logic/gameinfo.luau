@@ -131,7 +131,9 @@ local function disconnect(connection)
 end
 
 -- synchronization
-local function validSyncRemote(instance) return typeof(instance) == "Instance" and (instance:IsA("RemoteEvent") or instance:IsA("UnreliableRemoteEvent")) and instance.Parent ~= nil end
+local function validSyncRemote(instance)
+	return typeof(instance) == "Instance" and (instance:IsA("RemoteEvent") or instance:IsA("UnreliableRemoteEvent")) and instance.Parent ~= nil
+end
 local function disconnectSync()
 	if syncConnection then
 		if utils then utils.untrackGlobal(syncConnection) end
@@ -161,22 +163,14 @@ function GameInfo.bindBallSync(handler)
 		if syncRemote and not validSyncRemote(syncRemote) then disconnectSync() end
 		return syncConnection ~= nil and syncConnection.Connected == true
 	end
-	local replicated = storage(); local remotes = replicated and replicated:FindFirstChild("Remotes")
-	local snapshotCandidate = remotes and remotes:FindFirstChild("BallSnapshot")
+	local replicated = storage(); local remotes = replicated and replicated:FindFirstChild("Remotes"); local snapshotCandidate = remotes and remotes:FindFirstChild("BallSnapshot")
 	if not validSyncRemote(snapshotCandidate) then snapshotCandidate = nil end
-	if not (syncConnection and syncConnection.Connected and syncRemote == candidate) then
-		disconnectSync()
-		syncConnection, syncRemote = candidate.OnClientEvent:Connect(handler), candidate
-		utils.trackGlobal(syncConnection)
-	end
+	if not (syncConnection and syncConnection.Connected and syncRemote == candidate) then disconnectSync(); syncConnection, syncRemote = candidate.OnClientEvent:Connect(handler), candidate; utils.trackGlobal(syncConnection) end
 	if snapshotRemote ~= snapshotCandidate or (snapshotConnection and not snapshotConnection.Connected) then
 		if snapshotConnection then utils.untrackGlobal(snapshotConnection); snapshotConnection:Disconnect() end
 		snapshotConnection, snapshotRemote = nil, nil
 	end
-	if snapshotCandidate and not snapshotConnection then
-		snapshotConnection, snapshotRemote = snapshotCandidate.OnClientEvent:Connect(handler), snapshotCandidate
-		utils.trackGlobal(snapshotConnection)
-	end
+	if snapshotCandidate and not snapshotConnection then snapshotConnection, snapshotRemote = snapshotCandidate.OnClientEvent:Connect(handler), snapshotCandidate; utils.trackGlobal(snapshotConnection) end
 	return true
 end
 function GameInfo.startMaintenance(options)

@@ -258,8 +258,7 @@ local function shouldDeactivate(s, snapshot, time, fresh, serverTime)
 	local activeElapsed = finite(s.activeSince) and time - s.activeSince or nil
 	if not fresh or not activeElapsed or activeElapsed < T.DEACTIVATION.CLASH_DELAY then return nil end
 	if not snapshot or not s.root or not s.root.Parent then return nil end
-	local position = snapshot.ttiPosition or snapshot.position
-	local speed = tonumber(snapshot.syncSpeed)
+	local position = snapshot.ttiPosition or snapshot.position; local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
 	if typeof(position) ~= "Vector3" or not finite(speed) or speed <= 0 then return nil end
 	local range = tonumber(gameInfo.getDeflectRange())
@@ -551,7 +550,9 @@ function AutoSpam.onBallSync(data)
 	local snapshot = gameInfo.getSnapshotAt(time)
 	if snapshot and data.Source == "packet" then
 		snapshot = table.clone(snapshot)
-		if userId(target) then snapshot.targetId, snapshot.targeted = target, target == localPlayer.UserId end
+		if userId(target) then
+			snapshot.targetId, snapshot.targeted = target, target == localPlayer.UserId
+		end
 		snapshot.syncAt, snapshot.serverTime, snapshot.syncSequence = time, serverTime, sequence
 		snapshot.teleported = false
 		if typeof(data.RealPosition) == "Vector3" then snapshot.ttiPosition = data.RealPosition end
