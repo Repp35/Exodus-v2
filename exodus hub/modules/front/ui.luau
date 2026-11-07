@@ -10,7 +10,7 @@ local Controls: any = {}
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
 local Camera = workspace.CurrentCamera
 local _wait = task.wait
 local _spawn = task.spawn
@@ -667,10 +667,11 @@ function ExodusUI.setup(deps)
 		return false, "dependência ausente: Utils, Controls ou UIConfig"
 	end
 	Utils = deps.Utils; UIConfig = deps.UIConfig; GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam; Controls = type(deps.Controls) == "table" and deps.Controls or {}
+	local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	if type(_G.ExodusUICleanup) == "function" then
 		_G.ExodusUICleanup()
 	else
-		local old = CoreGui:FindFirstChild("ExodusUISystem")
+		local old = playerGui:FindFirstChild("ExodusUISystem")
 		if old then old:Destroy() end
 	end
 	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.panelTween = nil; UIState.btnTween = nil; _G.ExodusUICleanup = cleanupUI
@@ -679,7 +680,7 @@ function ExodusUI.setup(deps)
 		ResetOnSpawn = false,
 		IgnoreGuiInset = true,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-		Parent = CoreGui,
+		Parent = playerGui,
 	})
 	local distanceLabel = inst("TextLabel", {
 		Name = "ClashDistance",
