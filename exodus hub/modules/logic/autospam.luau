@@ -51,8 +51,7 @@ local function track(s, signal, callback)
 end
 local function distanceToPlayer(s, id) return id and gameInfo.getPlayerDistance(id) or nil end
 local function opponentTooFar(s, partner)
-	local distance = distanceToPlayer(s, partner)
-	return finite(distance) and distance > 70
+	local distance = distanceToPlayer(s, partner); return finite(distance) and distance > 70
 end
 local function playerIsAlive(id)
 	local player = id and players:GetPlayerByUserId(id); local character = player and player.Character; local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid"); return humanoid ~= nil and humanoid.Health > 0
