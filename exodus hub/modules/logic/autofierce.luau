@@ -70,7 +70,10 @@ local function update()
 			token = autoParry.beginFierce(); return true
 		end)
 	end)
-	if not ok or sent ~= true then autoParry.cancelFierce(token) end
+	if not ok or sent ~= true then
+		autoParry.cancelFierce(token)
+		if parryGeneration == generation then graceHandled = false end
+	end
 	if not ok then error(sent, 0) end
 end
 

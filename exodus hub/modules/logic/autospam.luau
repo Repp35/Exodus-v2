@@ -402,7 +402,7 @@ function AutoSpam.bindCharacter(character)
 		local function watchHumanoid(humanoid)
 			if humanoid:IsA("Humanoid") then
 				track(s, humanoid.Died, function()
-					if current == s then freezeClashStats(player.UserId); stopBoth(s, "player_died") end
+					if current == s and player.Character == model then freezeClashStats(player.UserId); stopBoth(s, "player_died") end
 				end)
 			end
 		end

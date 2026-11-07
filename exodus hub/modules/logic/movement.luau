@@ -78,10 +78,12 @@ function Movement.upDash()
 	local ability = gameInfo.getDashAbility()
 	if not ability then return false, "Dash não está equipada ou ainda não carregou" end
 	if ability.Dashing then return false, "Dash já está em andamento" end
+	local moveDir = ability.MoveDir; local vectorValue = typeof(moveDir) == "Instance" and moveDir:IsA("Vector3Value")
 	local ok, err = remote.fireDash()
 	if not ok then return false, tostring(err) end
 	if not ability.Dashing then return false, "Dash indisponível ou em cooldown" end
-	ability.MoveDir = Vector3.new(0, 1, 0); return true
+	if vectorValue then moveDir.Value = Vector3.new(0, 1, 0) else ability.MoveDir = Vector3.new(0, 1, 0) end
+	return true
 end
 function Movement.dashToward(direction)
 	if not utils or not gameInfo or not remote or not utils.isActive() then return false, "Hub inativo" end
