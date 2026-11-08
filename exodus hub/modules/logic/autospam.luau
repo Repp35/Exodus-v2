@@ -14,13 +14,9 @@ local T = {
 	ACTIVATION = {
 		RETURN = 0.13,
 		RADIUS_FACTOR = 0.8,
-		DASH_RADIUS_FACTOR = 1.5,
-		DASH_RETURN_MULTIPLIER = 2.5,
-		DASH_BONUS_DURATION = 0.3,
 		HAUNTER_RANGE = 11,
 		HAUNTER_MATCH_RADIUS = 5,
 		DASH_AWAY_COSINE = 0.98,
-		DASH_TOWARD_COSINE = 0.5,
 	},
 	DEACTIVATION = {
 		MIN_SPEED_DISTANCE = 20,
@@ -45,7 +41,6 @@ local function userId(value)
 	return finite(value) and value > 0 and value % 1 == 0 and value or nil
 end
 local function now() return utils.now() end
-local function dashActive(s, time) return gameInfo.areAbilitiesEnabled() and time <= s.dashUntil end
 local function elapsed(localStart, serverStart, localNow, serverNow)
 	if finite(serverStart) and finite(serverNow) then
 		if serverNow < serverStart then return nil end
@@ -265,7 +260,7 @@ local function shouldActivate(s, snapshot, time)
 		return radius ~= nil and s.target == localPlayer.UserId and snapshot.targetId == localPlayer.UserId
 			and (snapshot.position - s.root.Position).Magnitude <= radius
 	end
-	local factor = dashActive(s, time) and T.ACTIVATION.DASH_RADIUS_FACTOR or T.ACTIVATION.RADIUS_FACTOR; local g = geometry(s, snapshot, factor)
+	local g = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR)
 	if not g then return false end
 	if pending.recovery then
 		local partnerDistance = distanceToPlayer(s, pending.partner); local normal = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); return normal ~= nil
@@ -391,7 +386,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		elseif not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
 		elseif not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt and window then
-			local limit = returnWindow(window, speed, T.ACTIVATION.RETURN) * (dashActive(s, time) and T.ACTIVATION.DASH_RETURN_MULTIPLIER or 1); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
+			local limit = returnWindow(window, speed, T.ACTIVATION.RETURN); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
 			if returnElapsed and returnElapsed <= limit then s.pending = { partner = previous } end
 		end
 	end
@@ -413,13 +408,6 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
 	local target = userId(snapshot.targetId); observeClashStats(s, snapshot, time, fresh)
-	if utils.getConfigValue("AutoClashUpDash") == true and gameInfo.areAbilitiesEnabled() then
-		local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId); local g = partner and geometry(s, snapshot, 1); local position = g and gameInfo.getPlayerMotion(partner)
-		if typeof(position) == "Vector3" then
-			local direction = position - s.root.Position
-			if direction.Magnitude > g.fullRadius and playerIsAlive(partner) then movement.dashToward(direction) end
-		end
-	end
 	if fresh and utils.isManualSpamActive() then
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
 		if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
@@ -461,7 +449,6 @@ function AutoSpam.setup(deps)
 			if partner == event.userId and velocity.Y >= 72 and horizontalSpeed <= velocity.Y * 0.5 then movement.upDash() end
 		end
 		local offset = s.root.Position - event.position; local velocity = event.velocity; local distance, speed = offset.Magnitude, velocity.Magnitude
-		if distance > 0 and speed > 0 and velocity:Dot(offset) / (speed * distance) >= T.ACTIVATION.DASH_TOWARD_COSINE then s.dashUntil = now() + T.ACTIVATION.DASH_BONUS_DURATION; s.dashData = event end
 		if not utils.isActive() then return end
 		local context = gameInfo.getClashContext(); local partner = s.active and s.partner or (context and context.partnerId)
 		if
@@ -489,7 +476,6 @@ function AutoSpam.bindCharacter(character)
 		partner = nil,
 		pending = nil,
 		recoveryPartner = nil,
-		dashUntil = 0,
 		reason = "waiting",
 		generation = generation,
 	}
@@ -558,9 +544,7 @@ function AutoSpam.bindCharacter(character)
 			s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
 			return
 		end
-		if not gameInfo.areAbilitiesEnabled() then
-			s.dashUntil, s.dashData = 0, nil
-		elseif autoEnabled or upDashEnabled or clashContext then
+		if gameInfo.areAbilitiesEnabled() and (autoEnabled or upDashEnabled or clashContext) then
 			dash.tick(time, true)
 		end
 		evaluate(s, time, false)
@@ -631,7 +615,7 @@ function AutoSpam.stopSpam()
 	if current then stop(current, "stop_spam", false) end
 end
 function AutoSpam.getPullEvent() return nil end
-function AutoSpam.getDashData() return current and now() <= current.dashUntil and current.dashData or nil end
+function AutoSpam.getDashData() return nil end
 function AutoSpam.getTargetSwitch()
 	local s = current
 	return {
