@@ -47,9 +47,10 @@ local state = {
 -- tuning
 local T = {
 	BASE_RADIUS = 8.5,
-	BASE_WINDOW = 0.60,
+	BASE_WINDOW = 0.45,
 	GAME_BASE_WINDOW = 0.85,
-	MIN_WINDOW = 0.20,
+	MIN_WINDOW = 0.25,
+	GAME_MIN_WINDOW = 0.20,
 	BONUS_CAP = 7.5,
 	RESILIENCE_STEP = 0.225,
 	DEFAULT_WINDOW_FACTOR = 0.40,
@@ -131,7 +132,7 @@ local function radius(speed, factor, baseWindow)
 	local fraction = math.clamp((speed - low) / (high - low), 0, 1); local window = T.BASE_WINDOW + (T.MIN_WINDOW - T.BASE_WINDOW) * fraction
 	if (baseWindow == nil or baseWindow == "game") and gameInfo then
 		local actual = gameInfo.getDeflectWindow(speed)
-		if finite(actual) and actual > 0 then window = math.max(0, actual - (T.GAME_BASE_WINDOW - T.BASE_WINDOW) * (1 - fraction)) end
+		if finite(actual) and actual > 0 then window = math.max(0, actual + (T.BASE_WINDOW - T.GAME_BASE_WINDOW) * (1 - fraction) + (T.MIN_WINDOW - T.GAME_MIN_WINDOW) * fraction) end
 	elseif finite(baseWindow) and baseWindow > 0 then
 		window = baseWindow
 	end
