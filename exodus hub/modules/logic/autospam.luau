@@ -21,7 +21,6 @@ local T = {
 		MIN_SPEED_DISTANCE = 20,
 		MAX_SPEED_DISTANCE = 55,
 		DISTANCE_REACTIVATION_DELAY = 0.2,
-		DIRECTION_ALIGNMENT = 0.9,
 		MIN_SPEED_TIMEOUT = 0.2975,
 		MAX_SPEED_TIMEOUT = 0.07,
 		START_DELAY = 0.12,
@@ -315,30 +314,6 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		and s.lastSwitchAt and s.switchTimeout and time - s.lastSwitchAt > s.switchTimeout then
 		return "switch_timeout"
 	end
-	if snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported
-		and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt <= T.SHARED.SNAPSHOT_MAX_AGE then
-		local radius = closeRadius(snapshot)
-		local partnerPosition = gameInfo.getPlayerMotion(s.partner)
-		if radius and typeof(partnerPosition) == "Vector3" then
-			local ownPosition = s.root.Position
-			local axis = partnerPosition - ownPosition
-			local fromBallToMe = ownPosition - snapshot.position
-			local fromBallToPartner = partnerPosition - snapshot.position
-			local velocity = snapshot.velocity
-			if axis.Magnitude > 0 and axis.Magnitude <= radius and fromBallToMe.Magnitude > radius
-				and velocity.Magnitude > 1
-				and math.abs(velocity:Dot(axis) / (velocity.Magnitude * axis.Magnitude)) < T.DEACTIVATION.DIRECTION_ALIGNMENT
-				and velocity:Dot(fromBallToMe) < 0 and velocity:Dot(fromBallToPartner) < 0 then
-				return "ball_diverted"
-			end
-		end
-	end
-	local target = snapshot and userId(snapshot.targetId) or s.target
-	if targetChanged and target and target ~= localPlayer.UserId and target ~= s.partner and snapshot then
-		local g = geometry(s, snapshot, 1)
-		local distance = distanceToPlayer(s, target)
-		if g and distance and distance > g.fullRadius then return "distant_target" end
-	end
 	return nil
 end
 
@@ -346,13 +321,11 @@ local function applyDeactivation(s, snapshot, time, serverTime, targetChanged)
 	if not s.active then return false end
 	local reason = shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not reason then return false end
-	local redirected = reason == "distant_target" or reason == "ball_diverted"
 	if reason == "opponent_distance" or reason == "ball_distance" or reason == "distance_unavailable" then
 		s.distanceLockPartner = s.partner
 		s.distanceLockUntil = time + T.DEACTIVATION.DISTANCE_REACTIVATION_DELAY
 	end
-	stop(s, reason, redirected)
-	if redirected then utils.setManualSpamActive(false) end
+	stop(s, reason, false)
 	return true
 end
 
