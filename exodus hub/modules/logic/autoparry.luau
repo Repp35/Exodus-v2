@@ -29,8 +29,13 @@ local state = {
 	speed = 0,
 	distance = 0,
 	approaching = false,
+	closingSpeed = 0,
+	triggerDistance = 0,
 	ping = 0,
+	pingRaw = nil,
 	pingAt = 0,
+	pingSamples = {},
+	pingTotal = 0,
 	lastFireAt = 0,
 	lastErrorAt = -math.huge,
 	clicks = {},
@@ -49,6 +54,7 @@ local T = {
 	RESILIENCE_STEP = 0.225,
 	DEFAULT_WINDOW_FACTOR = 0.40,
 	PING_SAMPLE_INTERVAL = 0.25,
+	PING_SAMPLES = 8,
 	PRESSURE_SAMPLE_LIMIT = 100,
 	PRESSURE_WINDOW = 3,
 	TARGET_SEQUENCE_MODULUS = 65536,
@@ -85,7 +91,9 @@ local function resetTracking()
 	state.target, state.targetKnown, state.lastTargeted = -1, false, false
 	state.teleported, state.teleportSequence, state.sequence = false, nil, nil
 	state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
-	state.ping, state.pingAt, state.lastFireAt = 0, 0, 0
+	state.closingSpeed, state.triggerDistance = 0, 0
+	state.ping, state.pingRaw, state.pingAt, state.pingTotal, state.lastFireAt = 0, nil, 0, 0, 0
+	table.clear(state.pingSamples)
 	state.awayAt, state.awayTarget = nil, nil
 	table.clear(state.clicks); table.clear(state.returns)
 end
@@ -129,20 +137,40 @@ local function radius(speed, factor, baseWindow)
 	end
 	factor = tonumber(factor)
 	if not finite(factor) then factor = configuredFactor() end
-	factor = math.clamp(factor, 0, 1); return gameInfo.getDeflectGeometry(speed, window, factor, false)
+	factor = math.clamp(factor, 0, 1); return gameInfo.getDeflectGeometry(speed, window, factor, false, state.ping)
 end
 
 -- telemetry
 local function samplePing(time)
-	if time >= state.pingAt and time - state.pingAt < T.PING_SAMPLE_INTERVAL then return end
+	if state.pingRaw ~= nil and time >= state.pingAt and time - state.pingAt < T.PING_SAMPLE_INTERVAL then return end
 	state.pingAt = time; local value = gameInfo.getLocalPing()
-	if finite(value) and value >= 0 then state.ping = value end
+	if not finite(value) or value < 0 then return end
+	state.pingRaw = value
+	local samples = state.pingSamples
+	samples[#samples + 1] = value; state.pingTotal += value
+	if #samples > T.PING_SAMPLES then state.pingTotal -= table.remove(samples, 1) end
+	state.ping = state.pingTotal / #samples
 end
 local function appendRecent(list, item)
 	list[#list + 1] = item
 	while #list > T.PRESSURE_SAMPLE_LIMIT do
 		table.remove(list, 1)
 	end
+end
+
+-- Project the actual velocity onto the line to the player.
+-- Tangential movement in a curve cannot be treated as direct closing speed.
+local function trajectory(position, velocity, rootPosition, nominalSpeed, geometry)
+	local delta = rootPosition - position
+	local distance = delta.Magnitude
+	local magnitude = velocity.Magnitude
+	local closing = 0
+	if distance > 0 and magnitude > 0 then
+		closing = velocity:Dot(delta) / distance
+		if finite(nominalSpeed) and nominalSpeed > 0 then closing = math.min(closing, nominalSpeed * 1.1) end
+	end
+	local threshold = geometry.noWindowParryRadius + math.max(0, closing) * geometry.effectiveWindow
+	return distance, closing, threshold
 end
 
 -- target-sync
@@ -219,12 +247,18 @@ local function tick(character, root, generation)
 	if state.teleported or value.teleported then phase("waiting", "teleport_lock"); return end
 	if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
 	if state.fired then phase("waiting", "target_already_parried"); return end
+	if value.locked == true then state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0; phase("waiting", "ball_locked"); return end
 	local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if typeof(value.ball) ~= "Instance" or not value.ball.Parent or not value.ball:IsA("BasePart") then return end
-	state.lastBall, state.speed = value.ball, velocity.Magnitude
-	state.distance = (rootPosition - position).Magnitude; state.approaching = velocity:Dot(rootPosition - position) > 0
-	if state.distance <= radius(state.speed, configuredFactor()).fullRadius then request("parry_requested") end
+	local syncSpeed = tonumber(value.syncSpeed)
+	local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
+	local geometry = radius(speed, configuredFactor())
+	if not geometry then return end
+	local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry)
+	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
+	state.closingSpeed, state.triggerDistance = closing, threshold
+	if closing > 0 and distance <= threshold then request("parry_requested") end
 end
 
 -- setup
@@ -437,7 +471,9 @@ function AutoParry.getStatus()
 			ti = geometry.tti,
 			speed = state.speed,
 			distance = state.distance,
-			distanceToRadius = state.distance - geometry.fullRadius,
+			distanceToRadius = state.distance - state.triggerDistance,
+			triggerDistance = state.triggerDistance,
+			closingSpeed = state.closingSpeed,
 			deflectWindow = geometry.deflectWindow,
 			effectiveWindow = geometry.effectiveWindow,
 			leadTime = geometry.leadTime,
@@ -446,7 +482,7 @@ function AutoParry.getStatus()
 			approaching = state.approaching,
 		},
 
-		ping = { oneWay = state.ping, raw = state.ping, minimum = nil },
+		ping = { oneWay = state.ping, raw = state.pingRaw, samples = #state.pingSamples },
 		target = target,
 		pressure = AutoParry.getPressure(),
 		cycle = { fired = state.fired, armed = not state.fired, lastFireAt = state.lastFireAt, lastTTI = geometry.tti },

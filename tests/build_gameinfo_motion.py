@@ -10,6 +10,7 @@ mt.__add=function(a,b) return setmetatable({X=a.X+b.X,Y=a.Y+b.Y,Z=a.Z+b.Z},mt) e
 mt.__sub=function(a,b) return setmetatable({X=a.X-b.X,Y=a.Y-b.Y,Z=a.Z-b.Z},mt) end
 mt.__mul=function(a,b) return setmetatable({X=a.X*b,Y=a.Y*b,Z=a.Z*b},mt) end
 mt.__div=function(a,b) return a*(1/b) end
+math.clamp=function(v,a,b) return math.max(a,math.min(b,v)) end
 local function vec(x,y,z) return setmetatable({X=x,Y=y or 0,Z=z or 0},mt) end
 local Vector3={zero=vec(0)}
 local function typeof(value) if getmetatable(value)==mt then return 'Vector3' elseif type(value)=='table' and value.instance then return 'Instance' end return type(value) end
@@ -29,7 +30,7 @@ local function module()
 post=r'''
 end
 local info=module()
-assert(info.setup({Utils={now=os.clock,apiVersion=function() return 1 end,getPlayers=function() return {LocalPlayer={UserId=42}} end,getReplicatedStorage=function() return storage end,getWorkspace=function() return workspace end}}))
+assert(info.setup({Utils={now=os.clock,apiVersion=function() return 1 end,getPlayers=function() return {LocalPlayer={UserId=42,GetAttribute=function() return 8.5 end,GetNetworkPing=function() return .5 end}} end,getReplicatedStorage=function() return storage end,getWorkspace=function() return workspace end}}))
 local first=info.getSnapshotAt(1)
 assert(first.speed==0 and first.targeted and first.syncSequence==100)
 assert(info.isSnapshotValid(first))
@@ -49,22 +50,22 @@ assert(reset.speed==0 and reset.teleported and reset.syncSequence==101, 'telepor
 sync.Teleported=false; ball.Position=vec(-48.333333333)
 local after=info.getSnapshotAt(1.25+1/60)
 assert(after.speed>99 and after.speed<101, 'movement after teleport blocked')
-local packet=info.decodeBallPacket({seq=102,serverTime=123.5,teleported=false,grace=false,oldGrace=true,targetId=7,highlightId=7,position=vec(5),speed=100})
-assert(packet.Sequence==102 and packet.ServerTime==123.5 and packet.TargetPlayerID==7 and packet.OldGrace, 'packet mapping')
+local packet=info.decodeBallPacket({seq=102,serverTime=123.5,teleported=false,locked=true,grace=false,oldGrace=true,targetId=7,highlightId=7,position=vec(5),speed=100})
+assert(packet.Sequence==102 and packet.ServerTime==123.5 and packet.TargetPlayerID==7 and packet.OldGrace and packet.Locked, 'packet mapping')
 assert(not info.isSnapshotValid({ball=ball,position=vec(0),velocity=vec(0),speed=0/0,targetId=42,targeted=true}), 'NaN speed accepted')
-local newest={Sequence=102,TargetPlayerID=7,Speed=100,Teleported=false}
+local newest={Sequence=102,TargetPlayerID=7,Speed=100,Teleported=false,Locked=true}
 assert(info.applyPacket(newest), 'new packet should be accepted immediately')
 assert(info.getTargetId()==7 and info.getSyncSequence()==102 and info.getSnapshotAt(1.3).targetId==7, 'snapshot must use the newest packet before provider refresh')
+assert(info.getSnapshotAt(1.3).locked == true, 'locked packet was lost')
 assert(not info.applyPacket({Sequence=101,TargetPlayerID=42}), 'older packets must not replace the target')
 provider.lastSeq=102; sync.TargetPlayerID=7
 assert(info.getSyncData()==sync and info.getSyncSequence()==102, 'provider should resume when it catches up')
 provider.lastSeq=65535
 assert(info.applyPacket({Sequence=0,TargetPlayerID=42,Speed=100}), 'wrapped sequence must be accepted')
 assert(info.getTargetId()==42, 'wrapped packet must update target')
-info.getDeflectWindow=function() return 0.4 end
-info.noteDeflectPress()
-local cooldown=info.getDeflectCooldownState()
-assert(cooldown.attempt and cooldown.blocking and cooldown.attempt.targetId==42, 'a Deflect invocation must be tracked without LastPressClock')
+local meanGeometry=info.getDeflectGeometry(100, .2, .4, false, .08)
+local rawGeometry=info.getDeflectGeometry(100, .2, .4, false)
+assert(math.abs(meanGeometry.pingRadius-3.2)<.0001 and math.abs(rawGeometry.pingRadius-20)<.0001, 'ping override must only affect callers that provide it')
 print('GameInfo motion and packet scenarios: PASS')
 '''
 out.write_text(pre+source+post, encoding='utf-8')

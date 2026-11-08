@@ -359,6 +359,7 @@ function GameInfo.decodeBallPacket(value)
 		ServerTime = decoded.serverTime,
 		TeleportSequence = decoded.seq,
 		Teleported = decoded.teleported,
+		Locked = decoded.locked,
 		Grace = decoded.grace,
 		OldGrace = decoded.oldGrace,
 		TargetPlayerID = decoded.targetId,
@@ -403,6 +404,7 @@ local function snapshot(time)
 		targetId = target,
 		targeted = players.LocalPlayer ~= nil and target == players.LocalPlayer.UserId,
 		teleported = sync and sync.Teleported == true or false,
+		locked = sync and sync.Locked == true or false,
 		grace = sync and sync.Grace == true or false,
 		oldGrace = sync and sync.OldGrace == true or false,
 		syncAt = syncReceivedAt,
@@ -477,13 +479,13 @@ function GameInfo.getBallFrozen()
 	if not data then return nil end
 	return data:GetAttribute("Frozen") == true
 end
-function GameInfo.getDeflectGeometry(speed, window, factor, scaleBase)
+function GameInfo.getDeflectGeometry(speed, window, factor, scaleBase, latencyOverride)
 	if not finite(speed) or speed < 0 then return nil end
 	local range = GameInfo.getDeflectRange()
 	if not finite(range) or range <= 0 then range = T.RANGE_BASE end
 	if not finite(window) then window = GameInfo.getDeflectWindow(speed) end
 	if not finite(window) or window <= 0 then return nil end
-	local latency = GameInfo.getLocalPing()
+	local latency = finite(latencyOverride) and latencyOverride or GameInfo.getLocalPing()
 	if not finite(latency) or latency < 0 then latency = 0 end
 	factor = finite(factor) and math.max(0, factor) or 1; local base = scaleBase and range * factor or range
 	return {
