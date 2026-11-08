@@ -205,7 +205,8 @@ end
 
 -- parry
 local function request(reason)
-	if state.fired or not state.player or state.target ~= state.player.UserId then return false end
+	local redirectReturn = reason == "redirect_return"
+	if state.fired or not state.player or (not redirectReturn and state.target ~= state.player.UserId) then return false end
 	local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote; local firedAt, speed, distance = clock(), state.speed, state.distance
 	state.fired, state.lastFireAt = true, firedAt
 	local function sameCycle()
@@ -217,7 +218,7 @@ local function request(reason)
 			and state.bound
 			and state.fired
 			and state.player ~= nil
-			and state.target == state.player.UserId
+			and (redirectReturn or state.target == state.player.UserId)
 	end
 	local function allowed()
 		return sameCycle()
@@ -304,6 +305,35 @@ function AutoParry.fire()
 	if not state.player or state.target ~= state.player.UserId then return false end
 	if state.distance > radius(state.speed, configuredFactor()).fullRadius then return false end
 	return request("manual_parry")
+end
+function AutoParry.tryRedirectReturn(value, redirectAt)
+	if not state.alive or not state.bound or not state.player or state.teleported then return false end
+	if not state.root or not state.root.Parent then return false end
+	if not utils.isActive() or utils.isSpamActive() or utils.getConfigValue("AutoParry") == false then return false end
+	if not gameInfo.isSnapshotValid(value) or value.teleported or value.locked then return false end
+	local time = clock()
+	if not observeSnapshot(value, time) then return false end
+	if state.fired and finite(redirectAt) and state.lastFireAt >= redirectAt then return true end
+	local position, velocity = value.position, value.velocity
+	local own = gameInfo.getRootPosition(state.root)
+	if not vector(position) or not vector(velocity) or not vector(own) then return false end
+	samplePing(time)
+	local speed = tonumber(value.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = velocity.Magnitude end
+	local g = radius(speed, configuredFactor())
+	if not g then return false end
+	local distance, closing, threshold = trajectory(position, velocity, own, speed, g)
+	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
+	state.closingSpeed, state.triggerDistance = closing, threshold
+	if closing <= 0 or distance > threshold then return false end
+	local alreadyFired, previousFireAt = state.fired, state.lastFireAt
+	local generation, cycle = state.generation, state.cycle
+	state.fired = false
+	local sent = request("redirect_return")
+	if not sent and state.generation == generation and state.cycle == cycle then
+		state.fired, state.lastFireAt = alreadyFired, previousFireAt
+	end
+	return sent
 end
 function AutoParry.resetState() detach("reset") end
 function AutoParry.detachCharacter() detach("detach") end
@@ -539,6 +569,7 @@ AutoParry.__contract = {
 		"teardown",
 		"onBallSync",
 		"fire",
+		"tryRedirectReturn",
 		"beginFierce",
 		"cancelFierce",
 		"resetState",
@@ -555,3 +586,4 @@ AutoParry.__contract = {
 }
 
 return AutoParry
+

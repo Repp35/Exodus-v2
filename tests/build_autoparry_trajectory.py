@@ -67,6 +67,15 @@ ping=.12; testTime=1.52; sample(testTime)
 assert(math.abs(state.ping-.08)<.0001)
 for i=1,8 do ping=.10; testTime=testTime+.26; sample(testTime) end
 assert(#state.pingSamples==8 and math.abs(state.ping-.10)<.0001, "ping samples not bounded")
+local before=fires
+snapshot.targetId=99; snapshot.position=vec(-12); snapshot.velocity=vec(60,597)
+local redirectAt=testTime-.1
+assert(ap.tryRedirectReturn(snapshot,redirectAt), "redirected ball did not parry without local target")
+assert(fires==before+1, "redirect must send one parry")
+assert(ap.tryRedirectReturn(snapshot,redirectAt) and fires==before+1, "redirect sent a double parry")
+testTime=testTime+.3; snapshot.targetId=-1
+assert(ap.tryRedirectReturn(snapshot,testTime-.1) and fires==before+2, "return must work with no target")
 print("Auto Parry trajectory and ping: PASS")
 '''
 output.write_text(script.replace("SOURCE", "[========[" + source + "]========]", 1))
+

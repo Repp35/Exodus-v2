@@ -35,7 +35,7 @@ local POLICIES = {
 	},
 	autoparry = {
 		provide = allow(
-			"setup bindCharacter fire beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"
+			"setup bindCharacter fire tryRedirectReturn beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"
 		),
 		consume = {
 			utils = allow(
@@ -52,6 +52,7 @@ local POLICIES = {
 			"setup bindCharacter detachCharacter teardown onBallSync isActive getPullEvent stopSpam getTargetSwitch getActivationContext getDashData getStatus"
 		),
 		consume = {
+			autoparry = allow("tryRedirectReturn"),
 			utils = allow(
 				"apiVersion createClashLog appendClashLog getConfig getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
 			),
@@ -228,3 +229,4 @@ Permissions.__contract = {
 }
 
 return Permissions
+

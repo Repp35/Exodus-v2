@@ -3,7 +3,7 @@
 local AutoSpam = {}
 
 -- dependencies
-local utils, gameInfo, players, runService, localPlayer
+local utils, gameInfo, autoParry, players, runService, localPlayer
 
 -- state
 local current, generation = nil, 0
@@ -24,6 +24,9 @@ local T = {
 		MIN_SPEED_TIMEOUT = 0.2975,
 		MAX_SPEED_TIMEOUT = 0.07,
 		START_DELAY = 0.12,
+		DIRECTION_ALIGNMENT = 0.85,
+		AWAY_ALIGNMENT = 0.25,
+		RETURN_TRACK_DURATION = 2,
 	},
 	SHARED = {
 		MIN_RETURN = 1 / 25,
@@ -254,13 +257,14 @@ end
 
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
-	if s.active then return end
+	if s.active or s.redirectUntil or s.returnParriedTarget then return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if s.distanceLockPartner then
 		if time < s.distanceLockUntil or distanceGate(s, snapshot, s.distanceLockPartner) then return end
 		s.distanceLockPartner, s.distanceLockUntil = nil, nil
 	end
 	if distanceGate(s, snapshot, partner) then return end
+	s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner, s.redirectWatch = nil, nil, nil, nil, nil, nil
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.activatedAt, s.switchTimeout = time, nil
@@ -301,6 +305,10 @@ end
 local function stopBoth(s, reason)
 	stop(s, reason, false)
 	s.recoveryPartner, s.manualPartner, s.manualWasActive = nil, nil, false
+	s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner = nil, nil, nil, nil, nil
+	s.redirectWatch = nil
+	s.returnParriedTarget = nil
+	s.haunterPartner, s.haunterUntil = nil, nil
 	utils.setManualSpamActive(false)
 end
 local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
@@ -314,6 +322,30 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		and s.lastSwitchAt and s.switchTimeout and time - s.lastSwitchAt > s.switchTimeout then
 		return "switch_timeout"
 	end
+	if not snapshot or not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return nil end
+	local target = userId(snapshot.targetId)
+	if target and target ~= localPlayer.UserId and target ~= s.partner then
+		local g = geometry(s, snapshot, 1)
+		local distance = distanceToPlayer(s, target)
+		if not g or not finite(distance) then return nil end
+		if distance <= g.fullRadius then return nil end
+		if targetChanged then return "distant_target" end
+	end
+	if not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return nil end
+	local radius = closeRadius(snapshot)
+	local partnerPosition = gameInfo.getPlayerMotion(s.partner)
+	local velocity = snapshot.velocity
+	if not radius or typeof(partnerPosition) ~= "Vector3" or typeof(velocity) ~= "Vector3" or velocity.Magnitude <= 1 then return nil end
+	local own = s.root.Position
+	local axis = partnerPosition - own
+	local towardMe, towardPartner = own - snapshot.position, partnerPosition - snapshot.position
+	if axis.Magnitude <= 0 or towardMe.Magnitude <= radius or towardPartner.Magnitude <= 0 then return nil end
+	local speed = velocity.Magnitude
+	if math.abs(velocity:Dot(axis) / (speed * axis.Magnitude)) < T.DEACTIVATION.DIRECTION_ALIGNMENT
+		and velocity:Dot(towardMe) / (speed * towardMe.Magnitude) < -T.DEACTIVATION.AWAY_ALIGNMENT
+		and velocity:Dot(towardPartner) / (speed * towardPartner.Magnitude) < -T.DEACTIVATION.AWAY_ALIGNMENT then
+		return "ball_diverted"
+	end
 	return nil
 end
 
@@ -321,11 +353,20 @@ local function applyDeactivation(s, snapshot, time, serverTime, targetChanged)
 	if not s.active then return false end
 	local reason = shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not reason then return false end
+	local redirected = reason == "distant_target" or reason == "ball_diverted"
+	if redirected then
+		s.redirectAt = time
+		s.redirectUntil = time + T.DEACTIVATION.RETURN_TRACK_DURATION
+		s.redirectWatch = true
+		s.redirectAway = true
+		s.redirectPartner = s.partner
+	end
 	if reason == "opponent_distance" or reason == "ball_distance" or reason == "distance_unavailable" then
 		s.distanceLockPartner = s.partner
 		s.distanceLockUntil = time + T.DEACTIVATION.DISTANCE_REACTIVATION_DELAY
 	end
-	stop(s, reason, false)
+	stop(s, reason, redirected)
+	if redirected then utils.setManualSpamActive(false) end
 	return true
 end
 
@@ -344,6 +385,8 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	syncManualPartner(s)
 	if not target or target == s.target then return end
 	local previous, me = s.target, localPlayer.UserId
+	if target ~= me then s.returnParriedTarget = nil end
+	if s.redirectAway and target == me and previous ~= me then s.redirectReturning = true end
 	if not s.active and s.pending then s.pending = nil end
 	if utils.isManualSpamActive() and not s.manualPartner then
 		if previous == me and target ~= me then s.manualPartner = target elseif previous and previous ~= me and target == me then s.manualPartner = previous end
@@ -391,6 +434,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	if utils.getConfigValue("AutoSpam") ~= true then
 		if s.active then stop(s, "disabled", false) end
 		s.pending, s.recoveryPartner, s.departedAt, s.departedTo = nil, nil, nil, nil
+		s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner, s.redirectWatch = nil, nil, nil, nil, nil, nil
 	end
 	syncManualPartner(s)
 	if gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
@@ -400,11 +444,26 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
 	local target = userId(snapshot.targetId); observeClashStats(s, snapshot, time, fresh)
+	if s.redirectWatch and not s.active then
+		if s.redirectUntil and time > s.redirectUntil then s.redirectUntil = nil end
+		if s.redirectReturning or s.redirectAway then
+			local toMe = s.root.Position - snapshot.position
+			if typeof(snapshot.velocity) == "Vector3" and snapshot.velocity:Dot(toMe) > 0 then
+				s.redirectReturning = true
+				if autoParry.tryRedirectReturn(snapshot, s.redirectAt) then
+					s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner = nil, nil, nil, nil, nil
+					s.redirectWatch = nil
+					s.returnParriedTarget = true
+					blockedActivation = true
+				end
+			end
+		end
+	end
 	if fresh and utils.isManualSpamActive() then
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
 		if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
 	end
-	if not s.active and not blockedActivation and shouldActivate(s, snapshot, time) then
+	if not s.active and not blockedActivation and not s.redirectUntil and not s.returnParriedTarget and shouldActivate(s, snapshot, time) then
 		local activationServerTime = serverTime
 		if not fresh then activationServerTime = snapshot.serverTime end
 		start(s, s.pending.closeReturn and "close_return" or (s.pending.recovery and "recovery" or "return_target"), s.pending.partner, time, activationServerTime, snapshot)
@@ -429,9 +488,9 @@ local function detach(reason)
 	generation += 1
 end
 function AutoSpam.setup(deps)
-	if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo then return false, "dependências ausentes" end
+	if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.AutoParry then return false, "dependências ausentes" end
 	if current then detach("setup") end
-	utils, gameInfo = deps.Utils, deps.GameInfo; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
+	utils, gameInfo, autoParry = deps.Utils, deps.GameInfo, deps.AutoParry; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
 	if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
 	return true
 end
@@ -449,6 +508,7 @@ function AutoSpam.bindCharacter(character)
 		recoveryPartner = nil,
 		reason = "waiting",
 		generation = generation,
+		lastRootPosition = root.Position,
 	}
 
 	current = s
@@ -463,6 +523,37 @@ function AutoSpam.bindCharacter(character)
 			if current ~= s or s.active or not s.root.Parent or not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return end
 			if not gameInfo.areAbilitiesEnabled() or gameInfo.getBallFrozen() == true then return end
 			if typeof(from) ~= "CFrame" or typeof(destination) ~= "CFrame" then return end
+			local targetId = userId(gameInfo.getTargetId())
+			local ownId = localPlayer.UserId
+			local ownWasAtSource = typeof(s.lastRootPosition) == "Vector3" and (s.lastRootPosition - from.Position).Magnitude <= T.ACTIVATION.HAUNTER_MATCH_RADIUS
+			local eventTime = now()
+			if not ownWasAtSource and s.recentRootPosition and eventTime - s.recentRootAt <= 0.75 then
+				ownWasAtSource = (s.recentRootPosition - from.Position).Magnitude <= T.ACTIVATION.HAUNTER_MATCH_RADIUS
+			end
+			local otherTarget = targetId ~= ownId and targetId or (s.target ~= ownId and s.target or nil)
+			if ownWasAtSource and targetId == ownId and not otherTarget then
+				local bestDistance
+				for _, player in ipairs(players:GetPlayers()) do
+					if player ~= localPlayer and playerIsAlive(player.UserId) then
+						local position = gameInfo.getPlayerMotion(player.UserId)
+						if typeof(position) == "Vector3" then
+							local distance = (position - destination.Position).Magnitude
+							if distance <= T.ACTIVATION.HAUNTER_RANGE and (not bestDistance or distance < bestDistance) then
+								otherTarget, bestDistance = player.UserId, distance
+							end
+						end
+					end
+				end
+			end
+			if otherTarget and ownWasAtSource and (targetId == ownId or targetId == otherTarget) then
+				local targetPosition = gameInfo.getPlayerMotion(otherTarget)
+				if typeof(targetPosition) == "Vector3" and playerIsAlive(otherTarget)
+					and (targetPosition - destination.Position).Magnitude <= T.ACTIVATION.HAUNTER_RANGE then
+					s.haunterPartner, s.haunterUntil = otherTarget, eventTime + 0.75
+					start(s, "haunter_self", otherTarget, eventTime, nil)
+					return
+				end
+			end
 			if (destination.Position - s.root.Position).Magnitude > T.ACTIVATION.HAUNTER_RANGE then return end
 			local caster, best
 			for _, player in ipairs(players:GetPlayers()) do
@@ -502,6 +593,14 @@ function AutoSpam.bindCharacter(character)
 		if current ~= s then return end
 		if not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent then connectHaunter() end
 		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now()
+		if s.haunterPartner then
+			local target = userId(gameInfo.getTargetId())
+			if s.active or time > s.haunterUntil or not autoEnabled or not utils.isActive() then
+				s.haunterPartner, s.haunterUntil = nil, nil
+			elseif target == localPlayer.UserId or target == s.haunterPartner then
+				start(s, "haunter_self", s.haunterPartner, time, nil)
+			end
+		end
 		if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then finishClashStats("clash encerrado", clashStats.lastObserved) end
 		if
 			not autoEnabled
@@ -516,6 +615,10 @@ function AutoSpam.bindCharacter(character)
 			return
 		end
 		evaluate(s, time, false)
+		if typeof(s.lastRootPosition) == "Vector3" and (s.root.Position - s.lastRootPosition).Magnitude > T.ACTIVATION.HAUNTER_RANGE then
+			s.recentRootPosition, s.recentRootAt = s.lastRootPosition, time
+		end
+		s.lastRootPosition = s.root.Position
 	end)
 	track(s, character.AncestryChanged, function(_, parent)
 		if not parent and current == s then detach("character_removed") end
@@ -525,7 +628,7 @@ end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
 	detach("teardown")
-	utils, gameInfo, players, runService, localPlayer = nil, nil, nil, nil, nil
+	utils, gameInfo, autoParry, players, runService, localPlayer = nil, nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
 	local s = current
@@ -542,6 +645,10 @@ function AutoSpam.onBallSync(data)
 	if data.Teleported == true then
 		stop(s, "teleported", false)
 		s.target, s.recoveryPartner = nil, nil
+		s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner = nil, nil, nil, nil, nil
+		s.redirectWatch = nil
+		s.returnParriedTarget = nil
+		s.haunterPartner, s.haunterUntil = nil, nil
 		return
 	end
 	if
@@ -628,8 +735,9 @@ end
 
 -- contract
 AutoSpam.__contract = {
-	requires = { Utils = "utils", GameInfo = "gameinfo" },
+	requires = { Utils = "utils", GameInfo = "gameinfo", AutoParry = "autoparry" },
 	requiresMethods = {
+		AutoParry = { "tryRedirectReturn" },
 		Utils = {
 			"now",
 			"createClashLog",
@@ -684,3 +792,4 @@ AutoSpam.__contract = {
 }
 
 return AutoSpam
+
