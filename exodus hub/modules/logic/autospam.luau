@@ -20,6 +20,7 @@ local T = {
 	DEACTIVATION = {
 		MIN_SPEED_DISTANCE = 20,
 		MAX_SPEED_DISTANCE = 55,
+		DISTANCE_REACTIVATION_DELAY = 0.2,
 		DIRECTION_ALIGNMENT = 0.9,
 		MIN_SPEED_TIMEOUT = 0.2975,
 		MAX_SPEED_TIMEOUT = 0.07,
@@ -60,6 +61,21 @@ local function distanceLimit(snapshot)
 	if not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
 	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
 	return T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor, factor
+end
+-- Uses the same player positions as the clash panel, plus the current ball position.
+local function distanceGate(s, snapshot, partner)
+	local limit, factor = distanceLimit(snapshot)
+	if not limit or not s.root or not s.root.Parent or not partner or not snapshot or typeof(snapshot.position) ~= "Vector3" then
+		return "distance_unavailable", nil, factor
+	end
+	local other = gameInfo.getPlayerMotion(partner)
+	if typeof(other) ~= "Vector3" then return "distance_unavailable", limit, factor end
+	local own = s.root.Position
+	local opponentDistance = (other - own).Magnitude
+	local ballDistance = (snapshot.position - own).Magnitude
+	if opponentDistance > limit then return "opponent_distance", limit, factor end
+	if ballDistance > limit then return "ball_distance", limit, factor end
+	return nil, limit, factor
 end
 local function playerIsAlive(id)
 	local player = id and players:GetPlayerByUserId(id); local character = player and player.Character; local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid"); return humanoid ~= nil and humanoid.Health > 0
@@ -240,9 +256,12 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
 	if s.active then return end
-	local limit = distanceLimit(snapshot or gameInfo.getSnapshotAt(time))
-	local distance = distanceToPlayer(s, partner)
-	if not limit or not finite(distance) or distance > limit then return end
+	snapshot = snapshot or gameInfo.getSnapshotAt(time)
+	if s.distanceLockPartner then
+		if time < s.distanceLockUntil or distanceGate(s, snapshot, s.distanceLockPartner) then return end
+		s.distanceLockPartner, s.distanceLockUntil = nil, nil
+	end
+	if distanceGate(s, snapshot, partner) then return end
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.activatedAt, s.switchTimeout = time, nil
@@ -289,12 +308,9 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	local limit, factor = distanceLimit(snapshot)
-	if limit then
-		local distance = distanceToPlayer(s, s.partner)
-		if finite(distance) and distance > limit then return "opponent_distance" end
-		s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
-	end
+	local distanceReason, limit, factor = distanceGate(s, snapshot, s.partner)
+	if distanceReason then return distanceReason end
+	s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
 	if s.activatedAt and time - s.activatedAt >= T.DEACTIVATION.START_DELAY
 		and s.lastSwitchAt and s.switchTimeout and time - s.lastSwitchAt > s.switchTimeout then
 		return "switch_timeout"
@@ -331,6 +347,10 @@ local function applyDeactivation(s, snapshot, time, serverTime, targetChanged)
 	local reason = shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not reason then return false end
 	local redirected = reason == "distant_target" or reason == "ball_diverted"
+	if reason == "opponent_distance" or reason == "ball_distance" or reason == "distance_unavailable" then
+		s.distanceLockPartner = s.partner
+		s.distanceLockUntil = time + T.DEACTIVATION.DISTANCE_REACTIVATION_DELAY
+	end
 	stop(s, reason, redirected)
 	if redirected then utils.setManualSpamActive(false) end
 	return true
