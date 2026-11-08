@@ -26,13 +26,16 @@ local MODULE_MANIFEST = {
 	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
 	{ name = "utils", path = "modules/logic/utils.luau" },
 	{ name = "gameinfo", path = "modules/logic/gameinfo.luau" },
-	{ name = "autodark", path = "modules/logic/autodark.luau" },
+	{ name = "autodark", path = "modules/logic/extras/autodark.luau" },
 	{ name = "movement", path = "modules/logic/movement.luau" },
+	{ name = "autojump", path = "modules/logic/extras/autojump.luau" },
+	{ name = "camera", path = "modules/logic/extras/camera.luau" },
 	{ name = "remote", path = "modules/logic/remote.luau" },
-	{ name = "autofierce", path = "modules/logic/autofierce.luau" },
+	{ name = "autofierce", path = "modules/logic/extras/autofierce.luau" },
 	{ name = "autoparry", path = "modules/logic/autoparry.luau" },
 	{ name = "dash", path = "modules/logic/dash.luau" },
 	{ name = "autospam", path = "modules/logic/autospam.luau" },
+	{ name = "autodash", path = "modules/logic/extras/autodash.luau" },
 	{ name = "spam", path = "modules/logic/spam.luau" },
 	{ name = "character", path = "modules/logic/character.luau" },
 	{ name = "ui", path = "modules/front/ui.luau" },
@@ -121,7 +124,7 @@ local function clearRegistry()
 end
 local function stopPreviousRuntime()
 	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then Modules.gameinfo.stopMaintenance() end
-	for _, name in ipairs({ "character", "spam", "autospam", "autodark", "autofierce", "movement", "dash", "autoparry" }) do
+	for _, name in ipairs({ "character", "spam", "autodash", "autospam", "autodark", "autofierce", "autojump", "camera", "movement", "dash", "autoparry" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
 			if type(module.teardown) == "function" then module.teardown() elseif type(module.resetState) == "function" then module.resetState() end
@@ -478,7 +481,7 @@ local function startInternal()
 		loaded.permissions.wrap("ui", "utils", utils),
 		{
 			onAutoDarkChanged = function() loaded.autodark.sync() end,
-			onAutoJumpChanged = function() loaded.movement.syncJump() end,
+			onAutoJumpChanged = function() loaded.autojump.sync() end,
 			onUpDash = function()
 				local ok, err = loaded.movement.upDash()
 				if not ok then utils.recordError("UpDash", err or "Dash indisponível") end

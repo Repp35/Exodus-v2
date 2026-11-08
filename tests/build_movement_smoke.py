@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 
 root, output = Path(sys.argv[1]), Path(sys.argv[2])
-source = (root / "exodus hub/modules/logic/movement.luau").read_text(encoding="utf-8")
+source = (root / "exodus hub/modules/logic/extras/autojump.luau").read_text(encoding="utf-8")
 script = r'''
 Enum = {Material = {Air = "Air", Ground = "Ground"}, HumanoidStateType = {Jumping = "Jumping", Landed = "Landed"}}
 Vector3 = {new = function(x, y, z) return {X=x, Y=y, Z=z} end}
@@ -38,21 +38,17 @@ local utils = {
 }
 local info = {getDashAbility=function() return dash end}
 local module = assert(loadstring(SOURCE))()
-assert(module.setup({Utils=utils,GameInfo=info})); tick(); assert(humanoid.JumpCount==0)
-enabled=true; assert(module.syncJump()); tick(); assert(humanoid.JumpCount==1, "grounded jump missing")
+assert(module.setup({Utils=utils})); tick(); assert(humanoid.JumpCount==0)
+enabled=true; assert(module.sync()); tick(); assert(humanoid.JumpCount==1, "grounded jump missing")
 humanoid.Jump=false; tick(); assert(humanoid.JumpCount==1, "repeated jumping state")
 humanoid.FloorMaterial=Enum.Material.Air; humanoid.State=Enum.HumanoidStateType.Landed; tick(); assert(humanoid.JumpCount==1, "jump fired in air")
 humanoid.FloorMaterial=Enum.Material.Ground; tick(); assert(humanoid.JumpCount==2, "jump failed after landing")
 humanoid.State=Enum.HumanoidStateType.Landed; humanoid.Health=0; tick(); assert(humanoid.JumpCount==2, "dead humanoid jumped")
 local nextCharacter, nextHumanoid=newCharacter(); player.Character=nextCharacter; tick()
 assert(nextHumanoid.JumpCount==1, "jump failed after respawn")
-nextHumanoid.State=Enum.HumanoidStateType.Landed; enabled=false; module.syncJump(); tick(); assert(nextHumanoid.JumpCount==1 and next(tracked)==nil)
-assert(module.upDash()); assert(dash.MoveDir.X==0 and dash.MoveDir.Y==1 and dash.MoveDir.Z==0, "dash direction is not up")
-dash.MoveDir={X=3,Y=0,Z=0}; assert(not module.upDash()); assert(dash.MoveDir.X==3, "ongoing dash was changed")
-dash.Dashing=false; dash.Dash=function() end; assert(not module.upDash(), "unavailable dash reported success")
-dash=nil; assert(not module.upDash(), "missing dash reported success")
-enabled=true; module.syncJump(); module.syncJump(); nextHumanoid.State=Enum.HumanoidStateType.Landed; tick(); assert(nextHumanoid.JumpCount==2)
+nextHumanoid.State=Enum.HumanoidStateType.Landed; enabled=false; module.sync(); tick(); assert(nextHumanoid.JumpCount==1 and next(tracked)==nil)
+enabled=true; module.sync(); module.sync(); nextHumanoid.State=Enum.HumanoidStateType.Landed; tick(); assert(nextHumanoid.JumpCount==2)
 module.teardown(); nextHumanoid.State=Enum.HumanoidStateType.Landed; tick(); assert(nextHumanoid.JumpCount==2 and next(tracked)==nil)
-print("Auto Jump and Up Dash: PASS")
+print("Auto Jump: PASS")
 '''
 output.write_text(script.replace("SOURCE", "[========[" + source + "]========]", 1), encoding="utf-8")

@@ -1,7 +1,7 @@
 """Exercise local cooldown duration, target, ability availability, and resets."""
 from pathlib import Path
 import sys
-source = (Path(sys.argv[1]) / "exodus hub/modules/logic/autofierce.luau").read_text()
+source = (Path(sys.argv[1]) / "exodus hub/modules/logic/extras/autofierce.luau").read_text()
 source = source.replace("os.clock()", "clock")
 source = source.replace("return AutoFierce\n", "return AutoFierce, step\n")
 pre = "local clock = 0\nlocal function module()\n"

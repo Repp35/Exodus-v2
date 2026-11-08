@@ -58,8 +58,6 @@ local POLICIES = {
 			gameinfo = allow(
 				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRange getLocalPing getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getDeflectAbility getDeflectWindow getManifestRemote getSnapshot getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
 			),
-			dash = allow("setHandler tick"),
-			movement = allow("upDash dashToward"),
 		},
 	},
 	spam = {
@@ -92,11 +90,29 @@ local POLICIES = {
 		},
 	},
 	movement = {
-		provide = allow("syncJump upDash dashToward setup teardown"),
+		provide = allow("upDash dashToward setup teardown"),
 		consume = {
-			utils = allow("getConfigValue getLocalPlayer getRunService isActive trackGlobal untrackGlobal"),
+			utils = allow("isActive"),
 			gameinfo = allow("getDashAbility areAbilitiesEnabled"),
 			remote = allow("fireDash"),
+		},
+	},
+	autojump = {
+		provide = allow("setup sync teardown"),
+		consume = { utils = allow("getConfigValue getLocalPlayer getRunService isActive trackGlobal untrackGlobal") },
+	},
+	camera = {
+		provide = allow("setup teardown"),
+		consume = { utils = allow("getConfigValue getLocalPlayer isActive") },
+	},
+	autodash = {
+		provide = allow("setup bindCharacter detachCharacter teardown"),
+		consume = {
+			utils = allow("getPlayers getLocalPlayer getRunService getConfigValue isActive now trackCharacter untrackCharacter"),
+			gameinfo = allow("areAbilitiesEnabled getClashContext"),
+			dash = allow("setHandler tick"),
+			movement = allow("upDash dashToward"),
+			autospam = allow("getActivationContext"),
 		},
 	},
 	dash = {
@@ -115,6 +131,7 @@ local POLICIES = {
 			spam = allow("resetState"),
 			autoparry = allow("bindCharacter detachCharacter"),
 			autospam = allow("bindCharacter detachCharacter"),
+			autodash = allow("bindCharacter detachCharacter"),
 		},
 	},
 	ui = {

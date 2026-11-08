@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 
 root, output = Path(sys.argv[1]), Path(sys.argv[2])
-source = (root / "exodus hub/modules/logic/autodark.luau").read_text(encoding="utf-8")
+source = (root / "exodus hub/modules/logic/extras/autodark.luau").read_text(encoding="utf-8")
 script = r'''
 local sends, errors, tracked = {}, {}, {}
 local function signal()

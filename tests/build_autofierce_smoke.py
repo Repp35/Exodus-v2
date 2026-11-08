@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 
 root, output = Path(sys.argv[1]), Path(sys.argv[2])
-source = (root / "exodus hub/modules/logic/autofierce.luau").read_text()
+source = (root / "exodus hub/modules/logic/extras/autofierce.luau").read_text()
 source = source.replace("return AutoFierce\n", "return {api=AutoFierce, step=step, generation=function() return generation end}\n")
 pre = '''local mt={}
 mt.__index=function(t,k) if k=="Magnitude" then return math.abs(t.x) elseif k=="Dot" then return function(a,b) return a.x*b.x end end end
