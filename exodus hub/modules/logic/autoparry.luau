@@ -33,9 +33,7 @@ local state = {
 	triggerDistance = 0,
 	ping = 0,
 	pingRaw = nil,
-	pingAt = 0,
-	pingSamples = {},
-	pingTotal = 0,
+	pingCount = 0,
 	lastFireAt = 0,
 	lastErrorAt = -math.huge,
 	clicks = {},
@@ -46,23 +44,14 @@ local state = {
 
 -- tuning
 local T = {
-	BASE_RADIUS = 8.5,
-	BASE_WINDOW = 0.45,
-	GAME_BASE_WINDOW = 0.85,
-	MIN_WINDOW = 0.25,
-	GAME_MIN_WINDOW = 0.20,
 	BONUS_CAP = 7.5,
 	RESILIENCE_STEP = 0.225,
 	DEFAULT_WINDOW_FACTOR = 0.40,
-	PING_SAMPLE_INTERVAL = 0.25,
-	PING_SAMPLES = 8,
 	PRESSURE_SAMPLE_LIMIT = 100,
 	PRESSURE_WINDOW = 3,
 	TARGET_SEQUENCE_MODULUS = 65536,
 	TARGET_SEQUENCE_HALF = 32768,
 	MIN_PARRY_SPEED = 16,
-	FALLBACK_MIN_SPEED = 16,
-	FALLBACK_MAX_SPEED = 600,
 }
 
 -- helpers
@@ -93,8 +82,7 @@ local function resetTracking()
 	state.teleported, state.teleportSequence, state.sequence = false, nil, nil
 	state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
 	state.closingSpeed, state.triggerDistance = 0, 0
-	state.ping, state.pingRaw, state.pingAt, state.pingTotal, state.lastFireAt = 0, nil, 0, 0, 0
-	table.clear(state.pingSamples)
+	state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
 	state.awayAt, state.awayTarget = nil, nil
 	table.clear(state.clicks); table.clear(state.returns)
 end
@@ -107,7 +95,8 @@ end
 -- geometry
 local function rangeBonus()
 	if not state.alive or not state.bound then return 0 end
-	local range = gameInfo.getDeflectRange(); return finite(range) and math.clamp(range - T.BASE_RADIUS, 0, T.BONUS_CAP) or 0
+	local g = gameInfo.getDeflectGeometry(0, 0, 0, false, 0)
+	return g and math.clamp(g.resilienceBonus, 0, T.BONUS_CAP) or 0
 end
 local function resilience()
 	local bonus = rangeBonus()
@@ -126,31 +115,15 @@ end
 local function minimumBallSpeed() return T.MIN_PARRY_SPEED end
 local function radius(speed, factor, baseWindow)
 	speed = finite(speed) and math.max(speed, 0) or 0
-	local low, high
-	if gameInfo then low, high = gameInfo.getBallSpeedLimits() end
-	if not finite(low) or not finite(high) or high <= low then low, high = T.FALLBACK_MIN_SPEED, T.FALLBACK_MAX_SPEED end
-	local fraction = math.clamp((speed - low) / (high - low), 0, 1); local window = T.BASE_WINDOW + (T.MIN_WINDOW - T.BASE_WINDOW) * fraction
-	if (baseWindow == nil or baseWindow == "game") and gameInfo then
-		local actual = gameInfo.getDeflectWindow(speed)
-		if finite(actual) and actual > 0 then window = math.max(0, actual + (T.BASE_WINDOW - T.GAME_BASE_WINDOW) * (1 - fraction) + (T.MIN_WINDOW - T.GAME_MIN_WINDOW) * fraction) end
-	elseif finite(baseWindow) and baseWindow > 0 then
-		window = baseWindow
-	end
 	factor = tonumber(factor)
 	if not finite(factor) then factor = configuredFactor() end
-	factor = math.clamp(factor, 0, 1); return gameInfo.getDeflectGeometry(speed, window, factor, false, state.ping)
+	factor = math.clamp(factor, 0, 1)
+	return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
 end
 
 -- telemetry
 local function samplePing(time)
-	if state.pingRaw ~= nil and time >= state.pingAt and time - state.pingAt < T.PING_SAMPLE_INTERVAL then return end
-	state.pingAt = time; local value = gameInfo.getLocalPing()
-	if not finite(value) or value < 0 then return end
-	state.pingRaw = value
-	local samples = state.pingSamples
-	samples[#samples + 1] = value; state.pingTotal += value
-	if #samples > T.PING_SAMPLES then state.pingTotal -= table.remove(samples, 1) end
-	state.ping = state.pingTotal / #samples
+	state.ping, state.pingRaw, state.pingCount = gameInfo.getAveragePing()
 end
 local function appendRecent(list, item)
 	list[#list + 1] = item
@@ -170,7 +143,8 @@ local function trajectory(position, velocity, rootPosition, nominalSpeed, geomet
 		closing = velocity:Dot(delta) / distance
 		if finite(nominalSpeed) and nominalSpeed > 0 then closing = math.min(closing, nominalSpeed * 1.1) end
 	end
-	local threshold = geometry.noWindowParryRadius + math.max(0, closing) * geometry.effectiveWindow
+	if not finite(closing) then closing = 0 end
+	local threshold = gameInfo.getProjectedDeflectRadius(geometry, closing) or geometry.noWindowParryRadius
 	return distance, closing, threshold
 end
 
@@ -247,6 +221,7 @@ local function tick(character, root, generation)
 	if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
 	if utils.isSpamActive() then phase("waiting", "spam_active"); return end
 	if state.teleported or value.teleported then phase("waiting", "teleport_lock"); return end
+	if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
 	if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
 	if state.fired then phase("waiting", "target_already_parried"); return end
 	if value.locked == true then state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0; phase("waiting", "ball_locked"); return end
@@ -363,7 +338,8 @@ function AutoParry.onBallSync(data)
 		if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
 	end
 	state.teleported, state.teleportSequence = false, nil
-	local target = data.TargetPlayerID ~= nil and (tonumber(data.TargetPlayerID) or -1) or gameInfo.getTargetId()
+	local rawTarget = tonumber(data.TargetPlayerID)
+	local target = finite(rawTarget) and rawTarget > 0 and rawTarget or gameInfo.getTargetId()
 	if order == nil and state.sequence ~= nil and state.targetKnown and target ~= state.target then return true end
 	if not finite(target) then return true end
 	observeTarget(target, clock())
@@ -416,7 +392,7 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
 		pureRadius = geometry.pureRadius,
 		noWindowParryRadius = geometry.noWindowParryRadius,
 		pingRadius = geometry.pingRadius,
-		resilienceBonus = geometry.noWindowParryRadius - T.BASE_RADIUS,
+		resilienceBonus = geometry.resilienceBonus,
 		leadTime = geometry.leadTime,
 		deflectWindow = geometry.deflectWindow,
 		effectiveWindow = geometry.effectiveWindow,
@@ -513,13 +489,13 @@ function AutoParry.getStatus()
 			approaching = state.approaching,
 		},
 
-		ping = { oneWay = state.ping, raw = state.pingRaw, samples = #state.pingSamples },
+		ping = { oneWay = state.ping, raw = state.pingRaw, samples = state.pingCount },
 		target = target,
 		pressure = AutoParry.getPressure(),
 		cycle = { fired = state.fired, armed = not state.fired, lastFireAt = state.lastFireAt, lastTTI = geometry.tti },
 		config = {
-			baseRadius = T.BASE_RADIUS,
-			baseWindow = T.BASE_WINDOW,
+			baseRadius = geometry.pureRadius,
+			baseWindow = geometry.deflectWindow,
 			defaultWindowFactor = T.DEFAULT_WINDOW_FACTOR,
 			windowFactorRange = { min = 0, max = 1 },
 			minBallSpeed = minimumBallSpeed(),
@@ -540,15 +516,13 @@ AutoParry.__contract = {
 			"getSyncData",
 			"getTargetId",
 			"getSyncSequence",
-			"getDeflectRange",
 			"getDeflectCooldownState",
-			"getLocalPing",
+			"getAveragePing",
 			"getBallPosition",
 			"getBallVelocity",
 			"getRootPosition",
-			"getBallSpeedLimits",
 			"getDeflectGeometry",
-			"getDeflectWindow",
+			"getProjectedDeflectRadius",
 		},
 		Utils = {
 			"getLocalPlayer",
@@ -586,4 +560,5 @@ AutoParry.__contract = {
 }
 
 return AutoParry
+
 

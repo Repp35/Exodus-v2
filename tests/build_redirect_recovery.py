@@ -2,7 +2,7 @@ from pathlib import Path
 import sys
 root, output = Path(sys.argv[1]), Path(sys.argv[2])
 source=(root/'exodus hub/modules/logic/autospam.luau').read_text()
-source=source.replace('return AutoSpam\n','return AutoSpam, applyDeactivation, inspectTarget, evaluate, start, function(s,u,g,p,a) current=s; utils=u; gameInfo=g; localPlayer=p; autoParry=a end\n')
+source=source.replace('return AutoSpam\n','return AutoSpam, applyDeactivation, inspectTarget, evaluate, start, function(s,u,g,p,a) current=s; utils=u; gameInfo=g; localPlayer=p; autoParry=a end, shouldActivate\n')
 script=r'''
 local V={}
 V.__index=function(v,k) if k=="Magnitude" then return math.sqrt(v.X*v.X+v.Y*v.Y+v.Z*v.Z) end return V[k] end
@@ -26,14 +26,20 @@ local g={
  getPlayerMotion=function(id) if id==7 then return vec(7) end end,
  getPlayerDistance=function(id) if id==99 then return otherDistance end return 7 end,
  getDeflectWindow=function() return .2 end,
- getDeflectGeometry=function() return {fullRadius=30} end,
+ getDeflectGeometry=function(_,window,_,scaleBase)
+   assert(scaleBase==false, "physical radius must not be scaled")
+   return {fullRadius=window==0 and 8.5 or 30,deflectWindow=.25}
+ end,
  getLocalPing=function() return 0 end,isSnapshotValid=function() return true end,
  getClashContext=function() return nil end,getSnapshotAt=function() return snap end,
 }
 local returnCalls,lastReturnTarget=0,nil
 local ap={tryRedirectReturn=function(value) lastReturnTarget=value.targetId; returnCalls=returnCalls+1; return true end}
-local mod,apply,inspect,evaluate,start,inject=assert(loadstring(SOURCE))()
+local mod,apply,inspect,evaluate,start,inject,shouldActivate=assert(loadstring(SOURCE))()
 inject(state,u,g,{UserId=42},ap)
+state.pending={partner=7}; snap.targetId=42; snap.position=vec(-30)
+assert(shouldActivate(state,snap,100), "activation must use the central full radius")
+state.pending=nil; snap.targetId=99; snap.position=vec(-10,10)
 assert(not apply(state,snap,100.01,nil,true) and automatic, "nearby third target must not stop")
 otherDistance=80
 assert(apply(state,snap,100.02,nil,true) and not automatic and state.reason=="distant_target", "far target must stop")
@@ -59,6 +65,12 @@ inject(s3,u,g,{UserId=42},ap); automatic=true; otherDistance=80
 snap.targetId=42; snap.position=vec(-10,10); snap.velocity=vec(0,100); snap.syncAt=100
 mod.onBallSync({Source="packet",Sequence=50,TargetPlayerID=99,Speed=600})
 assert(not automatic and s3.reason=="distant_target", "target packet must stop immediately")
+local s4={root=rootPart,active=true,partner=7,target=42,lastSwitchAt=100,activatedAt=100,connections={}}
+inject(s4,u,g,{UserId=42},ap); automatic=true
+g.getTargetId=function() return -1 end
+mod.onBallSync({Source="packet",Sequence=51,TargetPlayerID=-1,Speed=600,Locked=true})
+assert(not automatic and s4.reason=="ball_locked", "locked packet must stop without waiting for a target")
 print("Redirect, no-target return and reactivation: PASS")
 '''
 output.write_text(script.replace('SOURCE','[========['+source+']========]',1))
+

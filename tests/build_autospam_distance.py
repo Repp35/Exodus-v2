@@ -51,6 +51,12 @@ distance=20.01; frame(1.55); assert(not auto and state.reason=="opponent_distanc
 distance=10; activate(1.76); assert(auto)
 snapshot.syncSpeed=nil; snapshot.speed=0; speed=0; frame(1.77)
 assert(not auto and state.reason=="distance_unavailable", "missing speed must stop spam")
+speed=600; distance=10; ball=10; snapshot.speed=600; activate(2); assert(auto)
+snapshot.locked=true; frame(2.01)
+assert(not auto and state.reason=="ball_locked", "locked ball must stop auto spam")
+activate(2.3); assert(not auto, "locked ball must block activation")
+snapshot.locked=false; activate(2.31); assert(auto, "unlocked ball must allow activation")
 print("Auto Spam distance gate: PASS")
 '''
 output.write_text(script.replace("SOURCE", "[========[" + source + "]========]", 1))
+

@@ -47,6 +47,7 @@ local info={
  getPlayerDistance=function() return (vec(7)-rootPart.Position).Magnitude end,
  getSnapshotAt=function() snap.targetId=target; return snap end,isSnapshotValid=function() return true end,
  getBallSpeedLimits=function() return 16,600 end,getLocalPing=function() return 0 end,
+ getDeflectGeometry=function() return {fullRadius=8.5} end,
  getBallFrozen=function() return false end,areAbilitiesEnabled=function() return true end,getClashContext=function() return nil end,
 }
 local mod=assert(loadstring(SOURCE))()
@@ -73,3 +74,4 @@ mod.teardown()
 print("Own and opponent Haunter events: PASS")
 '''
 output.write_text(script.replace('SOURCE','[========['+source+']========]',1))
+

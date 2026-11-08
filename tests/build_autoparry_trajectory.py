@@ -23,6 +23,7 @@ function typeof(v) if getmetatable(v)==V then return "Vector3" elseif type(v)=="
 math.clamp=function(x,a,b) return math.max(a,math.min(b,x)) end
 table.clear=function(t) for k in pairs(t) do t[k]=nil end end
 local ping=.04
+local pingSamples, pingTotal, pingAt={},0,nil
 local ball={instance=true,Parent={},IsA=function() return true end}
 local rootPart={Parent={},Position=vec(0)}
 local character={Parent={}}
@@ -36,12 +37,21 @@ local utils={
 local info={
   getSnapshotAt=function() return snapshot end, isSnapshotValid=function() return true end,
   getLocalPing=function() return ping end, getRootPosition=function(root) return root.Position end,
+  getAveragePing=function()
+    if not pingAt or testTime-pingAt>=.25 then
+      pingAt=testTime; pingSamples[#pingSamples+1]=ping; pingTotal=pingTotal+ping
+      if #pingSamples>8 then pingTotal=pingTotal-table.remove(pingSamples,1) end
+    end
+    return pingTotal/#pingSamples,ping,#pingSamples
+  end,
   getBallSpeedLimits=function() return 16,600 end, getDeflectWindow=function() return .2 end,
   getDeflectRange=function() return 8.5 end,
+  getProjectedDeflectRadius=function(g,closing) return g.noWindowParryRadius+math.max(0,closing)*g.effectiveWindow end,
   getDeflectGeometry=function(speed,window,factor,_,latency)
     assert(latency~=nil, "mean ping not passed to geometry")
+    if window=="ap" then window=.25 end
     return {noWindowParryRadius=8.5,fullRadius=8.5+speed*(window+latency)*factor,
-      effectiveWindow=(window+latency)*factor,leadTime=window+latency}
+      effectiveWindow=(window+latency)*factor,leadTime=window+latency,resilienceBonus=0}
   end,
 }
 local remote={fireParry=function(_,allowed) assert(allowed()); fires=fires+1; return true end}
@@ -51,6 +61,9 @@ state.player={UserId=42}; state.alive=true; state.bound=true; state.generation=1
 state.character=character; state.root=rootPart
 tick(character,rootPart,1); assert(fires==0 and state.reason=="ball_locked", "locked spawn fired")
 snapshot.locked=false
+snapshot.targetUncertain=true; snapshot.velocity=vec(600); tick(character,rootPart,1)
+assert(fires==0 and state.reason=="target_uncertain", "unconfirmed target fired")
+snapshot.targetUncertain=false
 snapshot.velocity=vec(0,600); tick(character,rootPart,1)
 assert(fires==0 and not state.approaching, "sideways curve fired")
 snapshot.velocity=vec(60,597); tick(character,rootPart,1)
@@ -66,16 +79,17 @@ assert(math.abs(state.ping-.06)<.0001 and state.pingRaw==.08, "ping is not rolli
 ping=.12; testTime=1.52; sample(testTime)
 assert(math.abs(state.ping-.08)<.0001)
 for i=1,8 do ping=.10; testTime=testTime+.26; sample(testTime) end
-assert(#state.pingSamples==8 and math.abs(state.ping-.10)<.0001, "ping samples not bounded")
+assert(state.pingCount==8 and math.abs(state.ping-.10)<.0001, "ping samples not bounded")
 local before=fires
 snapshot.targetId=99; snapshot.position=vec(-12); snapshot.velocity=vec(60,597)
 local redirectAt=testTime-.1
 assert(ap.tryRedirectReturn(snapshot,redirectAt), "redirected ball did not parry without local target")
 assert(fires==before+1, "redirect must send one parry")
 assert(ap.tryRedirectReturn(snapshot,redirectAt) and fires==before+1, "redirect sent a double parry")
-testTime=testTime+.3; snapshot.targetId=-1
+testTime=testTime+.3; snapshot.targetId=-1; snapshot.targetUncertain=true
 assert(ap.tryRedirectReturn(snapshot,testTime-.1) and fires==before+2, "return must work with no target")
 print("Auto Parry trajectory and ping: PASS")
 '''
 output.write_text(script.replace("SOURCE", "[========[" + source + "]========]", 1))
+
 

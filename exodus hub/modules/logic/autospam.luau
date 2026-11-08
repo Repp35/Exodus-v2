@@ -88,18 +88,17 @@ local function geometry(s, snapshot, factor)
 	local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
 	if not finite(speed) or speed <= 0 then return nil end
-	local window = gameInfo.getDeflectWindow(speed); local g = gameInfo.getDeflectGeometry(speed, window, factor, true)
+	local g = gameInfo.getDeflectGeometry(speed, "game", factor, false)
 	if not g then return nil end
-	return g, speed, window
+	return g, speed, g.deflectWindow
 end
 local function closeRadius(snapshot)
 	if not snapshot then return nil end
 	local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
 	if not finite(speed) or speed <= 0 then return nil end
-	local ping = gameInfo.getLocalPing()
-	if not finite(ping) or ping < 0 then ping = 0 end
-	return 8.5 + speed * ping
+	local g = gameInfo.getDeflectGeometry(speed, 0, 1, false, nil, { resilience = false })
+	return g and g.fullRadius or nil
 end
 local function returnWindow(window, speed, base)
 	local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0; return math.max(T.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
@@ -259,6 +258,7 @@ end
 local function start(s, reason, partner, time, serverTime, snapshot)
 	if s.active or s.redirectUntil or s.returnParriedTarget then return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
+	if snapshot and snapshot.locked == true then return end
 	if s.distanceLockPartner then
 		if time < s.distanceLockUntil or distanceGate(s, snapshot, s.distanceLockPartner) then return end
 		s.distanceLockPartner, s.distanceLockUntil = nil, nil
@@ -274,6 +274,8 @@ local function start(s, reason, partner, time, serverTime, snapshot)
 end
 local function shouldActivate(s, snapshot, time)
 	if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
+	if snapshot and snapshot.locked == true then return false end
+	if snapshot and snapshot.targetUncertain == true then return false end
 	if gameInfo.getBallFrozen() == true or not s.pending then return false end
 	local pending = s.pending
 	if pending.closeReturn then
@@ -315,6 +317,7 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
+	if snapshot and snapshot.locked == true then return "ball_locked" end
 	local distanceReason, limit, factor = distanceGate(s, snapshot, s.partner)
 	if distanceReason then return distanceReason end
 	s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
@@ -658,24 +661,28 @@ function AutoSpam.onBallSync(data)
 		and (not clashStats or clashStats.frozen)
 		and not gameInfo.getClashContext()
 	then
-		s.target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or s.target
+		s.target = userId(data.TargetPlayerID) or userId(gameInfo.getTargetId()) or s.target
 		s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
 		return
 	end
-	local time = now(); local target = userId(data.TargetPlayerID) or userId(data.HighlightTargetPlayerID) or gameInfo.getTargetId(); local serverTime = tonumber(data.ServerTime)
+	local time = now(); local target = userId(data.TargetPlayerID) or gameInfo.getTargetId(); local serverTime = tonumber(data.ServerTime)
 	if not finite(serverTime) then serverTime = nil end
 	local speed = tonumber(data.Speed)
 	local snapshot = gameInfo.getSnapshotAt(time)
-	if snapshot and data.Source == "packet" and userId(target) then
+	if snapshot and data.Source == "packet" then
 		snapshot = table.clone(snapshot)
-		snapshot.targetId, snapshot.targeted = target, target == localPlayer.UserId
+		if userId(target) then
+			snapshot.targetId, snapshot.targeted = target, target == localPlayer.UserId
+			if userId(data.TargetPlayerID) then snapshot.targetUncertain = false end
+		end
 		snapshot.syncAt, snapshot.serverTime, snapshot.syncSequence = time, serverTime, sequence
 		snapshot.teleported = false
+		if type(data.Locked) == "boolean" then snapshot.locked = data.Locked end
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
-	local stopped = false
+	local stopped = snapshot and snapshot.locked == true and applyDeactivation(s, snapshot, time, serverTime, false) or false
 	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then
-		if target ~= s.target then
+		if not stopped and target ~= s.target then
 			stopped = applyDeactivation(s, snapshot, time, serverTime, true)
 		end
 		inspectTarget(s, target, time, snapshot, serverTime)
@@ -760,12 +767,9 @@ AutoSpam.__contract = {
 			"areAbilitiesEnabled",
 			"getSnapshotAt",
 			"isSnapshotValid",
-			"getDeflectWindow",
-			"getDeflectRange",
 			"getPlayerDistance",
 			"getPlayerMotion",
 			"getHaunterEvent",
-			"getLocalPing",
 			"getDeflectGeometry",
 			"getBallFrozen",
 			"getTargetId",
@@ -792,4 +796,5 @@ AutoSpam.__contract = {
 }
 
 return AutoSpam
+
 

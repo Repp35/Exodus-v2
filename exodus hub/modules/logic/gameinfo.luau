@@ -29,6 +29,12 @@ local T = {
 	RANGE_BASE = 8.5,
 	RANGE_BONUS_SPAN = 7.5,
 	RANGE_WINDOW_BONUS = 0.12,
+	AP_WINDOW_LOW_SPEED = 0.45,
+	AP_WINDOW_HIGH_SPEED = 0.25,
+	PING_SAMPLE_INTERVAL = 0.25,
+	PING_SAMPLE_COUNT = 8,
+	TARGET_CONFIRM_INTERVAL = 1 / 60,
+	TARGET_HOLD_TIME = 0.1,
 }
 
 -- runtime-state
@@ -36,6 +42,9 @@ local minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0
 local errors, cooldownConnection, parriedConnection = {}, nil, nil
 local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
 local cooldown, signalAt, heldAt, missingAt, warningAt
+local pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil
+local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
+local targetFrame, targetFrameConnection = 0, nil
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
@@ -107,11 +116,55 @@ local function targetNumber(value)
 	if type(value) == "string" then value = tonumber(value) end
 	return finite(value) and value > 0 and value or nil
 end
-local function targetId(data)
-	local target = type(data) == "table" and (targetNumber(data.TargetPlayerID) or targetNumber(data.HighlightTargetPlayerID))
-	if target then return target end
-	if type(data) == "table" and data.Targeted == true and players.LocalPlayer then return players.LocalPlayer.UserId end
-	return targetNumber(world:GetAttribute("GameBallTarget")) or -1
+local function targetId(data, currentBall)
+	local time = os.clock()
+	local player = players and players.LocalPlayer
+	local primary = type(data) == "table" and targetNumber(data.TargetPlayerID) or nil
+	local attribute = targetNumber(world:GetAttribute("GameBallTarget"))
+	local highlight = type(data) == "table" and targetNumber(data.HighlightTargetPlayerID) or nil
+	local character = player and player.Character
+	local visual = character and character:FindFirstChild("PlayerBallHighlight")
+	local visualTargeted = visual ~= nil and visual.Enabled == true
+	local color = currentBall and currentBall.Color
+	local redBall = typeof(color) == "Color3" and color.R >= 0.65 and color.R > color.G * 1.5 and color.R > color.B * 1.5 or false
+	targetEvidence.primary, targetEvidence.attribute, targetEvidence.highlight = primary, attribute, highlight
+	targetEvidence.visualTargeted, targetEvidence.redBall = visualTargeted, redBall
+	if type(data) == "table" and data.Teleported == true then
+		targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = nil, nil, nil, nil, nil
+	end
+	local strong = primary
+	if strong then
+		targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = strong, nil, nil, nil, time
+		targetEvidence.source, targetEvidence.uncertain = "target", false
+		return strong
+	end
+	local candidate = highlight or attribute
+	local source = highlight and "highlight" or (attribute and "attribute" or nil)
+	if not candidate and player and (visualTargeted or (type(data) == "table" and data.Targeted == true)) then
+		candidate, source = player.UserId, visualTargeted and (redBall and "visual_color" or "visual") or "targeted"
+	end
+	if candidate then
+		if candidate == targetEvidence.stable then
+			targetEvidence.observedAt, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = time, nil, nil, nil
+			targetEvidence.source, targetEvidence.uncertain = source, false
+		elseif candidate ~= targetEvidence.pending then
+			targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = candidate, time, targetFrame
+			targetEvidence.uncertain = true
+		elseif (targetFrameConnection and targetEvidence.pendingFrame ~= targetFrame)
+			or (not targetFrameConnection and targetEvidence.pendingAt and time - targetEvidence.pendingAt >= T.TARGET_CONFIRM_INTERVAL) then
+			targetEvidence.stable, targetEvidence.observedAt = candidate, time
+			targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.source = nil, nil, nil, source
+			targetEvidence.uncertain = false
+		end
+	else
+		targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = nil, nil, nil
+		targetEvidence.uncertain = true
+	end
+	if targetEvidence.stable and targetEvidence.observedAt and time - targetEvidence.observedAt <= T.TARGET_HOLD_TIME then
+		return targetEvidence.stable
+	end
+	targetEvidence.stable, targetEvidence.source, targetEvidence.uncertain = nil, nil, true
+	return -1
 end
 local function findBall()
 	local candidate = world:FindFirstChild("GameBall") or world:FindFirstChild("GameBall", true)
@@ -188,6 +241,10 @@ function GameInfo.startMaintenance(options)
 end
 function GameInfo.stopMaintenance()
 	maintenance += 1; disconnectSync()
+	if targetFrameConnection then
+		if utils then utils.untrackGlobal(targetFrameConnection) end
+		targetFrameConnection:Disconnect(); targetFrameConnection = nil
+	end
 end
 
 -- setup
@@ -196,6 +253,14 @@ function GameInfo.setup(deps)
 	GameInfo.stopMaintenance(); disconnect(cooldownConnection); disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil; utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
 	if not players or not world then return false, "dependência ausente: Players ou Workspace" end
 	ball, searchAt, watching = nil, 0, false; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}
+	pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil
+	targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
+	targetFrame = 0
+	local service = utils.getRunService()
+	if service and service.Heartbeat then
+		targetFrameConnection = service.Heartbeat:Connect(function() targetFrame += 1 end)
+		utils.trackGlobal(targetFrameConnection)
+	end
 	cooldown = { known = false, active = false, rawActive = false, lastEventAt = -math.huge }; signalAt, heldAt, missingAt, warningAt = 0, 0, nil, 0; GameInfo.getDeflectCooldownState(); return true
 end
 function GameInfo.getBall() return getBall() end
@@ -203,6 +268,18 @@ function GameInfo.getBallPosition(value) return value.Position end
 function GameInfo.getBallVelocity(value) return value.AssemblyLinearVelocity end
 function GameInfo.getRootPosition(root) return root.Position end
 function GameInfo.getLocalPing() return players.LocalPlayer and players.LocalPlayer:GetNetworkPing() or nil end
+function GameInfo.getAveragePing()
+	local time = os.clock()
+	if pingSampleAt == nil or time < pingSampleAt or time - pingSampleAt >= T.PING_SAMPLE_INTERVAL then
+		pingSampleAt = time
+		local value = GameInfo.getLocalPing()
+		if finite(value) and value >= 0 then
+			pingRaw = value; pingSamples[#pingSamples + 1] = value; pingSum += value
+			if #pingSamples > T.PING_SAMPLE_COUNT then pingSum -= table.remove(pingSamples, 1) end
+		end
+	end
+	return #pingSamples > 0 and pingSum / #pingSamples or 0, pingRaw, #pingSamples
+end
 function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode") ~= 3 end
 function GameInfo.observeAbilityMode(callback)
 	return world:GetAttributeChangedSignal("CurGamemode"):Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
@@ -369,7 +446,7 @@ function GameInfo.decodeBallPacket(value)
 		Speed = decoded.speed,
 	}
 end
-function GameInfo.getTargetId() return targetId(syncData()) end
+function GameInfo.getTargetId() return targetId(syncData(), getBall()) end
 
 -- snapshots
 local function snapshot(time)
@@ -389,7 +466,7 @@ local function snapshot(time)
 		sampledPosition, sampledAt = position, time
 	end
 	if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
-	local target = targetId(sync)
+	local target = targetId(sync, currentBall)
 	return {
 		schema = 2,
 		generatedAt = time,
@@ -403,8 +480,15 @@ local function snapshot(time)
 		realPosition = sync and sync.RealPosition or nil,
 		targetId = target,
 		targeted = players.LocalPlayer ~= nil and target == players.LocalPlayer.UserId,
+		targetSource = targetEvidence.source,
+		targetUncertain = targetEvidence.uncertain == true,
+		targetSignals = {
+			primary = targetEvidence.primary, attribute = targetEvidence.attribute, highlight = targetEvidence.highlight,
+			visualTargeted = targetEvidence.visualTargeted, redBall = targetEvidence.redBall,
+		},
 		teleported = sync and sync.Teleported == true or false,
 		locked = sync and sync.Locked == true or false,
+		ballCanMove = not (sync and sync.Locked == true),
 		grace = sync and sync.Grace == true or false,
 		oldGrace = sync and sync.OldGrace == true or false,
 		syncAt = syncReceivedAt,
@@ -453,7 +537,7 @@ function GameInfo.getBallSpeedLimits()
 	if not finite(low) or not finite(high) or low <= 0 or high <= low then error("API externa inválida: GameBall retornou limites de velocidade inválidos", 2) end
 	minimumSpeed, maximumSpeed = low, high; return minimumSpeed, maximumSpeed
 end
-function GameInfo.getDeflectWindow(speed)
+function GameInfo.getDeflectWindow(speed, includeResilience)
 	local low, high = GameInfo.getBallSpeedLimits()
 	if not finite(speed) then
 		local sync = syncData()
@@ -467,7 +551,7 @@ function GameInfo.getDeflectWindow(speed)
 		if finite(minimum) then window = math.max(window, minimum) end
 	end
 	local range = GameInfo.getDeflectRange()
-	if finite(range) then window += math.clamp((range - T.RANGE_BASE) / T.RANGE_BONUS_SPAN, 0, 1) * T.RANGE_WINDOW_BONUS end
+	if includeResilience ~= false and finite(range) then window += math.clamp((range - T.RANGE_BASE) / T.RANGE_BONUS_SPAN, 0, 1) * T.RANGE_WINDOW_BONUS end
 	if inClash and type(gameBall.GetClashWindowScale) == "function" then
 		local scale = gameBall:GetClashWindowScale()
 		if finite(scale) and scale > 0 then window *= scale end
@@ -479,25 +563,47 @@ function GameInfo.getBallFrozen()
 	if not data then return nil end
 	return data:GetAttribute("Frozen") == true
 end
-function GameInfo.getDeflectGeometry(speed, window, factor, scaleBase, latencyOverride)
+function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyOverride, options)
 	if not finite(speed) or speed < 0 then return nil end
-	local range = GameInfo.getDeflectRange()
+	options = type(options) == "table" and options or {}
+	local includeResilience = options.resilience ~= false
+	local range = includeResilience and GameInfo.getDeflectRange() or T.RANGE_BASE
 	if not finite(range) or range <= 0 then range = T.RANGE_BASE end
-	if not finite(window) then window = GameInfo.getDeflectWindow(speed) end
-	if not finite(window) or window <= 0 then return nil end
-	local latency = finite(latencyOverride) and latencyOverride or GameInfo.getLocalPing()
+	if window == "ap" then
+		local low, high = GameInfo.getBallSpeedLimits()
+		if not finite(low) or not finite(high) or high <= low then return nil end
+		local fraction = math.clamp((speed - low) / (high - low), 0, 1)
+		local actual = GameInfo.getDeflectWindow(speed, includeResilience)
+		if not finite(actual) then return nil end
+		window = math.max(0, actual + (T.AP_WINDOW_LOW_SPEED - T.WINDOW_BASE) * (1 - fraction)
+			+ (T.AP_WINDOW_HIGH_SPEED - (T.WINDOW_BASE - T.WINDOW_SPREAD)) * fraction)
+	elseif not finite(window) then
+		window = GameInfo.getDeflectWindow(speed, includeResilience)
+		if finite(window) then
+			local minimum = finite(options.minimumWindow) and math.max(0, options.minimumWindow) or T.AP_WINDOW_HIGH_SPEED
+			window = math.max(window, minimum)
+		end
+	end
+	if not finite(window) or window < 0 then return nil end
+	local latency = options.ping == false and 0 or (finite(latencyOverride) and latencyOverride or GameInfo.getAveragePing())
 	if not finite(latency) or latency < 0 then latency = 0 end
-	factor = finite(factor) and math.max(0, factor) or 1; local base = scaleBase and range * factor or range
+	factor = finite(factor) and math.max(0, factor) or 1; local base = range
 	return {
 		fullRadius = base + speed * (window + latency) * factor,
 		pureRadius = T.RANGE_BASE,
 		noWindowParryRadius = range,
+		resilienceBonus = range - T.RANGE_BASE,
 		pingRadius = speed * latency * factor,
 		deflectWindow = window,
 		effectiveWindow = (window + latency) * factor,
 		leadTime = window + latency,
 		windowFactor = factor,
 	}
+end
+function GameInfo.getProjectedDeflectRadius(geometry, closingSpeed)
+	if type(geometry) ~= "table" or not finite(geometry.noWindowParryRadius)
+		or not finite(geometry.effectiveWindow) or not finite(closingSpeed) then return nil end
+	return geometry.noWindowParryRadius + math.max(0, closingSpeed) * geometry.effectiveWindow
 end
 function GameInfo.isBallWithinDeflectRadius(factor)
 	local snapshot = GameInfo.getSnapshotAt()
@@ -507,7 +613,7 @@ function GameInfo.isBallWithinDeflectRadius(factor)
 	local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
 	if not finite(speed) or speed <= 0 then return false end
-	local geometry = GameInfo.getDeflectGeometry(speed, nil, factor, true); return geometry ~= nil and (snapshot.position - root.Position).Magnitude <= geometry.fullRadius
+	local geometry = GameInfo.getDeflectGeometry(speed, nil, factor, false); return geometry ~= nil and (snapshot.position - root.Position).Magnitude <= geometry.fullRadius
 end
 function GameInfo.getManifestRemote() return generatedRemote(9.318024238496386e76) end
 function GameInfo.getClashContext()
@@ -540,7 +646,7 @@ end
 -- contract
 GameInfo.__contract = {
 	requires = { Utils = "utils" },
-	requiresMethods = { Utils = { "now", "apiVersion", "getPlayers", "getReplicatedStorage", "getWorkspace" } },
+	requiresMethods = { Utils = { "now", "apiVersion", "getPlayers", "getReplicatedStorage", "getWorkspace", "getRunService", "trackGlobal", "untrackGlobal" } },
 	provides = {
 		"setup",
 		"getBall",
@@ -548,6 +654,7 @@ GameInfo.__contract = {
 		"getBallVelocity",
 		"getRootPosition",
 		"getLocalPing",
+		"getAveragePing",
 		"areAbilitiesEnabled",
 		"observeAbilityMode",
 		"getDeflectRange",
@@ -556,6 +663,7 @@ GameInfo.__contract = {
 		"getHaunterEvent",
 		"getDeflectWindow",
 		"getDeflectGeometry",
+		"getProjectedDeflectRadius",
 		"isBallWithinDeflectRadius",
 		"getBallFrozen",
 		"getDeflectAbility",
@@ -587,3 +695,4 @@ GameInfo.__contract = {
 }
 
 return GameInfo
+
