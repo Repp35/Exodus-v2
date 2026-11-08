@@ -24,7 +24,7 @@ local T = {
 	},
 	DEACTIVATION = {
 		MIN_SPEED_DISTANCE = 20,
-		MAX_SPEED_DISTANCE = 51,
+		MAX_SPEED_DISTANCE = 55,
 		DIRECTION_ALIGNMENT = 0.9,
 		MIN_SPEED_TIMEOUT = 0.2975,
 		MAX_SPEED_TIMEOUT = 0.07,
@@ -58,9 +58,14 @@ local function track(s, signal, callback)
 	local connection = signal:Connect(callback); s.connections[#s.connections + 1] = connection; utils.trackCharacter(connection); return connection
 end
 local function distanceToPlayer(s, id) return id and gameInfo.getPlayerDistance(id) or nil end
-local function opponentTooFar(s, partner)
-	local distance = distanceToPlayer(s, partner)
-	return finite(distance) and distance > 70
+local function distanceLimit(snapshot)
+	local speed = snapshot and tonumber(snapshot.syncSpeed)
+	if not finite(speed) or speed <= 0 then speed = snapshot and snapshot.speed end
+	if not finite(speed) or speed <= 0 then return nil end
+	local minimum, maximum = gameInfo.getBallSpeedLimits()
+	if not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
+	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
+	return T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor, factor
 end
 local function playerIsAlive(id)
 	local player = id and players:GetPlayerByUserId(id); local character = player and player.Character; local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid"); return humanoid ~= nil and humanoid.Health > 0
@@ -239,8 +244,11 @@ local function freezeClashStats(playerId)
 end
 
 -- activation
-local function start(s, reason, partner, time, serverTime)
-	if s.active or opponentTooFar(s, partner) then return end
+local function start(s, reason, partner, time, serverTime, snapshot)
+	if s.active then return end
+	local limit = distanceLimit(snapshot or gameInfo.getSnapshotAt(time))
+	local distance = distanceToPlayer(s, partner)
+	if not limit or not finite(distance) or distance > limit then return end
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.activatedAt, s.switchTimeout = time, nil
@@ -287,17 +295,11 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	local speed = snapshot and tonumber(snapshot.syncSpeed)
-	if not finite(speed) or speed <= 0 then speed = snapshot and snapshot.speed end
-	if finite(speed) and speed > 0 then
-		local minimum, maximum = gameInfo.getBallSpeedLimits()
-		if finite(minimum) and finite(maximum) and maximum > minimum then
-			local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
-			local limit = T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor
-			local distance = distanceToPlayer(s, s.partner)
-			if finite(distance) and distance > limit then return "opponent_distance" end
-			s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
-		end
+	local limit, factor = distanceLimit(snapshot)
+	if limit then
+		local distance = distanceToPlayer(s, s.partner)
+		if finite(distance) and distance > limit then return "opponent_distance" end
+		s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
 	end
 	if s.activatedAt and time - s.activatedAt >= T.DEACTIVATION.START_DELAY
 		and s.lastSwitchAt and s.switchTimeout and time - s.lastSwitchAt > s.switchTimeout then
@@ -425,7 +427,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	if not s.active and not blockedActivation and shouldActivate(s, snapshot, time) then
 		local activationServerTime = serverTime
 		if not fresh then activationServerTime = snapshot.serverTime end
-		start(s, s.pending.closeReturn and "close_return" or (s.pending.recovery and "recovery" or "return_target"), s.pending.partner, time, activationServerTime)
+		start(s, s.pending.closeReturn and "close_return" or (s.pending.recovery and "recovery" or "return_target"), s.pending.partner, time, activationServerTime, snapshot)
 	end
 end
 
