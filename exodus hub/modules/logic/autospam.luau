@@ -22,8 +22,8 @@ local T = {
 		MIN_SPEED_DISTANCE = 20,
 		MAX_SPEED_DISTANCE = 55,
 		DISTANCE_REACTIVATION_DELAY = 0.2,
-		MIN_SPEED_TIMEOUT = 0.2975,
-		MAX_SPEED_TIMEOUT = 0.07,
+		MIN_SPEED_TIMEOUT = 0.3,
+		MAX_SPEED_TIMEOUT = 0.1,
 		START_DELAY = 0.12,
 		DIRECTION_ALIGNMENT = 0.75,
 		AWAY_ALIGNMENT = 0.3,
@@ -357,9 +357,13 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if distanceReason then return distanceReason end
 	s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
 	if target ~= localPlayer.UserId and target ~= s.partner then return nil end
-	if s.activatedAt and time - s.activatedAt >= T.DEACTIVATION.START_DELAY
-		and s.lastSwitchAt and s.switchTimeout and time - s.lastSwitchAt > s.switchTimeout then
-		return "switch_timeout"
+	-- Packet timestamps, not Heartbeat time: network stalls must not count.
+	if serverTime and finite(s.lastSwitchServerAt) and serverTime >= s.lastSwitchServerAt then
+		local ping = gameInfo.getAveragePing()
+		if not finite(ping) or ping < 0 then ping = 0 end
+		if serverTime - s.lastSwitchServerAt > s.switchTimeout + ping then
+			return "switch_timeout"
+		end
 	end
 	if not validSnapshot then return nil end
 	-- Confirm a diversion over time instead of trusting one potentially noisy frame.
@@ -757,6 +761,9 @@ function AutoSpam.onBallSync(data)
 	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then
 		if not stopped and target ~= s.target then
 			stopped = applyDeactivation(s, snapshot, time, serverTime, true)
+		end
+		if not stopped and target == s.target then
+			stopped = applyDeactivation(s, snapshot, time, serverTime, false)
 		end
 		inspectTarget(s, target, time, snapshot, serverTime)
 	end
