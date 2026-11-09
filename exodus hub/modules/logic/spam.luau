@@ -78,9 +78,14 @@ local function sync()
 				while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
 					local time = os.clock()
 					if time >= due then
-						request(boundUtils, boundRemote, token, guard)
-						-- Do not issue stale catch-up clicks after a scheduler stall.
-						due += (math.floor((time - due) / interval) + 1) * interval
+						-- Reset only an actual scheduler stall, not ordinary multi-click frames.
+						if time - due > 0.1 then due = time end
+						local pending = math.floor((time - due) / interval) + 1
+						for _ = 1, pending do
+							if not guard() then break end
+							request(boundUtils, boundRemote, token, guard)
+						end
+						due += pending * interval
 					end
 					if token == generation then task.wait(math.max(0, due - os.clock())) end
 				end
