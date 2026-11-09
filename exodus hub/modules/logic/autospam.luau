@@ -100,7 +100,7 @@ local function closeRadius(snapshot)
 	local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
 	if not finite(speed) or speed <= 0 then return nil end
-	local g = gameInfo.getDeflectGeometry(speed, 0, 1, false, nil, { resilience = false })
+	local g = gameInfo.getDeflectGeometry(speed, 0, 1, false)
 	return g and g.fullRadius or nil
 end
 local function returnWindow(window, speed, base)
