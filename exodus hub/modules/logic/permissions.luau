@@ -57,7 +57,7 @@ local POLICIES = {
 				"apiVersion createClashLog appendClashLog getConfig getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
 			),
 			gameinfo = allow(
-				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getSnapshotAt getTargetId isSnapshotValid"
+				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getAveragePing getSnapshotAt getTargetId isSnapshotValid"
 			),
 		},
 	},
