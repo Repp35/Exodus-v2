@@ -318,22 +318,15 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	-- Locked is transient and must not deactivate Auto Clash.
+	-- Physics gates run every Heartbeat, independent of target packets and Locked.
+	local limit = distanceLimit(snapshot)
+	local partnerPosition = s.partner and gameInfo.getPlayerMotion(s.partner)
+	if limit and typeof(partnerPosition) == "Vector3" and s.root and s.root.Parent
+		and (partnerPosition - s.root.Position).Magnitude > limit then
+		return "opponent_distance"
+	end
+	-- Locked only suppresses target-dependent decisions.
 	if snapshot and snapshot.locked == true then return nil end
-	-- Opponent separation is independent of ball packets and must be checked
-	-- before snapshot age, target uncertainty and close-range protection.
-	local distanceSnapshot = snapshot
-	if not distanceSnapshot or not gameInfo.isSnapshotValid(distanceSnapshot) then
-		distanceSnapshot = gameInfo.getSnapshotAt(time)
-	end
-	if distanceSnapshot and gameInfo.isSnapshotValid(distanceSnapshot) then
-		local limit = distanceLimit(distanceSnapshot)
-		local partnerPosition = s.partner and gameInfo.getPlayerMotion(s.partner)
-		if limit and typeof(partnerPosition) == "Vector3" and s.root and s.root.Parent
-			and (partnerPosition - s.root.Position).Magnitude > limit then
-			return "opponent_distance"
-		end
-	end
 	-- A different confirmed target must retain priority over close-range protection.
 	local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported
 	local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
