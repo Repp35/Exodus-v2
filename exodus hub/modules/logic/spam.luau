@@ -100,7 +100,7 @@ function Spam.setup(deps)
 		or type(deps.GameInfo) ~= "table"
 		or type(deps.GameInfo.getAutoSpamDelay) ~= "function"
 		or type(deps.Remote.fireParry) ~= "function"
-		or type(deps.Utils.getConfig) ~= "function"
+		or type(deps.Utils.getConfigValue) ~= "function"
 		or type(deps.Utils.isActive) ~= "function"
 		or type(deps.Utils.isManualSpamActive) ~= "function"
 		or type(deps.Utils.isAutoSpamActive) ~= "function"
