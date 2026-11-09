@@ -65,7 +65,7 @@ local POLICIES = {
 		provide = allow("setup resetState teardown getStatus"),
 		consume = {
 			utils = allow(
-				"apiVersion getConfig isActive isAutoSpamActive isManualSpamActive observeConfig observeSpam recordError recordTransition trackGlobal untrackGlobal"
+				"apiVersion getConfigValue isActive isAutoSpamActive isManualSpamActive observeConfig observeSpam recordError recordTransition trackGlobal untrackGlobal"
 			),
 			remote = allow("fireParry"),
 			gameinfo = allow("getAutoSpamDelay"),
