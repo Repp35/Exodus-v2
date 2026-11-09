@@ -711,7 +711,6 @@ function AutoSpam.onBallSync(data)
 	end
 	if finite(sequence) then s.sequence = sequence end
 	if data.Teleported == true then
-		stop(s, "teleported", false)
 		s.target, s.recoveryPartner = nil, nil
 		s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner = nil, nil, nil, nil, nil
 		s.redirectWatch = nil
