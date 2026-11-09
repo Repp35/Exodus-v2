@@ -498,7 +498,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 		s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner, s.redirectWatch = nil, nil, nil, nil, nil, nil
 	end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then return end
+	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now(), nil, false); return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	-- Deactivation runs on every Heartbeat, regardless of sync packets.
 	if not fresh and applyDeactivation(s, snapshot, time, nil, false) then blockedActivation = true end
@@ -712,7 +712,7 @@ function AutoSpam.onBallSync(data)
 	if not s or type(data) ~= "table" then return end
 	if data.Source ~= "packet" and data.Teleported ~= true then return end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then return end
+	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now(), nil, false); return end
 	local sequence = data.Sequence or data.TeleportSequence
 	if finite(sequence) and finite(s.sequence) then
 		local delta = (sequence - s.sequence) % T.SHARED.SEQUENCE_MODULUS
