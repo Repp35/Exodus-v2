@@ -12,7 +12,7 @@ local clashStats
 -- tuning
 local T = {
 	ACTIVATION = {
-		RETURN = 0.13,
+		RETURN = 0.15,
 		REACTIVATION_COOLDOWN = 0.04,
 		RADIUS_FACTOR = 0.8,
 		HAUNTER_RANGE = 11,
