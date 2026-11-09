@@ -33,11 +33,11 @@ local spamObservers, configObservers = {}, {}
 
 -- helpers
 local function copy(value, depth)
-	if type(value) ~= "table" or (depth or 0) > 8 then return value end
+	if type(value) ~= "table" then return value end
+	depth = depth or 0
+	if depth > 8 then return value end
 	local result = {}
-	for key, item in pairs(value) do
-		result[copy(key, (depth or 0) + 1)] = copy(item, (depth or 0) + 1)
-	end
+	for key, item in pairs(value) do result[copy(key, depth + 1)] = copy(item, depth + 1) end
 	return result
 end
 local function snapshot(value) return type(value) == "table" and copy(value) or {} end
@@ -58,6 +58,7 @@ local function connectObserver(list, observer)
 	return connection
 end
 local function notify(list, value)
+	if #list == 0 then return end
 	for _, observer in ipairs(table.clone(list)) do
 		if observer.Connected then observer.callback(value) end
 	end
@@ -289,11 +290,13 @@ function Utils.normalizeSpamRate(value, fallback)
 end
 function Utils.setConfig(patch)
 	if type(patch) ~= "table" then error("Config patch inválido: esperado table", 2) end
-	local normalized = snapshot(patch)
+	local normalized
 	if configModule then
 		local result, reason = configModule.normalizePatch(patch)
 		if type(result) ~= "table" then error("Config inválida: " .. tostring(reason), 2) end
 		normalized = result
+	else
+		normalized = snapshot(patch)
 	end
 	for key, value in pairs(normalized) do
 		state.config[key] = value

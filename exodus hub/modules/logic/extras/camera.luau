@@ -2,11 +2,16 @@
 local Camera = {}
 local utils
 local cameraEpoch = 0
-local cameraInput, cameraOriginal, cameraWrapped
+local cameraInput, cameraOriginal, cameraWrapped, configConnection
+local sensitivity = 1
 
 local function stopCamera()
 	cameraEpoch += 1
 	if cameraInput and cameraInput.getRotation == cameraWrapped then cameraInput.getRotation = cameraOriginal end
+	if configConnection then
+		if utils then utils.untrackGlobal(configConnection) end
+		configConnection:Disconnect(); configConnection = nil
+	end
 	cameraInput, cameraOriginal, cameraWrapped = nil, nil, nil
 end
 local function startCamera()
@@ -26,7 +31,7 @@ local function startCamera()
 						if api.getRotation == wrapped then api.getRotation = original end
 						return rotation
 					end
-					local factor = tonumber(boundUtils.getConfigValue("CameraSensitivity")); return rotation * (factor or 1)
+					return rotation * sensitivity
 				end
 				cameraWrapped = wrapped; cameraInput.getRotation = cameraWrapped; return
 			end
@@ -38,13 +43,20 @@ end
 
 function Camera.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "Utils ausente" end
-	Camera.teardown(); utils = deps.Utils; startCamera(); return true
+	Camera.teardown(); utils = deps.Utils
+	sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or 1
+	startCamera()
+	configConnection = utils.observeConfig(function(changes)
+		if changes.CameraSensitivity ~= nil then sensitivity = tonumber(changes.CameraSensitivity) or 1 end
+	end)
+	utils.trackGlobal(configConnection)
+	return true
 end
 function Camera.teardown() stopCamera(); utils = nil end
 
 Camera.__contract = {
 	requires = { Utils = "utils" },
-	requiresMethods = { Utils = { "getLocalPlayer", "getConfigValue", "isActive" } },
+	requiresMethods = { Utils = { "getLocalPlayer", "getConfigValue", "isActive", "observeConfig", "trackGlobal", "untrackGlobal" } },
 	provides = { "setup", "teardown" },
 }
 return Camera
