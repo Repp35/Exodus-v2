@@ -317,11 +317,14 @@ end
 local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
-	if gameInfo.getBallFrozen() == true then return "frozen" end
-	if snapshot and snapshot.locked == true then return "ball_locked" end
+	-- Frozen/locked states are transient: never deactivate on them.
+	if gameInfo.getBallFrozen() == true or (snapshot and snapshot.locked == true) then return nil end
 	-- A different confirmed target must retain priority over close-range protection.
 	local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported
 	local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
+	if not validSnapshot or not target then return nil end
+	if finite(snapshot.syncAt) and snapshot.syncAt > 0
+		and time - snapshot.syncAt > T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE then return nil end
 	if target and target ~= localPlayer.UserId and target ~= s.partner then
 		local g = geometry(s, snapshot, 1)
 		local distance = distanceToPlayer(s, target)
@@ -352,6 +355,7 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	end
 	if distanceReason then return distanceReason end
 	s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
+	if target ~= localPlayer.UserId and target ~= s.partner then return nil end
 	if s.activatedAt and time - s.activatedAt >= T.DEACTIVATION.START_DELAY
 		and s.lastSwitchAt and s.switchTimeout and time - s.lastSwitchAt > s.switchTimeout then
 		return "switch_timeout"
@@ -493,7 +497,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 		s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner, s.redirectWatch = nil, nil, nil, nil, nil, nil
 	end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
+	if gameInfo.getBallFrozen() == true then return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	-- Deactivation runs on every Heartbeat, regardless of sync packets.
 	if not fresh and applyDeactivation(s, snapshot, time, nil, false) then blockedActivation = true end
@@ -707,7 +711,7 @@ function AutoSpam.onBallSync(data)
 	if not s or type(data) ~= "table" then return end
 	if data.Source ~= "packet" and data.Teleported ~= true then return end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then stopBoth(s, "frozen"); return end
+	if gameInfo.getBallFrozen() == true then return end
 	local sequence = data.Sequence or data.TeleportSequence
 	if finite(sequence) and finite(s.sequence) then
 		local delta = (sequence - s.sequence) % T.SHARED.SEQUENCE_MODULUS
@@ -748,7 +752,7 @@ function AutoSpam.onBallSync(data)
 		if type(data.Locked) == "boolean" then snapshot.locked = data.Locked end
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
-	local stopped = snapshot and snapshot.locked == true and applyDeactivation(s, snapshot, time, serverTime, false) or false
+	local stopped = false
 	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then
 		if not stopped and target ~= s.target then
 			stopped = applyDeactivation(s, snapshot, time, serverTime, true)
