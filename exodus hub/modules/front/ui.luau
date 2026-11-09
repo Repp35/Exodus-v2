@@ -697,13 +697,7 @@ function ExodusUI.setup(deps)
 	})
 	local textService = game:GetService("TextService")
 	local function compactInformation(label)
-		local paddingX, paddingY = 8, 5
-		label.TextSize = 14
-		label.TextWrapped = false
-		label.TextXAlignment = Enum.TextXAlignment.Left
-		label.TextYAlignment = Enum.TextYAlignment.Top
-		label.BorderSizePixel = 0
-		label.ZIndex = 100
+		local paddingX, paddingY = 8, 5; label.TextSize = 14; label.TextWrapped = false; label.TextXAlignment = Enum.TextXAlignment.Left; label.TextYAlignment = Enum.TextYAlignment.Top; label.BorderSizePixel = 0; label.ZIndex = 100
 		local padding = inst("UIPadding", {
 			PaddingLeft = UDim.new(0, paddingX),
 			PaddingRight = UDim.new(0, paddingX),
@@ -712,11 +706,9 @@ function ExodusUI.setup(deps)
 			Parent = label,
 		})
 		local function resize()
-			local bounds = textService:GetTextSize(label.Text, label.TextSize, label.Font, Vector2.new(1000, 1000))
-			label.Size = UDim2.fromOffset(math.ceil(bounds.X) + paddingX * 2, math.ceil(bounds.Y) + paddingY * 2)
+			local bounds = textService:GetTextSize(label.Text, label.TextSize, label.Font, Vector2.new(1000, 1000)); label.Size = UDim2.fromOffset(math.ceil(bounds.X) + paddingX * 2, math.ceil(bounds.Y) + paddingY * 2)
 		end
-		trackConn(label:GetPropertyChangedSignal("Text"):Connect(resize))
-		resize()
+		trackConn(label:GetPropertyChangedSignal("Text"):Connect(resize)); resize()
 	end
 	local distanceLabel = inst("TextLabel", {
 		Name = "ClashDistance",
@@ -748,15 +740,13 @@ function ExodusUI.setup(deps)
 		ZIndex = 20,
 		Parent = informationGui,
 	})
-	compactInformation(distanceLabel)
-	compactInformation(travelLabel)
-	corner(travelLabel, 8); local nextTravelUpdate = 0
+	compactInformation(distanceLabel); compactInformation(travelLabel); corner(travelLabel, 8); local nextTravelUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not travelLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true; travelLabel.Visible = visible; local time = os.clock()
 		if not visible or time < nextTravelUpdate then return end
-		nextTravelUpdate = time + 0.05; local status = AutoSpam.getStatus(); local stats = status and status.clashStats
-		local snapshot = GameInfo.getSnapshotAt(time); local speed
+		nextTravelUpdate = time + 0.05; local status = AutoSpam.getStatus(); local stats = status and status.clashStats; local snapshot = GameInfo.getSnapshotAt(time)
+		local speed
 		if GameInfo.isSnapshotValid(snapshot) then
 			speed = tonumber(snapshot.syncSpeed)
 			if not speed or speed ~= speed or speed <= 0 or speed == math.huge then speed = snapshot.speed end

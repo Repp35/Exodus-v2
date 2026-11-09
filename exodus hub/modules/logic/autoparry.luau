@@ -95,8 +95,7 @@ end
 -- geometry
 local function rangeBonus()
 	if not state.alive or not state.bound then return 0 end
-	local g = gameInfo.getDeflectGeometry(0, 0, 0, false, 0)
-	return g and math.clamp(g.resilienceBonus, 0, T.BONUS_CAP) or 0
+	local g = gameInfo.getDeflectGeometry(0, 0, 0, false, 0); return g and math.clamp(g.resilienceBonus, 0, T.BONUS_CAP) or 0
 end
 local function resilience()
 	local bonus = rangeBonus()
@@ -114,11 +113,9 @@ local function configuredFactor()
 end
 local function minimumBallSpeed() return T.MIN_PARRY_SPEED end
 local function radius(speed, factor, baseWindow)
-	speed = finite(speed) and math.max(speed, 0) or 0
-	factor = tonumber(factor)
+	speed = finite(speed) and math.max(speed, 0) or 0; factor = tonumber(factor)
 	if not finite(factor) then factor = configuredFactor() end
-	factor = math.clamp(factor, 0, 1)
-	return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
+	factor = math.clamp(factor, 0, 1); return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
 end
 
 -- telemetry
@@ -129,21 +126,14 @@ local function appendRecent(list, item)
 	list[#list + 1] = item
 	if #list > T.PRESSURE_SAMPLE_LIMIT then table.remove(list, 1) end
 end
-
--- Project the actual velocity onto the line to the player.
--- Tangential movement in a curve cannot be treated as direct closing speed.
 local function trajectory(position, velocity, rootPosition, nominalSpeed, geometry)
-	local delta = rootPosition - position
-	local distance = delta.Magnitude
-	local magnitude = velocity.Magnitude
-	local closing = 0
+	local delta = rootPosition - position; local distance = delta.Magnitude; local magnitude = velocity.Magnitude; local closing = 0
 	if distance > 0 and magnitude > 0 then
 		closing = velocity:Dot(delta) / distance
 		if finite(nominalSpeed) and nominalSpeed > 0 then closing = math.min(closing, nominalSpeed * 1.1) end
 	end
 	if not finite(closing) then closing = 0 end
-	local threshold = gameInfo.getProjectedDeflectRadius(geometry, closing) or geometry.noWindowParryRadius
-	return distance, closing, threshold
+	local threshold = gameInfo.getProjectedDeflectRadius(geometry, closing) or geometry.noWindowParryRadius; return distance, closing, threshold
 end
 
 -- target-sync
@@ -209,11 +199,7 @@ local function request(reason)
 	local configured = configuredFactor()
 	if configured > 0 then
 		local geometry = radius(speed, configured)
-		if geometry then
-			local denominator = speed * geometry.leadTime
-			local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured
-			appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed })
-		end
+		if geometry then local denominator = speed * geometry.leadTime; local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured; appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed }) end
 	end
 	phase("fired", reason); return true
 end
@@ -229,13 +215,14 @@ local function tick(character, root, generation)
 	if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
 	if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
 	if state.fired then phase("waiting", "target_already_parried"); return end
-	if value.locked == true then state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0; phase("waiting", "ball_locked"); return end
+	if value.locked == true then
+		state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0
+		phase("waiting", "ball_locked"); return
+	end
 	local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if not value.ball.Parent then return end
-	local syncSpeed = tonumber(value.syncSpeed)
-	local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
-	local geometry = radius(speed, configuredFactor())
+	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; local geometry = radius(speed, configuredFactor())
 	if not geometry then return end
 	local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry)
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
@@ -295,11 +282,9 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
 	local time = clock()
 	if not observeSnapshot(value, time) then return false end
 	if state.fired and finite(redirectAt) and state.lastFireAt >= redirectAt then return true end
-	local position, velocity = value.position, value.velocity
-	local own = gameInfo.getRootPosition(state.root)
+	local position, velocity = value.position, value.velocity; local own = gameInfo.getRootPosition(state.root)
 	if not vector(position) or not vector(velocity) or not vector(own) then return false end
-	samplePing()
-	local speed = tonumber(value.syncSpeed)
+	samplePing(); local speed = tonumber(value.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = velocity.Magnitude end
 	local g = radius(speed, configuredFactor())
 	if not g then return false end
@@ -307,10 +292,7 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 	state.closingSpeed, state.triggerDistance = closing, threshold
 	if closing <= 0 or distance > threshold then return false end
-	local alreadyFired, previousFireAt = state.fired, state.lastFireAt
-	local generation, cycle = state.generation, state.cycle
-	state.fired = false
-	local sent = request("redirect_return")
+	local alreadyFired, previousFireAt = state.fired, state.lastFireAt; local generation, cycle = state.generation, state.cycle; state.fired = false; local sent = request("redirect_return")
 	if not sent and state.generation == generation and state.cycle == cycle then
 		state.fired, state.lastFireAt = alreadyFired, previousFireAt
 	end
@@ -344,8 +326,7 @@ function AutoParry.onBallSync(data)
 		if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
 	end
 	state.teleported, state.teleportSequence = false, nil
-	local rawTarget = tonumber(data.TargetPlayerID)
-	local target = finite(rawTarget) and rawTarget > 0 and rawTarget or gameInfo.getTargetId()
+	local rawTarget = tonumber(data.TargetPlayerID); local target = finite(rawTarget) and rawTarget > 0 and rawTarget or gameInfo.getTargetId()
 	if order == nil and state.sequence ~= nil and state.targetKnown and target ~= state.target then return true end
 	if not finite(target) then return true end
 	observeTarget(target, clock())
@@ -568,5 +549,3 @@ AutoParry.__contract = {
 }
 
 return AutoParry
-
-

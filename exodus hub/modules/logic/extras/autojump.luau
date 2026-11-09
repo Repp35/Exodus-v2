@@ -23,6 +23,7 @@ local function jumpStep(player)
 	if not humanoid or humanoid.Health <= 0 or humanoid.FloorMaterial == AIR then return end
 	if humanoid:GetState() ~= JUMPING then humanoid:ChangeState(JUMPING) end
 end
+
 -- lifecycle
 function AutoJump.sync()
 	stopJump()
@@ -37,12 +38,13 @@ function AutoJump.sync()
 	end)
 	utils.trackGlobal(jumpConnection); return true
 end
-
 function AutoJump.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "Utils ausente" end
 	AutoJump.teardown(); utils = deps.Utils; return AutoJump.sync()
 end
-function AutoJump.teardown() stopJump(); utils = nil end
+function AutoJump.teardown()
+	stopJump(); utils = nil
+end
 
 -- contract
 AutoJump.__contract = {
@@ -50,4 +52,5 @@ AutoJump.__contract = {
 	requiresMethods = { Utils = { "getConfigValue", "getLocalPlayer", "getRunService", "trackGlobal", "untrackGlobal", "isActive" } },
 	provides = { "setup", "sync", "teardown" },
 }
+
 return AutoJump

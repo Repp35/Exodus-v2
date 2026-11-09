@@ -34,9 +34,7 @@ end
 -- dispatch
 local function request(boundUtils, boundRemote, token, guard)
 	if inFlight then return end
-	inFlight = true; status.lastRequestAt = os.clock()
-	local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard)
-	inFlight = false
+	inFlight = true; status.lastRequestAt = os.clock(); local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard); inFlight = false
 	if not ok then error(result, 0) end
 	if token ~= generation or utils ~= boundUtils then return end
 	if result == true then status.lastError = nil; return end
@@ -59,9 +57,7 @@ local function sync()
 	if running then cancel("rate_changed") end
 	generation += 1; local token, boundUtils, boundRemote = generation, utils, remote; running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
 	task.spawn(function()
-		local function guard()
-			return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive())
-		end
+		local function guard() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
 		local ok, err = xpcall(function()
 			if mode == "Auto" then
 				while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
@@ -78,7 +74,6 @@ local function sync()
 				while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
 					local time = os.clock()
 					if time >= due then
-						-- Reset only an actual scheduler stall, not ordinary multi-click frames.
 						if time - due > 0.1 then due = time end
 						local pending = math.floor((time - due) / interval) + 1
 						for _ = 1, pending do

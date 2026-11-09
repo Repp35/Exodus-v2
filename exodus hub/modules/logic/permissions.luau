@@ -182,9 +182,10 @@ local function readonly(value, visited)
 	if type(value) ~= "table" then return value end
 	visited = visited or {}
 	if visited[value] then return visited[value] end
-	local copied = {}
-	visited[value] = copied
-	for key, item in pairs(value) do copied[key] = readonly(item, visited) end
+	local copied = {}; visited[value] = copied
+	for key, item in pairs(value) do
+		copied[key] = readonly(item, visited)
+	end
 	return table.freeze(copied)
 end
 local function wrap(consumer, source, provider)
@@ -230,5 +231,3 @@ Permissions.__contract = {
 }
 
 return Permissions
-
-

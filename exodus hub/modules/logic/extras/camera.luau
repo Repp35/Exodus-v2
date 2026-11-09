@@ -43,20 +43,18 @@ local function startCamera()
 	end)
 end
 
-
 -- lifecycle
 function Camera.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "Utils ausente" end
-	Camera.teardown(); utils = deps.Utils
-	sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or 1
-	startCamera()
+	Camera.teardown(); utils = deps.Utils; sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or 1; startCamera()
 	configConnection = utils.observeConfig(function(changes)
 		if changes.CameraSensitivity ~= nil then sensitivity = tonumber(changes.CameraSensitivity) or 1 end
 	end)
-	utils.trackGlobal(configConnection)
-	return true
+	utils.trackGlobal(configConnection); return true
 end
-function Camera.teardown() stopCamera(); utils = nil end
+function Camera.teardown()
+	stopCamera(); utils = nil
+end
 
 -- contract
 Camera.__contract = {
@@ -64,4 +62,5 @@ Camera.__contract = {
 	requiresMethods = { Utils = { "getLocalPlayer", "getConfigValue", "isActive", "observeConfig", "trackGlobal", "untrackGlobal" } },
 	provides = { "setup", "teardown" },
 }
+
 return Camera

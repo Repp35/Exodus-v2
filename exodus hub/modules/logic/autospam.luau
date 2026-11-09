@@ -64,21 +64,15 @@ local function distanceLimit(snapshot)
 	if not finite(speed) or speed <= 0 then return nil end
 	local minimum, maximum = gameInfo.getBallSpeedLimits()
 	if not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
-	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
-	return T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor, factor
+	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); return T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor, factor
 end
--- Uses the same player positions as the clash panel, plus the current ball position.
 local function distanceGate(s, snapshot, partner, knownPosition, knownLimit, knownFactor)
 	local limit, factor = knownLimit, knownFactor
 	if not limit then limit, factor = distanceLimit(snapshot) end
-	if not limit or not s.root or not s.root.Parent or not partner or not snapshot or typeof(snapshot.position) ~= "Vector3" then
-		return "distance_unavailable", nil, factor
-	end
+	if not limit or not s.root or not s.root.Parent or not partner or not snapshot or typeof(snapshot.position) ~= "Vector3" then return "distance_unavailable", nil, factor end
 	local other = typeof(knownPosition) == "Vector3" and knownPosition or gameInfo.getPlayerMotion(partner)
 	if typeof(other) ~= "Vector3" then return "distance_unavailable", limit, factor end
-	local own = s.root.Position
-	local opponentDistance = (other - own).Magnitude
-	local ballDistance = (snapshot.position - own).Magnitude
+	local own = s.root.Position; local opponentDistance = (other - own).Magnitude; local ballDistance = (snapshot.position - own).Magnitude
 	if opponentDistance > limit then return "opponent_distance", limit, factor end
 	if ballDistance > limit then return "ball_distance", limit, factor end
 	return nil, limit, factor
@@ -101,8 +95,7 @@ local function closeRadius(snapshot)
 	local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
 	if not finite(speed) or speed <= 0 then return nil end
-	local g = gameInfo.getDeflectGeometry(speed, 0, 1, false)
-	return g and g.fullRadius or nil
+	local g = gameInfo.getDeflectGeometry(speed, 0, 1, false); return g and g.fullRadius or nil
 end
 local function returnWindow(window, speed, base)
 	local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0; return math.max(T.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
@@ -217,11 +210,7 @@ local function observeClashStats(s, snapshot, time, fresh)
 		elseif stats.lastTarget == partner and target == me then
 			if stats.cycleArmed then
 				stats.totalSwitches += 1
-				if stats.lastCycleAt and time > stats.lastCycleAt then
-					stats.cycleInterval = time - stats.lastCycleAt
-					local sample = math.min(35, 1 / stats.cycleInterval)
-					stats.currentCps = stats.currentCps and (stats.currentCps + 0.2 * (sample - stats.currentCps)) or sample
-				end
+				if stats.lastCycleAt and time > stats.lastCycleAt then stats.cycleInterval = time - stats.lastCycleAt; local sample = math.min(35, 1 / stats.cycleInterval); stats.currentCps = stats.currentCps and (stats.currentCps + 0.2 * (sample - stats.currentCps)) or sample end
 				stats.lastCycleAt = time
 			end
 			stats.cycleArmed = false; stats.lastSwitchAt = time
@@ -281,8 +270,9 @@ local function shouldActivate(s, snapshot, time)
 	if gameInfo.getBallFrozen() == true or not s.pending then return false end
 	local pending = s.pending
 	if pending.closeReturn then
-		local radius = closeRadius(snapshot)
-		return radius ~= nil and s.target == localPlayer.UserId and snapshot.targetId == localPlayer.UserId
+		local radius = closeRadius(snapshot); return radius ~= nil
+			and s.target == localPlayer.UserId
+			and snapshot.targetId == localPlayer.UserId
 			and (snapshot.position - s.root.Position).Magnitude <= radius
 	end
 	local g = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR)
@@ -319,32 +309,18 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	-- Physics gates run every Heartbeat, independent of target packets and Locked.
-	local limit, speedFactor = distanceLimit(snapshot)
-	local partnerPosition = s.partner and gameInfo.getPlayerMotion(s.partner)
-	if limit and typeof(partnerPosition) == "Vector3" and s.root and s.root.Parent
-		and (partnerPosition - s.root.Position).Magnitude > limit then
-		return "opponent_distance"
-	end
-	-- Locked only suppresses target-dependent decisions.
+	local limit, speedFactor = distanceLimit(snapshot); local partnerPosition = s.partner and gameInfo.getPlayerMotion(s.partner)
+	if limit and typeof(partnerPosition) == "Vector3" and s.root and s.root.Parent and (partnerPosition - s.root.Position).Magnitude > limit then return "opponent_distance" end
 	if snapshot and snapshot.locked == true then return nil end
-	-- A different confirmed target must retain priority over close-range protection.
-	local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported
-	local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
+	local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported; local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
 	if not validSnapshot or not target then return nil end
-	if finite(snapshot.syncAt) and snapshot.syncAt > 0
-		and time - snapshot.syncAt > T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE then return nil end
+	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE then return nil end
 	if target ~= localPlayer.UserId and target ~= s.partner and targetChanged then return "distant_target" end
-	-- Once activated, preserve the clash while the same partner remains inside
-	-- our base deflect radius (8.5 + resilience + speed-adjusted ping).
 	local protected = false
 	if validSnapshot and target and (target == localPlayer.UserId or target == s.partner) then
 		local speed = tonumber(snapshot.syncSpeed)
 		if not finite(speed) or speed <= 0 then speed = snapshot.speed end
-		if finite(speed) and speed > 0 and typeof(partnerPosition) == "Vector3" then
-			local g = gameInfo.getDeflectGeometry(speed, 0, 1, false)
-			protected = g ~= nil and (partnerPosition - s.root.Position).Magnitude <= g.fullRadius
-		end
+		if finite(speed) and speed > 0 and typeof(partnerPosition) == "Vector3" then local g = gameInfo.getDeflectGeometry(speed, 0, 1, false); protected = g ~= nil and (partnerPosition - s.root.Position).Magnitude <= g.fullRadius end
 	end
 	if protected then
 		s.diversionSince, s.diversionSyncAt = nil, nil
@@ -358,74 +334,53 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if distanceReason then return distanceReason end
 	s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
 	if target ~= localPlayer.UserId and target ~= s.partner then return nil end
-	-- Packet timestamps, not Heartbeat time: network stalls must not count.
 	if serverTime and finite(s.lastSwitchServerAt) and serverTime >= s.lastSwitchServerAt then
 		local ping = gameInfo.getAveragePing()
 		if not finite(ping) or ping < 0 then ping = 0 end
-		if serverTime - s.lastSwitchServerAt > s.switchTimeout + ping then
-			return "switch_timeout"
-		end
+		if serverTime - s.lastSwitchServerAt > s.switchTimeout + ping then return "switch_timeout" end
 	end
 	if not validSnapshot then return nil end
-	-- Confirm a diversion over time instead of trusting one potentially noisy frame.
 	local diverted = false
-	if finite(snapshot.syncAt) and snapshot.syncAt > 0
+	if
+		finite(snapshot.syncAt)
+		and snapshot.syncAt > 0
 		and time - snapshot.syncAt <= T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE
-		and snapshot.targetUncertain ~= true then
-		local radius = closeRadius(snapshot)
-		local partnerPosition = gameInfo.getPlayerMotion(s.partner)
-		local velocity = snapshot.velocity
-		if radius and typeof(snapshot.position) == "Vector3"
+		and snapshot.targetUncertain ~= true
+	then
+		local radius = closeRadius(snapshot); local partnerPosition = gameInfo.getPlayerMotion(s.partner); local velocity = snapshot.velocity
+		if
+			radius
+			and typeof(snapshot.position) == "Vector3"
 			and typeof(partnerPosition) == "Vector3"
-			and typeof(velocity) == "Vector3" and velocity.Magnitude > 1 then
-			local own = s.root.Position
-			local axis = partnerPosition - own
-			local towardMe = own - snapshot.position
-			local towardPartner = partnerPosition - snapshot.position
-			local speed = velocity.Magnitude
-			if axis.Magnitude > 1 and towardMe.Magnitude > radius
-				and towardPartner.Magnitude > radius then
-				local alignment = math.abs(velocity:Dot(axis) / (speed * axis.Magnitude))
-				local awayMe = velocity:Dot(towardMe) / (speed * towardMe.Magnitude)
-				local awayPartner = velocity:Dot(towardPartner) / (speed * towardPartner.Magnitude)
-				diverted = alignment < T.DEACTIVATION.DIRECTION_ALIGNMENT
+			and typeof(velocity) == "Vector3"
+			and velocity.Magnitude > 1
+		then
+			local own = s.root.Position; local axis = partnerPosition - own; local towardMe = own - snapshot.position; local towardPartner = partnerPosition - snapshot.position; local speed = velocity.Magnitude
+			if axis.Magnitude > 1 and towardMe.Magnitude > radius and towardPartner.Magnitude > radius then
+				local alignment = math.abs(velocity:Dot(axis) / (speed * axis.Magnitude)); local awayMe = velocity:Dot(towardMe) / (speed * towardMe.Magnitude); local awayPartner = velocity:Dot(towardPartner) / (speed * towardPartner.Magnitude); diverted = alignment < T.DEACTIVATION.DIRECTION_ALIGNMENT
 					and awayMe < -T.DEACTIVATION.AWAY_ALIGNMENT
 					and awayPartner < -T.DEACTIVATION.AWAY_ALIGNMENT
 			end
 		end
 	end
 	if diverted then
-		-- Require a second distinct ball sync; repeated Heartbeats of one snapshot do not confirm a diversion.
 		if not s.diversionSince then
 			s.diversionSince, s.diversionSyncAt = time, snapshot.syncAt
-		elseif snapshot.syncAt ~= s.diversionSyncAt
-			and time - s.diversionSince >= T.DEACTIVATION.DIVERSION_CONFIRM then
+		elseif snapshot.syncAt ~= s.diversionSyncAt and time - s.diversionSince >= T.DEACTIVATION.DIVERSION_CONFIRM then
 			return "ball_diverted"
 		end
 	else
 		s.diversionSince, s.diversionSyncAt = nil, nil
 	end
-
 	return nil
 end
-
 local function applyDeactivation(s, snapshot, time, serverTime, targetChanged)
 	if not s.active then return false end
 	local reason = shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not reason then return false end
 	local redirected = reason == "distant_target" or reason == "ball_diverted"
-	if redirected then
-		s.redirectAt = time
-		s.redirectUntil = time + T.DEACTIVATION.RETURN_TRACK_DURATION
-		s.redirectWatch = true
-		s.redirectExited = false
-		s.redirectAway = true
-		s.redirectPartner = s.partner
-	end
-	if reason == "opponent_distance" or reason == "ball_distance" or reason == "distance_unavailable" then
-		s.distanceLockPartner = s.partner
-		s.distanceLockUntil = time + T.DEACTIVATION.DISTANCE_REACTIVATION_DELAY
-	end
+	if redirected then s.redirectAt = time; s.redirectUntil = time + T.DEACTIVATION.RETURN_TRACK_DURATION; s.redirectWatch = true; s.redirectExited = false; s.redirectAway = true; s.redirectPartner = s.partner end
+	if reason == "opponent_distance" or reason == "ball_distance" or reason == "distance_unavailable" then s.distanceLockPartner = s.partner; s.distanceLockUntil = time + T.DEACTIVATION.DISTANCE_REACTIVATION_DELAY end
 	stop(s, reason, redirected)
 	if redirected then utils.setManualSpamActive(false) end
 	return true
@@ -476,8 +431,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		if s.active and previous == s.partner then
 			s.awayAt, s.awayServerAt = nil, nil
 		end
-		local radius = snapshot and closeRadius(snapshot)
-		local closePartner = previous and previous ~= me and previous or nil
+		local radius = snapshot and closeRadius(snapshot); local closePartner = previous and previous ~= me and previous or nil
 		if not s.active and closePartner and radius and snapshot.targetUncertain ~= true and (snapshot.position - s.root.Position).Magnitude <= radius then
 			s.pending = { partner = closePartner, closeReturn = true }
 		elseif not s.active and s.recoveryPartner == previous then
@@ -501,41 +455,49 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	syncManualPartner(s)
 	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now(), nil, false); return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
-	-- Deactivation runs on every Heartbeat, regardless of sync packets.
 	if not fresh and applyDeactivation(s, snapshot, time, nil, false) then blockedActivation = true end
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
 	local target = userId(snapshot.targetId); observeClashStats(s, snapshot, time, fresh)
 	if s.redirectWatch and not s.active then
-		-- A redirected ball must leave the real deflect radius, then return with
-		-- a confirmed target on us before allowing exactly one extra parry.
-		local radius = closeRadius(snapshot)
-		local distance = radius and (snapshot.position - s.root.Position).Magnitude
+		local radius = closeRadius(snapshot); local distance = radius and (snapshot.position - s.root.Position).Magnitude
 		if distance and distance > radius then s.redirectExited = true end
-		if s.redirectExited and distance and distance <= radius
-			and snapshot.targetUncertain ~= true and target == localPlayer.UserId
-			and s.redirectReturning then
+		if
+			s.redirectExited
+			and distance
+			and distance <= radius
+			and snapshot.targetUncertain ~= true
+			and target == localPlayer.UserId
+			and s.redirectReturning
+		then
 			if autoParry.tryRedirectReturn(snapshot, s.redirectAt) then
 				s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner = nil, nil, nil, nil, nil
 				s.redirectWatch, s.redirectExited = nil, nil
 				s.returnParriedTarget = true
 			end
 		end
-		-- Never reactivate Auto Spam during a redirected third-party ball.
 		return
 	end
 	if fresh and utils.isManualSpamActive() then
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
 		if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
 	end
-	-- Never synthesize a return from proximity or ClashContext.
-	-- Only inspectTarget may create pending from a confirmed target transition.
-	if not s.active and not blockedActivation
+	if
+		not s.active
+		and not blockedActivation
 		and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= T.ACTIVATION.REACTIVATION_COOLDOWN)
-		and shouldActivate(s, snapshot, time) then
+		and shouldActivate(s, snapshot, time)
+	then
 		local activationServerTime = serverTime
 		if not fresh then activationServerTime = snapshot.serverTime end
-		start(s, s.pending.closeReturn and "close_return" or (s.pending.recovery and "recovery" or "return_target"), s.pending.partner, time, activationServerTime, snapshot)
+		start(
+			s,
+			s.pending.closeReturn and "close_return" or (s.pending.recovery and "recovery" or "return_target"),
+			s.pending.partner,
+			time,
+			activationServerTime,
+			snapshot
+		)
 	end
 end
 
@@ -592,13 +554,10 @@ function AutoSpam.bindCharacter(character)
 			if current ~= s or s.active or not s.root.Parent or not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return end
 			if not gameInfo.areAbilitiesEnabled() or gameInfo.getBallFrozen() == true then return end
 			if typeof(from) ~= "CFrame" or typeof(destination) ~= "CFrame" then return end
-			local targetId = userId(gameInfo.getTargetId())
-			local ownId = localPlayer.UserId
-			local ownWasAtSource = typeof(s.lastRootPosition) == "Vector3" and (s.lastRootPosition - from.Position).Magnitude <= T.ACTIVATION.HAUNTER_MATCH_RADIUS
+			local targetId = userId(gameInfo.getTargetId()); local ownId = localPlayer.UserId; local ownWasAtSource = typeof(s.lastRootPosition) == "Vector3"
+				and (s.lastRootPosition - from.Position).Magnitude <= T.ACTIVATION.HAUNTER_MATCH_RADIUS
 			local eventTime = now()
-			if not ownWasAtSource and s.recentRootPosition and eventTime - s.recentRootAt <= 0.75 then
-				ownWasAtSource = (s.recentRootPosition - from.Position).Magnitude <= T.ACTIVATION.HAUNTER_MATCH_RADIUS
-			end
+			if not ownWasAtSource and s.recentRootPosition and eventTime - s.recentRootAt <= 0.75 then ownWasAtSource = (s.recentRootPosition - from.Position).Magnitude <= T.ACTIVATION.HAUNTER_MATCH_RADIUS end
 			local otherTarget = targetId ~= ownId and targetId or (s.target ~= ownId and s.target or nil)
 			if ownWasAtSource and targetId == ownId and not otherTarget then
 				local bestDistance
@@ -607,20 +566,20 @@ function AutoSpam.bindCharacter(character)
 						local position = gameInfo.getPlayerMotion(player.UserId)
 						if typeof(position) == "Vector3" then
 							local distance = (position - destination.Position).Magnitude
-							if distance <= T.ACTIVATION.HAUNTER_RANGE and (not bestDistance or distance < bestDistance) then
-								otherTarget, bestDistance = player.UserId, distance
-							end
+							if distance <= T.ACTIVATION.HAUNTER_RANGE and (not bestDistance or distance < bestDistance) then otherTarget, bestDistance = player.UserId, distance end
 						end
 					end
 				end
 			end
 			if otherTarget and ownWasAtSource and (targetId == ownId or targetId == otherTarget) then
 				local targetPosition = gameInfo.getPlayerMotion(otherTarget)
-				if typeof(targetPosition) == "Vector3" and playerIsAlive(otherTarget)
-					and (targetPosition - destination.Position).Magnitude <= T.ACTIVATION.HAUNTER_RANGE then
+				if
+					typeof(targetPosition) == "Vector3"
+					and playerIsAlive(otherTarget)
+					and (targetPosition - destination.Position).Magnitude <= T.ACTIVATION.HAUNTER_RANGE
+				then
 					s.haunterPartner, s.haunterUntil = otherTarget, eventTime + 0.75
-					start(s, "haunter_self", otherTarget, eventTime, nil)
-					return
+					start(s, "haunter_self", otherTarget, eventTime, nil); return
 				end
 			end
 			if (destination.Position - s.root.Position).Magnitude > T.ACTIVATION.HAUNTER_RANGE then return end
@@ -696,8 +655,7 @@ function AutoSpam.bindCharacter(character)
 end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
-	detach("teardown")
-	utils, gameInfo, autoParry, players, runService, localPlayer = nil, nil, nil, nil, nil, nil, nil
+	detach("teardown"); utils, gameInfo, autoParry, players, runService, localPlayer = nil, nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
 	local s = current
@@ -732,8 +690,7 @@ function AutoSpam.onBallSync(data)
 	end
 	local time = now(); local target = userId(data.TargetPlayerID); local serverTime = tonumber(data.ServerTime)
 	if not finite(serverTime) then serverTime = nil end
-	local speed = tonumber(data.Speed)
-	local snapshot = gameInfo.getSnapshotAt(time)
+	local speed = tonumber(data.Speed); local snapshot = gameInfo.getSnapshotAt(time)
 	if snapshot and data.Source == "packet" then
 		snapshot = table.clone(snapshot)
 		if userId(target) then
@@ -747,12 +704,8 @@ function AutoSpam.onBallSync(data)
 	end
 	local stopped = false
 	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then
-		if not stopped and target ~= s.target then
-			stopped = applyDeactivation(s, snapshot, time, serverTime, true)
-		end
-		if not stopped and target == s.target then
-			stopped = applyDeactivation(s, snapshot, time, serverTime, false)
-		end
+		if not stopped and target ~= s.target then stopped = applyDeactivation(s, snapshot, time, serverTime, true) end
+		if not stopped and target == s.target then stopped = applyDeactivation(s, snapshot, time, serverTime, false) end
 		inspectTarget(s, target, time, snapshot, serverTime)
 	end
 	evaluate(s, time, true, serverTime, snapshot, stopped)
@@ -789,7 +742,10 @@ function AutoSpam.getStatus()
 			partnerId = clashStats.partnerId,
 			distance = clashStats.distance,
 			cps = clashStats.cps,
-			currentCps = clashStats.currentCps and (clashStats.frozen and clashStats.currentCps or math.min(clashStats.currentCps, 1 / math.max(clashStats.cycleInterval, now() - clashStats.lastCycleAt))) or nil,
+			currentCps = clashStats.currentCps and (clashStats.frozen and clashStats.currentCps or math.min(
+				clashStats.currentCps,
+				1 / math.max(clashStats.cycleInterval, now() - clashStats.lastCycleAt)
+			)) or nil,
 			startSample = clashStats.startSample,
 			endSample = clashStats.endSample,
 			endReason = clashStats.endReason,
@@ -864,5 +820,3 @@ AutoSpam.__contract = {
 }
 
 return AutoSpam
-
-

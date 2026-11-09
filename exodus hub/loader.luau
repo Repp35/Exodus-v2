@@ -120,7 +120,8 @@ local function clearRegistry()
 	for _, name in ipairs(MODULE_ORDER) do
 		Modules[name] = nil
 	end
-	Modules.ui = nil; Modules.permissions = nil; Modules.Loader = Loader; Exodus.Utils = nil; Exodus.State = nil; Exodus.Config = nil; Exodus.ModuleURLs = nil; Exodus.Runtime = nil; Exodus.Context = nil; Exodus.UI = nil; Exodus.Diagnostics = nil; Exodus.Version = nil; Exodus.Revision = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false; _G.ExodusOnBurst = nil
+	Modules.ui = nil; Modules.permissions = nil; Modules.Loader = Loader; Exodus.Utils = nil; Exodus.State = nil; Exodus.Config = nil; Exodus.ModuleURLs = nil; Exodus.Runtime = nil; Exodus.Context = nil; Exodus.UI = nil; Exodus.Diagnostics = nil; Exodus.Version = nil; Exodus.Revision = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false
+	_G.ExodusOnBurst = nil
 end
 local function stopPreviousRuntime()
 	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then Modules.gameinfo.stopMaintenance() end

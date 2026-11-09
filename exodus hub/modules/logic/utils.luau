@@ -37,7 +37,9 @@ local function copy(value, depth)
 	depth = depth or 0
 	if depth > 8 then return value end
 	local result = {}
-	for key, item in pairs(value) do result[copy(key, depth + 1)] = copy(item, depth + 1) end
+	for key, item in pairs(value) do
+		result[copy(key, depth + 1)] = copy(item, depth + 1)
+	end
 	return result
 end
 local function snapshot(value) return type(value) == "table" and copy(value) or {} end

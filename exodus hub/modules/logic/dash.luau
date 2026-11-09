@@ -113,8 +113,7 @@ function Dash.tick(time, excludeLocal, center, radius)
 	if time - lastTick < T.TICK_INTERVAL then return end
 	lastTick = time
 	if type(center) == "number" then
-		local player = players:GetPlayerByUserId(center)
-		local record = player and records[player]
+		local player = players:GetPlayerByUserId(center); local record = player and records[player]
 		if record and player.Parent and (not excludeLocal or player ~= players.LocalPlayer) then observe(player, record, time) end
 		return
 	end
