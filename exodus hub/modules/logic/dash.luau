@@ -52,11 +52,11 @@ local function resetCharacter(record, character)
 	record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
 	record.lastDetection, record.signalAt, record.signalActive, record.confirmedSignalAt = nil, -math.huge, false, nil
 end
-local function observe(player, record, time)
+local function observe(player, record, time, suppliedRoot)
 	local character = player.Character
 	if record.character ~= character then resetCharacter(record, character) end
 	if not character or not character.Parent then return end
-	local root = rootOf(player)
+	local root = suppliedRoot or rootOf(player)
 	if not root then
 		record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
 		return
@@ -107,19 +107,34 @@ end
 function Dash.setHandler(callback)
 	handler = type(callback) == "function" and callback or nil; return true
 end
-function Dash.tick(time, excludeLocal, playerId)
+function Dash.tick(time, excludeLocal, center, radius)
 	if not players then return end
 	time = type(time) == "number" and time or now()
 	if time - lastTick < T.TICK_INTERVAL then return end
 	lastTick = time
-	if playerId ~= nil then
-		local player = players:GetPlayerByUserId(playerId)
+	if type(center) == "number" then
+		local player = players:GetPlayerByUserId(center)
 		local record = player and records[player]
 		if record and player.Parent and (not excludeLocal or player ~= players.LocalPlayer) then observe(player, record, time) end
 		return
 	end
+	local limit = typeof(center) == "Vector3" and type(radius) == "number" and radius > 0 and radius * radius or nil
 	for player, record in pairs(records) do
-		if player.Parent and (not excludeLocal or player ~= players.LocalPlayer) then observe(player, record, time) end
+		if player.Parent and (not excludeLocal or player ~= players.LocalPlayer) then
+			if not limit then
+				observe(player, record, time)
+			else
+				local root = rootOf(player)
+				if root and root.Parent then
+					local delta = root.Position - center
+					if delta:Dot(delta) <= limit then
+						observe(player, record, time, root)
+					else
+						record.position, record.positionAt, record.signalActive, record.signalAt = nil, nil, false, -math.huge
+					end
+				end
+			end
+		end
 	end
 end
 function Dash.resetState()

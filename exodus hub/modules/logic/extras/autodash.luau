@@ -2,13 +2,16 @@
 local AutoDash = {}
 local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
 local root, heartbeat
+local DASH_DETECTION_RANGE = 70
 
 local function onDash(event)
 	if not root or not root.Parent or not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true
 		or not gameInfo.areAbilitiesEnabled() or not event or event.userId == localPlayer.UserId or not event.velocity then return end
+	if typeof(event.position) ~= "Vector3" or (event.position - root.Position).Magnitude > DASH_DETECTION_RANGE then return end
 	local active = autoSpam.getActivationContext()
 	local partner = active.active and active.partner or (gameInfo.getClashContext() or {}).partnerId
-	if partner ~= event.userId then return end
+	-- A nearby player holding the ball may become the clash partner on the next return.
+	if partner ~= event.userId and gameInfo.getTargetId() ~= event.userId then return end
 	local character = event.player and event.player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return end
@@ -35,9 +38,8 @@ function AutoDash.bindCharacter(character)
 	heartbeat = runService.Heartbeat:Connect(function()
 		if not root or not root.Parent then return end
 		if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then return end
-		local active = autoSpam.getActivationContext()
-		local partner = active.active and active.partner or (gameInfo.getClashContext() or {}).partnerId
-		if partner then dash.tick(utils.now(), true, partner) end
+		-- Track nearby players even before the first exchange; distant animations are expensive.
+		dash.tick(utils.now(), true, root.Position, DASH_DETECTION_RANGE)
 	end)
 	utils.trackCharacter(heartbeat)
 	return true
@@ -55,7 +57,7 @@ AutoDash.__contract = {
 	requires = { Utils = "utils", GameInfo = "gameinfo", Dash = "dash", Movement = "movement", AutoSpam = "autospam" },
 	requiresMethods = {
 		Utils = { "getPlayers", "getLocalPlayer", "getRunService", "getConfigValue", "isActive", "now", "trackCharacter", "untrackCharacter" },
-		GameInfo = { "areAbilitiesEnabled", "getClashContext" },
+		GameInfo = { "areAbilitiesEnabled", "getClashContext", "getTargetId" },
 		Dash = { "setHandler", "tick" }, Movement = { "upDash", "dashToward" },
 		AutoSpam = { "getActivationContext" },
 	},
