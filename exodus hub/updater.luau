@@ -1,5 +1,7 @@
 -- [[ atualização automática ]]
 
+-- runtime
+
 return function(loadedRevision, request)
 	local players = game:GetService("Players")
 	local workspace = game:GetService("Workspace")
