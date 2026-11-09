@@ -10,6 +10,7 @@ local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
 local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
+local ballData, dashAnimation
 
 -- tuning
 local T = {
@@ -48,6 +49,7 @@ local targetFrame, targetFrameConnection = 0, nil
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
+local EMPTY_OPTIONS = {}
 local function child(parent, name) return parent and parent:FindFirstChild(name) end
 local function report(name, message)
 	local time = os.clock()
@@ -252,7 +254,7 @@ function GameInfo.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
 	GameInfo.stopMaintenance(); disconnect(cooldownConnection); disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil; utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
 	if not players or not world then return false, "dependência ausente: Players ou Workspace" end
-	ball, searchAt, watching = nil, 0, false; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}
+	ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}
 	pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil
 	targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
 	targetFrame = 0
@@ -287,14 +289,23 @@ end
 function GameInfo.getHaunterEvent()
 	local folder = child(child(storage(), "TS"), "GeneratedNetworkRemotes"); local event = child(folder, "RE_" .. tostring(9.150098456648103e76)); return event and event:IsA("RemoteEvent") and event or nil
 end
+local function playerRoot(id)
+	local player = type(id) == "number" and players:GetPlayerByUserId(id)
+	local character = player and player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if root and root.Parent then return root, character end
+	return nil
+end
 function GameInfo.getPlayerMotion(id)
-	local player = type(id) == "number" and players:GetPlayerByUserId(id); local character = player and player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not root or not root.Parent then return nil end
+	local root, character = playerRoot(id)
+	if not root then return nil end
 	return root.Position, root.AssemblyLinearVelocity, character
 end
 function GameInfo.getPlayerDistance(id)
-	local own = players.LocalPlayer; local other = type(id) == "number" and players:GetPlayerByUserId(id); local ownRoot = own and own.Character and own.Character:FindFirstChild("HumanoidRootPart"); local otherRoot = other and other.Character and other.Character:FindFirstChild("HumanoidRootPart")
-	if not ownRoot or not otherRoot or not ownRoot.Parent or not otherRoot.Parent then return nil end
+	local own = players.LocalPlayer
+	local ownRoot = own and own.Character and own.Character:FindFirstChild("HumanoidRootPart")
+	local otherRoot = playerRoot(id)
+	if not ownRoot or not ownRoot.Parent or not otherRoot then return nil end
 	return (ownRoot.Position - otherRoot.Position).Magnitude
 end
 function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
@@ -332,7 +343,12 @@ function GameInfo.isPlayerDashing(player)
 	local character = player.Character
 	if not character or not character.Parent then return false end
 	if character:GetAttribute("IsDashing") == true then return true end
-	local humanoid = character:FindFirstChildOfClass("Humanoid"); local animator = humanoid and humanoid:FindFirstChildOfClass("Animator"); local replicated = storage(); local animations = replicated and replicated:FindFirstChild("Animations"); local movement = animations and animations:FindFirstChild("Movement"); local dashAnimation = movement and movement:FindFirstChild("Dash")
+	local humanoid = character:FindFirstChildOfClass("Humanoid"); local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	if not dashAnimation or not dashAnimation.Parent then
+		local replicated = storage(); local animations = replicated and replicated:FindFirstChild("Animations")
+		local movement = animations and animations:FindFirstChild("Movement")
+		dashAnimation = movement and movement:FindFirstChild("Dash")
+	end
 	if not animator or not dashAnimation or not dashAnimation:IsA("Animation") or dashAnimation.AnimationId == "" then return false end
 	for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
 		local animation = track.Animation
@@ -559,13 +575,13 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
 	return window
 end
 function GameInfo.getBallFrozen()
-	local data = child(world, "BallData")
-	if not data then return nil end
-	return data:GetAttribute("Frozen") == true
+	if not ballData or not ballData.Parent then ballData = child(world, "BallData") end
+	if not ballData then return nil end
+	return ballData:GetAttribute("Frozen") == true
 end
 function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyOverride, options)
 	if not finite(speed) or speed < 0 then return nil end
-	options = type(options) == "table" and options or {}
+	options = type(options) == "table" and options or EMPTY_OPTIONS
 	local includeResilience = options.resilience ~= false
 	local range = includeResilience and GameInfo.getDeflectRange() or T.RANGE_BASE
 	if not finite(range) or range <= 0 then range = T.RANGE_BASE end

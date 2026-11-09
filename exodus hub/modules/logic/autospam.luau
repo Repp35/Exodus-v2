@@ -68,12 +68,13 @@ local function distanceLimit(snapshot)
 	return T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor, factor
 end
 -- Uses the same player positions as the clash panel, plus the current ball position.
-local function distanceGate(s, snapshot, partner)
-	local limit, factor = distanceLimit(snapshot)
+local function distanceGate(s, snapshot, partner, knownPosition, knownLimit, knownFactor)
+	local limit, factor = knownLimit, knownFactor
+	if not limit then limit, factor = distanceLimit(snapshot) end
 	if not limit or not s.root or not s.root.Parent or not partner or not snapshot or typeof(snapshot.position) ~= "Vector3" then
 		return "distance_unavailable", nil, factor
 	end
-	local other = gameInfo.getPlayerMotion(partner)
+	local other = typeof(knownPosition) == "Vector3" and knownPosition or gameInfo.getPlayerMotion(partner)
 	if typeof(other) ~= "Vector3" then return "distance_unavailable", limit, factor end
 	local own = s.root.Position
 	local opponentDistance = (other - own).Magnitude
@@ -287,7 +288,7 @@ local function shouldActivate(s, snapshot, time)
 	local g = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR)
 	if not g then return false end
 	if pending.recovery then
-		local partnerDistance = distanceToPlayer(s, pending.partner); local normal = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); return normal ~= nil
+		local partnerDistance = distanceToPlayer(s, pending.partner); local normal = g; return normal ~= nil
 			and partnerDistance ~= nil
 			and partnerDistance <= normal.fullRadius
 			and (s.target == localPlayer.UserId or s.target == pending.partner)
@@ -319,7 +320,7 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
 	-- Physics gates run every Heartbeat, independent of target packets and Locked.
-	local limit = distanceLimit(snapshot)
+	local limit, speedFactor = distanceLimit(snapshot)
 	local partnerPosition = s.partner and gameInfo.getPlayerMotion(s.partner)
 	if limit and typeof(partnerPosition) == "Vector3" and s.root and s.root.Parent
 		and (partnerPosition - s.root.Position).Magnitude > limit then
@@ -333,20 +334,13 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not validSnapshot or not target then return nil end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0
 		and time - snapshot.syncAt > T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE then return nil end
-	if target and target ~= localPlayer.UserId and target ~= s.partner then
-		local g = geometry(s, snapshot, 1)
-		local distance = distanceToPlayer(s, target)
-		if targetChanged then
-			return "distant_target"
-		end
-	end
+	if target ~= localPlayer.UserId and target ~= s.partner and targetChanged then return "distant_target" end
 	-- Once activated, preserve the clash while the same partner remains inside
 	-- our base deflect radius (8.5 + resilience + speed-adjusted ping).
 	local protected = false
 	if validSnapshot and target and (target == localPlayer.UserId or target == s.partner) then
 		local speed = tonumber(snapshot.syncSpeed)
 		if not finite(speed) or speed <= 0 then speed = snapshot.speed end
-		local partnerPosition = gameInfo.getPlayerMotion(s.partner)
 		if finite(speed) and speed > 0 and typeof(partnerPosition) == "Vector3" then
 			local g = gameInfo.getDeflectGeometry(speed, 0, 1, false)
 			protected = g ~= nil and (partnerPosition - s.root.Position).Magnitude <= g.fullRadius
@@ -356,7 +350,7 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		s.diversionSince, s.diversionSyncAt = nil, nil
 		return nil
 	end
-	local distanceReason, limit, factor = distanceGate(s, snapshot, s.partner)
+	local distanceReason, limit, factor = distanceGate(s, snapshot, s.partner, partnerPosition, limit, speedFactor)
 	if distanceReason == "distance_unavailable" then
 		s.diversionSince, s.diversionSyncAt = nil, nil
 		return nil

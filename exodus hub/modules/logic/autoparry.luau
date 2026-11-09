@@ -122,14 +122,12 @@ local function radius(speed, factor, baseWindow)
 end
 
 -- telemetry
-local function samplePing(time)
+local function samplePing()
 	state.ping, state.pingRaw, state.pingCount = gameInfo.getAveragePing()
 end
 local function appendRecent(list, item)
 	list[#list + 1] = item
-	while #list > T.PRESSURE_SAMPLE_LIMIT do
-		table.remove(list, 1)
-	end
+	if #list > T.PRESSURE_SAMPLE_LIMIT then table.remove(list, 1) end
 end
 
 -- Project the actual velocity onto the line to the player.
@@ -209,13 +207,20 @@ local function request(reason)
 		return false
 	end
 	local configured = configuredFactor()
-	if configured > 0 then local geometry = radius(speed, configured); local denominator = speed * geometry.leadTime; local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured; appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed }) end
+	if configured > 0 then
+		local geometry = radius(speed, configured)
+		if geometry then
+			local denominator = speed * geometry.leadTime
+			local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured
+			appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed })
+		end
+	end
 	phase("fired", reason); return true
 end
 local function tick(character, root, generation)
 	if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
 	if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
-	local time = clock(); samplePing(time); local value = gameInfo.getSnapshotAt(time)
+	local time = clock(); samplePing(); local value = gameInfo.getSnapshotAt(time)
 	if generation ~= state.generation or not state.bound or not state.alive then return end
 	if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
 	if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
@@ -227,7 +232,7 @@ local function tick(character, root, generation)
 	if value.locked == true then state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0; phase("waiting", "ball_locked"); return end
 	local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
-	if typeof(value.ball) ~= "Instance" or not value.ball.Parent or not value.ball:IsA("BasePart") then return end
+	if not value.ball.Parent then return end
 	local syncSpeed = tonumber(value.syncSpeed)
 	local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
 	local geometry = radius(speed, configuredFactor())
@@ -278,7 +283,8 @@ end
 function AutoParry.fire()
 	if not state.alive or not state.bound or state.fired or state.teleported then return false end
 	if not state.player or state.target ~= state.player.UserId then return false end
-	if state.distance > radius(state.speed, configuredFactor()).fullRadius then return false end
+	local g = radius(state.speed, configuredFactor())
+	if not g or state.distance > g.fullRadius then return false end
 	return request("manual_parry")
 end
 function AutoParry.tryRedirectReturn(value, redirectAt)
@@ -292,7 +298,7 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
 	local position, velocity = value.position, value.velocity
 	local own = gameInfo.getRootPosition(state.root)
 	if not vector(position) or not vector(velocity) or not vector(own) then return false end
-	samplePing(time)
+	samplePing()
 	local speed = tonumber(value.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = velocity.Magnitude end
 	local g = radius(speed, configuredFactor())
@@ -382,7 +388,9 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
 	if not vector(position) or not vector(root) then return nil end
 	local speed = vector(velocity) and velocity.Magnitude or tonumber(value.speed) or 0
 	if not finite(speed) or speed < 0 then return nil end
-	local geometry = radius(speed, factor, baseWindow); local delta, distance = root - position, (root - position).Magnitude; local distanceToRadius = distance - geometry.fullRadius
+	local geometry = radius(speed, factor, baseWindow)
+	if not geometry then return nil end
+	local delta = root - position; local distance = delta.Magnitude; local distanceToRadius = distance - geometry.fullRadius
 	return {
 		distance = distance,
 		speed = speed,
