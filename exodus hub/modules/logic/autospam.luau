@@ -483,12 +483,8 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 			s.awayAt, s.awayServerAt = nil, nil
 		end
 		local radius = snapshot and closeRadius(snapshot)
-		local closePartner = previous and previous ~= me and previous or s.departedTo
-		if not closePartner then
-			local context = gameInfo.getClashContext()
-			closePartner = context and userId(context.partnerId)
-		end
-		if not s.active and closePartner and radius and (snapshot.position - s.root.Position).Magnitude <= radius then
+		local closePartner = previous and previous ~= me and previous or nil
+		if not s.active and previous == s.departedTo and s.departedAt and closePartner and radius and (snapshot.position - s.root.Position).Magnitude <= radius then
 			s.pending = { partner = closePartner, closeReturn = true }
 		elseif not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
@@ -538,17 +534,8 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
 		if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
 	end
-	-- Deactivation state never blocks a new legitimate activation after the short cooldown.
-	if not s.active and not s.pending and target == localPlayer.UserId and snapshot.targetUncertain ~= true then
-		local context = gameInfo.getClashContext()
-		local partner = userId(s.departedTo) or (context and userId(context.partnerId))
-		if partner and partner ~= localPlayer.UserId then
-			local radius = closeRadius(snapshot)
-			if radius and (snapshot.position - s.root.Position).Magnitude <= radius then
-				s.pending = { partner = partner, closeReturn = true }
-			end
-		end
-	end
+	-- Never synthesize a return from proximity or ClashContext.
+	-- Only inspectTarget may create pending from a confirmed target transition.
 	if not s.active and not blockedActivation
 		and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= T.ACTIVATION.REACTIVATION_COOLDOWN)
 		and shouldActivate(s, snapshot, time) then
@@ -749,7 +736,7 @@ function AutoSpam.onBallSync(data)
 		s.pending, s.recoveryPartner, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil, nil
 		return
 	end
-	local time = now(); local target = userId(data.TargetPlayerID) or gameInfo.getTargetId(); local serverTime = tonumber(data.ServerTime)
+	local time = now(); local target = userId(data.TargetPlayerID); local serverTime = tonumber(data.ServerTime)
 	if not finite(serverTime) then serverTime = nil end
 	local speed = tonumber(data.Speed)
 	local snapshot = gameInfo.getSnapshotAt(time)
