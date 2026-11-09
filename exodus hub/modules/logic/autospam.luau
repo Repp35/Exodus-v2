@@ -270,10 +270,11 @@ local function shouldActivate(s, snapshot, time)
 	if gameInfo.getBallFrozen() == true or not s.pending then return false end
 	local pending = s.pending
 	if pending.closeReturn then
-		local radius = closeRadius(snapshot); return radius ~= nil
+		local g = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR)
+		return g ~= nil
 			and s.target == localPlayer.UserId
 			and snapshot.targetId == localPlayer.UserId
-			and (snapshot.position - s.root.Position).Magnitude <= radius
+			and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
 	end
 	local g = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR)
 	if not g then return false end
@@ -432,11 +433,19 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 			s.awayAt, s.awayServerAt = nil, nil
 		end
 		local radius = snapshot and closeRadius(snapshot); local closePartner = previous and previous ~= me and previous or nil
-		if not s.active and closePartner and radius and snapshot.targetUncertain ~= true and (snapshot.position - s.root.Position).Magnitude <= radius then
-			s.pending = { partner = closePartner, closeReturn = true }
-		elseif not s.active and s.recoveryPartner == previous then
+		if not s.active and closePartner and snapshot.targetUncertain ~= true then
+			-- A confirmed incoming packet is enough to prepare the clash immediately.
+			-- Require both the ball and the previous target to be within the dynamic range.
+			local activation = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR)
+			local limit = distanceLimit(snapshot)
+			local partnerDistance = distanceToPlayer(s, closePartner)
+			local incoming = activation and limit and partnerDistance and partnerDistance <= limit
+				and (snapshot.position - s.root.Position).Magnitude <= activation.fullRadius
+			if incoming then s.pending = { partner = closePartner, closeReturn = true } end
+		end
+		if not s.pending and not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
-		elseif not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt and window then
+		elseif not s.pending and not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt and window then
 			local limit = returnWindow(window, speed, T.ACTIVATION.RETURN); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
 			if returnElapsed and returnElapsed <= limit then s.pending = { partner = previous } end
 		end
