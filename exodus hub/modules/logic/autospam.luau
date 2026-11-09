@@ -317,8 +317,9 @@ end
 local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
-	-- Frozen/locked states are transient: never deactivate on them.
-	if gameInfo.getBallFrozen() == true or (snapshot and snapshot.locked == true) then return nil end
+	if gameInfo.getBallFrozen() == true then return "frozen" end
+	-- Locked is transient and must not deactivate Auto Clash.
+	if snapshot and snapshot.locked == true then return nil end
 	-- A different confirmed target must retain priority over close-range protection.
 	local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported
 	local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
