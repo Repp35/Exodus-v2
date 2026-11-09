@@ -20,13 +20,7 @@ local function onDash(event)
 		local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
 		if partner == event.userId and velocity.Y >= 72 and horizontalSpeed <= velocity.Y * 0.5 then movement.upDash() end
 	end
-	local offset = root.Position - event.position
-	local distance, speed = offset.Magnitude, velocity.Magnitude
-	if not utils.isActive() then return end
-	if partner == event.userId and playerIsAlive(partner) and distance > 0 and speed > 0
-		and -velocity:Dot(offset) / (speed * distance) >= 0.98 and velocity.Y / speed < 0.5 then
-		movement.dashToward(-offset)
-	end
+
 end
 
 function AutoDash.setup(deps)
