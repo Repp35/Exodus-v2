@@ -104,7 +104,7 @@ local POLICIES = {
 	},
 	camera = {
 		provide = allow("setup teardown"),
-		consume = { utils = allow("getConfigValue getLocalPlayer isActive") },
+		consume = { utils = allow("getConfigValue getLocalPlayer isActive observeConfig trackGlobal untrackGlobal") },
 	},
 	autodash = {
 		provide = allow("setup bindCharacter detachCharacter teardown"),
@@ -178,12 +178,13 @@ local function validate(name, module)
 end
 
 -- capabilities
-local function readonly(value)
+local function readonly(value, visited)
 	if type(value) ~= "table" then return value end
+	visited = visited or {}
+	if visited[value] then return visited[value] end
 	local copied = {}
-	for key, item in pairs(value) do
-		copied[key] = readonly(item)
-	end
+	visited[value] = copied
+	for key, item in pairs(value) do copied[key] = readonly(item, visited) end
 	return table.freeze(copied)
 end
 local function wrap(consumer, source, provider)
