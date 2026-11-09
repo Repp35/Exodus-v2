@@ -13,6 +13,7 @@ local clashStats
 local T = {
 	ACTIVATION = {
 		RETURN = 0.13,
+		REACTIVATION_COOLDOWN = 0.04,
 		RADIUS_FACTOR = 0.8,
 		HAUNTER_RANGE = 11,
 		HAUNTER_MATCH_RADIUS = 5,
@@ -258,14 +259,9 @@ end
 
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
-	if s.active or s.redirectUntil or s.returnParriedTarget then return end
+	if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < T.ACTIVATION.REACTIVATION_COOLDOWN) then return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if snapshot and snapshot.locked == true then return end
-	if s.distanceLockPartner then
-		local lockReason = distanceGate(s, snapshot, s.distanceLockPartner)
-		if time < s.distanceLockUntil or (lockReason and lockReason ~= "distance_unavailable") then return end
-		s.distanceLockPartner, s.distanceLockUntil = nil, nil
-	end
 	local distanceReason = distanceGate(s, snapshot, partner)
 	if distanceReason and distanceReason ~= "distance_unavailable" then return end
 	s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner, s.redirectWatch = nil, nil, nil, nil, nil, nil
@@ -305,7 +301,7 @@ end
 local function stop(s, reason, distant)
 	if current ~= s then return end
 	if distant and s.partner then s.recoveryPartner = s.partner end
-	if s.active then s.active = false; utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
+	if s.active then s.active = false; s.lastDeactivatedAt = now(); utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
 	s.reason, s.pending, s.awayAt, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil
 	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
 end
@@ -505,16 +501,20 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
 		if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
 	end
-	-- A genuine close return supersedes a previous diversion lock.
-	-- Only release it for a confirmed target on self, with the ball already inside close radius.
-	if not s.active and s.redirectUntil and s.pending and s.pending.closeReturn
-		and target == localPlayer.UserId and snapshot.targetUncertain ~= true then
-		local radius = closeRadius(snapshot)
-		if radius and (snapshot.position - s.root.Position).Magnitude <= radius then
-			s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner, s.redirectWatch = nil, nil, nil, nil, nil, nil
+	-- Deactivation state never blocks a new legitimate activation after the short cooldown.
+	if not s.active and not s.pending and target == localPlayer.UserId and snapshot.targetUncertain ~= true then
+		local context = gameInfo.getClashContext()
+		local partner = userId(s.departedTo) or (context and userId(context.partnerId))
+		if partner and partner ~= localPlayer.UserId then
+			local radius = closeRadius(snapshot)
+			if radius and (snapshot.position - s.root.Position).Magnitude <= radius then
+				s.pending = { partner = partner, closeReturn = true }
+			end
 		end
 	end
-	if not s.active and not blockedActivation and not s.redirectUntil and not s.returnParriedTarget and shouldActivate(s, snapshot, time) then
+	if not s.active and not blockedActivation
+		and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= T.ACTIVATION.REACTIVATION_COOLDOWN)
+		and shouldActivate(s, snapshot, time) then
 		local activationServerTime = serverTime
 		if not fresh then activationServerTime = snapshot.serverTime end
 		start(s, s.pending.closeReturn and "close_return" or (s.pending.recovery and "recovery" or "return_target"), s.pending.partner, time, activationServerTime, snapshot)
