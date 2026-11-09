@@ -1,9 +1,12 @@
 -- [[ auto dash ]]
+
+-- dependencies
 local AutoDash = {}
 local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
 local root, heartbeat
 local DASH_DETECTION_RANGE = 70
 
+-- helpers
 local function onDash(event)
 	if not root or not root.Parent or not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true
 		or not gameInfo.areAbilitiesEnabled() or not event or event.userId == localPlayer.UserId or not event.velocity then return end
@@ -20,6 +23,7 @@ local function onDash(event)
 	if velocity.Y >= 72 and horizontalSpeed <= velocity.Y * 0.5 then movement.upDash() end
 end
 
+-- lifecycle
 function AutoDash.setup(deps)
 	if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.Dash or not deps.Movement or not deps.AutoSpam then return false, "dependências ausentes" end
 	AutoDash.teardown()
@@ -53,6 +57,7 @@ function AutoDash.teardown()
 	if dash then dash.setHandler(nil) end
 	utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService = nil, nil, nil, nil, nil, nil, nil, nil
 end
+-- contract
 AutoDash.__contract = {
 	requires = { Utils = "utils", GameInfo = "gameinfo", Dash = "dash", Movement = "movement", AutoSpam = "autospam" },
 	requiresMethods = {

@@ -1,10 +1,13 @@
 -- [[ auto jump ]]
+
+-- state
 local AutoJump = {}
 local utils
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0
 local AIR, JUMPING = Enum.Material.Air, Enum.HumanoidStateType.Jumping
 
+-- helpers
 local function stopJump()
 	epoch += 1; local connection = jumpConnection; jumpConnection, jumpCharacter, jumpHumanoid = nil, nil, nil
 	if not connection then return end
@@ -20,6 +23,7 @@ local function jumpStep(player)
 	if not humanoid or humanoid.Health <= 0 or humanoid.FloorMaterial == AIR then return end
 	if humanoid:GetState() ~= JUMPING then humanoid:ChangeState(JUMPING) end
 end
+-- lifecycle
 function AutoJump.sync()
 	stopJump()
 	if not utils or not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then return true end
@@ -40,6 +44,7 @@ function AutoJump.setup(deps)
 end
 function AutoJump.teardown() stopJump(); utils = nil end
 
+-- contract
 AutoJump.__contract = {
 	requires = { Utils = "utils" },
 	requiresMethods = { Utils = { "getConfigValue", "getLocalPlayer", "getRunService", "trackGlobal", "untrackGlobal", "isActive" } },

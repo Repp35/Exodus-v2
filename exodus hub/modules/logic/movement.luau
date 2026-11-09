@@ -1,5 +1,7 @@
 -- [[ movement: dash actions ]]
 
+-- helpers
+
 local Movement = {}
 local utils, gameInfo, remote
 
@@ -26,12 +28,14 @@ end
 function Movement.upDash() return performDash(UP, true) end
 function Movement.dashToward(direction) return performDash(direction, false) end
 
+-- lifecycle
 function Movement.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" then return false, "dependências ausentes: Utils, GameInfo ou Remote" end
 	Movement.teardown(); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote; return true
 end
 function Movement.teardown() utils, gameInfo, remote = nil, nil, nil end
 
+-- contract
 Movement.__contract = {
 	requires = { Utils = "utils", GameInfo = "gameinfo", Remote = "remote" },
 	requiresMethods = {

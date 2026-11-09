@@ -1,10 +1,13 @@
 -- [[ camera sensitivity ]]
+
+-- state
 local Camera = {}
 local utils
 local cameraEpoch = 0
 local cameraInput, cameraOriginal, cameraWrapped, configConnection
 local sensitivity = 1
 
+-- helpers
 local function stopCamera()
 	cameraEpoch += 1
 	if cameraInput and cameraInput.getRotation == cameraWrapped then cameraInput.getRotation = cameraOriginal end
@@ -41,6 +44,7 @@ local function startCamera()
 end
 
 
+-- lifecycle
 function Camera.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "Utils ausente" end
 	Camera.teardown(); utils = deps.Utils
@@ -54,6 +58,7 @@ function Camera.setup(deps)
 end
 function Camera.teardown() stopCamera(); utils = nil end
 
+-- contract
 Camera.__contract = {
 	requires = { Utils = "utils" },
 	requiresMethods = { Utils = { "getLocalPlayer", "getConfigValue", "isActive", "observeConfig", "trackGlobal", "untrackGlobal" } },
