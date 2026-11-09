@@ -40,10 +40,9 @@ local function valid(life) return currentLife == life and utils ~= nil and utils
 local function bindLife(life)
 	life.attempted = true
 	if not valid(life) then return end
-	setPhase("binding", "character_bind_start")
-	local root = life.character:FindFirstChild("HumanoidRootPart")
-	if not root or not root:IsA("BasePart") or not root.Parent then
-		root = life.character:WaitForChild("HumanoidRootPart", T.BIND_TIMEOUT)
+	setPhase("binding", "character_bind_start"); local root = life.character:FindFirstChild("HumanoidRootPart"); local deadline = os.clock() + T.BIND_TIMEOUT
+	while valid(life) and (not root or not root:IsA("BasePart") or not root.Parent) and os.clock() < deadline do
+		task.wait(); root = life.character:FindFirstChild("HumanoidRootPart")
 	end
 	if not valid(life) then return end
 	if not root or not root:IsA("BasePart") or not root.Parent then deactivate(life, "root_unavailable"); setPhase("invalid", "root_unavailable"); return end
