@@ -697,15 +697,23 @@ function ExodusUI.setup(deps)
 	})
 	local textService = game:GetService("TextService")
 	local function compactInformation(label)
-		label.TextSize = 11
+		local paddingX, paddingY = 8, 5
+		label.TextSize = 14
 		label.TextWrapped = false
 		label.TextXAlignment = Enum.TextXAlignment.Left
 		label.TextYAlignment = Enum.TextYAlignment.Top
 		label.BorderSizePixel = 0
 		label.ZIndex = 100
+		local padding = inst("UIPadding", {
+			PaddingLeft = UDim.new(0, paddingX),
+			PaddingRight = UDim.new(0, paddingX),
+			PaddingTop = UDim.new(0, paddingY),
+			PaddingBottom = UDim.new(0, paddingY),
+			Parent = label,
+		})
 		local function resize()
 			local bounds = textService:GetTextSize(label.Text, label.TextSize, label.Font, Vector2.new(1000, 1000))
-			label.Size = UDim2.fromOffset(math.ceil(bounds.X), math.ceil(bounds.Y))
+			label.Size = UDim2.fromOffset(math.ceil(bounds.X) + paddingX * 2, math.ceil(bounds.Y) + paddingY * 2)
 		end
 		trackConn(label:GetPropertyChangedSignal("Text"):Connect(resize))
 		resize()
@@ -742,7 +750,7 @@ function ExodusUI.setup(deps)
 	})
 	compactInformation(distanceLabel)
 	compactInformation(travelLabel)
-	corner(travelLabel, 3); local nextTravelUpdate = 0
+	corner(travelLabel, 8); local nextTravelUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not travelLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true; travelLabel.Visible = visible; local time = os.clock()
@@ -769,7 +777,7 @@ function ExodusUI.setup(deps)
 		end
 		travelLabel.Text = "SPD atual: " .. speedText .. "\n" .. travelLabel.Text
 	end))
-	corner(distanceLabel, 3); local nextDistanceUpdate = 0
+	corner(distanceLabel, 8); local nextDistanceUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not distanceLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashDistanceVisible") == true; distanceLabel.Visible = visible; local time = os.clock()
