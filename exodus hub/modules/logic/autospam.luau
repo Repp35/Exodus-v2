@@ -24,6 +24,10 @@ local T = {
 		MIN_SPEED_TIMEOUT = 0.2975,
 		MAX_SPEED_TIMEOUT = 0.07,
 		START_DELAY = 0.12,
+		DIRECTION_ALIGNMENT = 0.75,
+		AWAY_ALIGNMENT = 0.3,
+		DIVERSION_CONFIRM = 0.04,
+		DIVERSION_MAX_SAMPLE_AGE = 0.12,
 		RETURN_TRACK_DURATION = 2,
 	},
 	SHARED = {
@@ -299,7 +303,7 @@ local function stop(s, reason, distant)
 	if current ~= s then return end
 	if distant and s.partner then s.recoveryPartner = s.partner end
 	if s.active then s.active = false; utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
-	s.reason, s.pending, s.awayAt, s.partner, s.activatedAt = reason, nil, nil, nil, nil
+	s.reason, s.pending, s.awayAt, s.partner, s.activatedAt, s.diversionSince = reason, nil, nil, nil, nil, nil
 	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
 end
 local function stopBoth(s, reason)
@@ -333,6 +337,42 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		if targetChanged then return "distant_target" end
 	end
 
+	-- Confirm a diversion over time instead of trusting one potentially noisy frame.
+	local diverted = false
+	if finite(snapshot.syncAt) and snapshot.syncAt > 0
+		and time - snapshot.syncAt <= T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE
+		and snapshot.targetUncertain ~= true then
+		local radius = closeRadius(snapshot)
+		local partnerPosition = gameInfo.getPlayerMotion(s.partner)
+		local velocity = snapshot.velocity
+		if radius and typeof(snapshot.position) == "Vector3"
+			and typeof(partnerPosition) == "Vector3"
+			and typeof(velocity) == "Vector3" and velocity.Magnitude > 1 then
+			local own = s.root.Position
+			local axis = partnerPosition - own
+			local towardMe = own - snapshot.position
+			local towardPartner = partnerPosition - snapshot.position
+			local speed = velocity.Magnitude
+			if axis.Magnitude > 1 and towardMe.Magnitude > radius
+				and towardPartner.Magnitude > radius then
+				local alignment = math.abs(velocity:Dot(axis) / (speed * axis.Magnitude))
+				local awayMe = velocity:Dot(towardMe) / (speed * towardMe.Magnitude)
+				local awayPartner = velocity:Dot(towardPartner) / (speed * towardPartner.Magnitude)
+				diverted = alignment < T.DEACTIVATION.DIRECTION_ALIGNMENT
+					and awayMe < -T.DEACTIVATION.AWAY_ALIGNMENT
+					and awayPartner < -T.DEACTIVATION.AWAY_ALIGNMENT
+			end
+		end
+	end
+	if diverted then
+		if not s.diversionSince then s.diversionSince = time end
+		if time - s.diversionSince >= T.DEACTIVATION.DIVERSION_CONFIRM then
+			return "ball_diverted"
+		end
+	else
+		s.diversionSince = nil
+	end
+
 	return nil
 end
 
@@ -340,7 +380,7 @@ local function applyDeactivation(s, snapshot, time, serverTime, targetChanged)
 	if not s.active then return false end
 	local reason = shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not reason then return false end
-	local redirected = reason == "distant_target"
+	local redirected = reason == "distant_target" or reason == "ball_diverted"
 	if redirected then
 		s.redirectAt = time
 		s.redirectUntil = time + T.DEACTIVATION.RETURN_TRACK_DURATION
