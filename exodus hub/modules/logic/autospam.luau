@@ -454,14 +454,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	then
 		local activationServerTime = serverTime
 		if not fresh then activationServerTime = snapshot.serverTime end
-		start(
-			s,
-			s.pending.closeReturn and "close_return" or "return_target",
-			s.pending.partner,
-			time,
-			activationServerTime,
-			snapshot
-		)
+		start(s, s.pending.closeReturn and "close_return" or "return_target", s.pending.partner, time, activationServerTime, snapshot)
 	end
 end
 
