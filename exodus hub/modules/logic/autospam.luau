@@ -270,8 +270,7 @@ local function shouldActivate(s, snapshot, time)
 	if gameInfo.getBallFrozen() == true or not s.pending then return false end
 	local pending = s.pending
 	if pending.closeReturn then
-		local g = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR)
-		return g ~= nil
+		local g = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); return g ~= nil
 			and s.target == localPlayer.UserId
 			and snapshot.targetId == localPlayer.UserId
 			and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
@@ -434,12 +433,10 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		end
 		local radius = snapshot and closeRadius(snapshot); local closePartner = previous and previous ~= me and previous or nil
 		if not s.active and closePartner and snapshot.targetUncertain ~= true then
-			-- A confirmed incoming packet is enough to prepare the clash immediately.
-			-- Require both the ball and the previous target to be within the dynamic range.
-			local activation = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR)
-			local limit = distanceLimit(snapshot)
-			local partnerDistance = distanceToPlayer(s, closePartner)
-			local incoming = activation and limit and partnerDistance and partnerDistance <= limit
+			local activation = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); local limit = distanceLimit(snapshot); local partnerDistance = distanceToPlayer(s, closePartner); local incoming = activation
+				and limit
+				and partnerDistance
+				and partnerDistance <= limit
 				and (snapshot.position - s.root.Position).Magnitude <= activation.fullRadius
 			if incoming then s.pending = { partner = closePartner, closeReturn = true } end
 		end
