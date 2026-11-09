@@ -262,10 +262,12 @@ local function start(s, reason, partner, time, serverTime, snapshot)
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if snapshot and snapshot.locked == true then return end
 	if s.distanceLockPartner then
-		if time < s.distanceLockUntil or distanceGate(s, snapshot, s.distanceLockPartner) then return end
+		local lockReason = distanceGate(s, snapshot, s.distanceLockPartner)
+		if time < s.distanceLockUntil or (lockReason and lockReason ~= "distance_unavailable") then return end
 		s.distanceLockPartner, s.distanceLockUntil = nil, nil
 	end
-	if distanceGate(s, snapshot, partner) then return end
+	local distanceReason = distanceGate(s, snapshot, partner)
+	if distanceReason and distanceReason ~= "distance_unavailable" then return end
 	s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner, s.redirectWatch = nil, nil, nil, nil, nil, nil
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
@@ -422,7 +424,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	local previous, me = s.target, localPlayer.UserId
 	if target ~= me then s.returnParriedTarget = nil end
 	if s.redirectAway and target == me and previous ~= me then s.redirectReturning = true end
-	if not s.active and s.pending then s.pending = nil end
+	if not s.active and s.pending and target ~= me then s.pending = nil end
 	if utils.isManualSpamActive() and not s.manualPartner then
 		if previous == me and target ~= me then s.manualPartner = target elseif previous and previous ~= me and target == me then s.manualPartner = previous end
 	end
@@ -446,13 +448,18 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 			s.awayAt, s.awayServerAt = time, serverTime
 		end
 		if not s.active and s.recoveryPartner == target then s.pending = { partner = target, recovery = true } end
-	elseif previous and previous ~= me and target == me then
+	elseif target == me and previous ~= me then
 		if s.active and previous == s.partner then
 			s.awayAt, s.awayServerAt = nil, nil
 		end
 		local radius = snapshot and closeRadius(snapshot)
-		if not s.active and radius and (snapshot.position - s.root.Position).Magnitude <= radius then
-			s.pending = { partner = previous, closeReturn = true }
+		local closePartner = previous and previous ~= me and previous or s.departedTo
+		if not closePartner then
+			local context = gameInfo.getClashContext()
+			closePartner = context and userId(context.partnerId)
+		end
+		if not s.active and closePartner and radius and (snapshot.position - s.root.Position).Magnitude <= radius then
+			s.pending = { partner = closePartner, closeReturn = true }
 		elseif not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
 		elseif not s.active and not s.recoveryPartner and previous == s.departedTo and s.departedAt and window then
