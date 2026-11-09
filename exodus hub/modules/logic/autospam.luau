@@ -24,8 +24,6 @@ local T = {
 		MIN_SPEED_TIMEOUT = 0.2975,
 		MAX_SPEED_TIMEOUT = 0.07,
 		START_DELAY = 0.12,
-		DIRECTION_ALIGNMENT = 0.85,
-		AWAY_ALIGNMENT = 0.25,
 		RETURN_TRACK_DURATION = 2,
 	},
 	SHARED = {
@@ -334,21 +332,7 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		if distance <= g.fullRadius then return nil end
 		if targetChanged then return "distant_target" end
 	end
-	if not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return nil end
-	local radius = closeRadius(snapshot)
-	local partnerPosition = gameInfo.getPlayerMotion(s.partner)
-	local velocity = snapshot.velocity
-	if not radius or typeof(partnerPosition) ~= "Vector3" or typeof(velocity) ~= "Vector3" or velocity.Magnitude <= 1 then return nil end
-	local own = s.root.Position
-	local axis = partnerPosition - own
-	local towardMe, towardPartner = own - snapshot.position, partnerPosition - snapshot.position
-	if axis.Magnitude <= 0 or towardMe.Magnitude <= radius or towardPartner.Magnitude <= 0 then return nil end
-	local speed = velocity.Magnitude
-	if math.abs(velocity:Dot(axis) / (speed * axis.Magnitude)) < T.DEACTIVATION.DIRECTION_ALIGNMENT
-		and velocity:Dot(towardMe) / (speed * towardMe.Magnitude) < -T.DEACTIVATION.AWAY_ALIGNMENT
-		and velocity:Dot(towardPartner) / (speed * towardPartner.Magnitude) < -T.DEACTIVATION.AWAY_ALIGNMENT then
-		return "ball_diverted"
-	end
+
 	return nil
 end
 
@@ -356,7 +340,7 @@ local function applyDeactivation(s, snapshot, time, serverTime, targetChanged)
 	if not s.active then return false end
 	local reason = shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not reason then return false end
-	local redirected = reason == "distant_target" or reason == "ball_diverted"
+	local redirected = reason == "distant_target"
 	if redirected then
 		s.redirectAt = time
 		s.redirectUntil = time + T.DEACTIVATION.RETURN_TRACK_DURATION
