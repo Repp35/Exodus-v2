@@ -295,6 +295,11 @@ local function cleanupUI()
 	end
 	local current = screenGui
 	if current then current:Destroy() end
+	local overlay = Players.LocalPlayer and Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	if overlay then
+		local oldOverlay = overlay:FindFirstChild("ExodusInformationOverlay")
+		if oldOverlay then oldOverlay:Destroy() end
+	end
 	screenGui = nil; floatingButton = nil; clashBall = nil; parryBall = nil; darkBall = nil; jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil; particleLayer = nil; titleBar = nil; closeButton = nil; colLeft = nil; colRight = nil; killBtn = nil; autoClashTrack = nil; autoClashThumb = nil; autoParrySetVisual = nil; autoDarkSetVisual = nil; autoJumpSetVisual = nil
 	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil end
 end
@@ -676,15 +681,38 @@ function ExodusUI.setup(deps)
 	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.panelTween = nil; UIState.btnTween = nil; _G.ExodusUICleanup = cleanupUI
 	screenGui = inst("ScreenGui", {
 		Name = "ExodusUISystem",
-		DisplayOrder = 2147483647,
+		DisplayOrder = 100,
 		ResetOnSpawn = false,
 		IgnoreGuiInset = true,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 		Parent = playerGui,
 	})
+	local informationGui = inst("ScreenGui", {
+		Name = "ExodusInformationOverlay",
+		DisplayOrder = 2147483647,
+		ResetOnSpawn = false,
+		IgnoreGuiInset = true,
+		ZIndexBehavior = Enum.ZIndexBehavior.Global,
+		Parent = playerGui,
+	})
+	local textService = game:GetService("TextService")
+	local function compactInformation(label)
+		label.TextSize = 11
+		label.TextWrapped = false
+		label.TextXAlignment = Enum.TextXAlignment.Left
+		label.TextYAlignment = Enum.TextYAlignment.Top
+		label.BorderSizePixel = 0
+		label.ZIndex = 100
+		local function resize()
+			local bounds = textService:GetTextSize(label.Text, label.TextSize, label.Font, Vector2.new(1000, 1000))
+			label.Size = UDim2.fromOffset(math.ceil(bounds.X), math.ceil(bounds.Y))
+		end
+		trackConn(label:GetPropertyChangedSignal("Text"):Connect(resize))
+		resize()
+	end
 	local distanceLabel = inst("TextLabel", {
 		Name = "ClashDistance",
-		Size = UDim2.new(0, 240, 0, 110),
+		Size = UDim2.fromOffset(1, 1),
 		AnchorPoint = Vector2.new(0.5, 0),
 		Position = UDim2.new(0.5, 0, 0, 0),
 		BackgroundColor3 = C.header,
@@ -695,11 +723,11 @@ function ExodusUI.setup(deps)
 		Font = Enum.Font.GothamSemibold,
 		Visible = Utils.getConfigValue("ClashDistanceVisible") == true,
 		ZIndex = 20,
-		Parent = screenGui,
+		Parent = informationGui,
 	})
 	local travelLabel = inst("TextLabel", {
 		Name = "ClashTravelTime",
-		Size = UDim2.new(0, 270, 0, 90),
+		Size = UDim2.fromOffset(1, 1),
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, -20),
 		BackgroundColor3 = C.header,
@@ -710,9 +738,11 @@ function ExodusUI.setup(deps)
 		Font = Enum.Font.GothamSemibold,
 		Visible = Utils.getConfigValue("ClashTravelTimeVisible") == true,
 		ZIndex = 20,
-		Parent = screenGui,
+		Parent = informationGui,
 	})
-	corner(travelLabel, 8); local nextTravelUpdate = 0
+	compactInformation(distanceLabel)
+	compactInformation(travelLabel)
+	corner(travelLabel, 3); local nextTravelUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not travelLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true; travelLabel.Visible = visible; local time = os.clock()
@@ -739,7 +769,7 @@ function ExodusUI.setup(deps)
 		end
 		travelLabel.Text = "SPD atual: " .. speedText .. "\n" .. travelLabel.Text
 	end))
-	corner(distanceLabel, 8); local nextDistanceUpdate = 0
+	corner(distanceLabel, 3); local nextDistanceUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not distanceLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashDistanceVisible") == true; distanceLabel.Visible = visible; local time = os.clock()
