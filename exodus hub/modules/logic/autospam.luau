@@ -264,7 +264,7 @@ local function start(s, reason, partner, time, serverTime, snapshot)
 	if snapshot and snapshot.locked == true then return end
 	local distanceReason = distanceGate(s, snapshot, partner)
 	if distanceReason and distanceReason ~= "distance_unavailable" then return end
-	s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner, s.redirectWatch = nil, nil, nil, nil, nil, nil
+	s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner, s.redirectWatch, s.redirectExited = nil, nil, nil, nil, nil, nil, nil
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.activatedAt, s.switchTimeout = time, nil
@@ -309,7 +309,7 @@ local function stopBoth(s, reason)
 	stop(s, reason, false)
 	s.recoveryPartner, s.manualPartner, s.manualWasActive = nil, nil, false
 	s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner = nil, nil, nil, nil, nil
-	s.redirectWatch = nil
+	s.redirectWatch, s.redirectExited = nil, nil
 	s.returnParriedTarget = nil
 	s.haunterPartner, s.haunterUntil = nil, nil
 	utils.setManualSpamActive(false)
@@ -325,7 +325,7 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if target and target ~= localPlayer.UserId and target ~= s.partner then
 		local g = geometry(s, snapshot, 1)
 		local distance = distanceToPlayer(s, target)
-		if targetChanged and g and finite(distance) and distance > g.fullRadius then
+		if targetChanged then
 			return "distant_target"
 		end
 	end
@@ -408,6 +408,7 @@ local function applyDeactivation(s, snapshot, time, serverTime, targetChanged)
 		s.redirectAt = time
 		s.redirectUntil = time + T.DEACTIVATION.RETURN_TRACK_DURATION
 		s.redirectWatch = true
+		s.redirectExited = false
 		s.redirectAway = true
 		s.redirectPartner = s.partner
 	end
@@ -500,19 +501,22 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
 	local target = userId(snapshot.targetId); observeClashStats(s, snapshot, time, fresh)
 	if s.redirectWatch and not s.active then
-		if s.redirectUntil and time > s.redirectUntil then s.redirectUntil = nil end
-		if s.redirectReturning or s.redirectAway then
-			local toMe = s.root.Position - snapshot.position
-			if typeof(snapshot.velocity) == "Vector3" and snapshot.velocity:Dot(toMe) > 0 then
-				s.redirectReturning = true
-				if autoParry.tryRedirectReturn(snapshot, s.redirectAt) then
-					s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner = nil, nil, nil, nil, nil
-					s.redirectWatch = nil
-					s.returnParriedTarget = true
-					blockedActivation = true
-				end
+		-- A redirected ball must leave the real deflect radius, then return with
+		-- a confirmed target on us before allowing exactly one extra parry.
+		local radius = closeRadius(snapshot)
+		local distance = radius and (snapshot.position - s.root.Position).Magnitude
+		if distance and distance > radius then s.redirectExited = true end
+		if s.redirectExited and distance and distance <= radius
+			and snapshot.targetUncertain ~= true and target == localPlayer.UserId
+			and s.redirectReturning then
+			if autoParry.tryRedirectReturn(snapshot, s.redirectAt) then
+				s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner = nil, nil, nil, nil, nil
+				s.redirectWatch, s.redirectExited = nil, nil
+				s.returnParriedTarget = true
 			end
 		end
+		-- Never reactivate Auto Spam during a redirected third-party ball.
+		return
 	end
 	if fresh and utils.isManualSpamActive() then
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
@@ -713,7 +717,7 @@ function AutoSpam.onBallSync(data)
 	if data.Teleported == true then
 		s.target, s.recoveryPartner = nil, nil
 		s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner = nil, nil, nil, nil, nil
-		s.redirectWatch = nil
+		s.redirectWatch, s.redirectExited = nil, nil
 		s.returnParriedTarget = nil
 		s.haunterPartner, s.haunterUntil = nil, nil
 		return
