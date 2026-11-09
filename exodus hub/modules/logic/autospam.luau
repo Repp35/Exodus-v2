@@ -270,6 +270,7 @@ local function start(s, reason, partner, time, serverTime, snapshot)
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
 	s.active, s.partner, s.pending, s.recoveryPartner = true, partner, nil, nil
 	s.activatedAt, s.switchTimeout = time, nil
+	s.diversionSince, s.diversionSyncAt = nil, nil
 	s.awayAt = s.target == partner and time or nil; s.awayServerAt = s.awayAt and serverTime or nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
 	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
@@ -303,7 +304,7 @@ local function stop(s, reason, distant)
 	if current ~= s then return end
 	if distant and s.partner then s.recoveryPartner = s.partner end
 	if s.active then s.active = false; utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
-	s.reason, s.pending, s.awayAt, s.partner, s.activatedAt, s.diversionSince = reason, nil, nil, nil, nil, nil
+	s.reason, s.pending, s.awayAt, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil
 	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
 end
 local function stopBoth(s, reason)
@@ -321,6 +322,10 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if gameInfo.getBallFrozen() == true then return "frozen" end
 	if snapshot and snapshot.locked == true then return "ball_locked" end
 	local distanceReason, limit, factor = distanceGate(s, snapshot, s.partner)
+	if distanceReason == "distance_unavailable" then
+		s.diversionSince, s.diversionSyncAt = nil, nil
+		return nil
+	end
 	if distanceReason then return distanceReason end
 	s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
 	if s.activatedAt and time - s.activatedAt >= T.DEACTIVATION.START_DELAY
@@ -365,12 +370,15 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		end
 	end
 	if diverted then
-		if not s.diversionSince then s.diversionSince = time end
-		if time - s.diversionSince >= T.DEACTIVATION.DIVERSION_CONFIRM then
+		-- Require a second distinct ball sync; repeated Heartbeats of one snapshot do not confirm a diversion.
+		if not s.diversionSince then
+			s.diversionSince, s.diversionSyncAt = time, snapshot.syncAt
+		elseif snapshot.syncAt ~= s.diversionSyncAt
+			and time - s.diversionSince >= T.DEACTIVATION.DIVERSION_CONFIRM then
 			return "ball_diverted"
 		end
 	else
-		s.diversionSince = nil
+		s.diversionSince, s.diversionSyncAt = nil, nil
 	end
 
 	return nil
