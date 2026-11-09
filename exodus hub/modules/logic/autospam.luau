@@ -484,7 +484,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		end
 		local radius = snapshot and closeRadius(snapshot)
 		local closePartner = previous and previous ~= me and previous or nil
-		if not s.active and previous == s.departedTo and s.departedAt and closePartner and radius and (snapshot.position - s.root.Position).Magnitude <= radius then
+		if not s.active and closePartner and radius and snapshot.targetUncertain ~= true and (snapshot.position - s.root.Position).Magnitude <= radius then
 			s.pending = { partner = closePartner, closeReturn = true }
 		elseif not s.active and s.recoveryPartner == previous then
 			s.pending = { partner = previous, recovery = true }
