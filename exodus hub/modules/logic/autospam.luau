@@ -505,6 +505,15 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
 		if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
 	end
+	-- A genuine close return supersedes a previous diversion lock.
+	-- Only release it for a confirmed target on self, with the ball already inside close radius.
+	if not s.active and s.redirectUntil and s.pending and s.pending.closeReturn
+		and target == localPlayer.UserId and snapshot.targetUncertain ~= true then
+		local radius = closeRadius(snapshot)
+		if radius and (snapshot.position - s.root.Position).Magnitude <= radius then
+			s.redirectAt, s.redirectUntil, s.redirectAway, s.redirectReturning, s.redirectPartner, s.redirectWatch = nil, nil, nil, nil, nil, nil
+		end
+	end
 	if not s.active and not blockedActivation and not s.redirectUntil and not s.returnParriedTarget and shouldActivate(s, snapshot, time) then
 		local activationServerTime = serverTime
 		if not fresh then activationServerTime = snapshot.serverTime end
