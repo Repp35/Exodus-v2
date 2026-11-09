@@ -319,6 +319,32 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
 	if snapshot and snapshot.locked == true then return "ball_locked" end
+	-- A different confirmed target must retain priority over close-range protection.
+	local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported
+	local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
+	if target and target ~= localPlayer.UserId and target ~= s.partner then
+		local g = geometry(s, snapshot, 1)
+		local distance = distanceToPlayer(s, target)
+		if targetChanged and g and finite(distance) and distance > g.fullRadius then
+			return "distant_target"
+		end
+	end
+	-- Once activated, preserve the clash while the same partner remains inside
+	-- our base deflect radius (8.5 + resilience + speed-adjusted ping).
+	local protected = false
+	if validSnapshot and target and (target == localPlayer.UserId or target == s.partner) then
+		local speed = tonumber(snapshot.syncSpeed)
+		if not finite(speed) or speed <= 0 then speed = snapshot.speed end
+		local partnerPosition = gameInfo.getPlayerMotion(s.partner)
+		if finite(speed) and speed > 0 and typeof(partnerPosition) == "Vector3" then
+			local g = gameInfo.getDeflectGeometry(speed, 0, 1, false)
+			protected = g ~= nil and (partnerPosition - s.root.Position).Magnitude <= g.fullRadius
+		end
+	end
+	if protected then
+		s.diversionSince, s.diversionSyncAt = nil, nil
+		return nil
+	end
 	local distanceReason, limit, factor = distanceGate(s, snapshot, s.partner)
 	if distanceReason == "distance_unavailable" then
 		s.diversionSince, s.diversionSyncAt = nil, nil
@@ -330,16 +356,7 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		and s.lastSwitchAt and s.switchTimeout and time - s.lastSwitchAt > s.switchTimeout then
 		return "switch_timeout"
 	end
-	if not snapshot or not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return nil end
-	local target = userId(snapshot.targetId)
-	if target and target ~= localPlayer.UserId and target ~= s.partner then
-		local g = geometry(s, snapshot, 1)
-		local distance = distanceToPlayer(s, target)
-		if not g or not finite(distance) then return nil end
-		if distance <= g.fullRadius then return nil end
-		if targetChanged then return "distant_target" end
-	end
-
+	if not validSnapshot then return nil end
 	-- Confirm a diversion over time instead of trusting one potentially noisy frame.
 	local diverted = false
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0
