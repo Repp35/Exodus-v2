@@ -3,6 +3,7 @@ local AutoJump = {}
 local utils
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0
+local AIR, JUMPING = Enum.Material.Air, Enum.HumanoidStateType.Jumping
 
 local function stopJump()
 	epoch += 1; local connection = jumpConnection; jumpConnection, jumpCharacter, jumpHumanoid = nil, nil, nil
@@ -16,8 +17,8 @@ local function jumpStep(player)
 	if not character or not character.Parent then return end
 	local humanoid = jumpHumanoid
 	if not humanoid or humanoid.Parent ~= character then humanoid = character:FindFirstChildOfClass("Humanoid"); jumpHumanoid = humanoid end
-	if not humanoid or humanoid.Health <= 0 or humanoid.FloorMaterial == Enum.Material.Air then return end
-	if humanoid:GetState() ~= Enum.HumanoidStateType.Jumping then humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end
+	if not humanoid or humanoid.Health <= 0 or humanoid.FloorMaterial == AIR then return end
+	if humanoid:GetState() ~= JUMPING then humanoid:ChangeState(JUMPING) end
 end
 function AutoJump.sync()
 	stopJump()

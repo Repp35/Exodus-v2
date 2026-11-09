@@ -2,7 +2,7 @@
 
 -- dependencies
 local AutoDark = {}
-local utils, remote, gameInfo
+local utils, remote, gameInfo, world
 
 -- tuning
 local T = { DARK_EVENT = 2.4141700243704228e76 }
@@ -23,17 +23,17 @@ function AutoDark.sync()
 	if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
 	connection = runService.Heartbeat:Connect(function()
 		if not utils.getConfigValue("AutoDark") or not gameInfo.areAbilitiesEnabled() then return end
-		local camera = utils.getWorkspace().CurrentCamera
+		local camera = world.CurrentCamera
 		if camera then remote.fireDark(T.DARK_EVENT, camera.CFrame) end
 	end)
 	utils.trackGlobal(connection); return true
 end
 function AutoDark.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.Remote) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências ausentes: Utils, GameInfo ou Remote" end
-	AutoDark.teardown(); utils, remote, gameInfo = deps.Utils, deps.Remote, deps.GameInfo; return AutoDark.sync()
+	AutoDark.teardown(); utils, remote, gameInfo = deps.Utils, deps.Remote, deps.GameInfo; world = utils.getWorkspace(); return AutoDark.sync()
 end
 function AutoDark.teardown()
-	disconnect(); utils, remote, gameInfo = nil, nil, nil
+	disconnect(); utils, remote, gameInfo, world = nil, nil, nil, nil
 end
 
 -- contract

@@ -14,7 +14,7 @@ local T = {
 -- state
 local connections = {}
 local parriedConnection
-local nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt
+local nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt, localUserId
 
 -- helpers
 local function track(connection)
@@ -36,7 +36,7 @@ local function graceDanger(now)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return false, nil end
 	local fresh = type(snapshot.syncAt) == "number" and snapshot.syncAt > 0 and now >= snapshot.syncAt and now - snapshot.syncAt <= T.SYNC_MAX_AGE
 	if not fresh then return false, nil end
-	local grace = snapshot.grace == true; local player = utils.getLocalPlayer(); local danger = grace and player ~= nil and snapshot.targetId == player.UserId and gameInfo.getBallFrozen() ~= true; return danger, grace
+	local grace = snapshot.grace == true; local danger = grace and localUserId ~= nil and snapshot.targetId == localUserId and gameInfo.getBallFrozen() ~= true; return danger, grace
 end
 local function deflectPending(now)
 	local pressedAt = gameInfo.getLastDeflectPressAt()
@@ -53,8 +53,8 @@ end
 -- activation
 local function update()
 	local now = os.clock()
-	if not parriedConnection then connectSignals(now) end
 	if not enabled() then graceHandled = false; return end
+	if not parriedConnection then connectSignals(now) end
 	if not parriedConnection then return end
 	local danger, grace = graceDanger(now)
 	if grace == nil then return end
@@ -89,7 +89,7 @@ function AutoFierce.setup(deps)
 	then
 		return false, "dependências ausentes: Utils, GameInfo ou Remote"
 	end
-	AutoFierce.teardown(); utils, gameInfo, remote, autoParry = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry; nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt = 0, false, 0, 0, 0; local runService = utils.getRunService()
+	AutoFierce.teardown(); utils, gameInfo, remote, autoParry = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry; nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt = 0, false, 0, 0, 0; local player = utils.getLocalPlayer(); localUserId = player and player.UserId; local runService = utils.getRunService()
 	if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
 	track(utils.observeConfig(function()
 		if not enabled() then graceHandled = false end
@@ -101,7 +101,7 @@ function AutoFierce.teardown()
 		if utils then utils.untrackGlobal(connection) end
 		connection:Disconnect()
 	end
-	connections = {}; parriedConnection, nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt = nil, nil, nil, nil, nil, nil; utils, gameInfo, remote, autoParry = nil, nil, nil, nil
+	connections = {}; parriedConnection, nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt, localUserId = nil, nil, nil, nil, nil, nil, nil; utils, gameInfo, remote, autoParry = nil, nil, nil, nil
 end
 
 -- contract
