@@ -3,24 +3,18 @@ local AutoDash = {}
 local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
 local root, heartbeat
 
-local function playerIsAlive(id)
-	local player = id and players:GetPlayerByUserId(id)
-	local character = player and player.Character
-	local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid")
-	return humanoid ~= nil and humanoid.Health > 0
-end
-
 local function onDash(event)
-	if not root or not root.Parent or not gameInfo.areAbilitiesEnabled() or not event or event.userId == localPlayer.UserId or not event.position or not event.velocity then return end
+	if not root or not root.Parent or not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true
+		or not gameInfo.areAbilitiesEnabled() or not event or event.userId == localPlayer.UserId or not event.velocity then return end
 	local active = autoSpam.getActivationContext()
-	local context = gameInfo.getClashContext()
-	local partner = active.active and active.partner or (context and context.partnerId)
+	local partner = active.active and active.partner or (gameInfo.getClashContext() or {}).partnerId
+	if partner ~= event.userId then return end
+	local character = event.player and event.player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return end
 	local velocity = event.velocity
-	if utils.isActive() and utils.getConfigValue("AutoClashUpDash") == true then
-		local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
-		if partner == event.userId and velocity.Y >= 72 and horizontalSpeed <= velocity.Y * 0.5 then movement.upDash() end
-	end
-
+	local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
+	if velocity.Y >= 72 and horizontalSpeed <= velocity.Y * 0.5 then movement.upDash() end
 end
 
 function AutoDash.setup(deps)
@@ -40,10 +34,10 @@ function AutoDash.bindCharacter(character)
 	root = newRoot
 	heartbeat = runService.Heartbeat:Connect(function()
 		if not root or not root.Parent then return end
-		local autoEnabled = utils.getConfigValue("AutoSpam") == true
-		local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
-		local context = gameInfo.getClashContext()
-		if gameInfo.areAbilitiesEnabled() and (autoEnabled or upDashEnabled or context) then dash.tick(utils.now(), true) end
+		if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then return end
+		local active = autoSpam.getActivationContext()
+		local partner = active.active and active.partner or (gameInfo.getClashContext() or {}).partnerId
+		if partner then dash.tick(utils.now(), true, partner) end
 	end)
 	utils.trackCharacter(heartbeat)
 	return true

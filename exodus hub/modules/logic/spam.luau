@@ -3,6 +3,7 @@
 -- dependencies
 local Spam = {}
 local utils, remote, gameInfo, spamObserver, configObserver
+local function traceback(err) return debug.traceback(tostring(err), 2) end
 
 -- state
 local generation, running, inFlight = 0, false, false
@@ -11,9 +12,9 @@ local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErro
 
 -- config
 local function readRate()
-	local config = utils.getConfig(); local mode = config.SpamRateMode == "Auto" and "Auto" or (config.SpamRateMode == "CPF" and "CPF" or "CPS")
+	local selected = utils.getConfigValue("SpamRateMode"); local mode = selected == "Auto" and "Auto" or (selected == "CPF" and "CPF" or "CPS")
 	if mode == "Auto" then return mode, 1 end
-	local rate = tonumber(config[mode]) or 0
+	local rate = tonumber(utils.getConfigValue(mode)) or 0
 	if rate ~= rate or rate <= 0 or rate == math.huge then return mode, 0 end
 	if mode == "CPF" and rate * 60 == math.huge then return mode, 0 end
 	return mode, rate
@@ -31,15 +32,10 @@ local function cancel(reason)
 end
 
 -- dispatch
-local function request(boundUtils, boundRemote, token)
+local function request(boundUtils, boundRemote, token, guard)
 	if inFlight then return end
 	inFlight = true; status.lastRequestAt = os.clock()
-	local ok, result, detail = xpcall(function()
-		return boundRemote.fireParry(
-			1,
-			function() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
-		)
-	end, function(err) return debug.traceback(tostring(err), 2) end)
+	local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard)
 	inFlight = false
 	if not ok then error(result, 0) end
 	if token ~= generation or utils ~= boundUtils then return end
@@ -63,12 +59,15 @@ local function sync()
 	if running then cancel("rate_changed") end
 	generation += 1; local token, boundUtils, boundRemote = generation, utils, remote; running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
 	task.spawn(function()
+		local function guard()
+			return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive())
+		end
 		local ok, err = xpcall(function()
 			if mode == "Auto" then
 				while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
 					local delay = gameInfo.getAutoSpamDelay()
 					if delay ~= nil and delay <= 0 then
-						request(boundUtils, boundRemote, token)
+						request(boundUtils, boundRemote, token, guard)
 						if token == generation then task.wait() end
 					elseif token == generation then
 						task.wait(delay and math.min(0.05, math.max(delay, 1 / 240)) or 0.05)
@@ -79,17 +78,14 @@ local function sync()
 				while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
 					local time = os.clock()
 					if time >= due then
-						local pending = math.floor((time - due) / interval) + 1
-						for _ = 1, pending do
-							if token ~= generation or not boundUtils.isActive() or not (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) then break end
-							request(boundUtils, boundRemote, token)
-						end
-						due += pending * interval
+						request(boundUtils, boundRemote, token, guard)
+						-- Do not issue stale catch-up clicks after a scheduler stall.
+						due += (math.floor((time - due) / interval) + 1) * interval
 					end
 					if token == generation then task.wait(math.max(0, due - os.clock())) end
 				end
 			end
-		end, function(message) return debug.traceback(tostring(message), 2) end)
+		end, traceback)
 		if token == generation then cancel(ok and "spam_disabled" or "spam_error") end
 		if not ok then error(err, 0) end
 	end)
@@ -155,7 +151,7 @@ Spam.__contract = {
 	requiresMethods = {
 		Remote = { "fireParry" },
 		GameInfo = { "getAutoSpamDelay" },
-		Utils = { "getConfig", "isActive", "isManualSpamActive", "isAutoSpamActive", "observeSpam", "observeConfig", "trackGlobal", "untrackGlobal" },
+		Utils = { "getConfigValue", "isActive", "isManualSpamActive", "isAutoSpamActive", "observeSpam", "observeConfig", "trackGlobal", "untrackGlobal" },
 	},
 
 	provides = { "setup", "resetState", "teardown", "getStatus" },

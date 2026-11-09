@@ -107,11 +107,17 @@ end
 function Dash.setHandler(callback)
 	handler = type(callback) == "function" and callback or nil; return true
 end
-function Dash.tick(time, excludeLocal)
+function Dash.tick(time, excludeLocal, playerId)
 	if not players then return end
 	time = type(time) == "number" and time or now()
 	if time - lastTick < T.TICK_INTERVAL then return end
 	lastTick = time
+	if playerId ~= nil then
+		local player = players:GetPlayerByUserId(playerId)
+		local record = player and records[player]
+		if record and player.Parent and (not excludeLocal or player ~= players.LocalPlayer) then observe(player, record, time) end
+		return
+	end
 	for player, record in pairs(records) do
 		if player.Parent and (not excludeLocal or player ~= players.LocalPlayer) then observe(player, record, time) end
 	end
