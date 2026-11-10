@@ -44,3 +44,9 @@ Os identificadores de habilidades, eventos e caixas ficam em `GAME_IDS`, em `gam
 ## Ritmo do Spam
 
 `gameinfo.getMinimumSpamInterval()` informa o intervalo mínimo entre tentativas configurado no adaptador do jogo; `getAutoSpamDelay()` informa uma espera adicional quando os dados necessários estiverem disponíveis. O Spam aplica o intervalo mínimo nos modos CPS, CPF e Auto. Nos modos com taxa definida, mantém no máximo 0,2 segundo de atraso para compensar progressivamente, sem enviar tentativas juntas. Caso a taxa pedida ultrapasse o intervalo mínimo, a taxa efetiva é limitada por ele. O envio e a aceitação pelo servidor são coisas distintas.
+
+## CPS do AutoParry
+
+`remote.fireParry` aceita um token privado fornecido somente ao `autoparry`. O AutoParry envia esse token e o módulo `remote` notifica apenas envios aceitos com a mesma assinatura; chamadas do Spam não possuem o token e não entram nessa medição. O CPS do AutoParry é o inverso do intervalo entre os dois últimos envios assinados.
+
+O fator da janela começa em 0,8. Até 2 CPS ele permanece em 0,8; entre 2 e 2,5 CPS o fator sobe progressivamente até 1; a partir de 2,5 CPS fica em 1. Um intervalo acima de 0,5 segundo elimina o bônus no próximo clique. `autoparry.getStatus()` expõe `cps`, `windowFactor` e os limites em `cpsGate`.
