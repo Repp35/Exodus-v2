@@ -763,14 +763,16 @@ function ExodusUI.setup(deps)
 		TextColor3 = C.text,
 		TextSize = 14,
 		Font = Enum.Font.GothamSemibold,
-		Visible = true,
+		Visible = Utils.getConfigValue("AutoParryCpsVisible") == true,
 		ZIndex = 20,
 		Parent = informationGui,
 	})
 	compactInformation(apCpsLabel); corner(apCpsLabel, 8); local nextApCpsUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not apCpsLabel.Parent or os.clock() < nextApCpsUpdate then return end
-		nextApCpsUpdate = os.clock() + 0.1; local status = AutoParry.getCpsStatus(); apCpsLabel.Position = UDim2.new(0.5, 0, 0, distanceLabel.Visible and (distanceLabel.AbsoluteSize.Y + 12) or 12); apCpsLabel.Text = string.format("CPS do AP: %.2f | Fator: %s", status.cps, status.boosted and "1.0" or "normal")
+		nextApCpsUpdate = os.clock() + 0.1; apCpsLabel.Visible = Utils.getConfigValue("AutoParryCpsVisible") == true
+		if not apCpsLabel.Visible then return end
+		local status = AutoParry.getCpsStatus(); apCpsLabel.Position = UDim2.new(0.5, 0, 0, distanceLabel.Visible and (distanceLabel.AbsoluteSize.Y + 12) or 12); apCpsLabel.Text = string.format("CPS do AP: %.2f | Fator: %s", status.cps, status.boosted and "1.0" or "normal")
 	end))
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not travelLabel.Parent then return end
@@ -1256,7 +1258,7 @@ function ExodusUI.setup(deps)
 		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
 	end)
 	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall); local upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); local _, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft)
-	createCameraSensitivityCard(parryYPos, settingsLeft); local travelYPos = createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight); createToggleCard("Tempo da bola", "ClashTravelTimeVisible", travelYPos, settingsRight)
+	createCameraSensitivityCard(parryYPos, settingsLeft); local travelYPos = createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight); local apCpsYPos = createToggleCard("Tempo da bola", "ClashTravelTimeVisible", travelYPos, settingsRight); createToggleCard("CPS do AP flutuante", "AutoParryCpsVisible", apCpsYPos, settingsRight)
 	local function updateAbilityVisibility(enabled)
 		darkCard.Visible, miniDarkCard.Visible, upDashCard.Visible, fierceCard.Visible, autoUpDashCard.Visible = enabled, enabled, enabled, enabled, enabled
 		darkBall.Visible, upDashBall.Visible = enabled, enabled
