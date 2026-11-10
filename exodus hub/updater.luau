@@ -4,6 +4,7 @@
 
 return function(loadedRevision, request)
 	local players = game:GetService("Players"); local token = {}; _G.ExodusUpdaterToken = token
+	local CHECK_INTERVAL = 60
 	local function running() return _G.ExodusUpdaterToken == token and type(_G.Exodus) == "table" and _G.Exodus.Started == true end
 	local function safeToUpdate()
 		local exodus = _G.Exodus; local modules = exodus and exodus.Modules; local info = modules and modules.gameinfo; local auto = modules and modules.autospam; local player = players.LocalPlayer
@@ -22,7 +23,7 @@ return function(loadedRevision, request)
 		return true
 	end
 	local function latestRevision()
-		local body, err = request("https://api.github.com/repos/Repp35/Exodus-v2/commits/main?exodus_cache=" .. tostring(os.time()), {
+		local body, err = request("https://api.github.com/repos/Repp35/Exodus-v2/commits/main", {
 			["Accept"] = "application/vnd.github+json",
 			["User-Agent"] = "Exodus-Hub-Updater",
 		})
@@ -31,7 +32,7 @@ return function(loadedRevision, request)
 			if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
 		end
 		local feed, feedError = request(
-			"https://github.com/Repp35/Exodus-v2/commits/main.atom?exodus_cache=" .. tostring(os.time()),
+			"https://github.com/Repp35/Exodus-v2/commits/main.atom",
 			{ ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Updater" }
 		)
 		local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
@@ -42,7 +43,7 @@ return function(loadedRevision, request)
 		local pending, chunk, nextCheck, failures = nil, nil, 0, 0
 		while running() do
 			if os.clock() >= nextCheck then
-				nextCheck = os.clock() + 1; local revision, err = latestRevision()
+				nextCheck = os.clock() + CHECK_INTERVAL; local revision, err = latestRevision()
 				if not running() then return end
 				if revision then
 					failures = 0
