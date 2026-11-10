@@ -238,16 +238,15 @@ local function tick(character, root, generation)
 	local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if not value.ball.Parent then return end
-	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; samplePing(); local fullWindow = radius(speed, 1); local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0; local targeted = value.targetUncertain ~= true and state.player ~= nil and value.targetId == state.player.UserId
-	local inKillDistance = distance <= T.GRACE_KILL_DISTANCE
+	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; samplePing(); local fullWindow = radius(speed, 1); local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
+	local targeted = value.targetUncertain ~= true and state.player ~= nil and value.targetId == state.player.UserId; local inKillDistance = distance <= T.GRACE_KILL_DISTANCE
 	if not targeted or not inKillDistance then
 		state.localGraceActive, state.graceHandled, state.localGraceUntil = false, false, 0
 	elseif not state.localGraceActive then
 		state.localGraceActive, state.graceHandled = true, false
 		state.localGraceUntil = time + math.clamp(state.ping + 0.075, 0.075, 0.350)
 	end
-	local localGrace = state.localGraceActive and time <= state.localGraceUntil
-		and fullWindow ~= nil and distance <= fullWindow.fullRadius
+	local localGrace = state.localGraceActive and time <= state.localGraceUntil and fullWindow ~= nil and distance <= fullWindow.fullRadius
 	if localGrace then
 		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, true
 		state.closingSpeed, state.triggerDistance = closing, fullWindow.fullRadius
