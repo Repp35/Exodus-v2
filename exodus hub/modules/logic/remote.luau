@@ -4,18 +4,32 @@
 local Remote = {}
 local gameInfo
 local lastParryAt, lastParryInterval
+local parryTimes = {}
 
 -- lifecycle
 function Remote.setup(deps)
 	if type(deps) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependência inválida: GameInfo" end
-	gameInfo = deps.GameInfo; lastParryAt, lastParryInterval = nil, nil; return true
+	gameInfo = deps.GameInfo; lastParryAt, lastParryInterval = nil, nil; table.clear(parryTimes); return true
 end
 
 -- dispatch
+local function pruneParryTimes(now)
+	for i = #parryTimes, 1, -1 do
+		if now - parryTimes[i] >= 1 or now < parryTimes[i] then table.remove(parryTimes, i) end
+	end
+end
 local function recordParrySent()
-	local now = os.clock(); lastParryInterval = lastParryAt and (now - lastParryAt) or nil; lastParryAt = now
+	local now = os.clock()
+	lastParryInterval = lastParryAt and (now - lastParryAt) or nil
+	lastParryAt = now
+	pruneParryTimes(now)
+	parryTimes[#parryTimes + 1] = now
 end
 function Remote.getParrySendTiming() return lastParryInterval, lastParryAt end
+function Remote.getParryCps()
+	pruneParryTimes(os.clock())
+	return #parryTimes
+end
 local function send(ability, method, ...)
 	if ability == nil then return false, method .. " não equipado ou indisponível" end
 	local callback = ability[method]
@@ -56,7 +70,7 @@ Remote.__contract = {
 		GameInfo = { "isTrainingArea", "fireTrainingParry", "getDeflectAbility", "getDarkSealAbility", "getFierceDeflectAbility", "getDashAbility" },
 	},
 
-	provides = { "setup", "fireParry", "getParrySendTiming", "fireDark", "fireFierce", "fireDash" },
+	provides = { "setup", "fireParry", "getParrySendTiming", "getParryCps", "fireDark", "fireFierce", "fireDash" },
 }
 
 return Remote
