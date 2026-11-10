@@ -817,7 +817,7 @@ local function restoreAfterReloadFailure(message)
 end
 -- Public transition used by the updater and by a new loader instance.
 local function fadeOutForReplacement()
-	if not screenGui or not screenGui.Parent then return end
+	if not screenGui or not screenGui.Parent or UIState.closing then return end
 	UIState.closing = true
 	safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
 	local duration = 0.3
@@ -887,9 +887,6 @@ function ExodusUI.setup(deps)
 		Parent = playerGui,
 	})
 	responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
-	-- The replacement UI fades in only after the previous UI has faded out.
-	responsiveScale.Scale = 0.96
-	local openingScale = responsiveScale
 	local function updateResponsiveScale()
 		local size = viewport(); responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
 	end
