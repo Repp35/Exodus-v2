@@ -246,7 +246,7 @@ local function requestGrace()
 		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Grace deflect indisponível")) end
 		return false
 	end
-	state.graceHandled, state.lastFireAt = true, clock()
+	state.graceHandled, state.fired, state.lastFireAt = true, true, clock()
 	phase("fired", "local_grace_parry_requested"); return true
 end
 local function tick(character, root, generation)
