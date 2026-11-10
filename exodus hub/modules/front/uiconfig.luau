@@ -13,6 +13,7 @@ UIConfig.panelToggles = {
 		kind = "toggle",
 		label = "Mini Parry UI",
 		key = "ParryBallVisible",
+		mobileOnly = true,
 	},
 	{
 		kind = "toggle",
@@ -23,6 +24,7 @@ UIConfig.panelToggles = {
 		kind = "toggle",
 		label = "Mini Clash UI",
 		key = "ClashBallVisible",
+		mobileOnly = true,
 	},
 }
 UIConfig.panelComponents = {
@@ -62,6 +64,11 @@ UIConfig.__config = {
 		SpamRateMode = "rateMode",
 		Keybind = "keyCode",
 		SpamKeybind = "keyCode",
+		ParryKeybind = "keyCode",
+		ClashKeybind = "keyCode",
+		DarkKeybind = "keyCode",
+		JumpKeybind = "keyCode",
+		UpDashKeybind = "keyCode",
 		BtnX = "position",
 		BtnY = "position",
 		ClashBallX = "position",
@@ -101,6 +108,11 @@ UIConfig.__config = {
 		SpamRateMode = "CPF",
 		Keybind = Enum.KeyCode.F9,
 		SpamKeybind = Enum.KeyCode.F,
+		ParryKeybind = Enum.KeyCode.P,
+		ClashKeybind = Enum.KeyCode.C,
+		DarkKeybind = Enum.KeyCode.D,
+		JumpKeybind = Enum.KeyCode.J,
+		UpDashKeybind = Enum.KeyCode.U,
 	},
 
 }

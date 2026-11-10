@@ -17,6 +17,7 @@ local REPOSITORY = "Repp35/Exodus-v2"
 local BRANCH = "main"
 local PROJECT_PATH = "exodus%20hub/"
 local LOCAL_ROOTS = { "Exodus-v2/exodus hub", "Exodus-v2-main/exodus hub", "exodus hub", "Exodus Hub" }
+local CACHE_ROOT, VERSION_FILE = "Exodus Hub/Cache", "Exodus Hub/current_version.txt"
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local CACHE_BUSTER = tostring(os.time())
 local HttpService = game:GetService("HttpService")
@@ -75,31 +76,54 @@ end
 local function waitBeforeRetry(attempt)
 	if type(task) == "table" and type(task.wait) == "function" then local delays = { 0.25, 0.75, 1.5 }; task.wait(delays[attempt] or delays[#delays]) end
 end
+local function headerValue(headers, expected)
+	for key, value in pairs(type(headers) == "table" and headers or {}) do
+		if string.lower(tostring(key)) == string.lower(expected) then return value end
+	end
+	return nil
+end
+local function retryAfter(headers)
+	local delay = tonumber(headerValue(headers, "retry-after"))
+	if delay and delay >= 0 then return delay end
+	local reset = tonumber(headerValue(headers, "x-ratelimit-reset")); return reset and math.max(0, reset - os.time()) or 5
+end
+local function requestOnce(url, headers)
+	if not requestFunction then return nil, "Nenhum serviço HTTP disponível" end
+	local ok, response = pcall(requestFunction, { Url = url, Method = "GET", Headers = headers })
+	if not ok then return nil, tostring(response) end
+	if type(response) ~= "table" then return nil, "Resposta HTTP inválida" end
+	local statusCode = tonumber(response.StatusCode or response.status_code); local responseHeaders = response.Headers or response.headers; local responseBody = response.Body or response.body or response.ResponseBody
+	if not statusCode or statusCode < 200 or statusCode >= 300 then
+		local remaining = tonumber(headerValue(responseHeaders, "x-ratelimit-remaining")); local details = string.lower(tostring(responseBody or "")); local limited = statusCode == 429
+			or (
+				statusCode == 403
+				and (
+					remaining == 0
+					or headerValue(responseHeaders, "retry-after") ~= nil
+					or headerValue(responseHeaders, "x-ratelimit-reset") ~= nil
+					or details:find("rate limit", 1, true) ~= nil
+				)
+			)
+		return nil,
+			"HTTP " .. tostring(statusCode or "sem status"),
+			limited and { rateLimited = true, retryAfter = retryAfter(responseHeaders), statusCode = statusCode } or { statusCode = statusCode }
+	end
+	if type(responseBody) ~= "string" or responseBody == "" then return nil, "Corpo HTTP vazio ou inválido" end
+	return responseBody
+end
 local function request(url, headers)
 	if type(url) ~= "string" or url == "" then return nil, "URL inválida" end
-	local lastError
+	if not requestFunction then return nil, "Nenhum serviço HTTP disponível" end
+	local lastError, lastMeta
 	for attempt = 1, 3 do
-		if requestFunction then
-			local ok, responseBody = pcall(function()
-				local response = requestFunction({
-					Url = url,
-					Method = "GET",
-					Headers = headers,
-				})
-				if type(response) ~= "table" then error("Resposta HTTP inválida") end
-				local statusCode = tonumber(response.StatusCode or response.status_code)
-				if not statusCode or statusCode < 200 or statusCode >= 300 then error("HTTP " .. tostring(statusCode or "sem status")) end
-				local body = response.Body or response.body or response.ResponseBody
-				if type(body) ~= "string" or body == "" then error("Corpo HTTP vazio ou inválido") end
-				return body
-			end)
-			if ok and type(responseBody) == "string" and responseBody ~= "" then return responseBody end
-			lastError = tostring(responseBody)
-		end
+		local body, err, meta = requestOnce(url, headers)
+		if body then return body end
+		lastError, lastMeta = err, meta
+		if meta and meta.rateLimited then return nil, lastError, lastMeta end
 		if not isRetryableHttp(lastError) then break end
 		if attempt < 3 then waitBeforeRetry(attempt) end
 	end
-	local message = lastError or "Nenhum serviço HTTP disponível"; return nil, message
+	local message = lastError or "Nenhum serviço HTTP disponível"; return nil, message, lastMeta
 end
 local function findCompleteLocalRoot()
 	if not ALLOW_LOCAL_FALLBACK or type(isfile) ~= "function" or type(readfile) ~= "function" then return nil end
@@ -111,6 +135,63 @@ local function findCompleteLocalRoot()
 		if complete then return root end
 	end
 	return nil
+end
+local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
+local function persistentStorageAvailable()
+	return type(isfile) == "function"
+		and type(readfile) == "function"
+		and type(writefile) == "function"
+		and type(isfolder) == "function"
+		and type(makefolder) == "function"
+end
+local function ensureFolder(path)
+	if isfolder(path) then return true end
+	local ok = pcall(makefolder, path); return ok or isfolder(path)
+end
+local function cachePath(revision) return CACHE_ROOT .. "/" .. revision end
+local function ensureCacheRoot(revision)
+	if not persistentStorageAvailable() or not validRevision(revision) then return nil end
+	local ok, root = pcall(function()
+		if not ensureFolder("Exodus Hub") or not ensureFolder(CACHE_ROOT) or not ensureFolder(cachePath(revision)) then return nil end
+		return cachePath(revision)
+	end)
+	return ok and root or nil
+end
+local function findCompleteCacheRoot(revision)
+	if not persistentStorageAvailable() or not validRevision(revision) then return nil end
+	local root = cachePath(revision)
+	for _, entry in ipairs(MODULE_MANIFEST) do
+		if not isfile(root .. "/" .. entry.path) then return nil end
+	end
+	return root
+end
+local function readSavedRevision()
+	if not persistentStorageAvailable() or not isfile(VERSION_FILE) then return nil end
+	local ok, value = pcall(readfile, VERSION_FILE); value = ok and type(value) == "string" and value:match("([%x]+)") or nil; return validRevision(value) and value or nil
+end
+local function saveCurrentRevision(revision)
+	if not persistentStorageAvailable() or not validRevision(revision) then return false end
+	local ok = pcall(function()
+		ensureFolder("Exodus Hub"); writefile(VERSION_FILE, revision)
+	end)
+	return ok
+end
+local function saveCacheFile(revision, relativePath, source)
+	local root = ensureCacheRoot(revision)
+	if not root or type(source) ~= "string" then return false end
+	local directory = root; local parts = {}
+	for part in string.gmatch(relativePath, "[^/]+") do
+		parts[#parts + 1] = part
+	end
+	for index = 1, #parts - 1 do
+		directory = directory .. "/" .. parts[index]
+		if not ensureFolder(directory) then return false end
+	end
+	local ok = pcall(writefile, root .. "/" .. relativePath, source); return ok
+end
+local function readCacheFile(revision, relativePath)
+	if not persistentStorageAvailable() or not validRevision(revision) then return nil end
+	local ok, source = pcall(readfile, cachePath(revision) .. "/" .. relativePath); return ok and type(source) == "string" and source ~= "" and source or nil
 end
 
 -- registry
@@ -130,7 +211,7 @@ local function cleanupCall(name, action)
 	return ok, result
 end
 local function stopPreviousRuntime()
-	local clean = true
+	local clean = true; _G.ExodusUpdaterToken = nil
 	local function attempt(name, action)
 		local ok, result = cleanupCall(name, action)
 		if not ok then clean = false end
@@ -177,18 +258,18 @@ end
 
 -- urls
 local function resolveLatestRevision()
-	local url = "https://api.github.com/repos/" .. REPOSITORY .. "/commits/" .. BRANCH .. "?exodus_cache=" .. CACHE_BUSTER; local body, requestError = request(url, { ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Loader" })
+	local url = "https://api.github.com/repos/" .. REPOSITORY .. "/commits/" .. BRANCH .. "?exodus_cache=" .. tostring(os.time()); local body, requestError, requestMeta = request(url, { ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Loader" })
 	if body then
 		local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and document.sha
 		if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
 	end
-	local feed, feedError = request(
+	local feed, feedError, feedMeta = request(
 		"https://github.com/" .. REPOSITORY .. "/commits/" .. BRANCH .. ".atom?exodus_cache=" .. CACHE_BUSTER,
 		{ ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Loader" }
 	)
 	local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
 	if sha and #sha == 40 then return sha end
-	return nil, feedError or requestError or "SHA mais recente indisponível"
+	return nil, feedError or requestError or "SHA mais recente indisponível", feedMeta or requestMeta
 end
 local function buildURLs(revision)
 	local root = BASE_URL .. revision .. "/" .. PROJECT_PATH; local urls = {}
@@ -202,11 +283,19 @@ local function buildCDNURL(url)
 	if not repository or not version or not path then return nil end
 	return "https://cdn.jsdelivr.net/gh/" .. repository .. "@" .. version .. "/" .. path
 end
-local function loadModule(name, relativePath, url, localRoot)
-	if localRoot then
-		local path = localRoot .. "/" .. relativePath; local source = readfile(path)
+local function loadModule(name, relativePath, url, sourceRoot, cacheRevision)
+	if sourceRoot then
+		local path = sourceRoot .. "/" .. relativePath; local source = readfile(path)
 		if type(source) ~= "string" or source == "" then error("Arquivo local inválido: " .. path, 2) end
 		local chunk, compileError = compile(name .. " [local]", source); return chunk, compileError, "local"
+	end
+	if cacheRevision then
+		local cachedSource = readCacheFile(cacheRevision, relativePath)
+		if cachedSource then
+			local cachedChunk, cachedError = compile(name .. " [cache]", cachedSource)
+			if cachedChunk then return cachedChunk, nil, "cache" end
+			if not url then return nil, cachedError end
+		end
 	end
 	local source, fetchError
 	if url then source, fetchError = request(url) end
@@ -220,15 +309,18 @@ local function loadModule(name, relativePath, url, localRoot)
 	end
 	if source then
 		local chunk, compileError = compile(name, source)
-		if chunk then return chunk, nil, sourceKind end
+		if chunk then
+			if cacheRevision then saveCacheFile(cacheRevision, relativePath, source) end
+			return chunk, nil, sourceKind
+		end
 		fetchError = compileError
 	end
 	return nil, fetchError or "origem remota indisponível"
 end
-local function loadModules(urls, localRoot)
+local function loadModules(urls, sourceRoot, cacheRevision)
 	local loaded, results = {}, {}
 	local function load(name)
-		local entry = MODULE_BY_NAME[name]; local chunk, loadError = loadModule(name, entry.path, urls[name], localRoot); results[name] = { chunk = chunk, error = loadError }
+		local entry = MODULE_BY_NAME[name]; local chunk, loadError = loadModule(name, entry.path, urls[name], sourceRoot, cacheRevision); results[name] = { chunk = chunk, error = loadError }
 	end
 	if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
 		local pending = #MODULE_MANIFEST; local deadline = os.clock() + 30
@@ -446,14 +538,39 @@ local function waitForLocalPlayer(timeout)
 	until os.clock() >= deadline
 	return false, "LocalPlayer indisponível após esperar " .. timeout .. "s"
 end
+local reloadInFlight = false
+local function reloadLatest()
+	if reloadInFlight then return false end
+	reloadInFlight = true
+	task.spawn(function()
+		local revision, revisionError = resolveLatestRevision()
+		if not revision then warn("[Exodus Reload] " .. tostring(revisionError)); reloadInFlight = false; return end
+		local source = readCacheFile(revision, "loader.luau")
+		local fetchError
+		if not source then source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau") end
+		if not source then warn("[Exodus Reload] " .. tostring(fetchError)); reloadInFlight = false; return end
+		saveCacheFile(revision, "loader.luau", source); local chunk, compileError = compile("reload loader", source)
+		if not chunk then warn("[Exodus Reload] " .. tostring(compileError)); reloadInFlight = false; return end
+		_G.ExodusRequestedRevision = revision
+		local ok, executionError = xpcall(chunk, function(err) return debug.traceback(tostring(err), 2) end)
+		if not ok then _G.ExodusRequestedRevision = nil; warn("[Exodus Reload] " .. tostring(executionError)) end
+		reloadInFlight = false
+	end)
+	return true
+end
 local function startInternal()
 	printStartup("Exodus: iniciando")
 	if not stopPreviousRuntime() then return false, "Loader", "falha ao encerrar a sessão anterior" end
 	clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
 	if not playerReady then return false, "Loader", playerError end
-	local version, revisionError = resolveLatestRevision(); local localRoot = not version and findCompleteLocalRoot() or nil; local unpinned = not version and not localRoot
-	if unpinned then version = BRANCH; warn("[Exodus] SHA indisponível; carregando main sem atualizador automático: " .. tostring(revisionError)) end
-	local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, localRoot)
+	local requestedRevision = validRevision(_G.ExodusRequestedRevision) and _G.ExodusRequestedRevision or nil; _G.ExodusRequestedRevision = nil; local version = requestedRevision or readSavedRevision(); local sourceRoot = version and findCompleteCacheRoot(version) or findCompleteLocalRoot()
+	local revisionError
+	if not version and not sourceRoot then version, revisionError = resolveLatestRevision() end
+	local unpinned = not validRevision(version) and not sourceRoot
+	if unpinned then version = BRANCH; warn("[Exodus] SHA indisponível; carregando main até a próxima verificação: " .. tostring(revisionError)) end
+	local cacheRevision = validRevision(version) and version or nil
+	if cacheRevision then sourceRoot = findCompleteCacheRoot(cacheRevision) end
+	local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, sourceRoot, cacheRevision)
 	if not loaded then return false, moduleName, loadError end
 	activeLoaded = loaded; local utils = loaded.utils
 	if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
@@ -475,10 +592,12 @@ local function startInternal()
 		onPanic = function()
 			loaded.autoparry.resetState(); loaded.autospam.stopSpam()
 		end,
+		onClose = function() utils.stop() end,
+		onReload = reloadLatest,
 	})
 	if not uiReady then return stopStartup(utils, uiModule, uiError) end
-	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); Exodus.Revision = version
-	if unpinned then Exodus.Revision = nil end
+	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); Exodus.Revision = cacheRevision
+	if cacheRevision then saveCurrentRevision(cacheRevision) end
 	printStartup("Exodus: iniciado"); return true
 end
 
@@ -495,13 +614,15 @@ local function rollbackLoaded(loaded)
 	if type(loaded.utils) == "table" and type(loaded.utils.stop) == "function" then cleanupCall("utils", loaded.utils.stop) end
 end
 local startLock = false
+local startToken = {}
 function Loader.start()
-	if startLock then return false, "Loader", "startup já em andamento" end
+	if startLock or _G.ExodusLoaderStartToken then return false, "Loader", "startup já em andamento" end
 	local ready, reason = validateExecutor()
 	if not ready then return false, "Loader", reason end
-	startLock = true; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules; Exodus.Loader = Loader; Modules.Loader = Loader
+	startLock = true; _G.ExodusLoaderStartToken = startToken; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules; Exodus.Loader = Loader; Modules.Loader = Loader
 	local ok, started, moduleName, startError = xpcall(startInternal, function(err) return debug.traceback(tostring(err), 2) end)
 	startLock = false
+	if _G.ExodusLoaderStartToken == startToken then _G.ExodusLoaderStartToken = nil end
 	if not ok then rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry(); return false, "Loader", started end
 	if started ~= true then rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry(); return started, moduleName, startError end
 	activeLoaded = nil; return started, moduleName, startError
@@ -519,17 +640,20 @@ local function startSafely()
 end
 local started = startSafely()
 Exodus.Started = started == true
-if started and Exodus.Revision then
-	local revision = Exodus.Revision
+if started then
+	local revision = Exodus.Revision or readSavedRevision() or BRANCH
 	task.spawn(function()
-		local source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "updater.luau")
+		local source = validRevision(revision) and readCacheFile(revision, "updater.luau")
+		local fetchError
+		if not source then source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "updater.luau") end
 		if not source then warn("[Exodus Updater] " .. tostring(fetchError)); return end
-		if not Exodus.Started or Exodus.Revision ~= revision then return end
-		local chunk, compileError = loadstring(source, "Exodus updater")
+		if not Exodus.Started or (Exodus.Revision and validRevision(revision) and Exodus.Revision ~= revision) then return end
+		if validRevision(revision) then saveCacheFile(revision, "updater.luau", source) end
+		local chunk, compileError = compile("Exodus updater", source)
 		if not chunk then warn("[Exodus Updater] " .. tostring(compileError)); return end
 		local ok, updater = pcall(chunk)
 		if not ok or type(updater) ~= "function" then warn("[Exodus Updater] " .. tostring(updater)); return end
-		updater(revision, request)
+		updater(revision, request, { cacheLoader = saveCacheFile })
 	end)
 end
 
