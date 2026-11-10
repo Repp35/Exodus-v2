@@ -21,6 +21,10 @@ local function send(ability, method, ...)
 end
 function Remote.fireParry(_flag, guard)
 	if not gameInfo then return false, "Remote não inicializado" end
+	if gameInfo.isTrainingArea() then
+		if type(guard) == "function" and not guard() then return false, "Deflect cancelado" end
+		return gameInfo.fireTrainingParry()
+	end
 	local ability = gameInfo.getDeflectAbility()
 	if not ability then return false, "Deflect indisponível" end
 	if type(guard) == "function" then
@@ -40,7 +44,7 @@ function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), "
 Remote.__contract = {
 	requires = { GameInfo = "gameinfo" },
 	requiresMethods = {
-		GameInfo = { "getDeflectAbility", "getDarkSealAbility", "getFierceDeflectAbility", "getDashAbility" },
+		GameInfo = { "isTrainingArea", "fireTrainingParry", "getDeflectAbility", "getDarkSealAbility", "getFierceDeflectAbility", "getDashAbility" },
 	},
 
 	provides = { "setup", "fireParry", "fireDark", "fireFierce", "fireDash" },

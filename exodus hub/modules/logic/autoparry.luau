@@ -25,6 +25,7 @@ local state = {
 	teleported = false,
 	teleportSequence = nil,
 	sequence = nil,
+	mode = nil,
 	lastBall = nil,
 	speed = 0,
 	distance = 0,
@@ -81,6 +82,7 @@ local function resetTracking()
 	state.fired, state.awaySeen, state.cycle = false, false, 0
 	state.target, state.targetKnown, state.lastTargeted = -1, false, false
 	state.teleported, state.teleportSequence, state.sequence = false, nil, nil
+	state.mode = nil
 	state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
 	state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
 	state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
@@ -159,6 +161,12 @@ local function observeTarget(target, time)
 	state.target, state.targetKnown = target, true
 end
 local function observeSnapshot(snapshot, time)
+	local mode = snapshot.mode == "training" and "training" or "match"
+	if state.mode ~= mode then
+		state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false
+		state.fired, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, nil
+		state.awayAt, state.awayTarget = nil, nil
+	end
 	local order = sequenceOrder(snapshot.syncSequence)
 	if order == "old" then return false end
 	if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then return false end
@@ -321,6 +329,8 @@ end
 -- ball-sync
 function AutoParry.onBallSync(data)
 	if type(data) ~= "table" or not state.alive or not state.bound then return end
+	local currentSnapshot = gameInfo.getSnapshotAt(clock())
+	if currentSnapshot and currentSnapshot.mode == "training" then return true end
 	local sequence = data.Sequence or data.TeleportSequence
 	if sequence == nil and gameInfo.getSyncSequence and data == gameInfo.getSyncData() then sequence = gameInfo.getSyncSequence() end
 	local order = sequenceOrder(sequence)

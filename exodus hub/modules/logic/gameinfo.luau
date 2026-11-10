@@ -66,6 +66,8 @@ local cooldown, signalAt, heldAt, missingAt, warningAt
 local pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil
 local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
 local targetFrame, targetFrameConnection = 0, nil
+local trainingConnection, trainingRemote, trainingState, trainingSequence = nil, nil, nil, 0
+local trainingDataModule, trainingData
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
@@ -86,6 +88,35 @@ end
 local function storage() return utils and utils.getReplicatedStorage() end
 local function ts() return child(storage(), "Shared") or child(storage(), "TS") end
 local function sharedLayout() return child(storage(), "Shared") ~= nil end
+local function inTrainingArea()
+	local player = players and players.LocalPlayer; local character = player and player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or not root.Parent then return false end
+	local area = child(child(child(world, "Training"), "Areas"), "Zone")
+	if not area or not area:IsA("BasePart") then return false end
+	local localPos = area.CFrame:PointToObjectSpace(root.Position); local half = area.Size / 2
+	if math.abs(localPos.X) > half.X or math.abs(localPos.Y) > half.Y or math.abs(localPos.Z) > half.Z then return false end
+	local module = child(child(ts(), "Core"), "GameData")
+	if module ~= trainingDataModule then trainingDataModule, trainingData = module, nil end
+	if module and not trainingData then
+		local ok, result = pcall(load, module, "GameData")
+		if ok then trainingData = result.GameData end
+	end
+	local lives = player:GetAttribute("Lives")
+	if trainingData and type(trainingData.GetFallback) == "function" then
+		local ok, result = pcall(trainingData.GetFallback, trainingData, player, "Lives", 0)
+		if ok then lives = result end
+	end
+	return not finite(lives) or lives <= 0
+end
+function GameInfo.isTrainingArea() return inTrainingArea() end
+function GameInfo.fireTrainingParry()
+	if not inTrainingArea() then return false, "fora da arena de treino" end
+	local limit = world:GetAttribute("CPS_LIMIT")
+	if finite(limit) and limit < 1 then return false, "bloqueio de treino indisponível" end
+	local endpoint = child(child(child(storage(), "Training"), "Remotes"), "Block"); local camera = world.CurrentCamera
+	if not endpoint or not endpoint:IsA("RemoteEvent") or not camera then return false, "bloqueio de treino indisponível" end
+	endpoint:FireServer(camera.CFrame.Position, camera.CFrame.LookVector); return true
+end
 
 -- abilities
 local function getAbilities()
@@ -228,6 +259,29 @@ local function findSyncRemote()
 end
 function GameInfo.bindBallSync(handler)
 	if type(handler) ~= "function" then return false end
+	local training = child(child(child(storage(), "Training"), "Remotes"), "BallState")
+	if not validSyncRemote(training) then training = nil end
+	if trainingRemote ~= training or (trainingConnection and not trainingConnection.Connected) then disconnect(trainingConnection); trainingConnection, trainingRemote, trainingState = nil, nil, nil end
+	if training and not trainingConnection then
+		trainingRemote = training
+		trainingConnection = training.OnClientEvent:Connect(function(position, velocity, serverTime, goal, target, speed)
+			if typeof(position) ~= "Vector3" or typeof(velocity) ~= "Vector3" or not finite(serverTime) then return end
+			if trainingState and serverTime <= trainingState.serverTime and os.clock() - trainingState.receivedAt <= 0.6 then return end
+			trainingSequence = (trainingSequence + 1) % 65536
+			trainingState = {
+				position = position,
+				velocity = velocity,
+				serverTime = serverTime,
+				goal = goal,
+				target = target,
+				speed = speed,
+				receivedAt = os.clock(),
+				sequence = trainingSequence,
+			}
+
+		end)
+		utils.trackGlobal(trainingConnection)
+	end
 	local candidate = findSyncRemote()
 	if not candidate then
 		if syncRemote and not validSyncRemote(syncRemote) then disconnectSync() end
@@ -257,7 +311,7 @@ function GameInfo.startMaintenance(options)
 	return true
 end
 function GameInfo.stopMaintenance()
-	maintenance += 1; disconnectSync()
+	maintenance += 1; disconnectSync(); disconnect(trainingConnection); trainingConnection, trainingRemote, trainingState = nil, nil, nil
 	if targetFrameConnection then
 		if utils then utils.untrackGlobal(targetFrameConnection) end
 		targetFrameConnection:Disconnect(); targetFrameConnection = nil
@@ -270,7 +324,7 @@ function GameInfo.setup(deps)
 	GameInfo.stopMaintenance(); disconnect(cooldownConnection); disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil; utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
 	if not players or not world then return false, "dependência ausente: Players ou Workspace" end
 	ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil
-	minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}; pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }; targetFrame = 0; local service = utils.getRunService()
+	trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil; minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}; pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }; targetFrame = 0; local service = utils.getRunService()
 	if service and service.Heartbeat then
 		targetFrameConnection = service.Heartbeat:Connect(function()
 			targetFrame += 1
@@ -320,6 +374,7 @@ function GameInfo.getPlayerDistance(id)
 end
 function GameInfo.getDeflectRangeParameters() return T.RANGE_BASE, T.RANGE_BONUS_SPAN, sharedLayout() and 0.1125 or T.RANGE_BONUS_STEP end
 function GameInfo.getDeflectRange()
+	if inTrainingArea() then return T.RANGE_BASE end
 	local player = players.LocalPlayer; local range = player and player:GetAttribute("DeflectRange") or nil
 	if sharedLayout() and player and type(GameInfo.getPlayerDeflectRange) == "function" then return GameInfo.getPlayerDeflectRange(player.UserId) end
 	return range
@@ -361,8 +416,16 @@ function GameInfo.getLastDeflectPressAt()
 	end
 	return latest and (os.clock() - (1 - latest)) or 0
 end
-function GameInfo.getMinimumSpamInterval() return T.SPAM_MIN_INTERVAL end
+function GameInfo.getMinimumSpamInterval()
+	if inTrainingArea() then
+		local limit = world:GetAttribute("CPS_LIMIT")
+		if not finite(limit) then limit = 16 end
+		return limit >= 1 and math.max(T.SPAM_MIN_INTERVAL, 1 / math.floor(limit)) or 1
+	end
+	return T.SPAM_MIN_INTERVAL
+end
 function GameInfo.getAutoSpamDelay()
+	if inTrainingArea() then local limit = world:GetAttribute("CPS_LIMIT"); return (not finite(limit) or limit >= 1) and 0 or nil end
 	local ability = GameInfo.getDeflectAbility()
 	if not ability then return nil end
 	local time = os.clock(); local last = ability.LastPressClock; local delay = finite(last) and math.max(0, T.SPAM_MIN_INTERVAL - (time - last)) or 0; local limit = world:GetAttribute("CPS_LIMIT")
@@ -551,6 +614,29 @@ function GameInfo.getTargetId() return targetId(syncData(), getBall()) end
 
 -- snapshots
 local function snapshot(time)
+	if inTrainingArea() then
+		time = type(time) == "number" and time or utils.now(); local sample = trainingState; local model = child(child(child(world, "Training"), "TrainingClient"), "TrainingBall")
+		if not sample or time < sample.receivedAt or time - sample.receivedAt > 0.6 or not model or not model:IsA("BasePart") or not model.Parent then return nil end
+		local age = math.clamp(world:GetServerTimeNow() - sample.serverTime, 0, 0.25); local target = finite(sample.goal) and sample.goal > 0 and sample.goal or -1
+		return {
+			schema = 2,
+			mode = "training",
+			ball = model,
+			position = sample.position + sample.velocity * age,
+			velocity = sample.velocity,
+			speed = sample.velocity.Magnitude,
+			syncSpeed = sample.speed,
+			targetId = target,
+			targeted = target == players.LocalPlayer.UserId,
+			targetUncertain = false,
+			teleported = false,
+			locked = false,
+			grace = false,
+			syncAt = sample.receivedAt,
+			serverTime = sample.serverTime,
+			syncSequence = sample.sequence,
+		}
+	end
 	local currentBall = getBall()
 	if not currentBall then return nil end
 	time = type(time) == "number" and time or utils.now(); local provider = getReplicator(); local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData(provider or false)
@@ -650,7 +736,7 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
 	end
 	if not finite(speed) or high <= low then return nil end
 	local window = T.WINDOW_BASE - T.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer; local inClash = false
-	if gameBall and player and type(gameBall.IsInClash) == "function" then inClash = gameBall:IsInClash(player) == true end
+	if not inTrainingArea() and gameBall and player and type(gameBall.IsInClash) == "function" then inClash = gameBall:IsInClash(player) == true end
 	if inClash and type(gameBall.GetClashMinWindow) == "function" then
 		local minimum = gameBall:GetClashMinWindow(speed)
 		if finite(minimum) then window = math.max(window, minimum) end
@@ -664,6 +750,7 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
 	return window
 end
 function GameInfo.getBallFrozen()
+	if inTrainingArea() then return false end
 	if not ballData or not ballData.Parent then ballData = child(world, "BallData") end
 	if not ballData then return nil end
 	return ballData:GetAttribute("Frozen") == true
@@ -760,6 +847,8 @@ GameInfo.__contract = {
 	requiresMethods = { Utils = { "now", "apiVersion", "getPlayers", "getReplicatedStorage", "getWorkspace", "getRunService", "trackGlobal", "untrackGlobal" } },
 	provides = {
 		"setup",
+		"isTrainingArea",
+		"fireTrainingParry",
 		"getBall",
 		"getBallPosition",
 		"getBallVelocity",

@@ -63,9 +63,9 @@ local function sync()
 	task.spawn(function()
 		local function guard() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
 		local ok, err = xpcall(function()
-			local minimum = boundGameInfo.getMinimumSpamInterval(); local interval = mode ~= "Auto" and math.max(1 / (mode == "CPF" and rate * 60 or rate), minimum) or nil; local due = os.clock()
+			local due = os.clock()
 			while guard() do
-				local time = os.clock()
+				local time = os.clock(); local minimum = boundGameInfo.getMinimumSpamInterval(); local interval = mode ~= "Auto" and math.max(1 / (mode == "CPF" and rate * 60 or rate), minimum) or nil
 				if interval then due = math.max(due, time - MAX_DELAY_DEBT) end
 				local gameDelay = boundGameInfo.getAutoSpamDelay()
 				if inFlight or (mode == "Auto" and gameDelay == nil) then

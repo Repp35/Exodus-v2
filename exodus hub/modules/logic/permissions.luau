@@ -23,7 +23,7 @@ local POLICIES = {
 	},
 	gameinfo = {
 		provide = allow(
-			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getPlayerMotion getHaunterEvent getLocalPing getAveragePing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectRangeParameters getPlayerDeflectRange getPlayerRawRadius getDeflectGeometry getProjectedDeflectRadius isBallWithinDeflectRadius getBallFrozen getDeflectAbility getLastDeflectPressAt getAutoSpamDelay getMinimumSpamInterval getDashAbility isPlayerDashing getFierceDeflectAbility getDarkSealAbility getDarkSealEventId createCrateNetwork spinCrate getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getBallTargetAttribute getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
+			"bindBallSync startMaintenance stopMaintenance setup isTrainingArea fireTrainingParry getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getPlayerMotion getHaunterEvent getLocalPing getAveragePing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectRangeParameters getPlayerDeflectRange getPlayerRawRadius getDeflectGeometry getProjectedDeflectRadius isBallWithinDeflectRadius getBallFrozen getDeflectAbility getLastDeflectPressAt getAutoSpamDelay getMinimumSpamInterval getDashAbility isPlayerDashing getFierceDeflectAbility getDarkSealAbility getDarkSealEventId createCrateNetwork spinCrate getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getBallTargetAttribute getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
 		),
 		consume = {
 			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace getRunService now recordError trackGlobal untrackGlobal"),
@@ -31,7 +31,7 @@ local POLICIES = {
 	},
 	remote = {
 		provide = allow("setup fireParry fireDark fireFierce fireDash"),
-		consume = { gameinfo = allow("getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
+		consume = { gameinfo = allow("isTrainingArea fireTrainingParry getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
 	},
 	autoparry = {
 		provide = allow(
