@@ -51,7 +51,6 @@ local state = {
 local T = {
 	DEFAULT_WINDOW_FACTOR = 0.40,
 	FAST_EXCHANGE_INTERVAL = 0.5,
-	FAST_EXCHANGE_FACTOR = 1.70,
 	FAST_EXCHANGE_RECENCY = 1,
 	GRACE_COOLDOWN = 0.03,
 	PRESSURE_SAMPLE_LIMIT = 100,
@@ -130,7 +129,7 @@ local function configuredFactor()
 			and finite(lastSentAt)
 			and clock() - lastSentAt <= T.FAST_EXCHANGE_RECENCY
 		then
-			factor = math.min(1, factor * T.FAST_EXCHANGE_FACTOR)
+			factor = 1
 		end
 	end
 	return factor
