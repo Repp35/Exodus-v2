@@ -18,6 +18,7 @@ local state = {
 	connections = {},
 	fired = false,
 	graceHandled = false,
+	localGraceActive = false,
 	awaySeen = false,
 	cycle = 0,
 	target = -1,
@@ -81,7 +82,7 @@ end
 
 -- lifecycle
 local function resetTracking()
-	state.fired, state.graceHandled, state.awaySeen, state.cycle = false, false, false, 0
+	state.fired, state.graceHandled, state.localGraceActive, state.awaySeen, state.cycle = false, false, false, false, 0
 	state.target, state.targetKnown, state.lastTargeted = -1, false, false
 	state.teleported, state.teleportSequence, state.sequence = false, nil, nil
 	state.mode = nil
@@ -166,7 +167,7 @@ local function observeSnapshot(snapshot, time)
 	local mode = snapshot.mode == "training" and "training" or "match"
 	if state.mode ~= mode then
 		state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false
-		state.fired, state.graceHandled, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, false, nil
+		state.fired, state.graceHandled, state.localGraceActive, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, false, false, nil
 		state.awayAt, state.awayTarget = nil, nil
 	end
 	local order = sequenceOrder(snapshot.syncSequence)
@@ -224,7 +225,7 @@ local function tick(character, root, generation)
 	if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
 	if utils.isSpamActive() then phase("waiting", "spam_active"); return end
 	if state.teleported or value.teleported then phase("waiting", "teleport_lock"); return end
-	if value.grace ~= true then state.graceHandled = false end
+	-- Grace is inferred from local ball movement, independent of the sync Grace flag.
 	if state.fired then phase("waiting", "target_already_parried"); return end
 	if value.locked == true then
 		state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0
@@ -234,12 +235,26 @@ local function tick(character, root, generation)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if not value.ball.Parent then return end
 	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
-	if value.grace == true and value.targetUncertain ~= true and state.player and value.targetId == state.player.UserId then
-		samplePing(); local fullWindow = radius(speed, 1); local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
-		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
-		state.closingSpeed, state.triggerDistance = closing, fullWindow and fullWindow.fullRadius or 0
-		if not state.graceHandled and fullWindow and distance <= fullWindow.fullRadius and time - state.lastFireAt >= T.GRACE_COOLDOWN then
-			if request("grace_parry_requested") then state.graceHandled = true end
+	samplePing()
+	local fullWindow = radius(speed, 1)
+	local delta = rootPosition - position; local distance = delta.Magnitude
+	local closing = distance > 0 and velocity:Dot(delta) / distance or 0
+	local localGrace = fullWindow ~= nil
+		and distance <= fullWindow.fullRadius
+		and closing > 0
+		and value.targetUncertain ~= true
+		and state.player ~= nil
+		and value.targetId == state.player.UserId
+	if not localGrace then
+		state.localGraceActive, state.graceHandled = false, false
+	elseif not state.localGraceActive then
+		state.localGraceActive = true
+	end
+	if localGrace then
+		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, true
+		state.closingSpeed, state.triggerDistance = closing, fullWindow.fullRadius
+		if not state.graceHandled and time - state.lastFireAt >= T.GRACE_COOLDOWN then
+			if request("local_grace_parry_requested") then state.graceHandled = true end
 		end
 		return
 	end
