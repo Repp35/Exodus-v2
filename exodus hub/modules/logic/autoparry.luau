@@ -235,9 +235,7 @@ local function tick(character, root, generation)
 	if not value.ball.Parent then return end
 	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
 	if value.grace == true and value.targetUncertain ~= true and state.player and value.targetId == state.player.UserId then
-		samplePing()
-		local fullWindow = radius(speed, 1)
-		local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
+		samplePing(); local fullWindow = radius(speed, 1); local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
 		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 		state.closingSpeed, state.triggerDistance = closing, fullWindow and fullWindow.fullRadius or 0
 		if not state.graceHandled and fullWindow and distance <= fullWindow.fullRadius and time - state.lastFireAt >= T.GRACE_COOLDOWN then
