@@ -23,7 +23,7 @@ local POLICIES = {
 	},
 	gameinfo = {
 		provide = allow(
-			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getPlayerMotion getHaunterEvent getLocalPing getAveragePing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectRangeParameters getPlayerDeflectRange getPlayerRawRadius getDeflectGeometry getProjectedDeflectRadius isBallWithinDeflectRadius getBallFrozen getDeflectAbility getLastDeflectPressAt getAutoSpamDelay getDashAbility isPlayerDashing getFierceDeflectAbility getDarkSealAbility getDarkSealEventId createCrateNetwork spinCrate getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getBallTargetAttribute getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
+			"bindBallSync startMaintenance stopMaintenance setup getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getPlayerMotion getHaunterEvent getLocalPing getAveragePing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectRangeParameters getPlayerDeflectRange getPlayerRawRadius getDeflectGeometry getProjectedDeflectRadius isBallWithinDeflectRadius getBallFrozen getDeflectAbility getLastDeflectPressAt getAutoSpamDelay getMinimumSpamInterval getDashAbility isPlayerDashing getFierceDeflectAbility getDarkSealAbility getDarkSealEventId createCrateNetwork spinCrate getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getBallTargetAttribute getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
 		),
 		consume = {
 			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace getRunService now recordError trackGlobal untrackGlobal"),
@@ -67,7 +67,7 @@ local POLICIES = {
 				"apiVersion getConfigValue isActive isAutoSpamActive isManualSpamActive observeConfig observeSpam recordError recordTransition trackGlobal untrackGlobal"
 			),
 			remote = allow("fireParry"),
-			gameinfo = allow("getAutoSpamDelay"),
+			gameinfo = allow("getAutoSpamDelay getMinimumSpamInterval"),
 		},
 	},
 	autodark = {

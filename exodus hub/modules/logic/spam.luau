@@ -8,7 +8,8 @@ local function traceback(err) return debug.traceback(tostring(err), 2) end
 -- state
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
-local MAX_CATCH_UP = 256
+local MAX_DELAY_DEBT = 0.2
+local nextAllowedAt = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 
 -- config
@@ -33,9 +34,9 @@ local function cancel(reason)
 end
 
 -- dispatch
-local function request(boundUtils, boundRemote, token, guard)
+local function request(boundUtils, boundRemote, token, guard, minimum)
 	if inFlight then return end
-	inFlight = true; status.lastRequestAt = os.clock(); local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard); inFlight = false
+	inFlight = true; status.lastRequestAt = os.clock(); local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard); nextAllowedAt = os.clock() + minimum; inFlight = false
 	if not ok then error(result, 0) end
 	if token ~= generation or utils ~= boundUtils then return end
 	if result == true then status.lastError = nil; return end
@@ -56,34 +57,26 @@ local function sync()
 	end
 	if running and currentMode == mode and currentRate == rate then return end
 	if running then cancel("rate_changed") end
-	generation += 1; local token, boundUtils, boundRemote = generation, utils, remote; running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
+	generation += 1; local token, boundUtils, boundRemote, boundGameInfo = generation, utils, remote, gameInfo; running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
 	task.spawn(function()
 		local function guard() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
 		local ok, err = xpcall(function()
-			if mode == "Auto" then
-				while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
-					local delay = gameInfo.getAutoSpamDelay()
-					if delay ~= nil and delay <= 0 then
-						request(boundUtils, boundRemote, token, guard)
-						if token == generation then task.wait() end
-					elseif token == generation then
-						task.wait(delay and math.min(0.05, math.max(delay, 1 / 240)) or 0.05)
+			local minimum = boundGameInfo.getMinimumSpamInterval(); local interval = mode ~= "Auto" and math.max(1 / (mode == "CPF" and rate * 60 or rate), minimum) or nil; local due = os.clock()
+			while guard() do
+				local time = os.clock()
+				if interval then due = math.max(due, time - MAX_DELAY_DEBT) end
+				local gameDelay = boundGameInfo.getAutoSpamDelay()
+				if inFlight or (mode == "Auto" and gameDelay == nil) then
+					task.wait(0.05)
+				else
+					local readyAt = math.max(nextAllowedAt, interval and due or time)
+					if type(gameDelay) == "number" and gameDelay == gameDelay and gameDelay > 0 and gameDelay < math.huge then readyAt = math.max(readyAt, time + gameDelay) end
+					if time >= readyAt then
+						request(boundUtils, boundRemote, token, guard, minimum)
+						if interval then due += interval end
+					else
+						task.wait(math.clamp(readyAt - time, 1 / 240, 0.05))
 					end
-				end
-			else
-				local interval = 1 / (mode == "CPF" and rate * 60 or rate); local due = os.clock()
-				while token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) do
-					local time = os.clock()
-					if time >= due then
-						if time - due > 0.1 then due = time end
-						local pending = math.floor((time - due) / interval) + 1
-						for _ = 1, math.min(pending, MAX_CATCH_UP) do
-							if not guard() then break end
-							request(boundUtils, boundRemote, token, guard)
-						end
-						if pending > MAX_CATCH_UP then due = time + interval else due += pending * interval end
-					end
-					if token == generation then task.wait(math.max(0, due - os.clock())) end
 				end
 			end
 		end, traceback)
@@ -111,6 +104,7 @@ function Spam.setup(deps)
 		or type(deps.Remote) ~= "table"
 		or type(deps.GameInfo) ~= "table"
 		or type(deps.GameInfo.getAutoSpamDelay) ~= "function"
+		or type(deps.GameInfo.getMinimumSpamInterval) ~= "function"
 		or type(deps.Remote.fireParry) ~= "function"
 		or type(deps.Utils.getConfigValue) ~= "function"
 		or type(deps.Utils.isActive) ~= "function"
@@ -162,7 +156,7 @@ Spam.__contract = {
 	requires = { Remote = "remote", Utils = "utils", GameInfo = "gameinfo" },
 	requiresMethods = {
 		Remote = { "fireParry" },
-		GameInfo = { "getAutoSpamDelay" },
+		GameInfo = { "getAutoSpamDelay", "getMinimumSpamInterval" },
 		Utils = { "getConfigValue", "isActive", "isManualSpamActive", "isAutoSpamActive", "observeSpam", "observeConfig", "trackGlobal", "untrackGlobal" },
 	},
 

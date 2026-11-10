@@ -39,3 +39,7 @@ Os nomes de funções existentes foram mantidos. Os módulos carregados continua
 `gameinfo.getDeflectRangeParameters()` fornece o raio-base, o limite de bônus e o incremento de resiliência. `gameinfo.getPlayerDeflectRange` e `getPlayerRawRadius` leem o alcance de jogadores; `getDeflectWindow`, `getDeflectGeometry` e `getProjectedDeflectRadius` calculam janelas e distâncias. Esses valores têm finalidades diferentes e não devem ser substituídos uns pelos outros sem rever o comportamento.
 
 Os identificadores de habilidades, eventos e caixas ficam em `GAME_IDS`, em `gameinfo.luau`. O mesmo módulo localiza os recursos do jogo, expõe o alvo informado pelo jogo ao atualizador e fornece as operações para abertura de caixas; `remote` despacha habilidades. A interface não precisa conhecer os identificadores nem carregar diretamente a rede de caixas. Alterações futuras na estrutura do jogo podem exigir atualização desse adaptador.
+
+## Ritmo do Spam
+
+`gameinfo.getMinimumSpamInterval()` informa o intervalo mínimo entre tentativas configurado no adaptador do jogo; `getAutoSpamDelay()` informa uma espera adicional quando os dados necessários estiverem disponíveis. O Spam aplica o intervalo mínimo nos modos CPS, CPF e Auto. Nos modos com taxa definida, mantém no máximo 0,2 segundo de atraso para compensar progressivamente, sem enviar tentativas juntas. Caso a taxa pedida ultrapasse o intervalo mínimo, a taxa efetiva é limitada por ele. O envio e a aceitação pelo servidor são coisas distintas.

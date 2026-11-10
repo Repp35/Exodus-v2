@@ -21,6 +21,7 @@ local T = {
 	SYNC_CONNECTED_INTERVAL = 3,
 	SYNC_RETRY_INTERVAL = 1,
 	COOLDOWN_RETRY = 0.5,
+	SPAM_MIN_INTERVAL = 0.0301,
 	HELD_COOLDOWN_INTERVAL = 0.05,
 	SPEED_REFRESH = 0.5,
 	SAMPLE_INTERVAL = 1 / 240,
@@ -340,10 +341,11 @@ function GameInfo.getLastDeflectPressAt()
 	if not finite(pressedAt) or pressedAt <= 0 then return 0 end
 	return pressedAt
 end
+function GameInfo.getMinimumSpamInterval() return T.SPAM_MIN_INTERVAL end
 function GameInfo.getAutoSpamDelay()
 	local ability = GameInfo.getDeflectAbility()
 	if not ability then return nil end
-	local time = os.clock(); local last = ability.LastPressClock; local delay = finite(last) and math.max(0, 0.0301 - (time - last)) or 0; local limit = world:GetAttribute("CPS_LIMIT")
+	local time = os.clock(); local last = ability.LastPressClock; local delay = finite(last) and math.max(0, T.SPAM_MIN_INTERVAL - (time - last)) or 0; local limit = world:GetAttribute("CPS_LIMIT")
 	if not finite(limit) then limit = 50 end
 	limit = math.floor(limit)
 	if limit <= 0 then return nil end
@@ -712,6 +714,7 @@ GameInfo.__contract = {
 		"getDeflectAbility",
 		"getLastDeflectPressAt",
 		"getAutoSpamDelay",
+		"getMinimumSpamInterval",
 		"getDeflectServerEvents",
 		"decodeDeflectServerEvent",
 		"getHeldDeflectServerCooldown",
