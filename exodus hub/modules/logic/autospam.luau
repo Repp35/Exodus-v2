@@ -380,9 +380,13 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	end
 	local sampleAge = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt or nil; local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported; local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
 	if
-		sampleAge and sampleAge >= 0 and sampleAge <= T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE
-		and snapshot and not snapshot.teleported
-		and s.root and s.root.Parent
+		sampleAge
+		and sampleAge >= 0
+		and sampleAge <= T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE
+		and snapshot
+		and not snapshot.teleported
+		and s.root
+		and s.root.Parent
 		and s.activatedAt
 		and time - s.activatedAt >= T.DEACTIVATION.RETURN_START_GRACE
 		and typeof(snapshot.position) == "Vector3"
