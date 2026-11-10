@@ -123,17 +123,29 @@ local function clearRegistry()
 	Modules.ui = nil; Modules.permissions = nil; Modules.Loader = Loader; Exodus.Utils = nil; Exodus.State = nil; Exodus.Config = nil; Exodus.ModuleURLs = nil; Exodus.Runtime = nil; Exodus.Context = nil; Exodus.UI = nil; Exodus.Diagnostics = nil; Exodus.Version = nil; Exodus.Revision = nil; Exodus.StartError = nil; Exodus.StartErrorModule = nil; Exodus.UIReady = false; Exodus.Started = false
 	_G.ExodusOnBurst = nil
 end
+local function cleanupCall(name, action)
+	local ok, result = pcall(action)
+	if not ok then printRawError(name, "falha na limpeza: " .. tostring(result)) end
+	return ok, result
+end
 local function stopPreviousRuntime()
-	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then Modules.gameinfo.stopMaintenance() end
+	local clean = true
+	local function attempt(name, action)
+		local ok, result = cleanupCall(name, action)
+		if not ok then clean = false end
+		return ok, result
+	end
+	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then attempt("gameinfo", Modules.gameinfo.stopMaintenance) end
 	for _, name in ipairs({ "character", "spam", "autodash", "autospam", "autodark", "autofierce", "autojump", "camera", "movement", "dash", "autoparry" }) do
 		local module = Modules[name]
 		if type(module) == "table" then
-			if type(module.teardown) == "function" then module.teardown() elseif type(module.resetState) == "function" then module.resetState() end
+			if type(module.teardown) == "function" then attempt(name, module.teardown) elseif type(module.resetState) == "function" then attempt(name, module.resetState) end
 		end
 	end
 	local stopped = false
-	if type(_G.ExodusStop) == "function" then stopped = _G.ExodusStop() == true end
-	if not stopped and type(_G.ExodusUICleanup) == "function" then _G.ExodusUICleanup() end
+	if type(_G.ExodusStop) == "function" then local ok, result = attempt("Utils", _G.ExodusStop); stopped = ok and result == true end
+	if not stopped and type(_G.ExodusUICleanup) == "function" then attempt("UI", _G.ExodusUICleanup) end
+	return clean
 end
 
 -- compiler
@@ -439,7 +451,9 @@ local function waitForLocalPlayer(timeout)
 	return false, "LocalPlayer indisponível após esperar " .. timeout .. "s"
 end
 local function startInternal()
-	printStartup("Exodus: iniciando"); stopPreviousRuntime(); clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
+	printStartup("Exodus: iniciando")
+	if not stopPreviousRuntime() then return false, "Loader", "falha ao encerrar a sessão anterior" end
+	clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
 	if not playerReady then return false, "Loader", playerError end
 	local localRoot = findCompleteLocalRoot()
 	local version, revisionError
@@ -503,13 +517,13 @@ end
 local function rollbackLoaded(loaded)
 	if type(loaded) ~= "table" then return end
 	for index = #MODULE_ORDER, 1, -1 do
-		local module = loaded[MODULE_ORDER[index]]
+		local name = MODULE_ORDER[index]; local module = loaded[name]
 		if type(module) == "table" then
-			if type(module.teardown) == "function" then module.teardown() elseif type(module.detachCharacter) == "function" then module.detachCharacter() elseif type(module.resetState) == "function" then module.resetState() end
+			if type(module.teardown) == "function" then cleanupCall(name, module.teardown) elseif type(module.detachCharacter) == "function" then cleanupCall(name, module.detachCharacter) elseif type(module.resetState) == "function" then cleanupCall(name, module.resetState) end
 		end
 	end
-	if type(loaded.gameinfo) == "table" and type(loaded.gameinfo.stopMaintenance) == "function" then loaded.gameinfo.stopMaintenance() end
-	if type(loaded.utils) == "table" and type(loaded.utils.stop) == "function" then loaded.utils.stop() end
+	if type(loaded.gameinfo) == "table" and type(loaded.gameinfo.stopMaintenance) == "function" then cleanupCall("gameinfo", loaded.gameinfo.stopMaintenance) end
+	if type(loaded.utils) == "table" and type(loaded.utils.stop) == "function" then cleanupCall("utils", loaded.utils.stop) end
 end
 local startLock = false
 function Loader.start()
