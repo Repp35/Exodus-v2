@@ -10,7 +10,6 @@ local sensitivity = 1
 -- helpers
 local function stopCamera()
 	cameraEpoch += 1
-	if runService then runService:UnbindFromRenderStep("ExodusAimLock") end
 	if cameraInput and cameraInput.getRotation == cameraWrapped then cameraInput.getRotation = cameraOriginal end
 	if configConnection then
 		if utils then utils.untrackGlobal(configConnection) end
@@ -50,15 +49,6 @@ function Camera.setup(deps)
 	Camera.teardown(); utils, gameInfo, autoSpam = deps.Utils, deps.GameInfo, deps.AutoSpam; runService = utils.getRunService()
 	if not runService then return false, "RunService indisponível" end
 	sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or 1; startCamera()
-	runService:BindToRenderStep("ExodusAimLock", Enum.RenderPriority.Camera.Value + 1, function(deltaTime)
-		if not utils or not utils.isActive() or utils.getConfigValue("AutoAimLock") ~= true then return end
-		local context = autoSpam.getActivationContext(); local partner = context and context.active and context.partner
-		if not partner then local clash = gameInfo.getClashContext(); partner = clash and clash.partnerId end
-		if type(partner) ~= "number" or partner <= 0 then return end
-		local position = gameInfo.getPlayerMotion(partner); local workspace = utils.getWorkspace(); local camera = workspace and workspace.CurrentCamera
-		if typeof(position) ~= "Vector3" or not camera or (position - camera.CFrame.Position).Magnitude < 0.001 then return end
-		local aimPoint = position + Vector3.new(0, 4.5, 0); local goal = CFrame.lookAt(camera.CFrame.Position, aimPoint); local strength = 1 - math.exp(-1.2 * math.clamp(deltaTime, 0, 0.1)); camera.CFrame = camera.CFrame:Lerp(goal, strength)
-	end)
 	configConnection = utils.observeConfig(function(changes)
 		if changes.CameraSensitivity ~= nil then sensitivity = tonumber(changes.CameraSensitivity) or 1 end
 	end)
