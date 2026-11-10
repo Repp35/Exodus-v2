@@ -196,7 +196,6 @@ local function observeSnapshot(snapshot, time)
 	if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then return false end
 	if order == "new" then
 		state.sequence = snapshot.syncSequence
-		-- Training packets describe a new practice ball/shot; they are not match target cycles.
 		if mode == "training" then
 			state.fired, state.graceHandled, state.localGraceActive, state.localGraceUntil = false, false, false, 0
 			state.cycle += 1
