@@ -5,6 +5,10 @@
 return function(loadedRevision, request)
 	local players = game:GetService("Players"); local token = {}; _G.ExodusUpdaterToken = token; local CHECK_INTERVAL = 5
 	local function running() return _G.ExodusUpdaterToken == token and type(_G.Exodus) == "table" and _G.Exodus.Started == true end
+	local function currentRevision()
+		local exodus = _G.Exodus
+		return type(exodus) == "table" and exodus.Started == true and exodus.Revision or nil
+	end
 	local function safeToUpdate()
 		local exodus = _G.Exodus; local modules = exodus and exodus.Modules; local info = modules and modules.gameinfo; local auto = modules and modules.autospam; local player = players.LocalPlayer
 		if not player or not info or not auto then return false end
@@ -44,7 +48,7 @@ return function(loadedRevision, request)
 				if not running() then return end
 				if revision then
 					failures = 0
-					if revision ~= loadedRevision then
+					if revision ~= loadedRevision and revision ~= currentRevision() and _G.ExodusUpdatingRevision ~= revision then
 						if pending ~= revision then pending, chunk = revision, nil end
 					else
 						pending, chunk = nil, nil
@@ -65,9 +69,17 @@ return function(loadedRevision, request)
 			end
 			local safe, ready = pcall(safeToUpdate)
 			if chunk and running() and safe and ready then
+				if pending == currentRevision() or _G.ExodusUpdatingRevision == pending then
+					pending, chunk = nil, nil
+					continue
+				end
+				_G.ExodusUpdatingRevision = pending
 				print("[Exodus Updater] Atualizando o hub...")
 				local ok, err = xpcall(chunk, function(value) return debug.traceback(tostring(value), 2) end)
-				if not ok then warn("[Exodus Updater] Falha ao reiniciar: " .. tostring(err)) end
+				if not ok then
+					warn("[Exodus Updater] Falha ao reiniciar: " .. tostring(err))
+				end
+				_G.ExodusUpdatingRevision = nil
 				return
 			end
 			task.wait(pending and 0.25 or 1)
