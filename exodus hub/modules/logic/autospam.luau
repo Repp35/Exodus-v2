@@ -24,7 +24,7 @@ local T = {
 	},
 	DEACTIVATION = {
 		MIN_SPEED_DISTANCE = 20,
-		MAX_SPEED_DISTANCE = 55, -- includes BOTH players at 7.5 maximum resilience each
+		MAX_SPEED_DISTANCE = 55,
 		DISTANCE_REACTIVATION_DELAY = 0.2,
 		MIN_SPEED_TIMEOUT = 0.3,
 		MAX_SPEED_TIMEOUT = 0.1,
@@ -67,13 +67,7 @@ local function distanceLimit(snapshot, partner)
 	if not finite(speed) or speed <= 0 then return nil end
 	local minimum, maximum = gameInfo.getBallSpeedLimits()
 	if not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
-	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
-	-- 55 studs at max SPD already includes 7.5 + 7.5 resilience.
-	-- Subtract the maximum bonuses to obtain the base, then add CURRENT bonuses.
-	local base = (T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor) - 15
-	local ownRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId)
-	local otherRange = partner and gameInfo.getPlayerDeflectRange(partner)
-	-- Fail conservatively when the opponent's current range is not replicated.
+	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local base = (T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor) - 15; local ownRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId); local otherRange = partner and gameInfo.getPlayerDeflectRange(partner)
 	if not ownRange or not otherRange then return base + 15, factor end
 	return base + math.clamp(ownRange - 8.5, 0, 7.5) + math.clamp(otherRange - 8.5, 0, 7.5), factor
 end
@@ -259,14 +253,8 @@ local function freezeClashStats(playerId)
 end
 
 -- dash-assist
--- Normal Dash: 120 studs/s for 0.2 s (~24 studs ideal), velocity is reapplied each tick.
--- Wind Dash: 200 studs/s for 0.05 s then 150 studs/s for 0.75 s; direction may change.
--- Confirm ACTUAL displacement toward an opponent; a dash animation alone is insufficient.
--- RAW RADIUS = 8.5 studs + current resilience + ping distance (speed * average one-way ping).
--- AP window is a separate dynamic layer ABOVE that radius, scaled by 0.4 for dash assist.
 local function sampleOwnDash(s, time)
-	local ability = gameInfo.getDashAbility()
-	local dashing = ability and ability.Dashing == true
+	local ability = gameInfo.getDashAbility(); local dashing = ability and ability.Dashing == true
 	if not dashing then
 		s.dashStart, s.dashAt, s.dashTarget, s.dashApproach = nil, nil, nil, nil
 		return
@@ -274,7 +262,9 @@ local function sampleOwnDash(s, time)
 	if not s.dashStart then
 		s.dashStart, s.dashAt, s.dashTarget, s.dashApproach = s.root.Position, time, nil, nil
 	end
-	if time - s.dashAt > 0.85 then s.dashStart, s.dashAt = s.root.Position, time end
+	if time - s.dashAt > 0.85 then
+		s.dashStart, s.dashAt = s.root.Position, time
+	end
 end
 local function dashAssistPartner(s, snapshot, time)
 	if not s.dashStart or not s.dashAt or time - s.dashAt > 0.85 or not s.dashSwitchPartner then return nil end
@@ -283,21 +273,15 @@ local function dashAssistPartner(s, snapshot, time)
 	if not playerIsAlive(partner) then return nil end
 	local opponent = gameInfo.getPlayerMotion(partner)
 	if typeof(opponent) ~= "Vector3" then return nil end
-	local own = s.root.Position
-	local movement = own - s.dashStart
-	local toward = opponent - s.dashStart
-	local startDistance = toward.Magnitude
+	local own = s.root.Position; local movement = own - s.dashStart; local toward = opponent - s.dashStart; local startDistance = toward.Magnitude
 	if startDistance < 0.1 or movement.Magnitude < T.ACTIVATION.DASH_MIN_APPROACH then return nil end
 	if movement:Dot(toward) / (movement.Magnitude * startDistance) < T.ACTIVATION.DASH_ALIGNMENT then return nil end
 	if startDistance - (opponent - own).Magnitude < T.ACTIVATION.DASH_MIN_APPROACH then return nil end
 	local speed = tonumber(snapshot.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = snapshot.speed end
-	local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
-	local g = gameInfo.getDeflectGeometry(speed, "ap", T.ACTIVATION.DASH_WINDOW_FACTOR, false)
+	local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true); local g = gameInfo.getDeflectGeometry(speed, "ap", T.ACTIVATION.DASH_WINDOW_FACTOR, false)
 	if not raw or not g then return nil end
-	-- Entry must be into our physical radius, not just the large window.
 	if (opponent - own).Magnitude > raw then return nil end
-	-- Ball must be inside the AP window (0.4), measured above 8.5 + resilience + ping.
 	local allowed = raw + speed * g.deflectWindow * T.ACTIVATION.DASH_WINDOW_FACTOR
 	if (snapshot.position - own).Magnitude > allowed then return nil end
 	return partner
@@ -443,7 +427,6 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	syncManualPartner(s)
 	if not target or target == s.target then return end
 	local previous, me = s.target, localPlayer.UserId
-	-- Only an actual target switch between us and the dash opponent is eligible.
 	if previous and previous ~= target and (previous == me or target == me) and s.dashStart then
 		s.dashSwitchPartner, s.dashSwitchAt = previous == me and target or previous, time
 	elseif previous and previous ~= target then
@@ -507,11 +490,16 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
 	local target = userId(snapshot.targetId); observeClashStats(s, snapshot, time, fresh)
-	if not s.active and not blockedActivation and utils.getConfigValue("AutoSpam") == true and snapshot.targetUncertain ~= true and snapshot.locked ~= true and gameInfo.getBallFrozen() ~= true then
+	if
+		not s.active
+		and not blockedActivation
+		and utils.getConfigValue("AutoSpam") == true
+		and snapshot.targetUncertain ~= true
+		and snapshot.locked ~= true
+		and gameInfo.getBallFrozen() ~= true
+	then
 		local partner = dashAssistPartner(s, snapshot, time)
-		if partner and (target == localPlayer.UserId or target == partner) and partner ~= s.stoppedPartner then
-			start(s, "dash_assist", partner, time, serverTime, snapshot)
-		end
+		if partner and (target == localPlayer.UserId or target == partner) and partner ~= s.stoppedPartner then start(s, "dash_assist", partner, time, serverTime, snapshot) end
 	end
 	if fresh and utils.isManualSpamActive() then
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
@@ -653,10 +641,7 @@ function AutoSpam.bindCharacter(character)
 		if not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent then connectHaunter() end
 		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now()
 		if s.pendingReset then
-			local safe = true
-			local snapshot = gameInfo.getSnapshotAt(time)
-			local speed = snapshot and (snapshot.syncSpeed or snapshot.speed) or 16
-			local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true) or 8.5
+			local safe = true; local snapshot = gameInfo.getSnapshotAt(time); local speed = snapshot and (snapshot.syncSpeed or snapshot.speed) or 16; local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true) or 8.5
 			for _, player in ipairs(players:GetPlayers()) do
 				if player ~= localPlayer and playerIsAlive(player.UserId) then
 					local position = gameInfo.getPlayerMotion(player.UserId)
@@ -664,7 +649,10 @@ function AutoSpam.bindCharacter(character)
 				end
 			end
 			if snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetId == localPlayer.UserId then safe = false end
-			if safe then s.pendingReset = false; s.stoppedPartner, s.pending, s.dashSwitchPartner = nil, nil, nil end
+			if safe then
+				s.pendingReset = false
+				s.stoppedPartner, s.pending, s.dashSwitchPartner = nil, nil, nil
+			end
 		end
 		if s.haunterPartner then
 			local target = userId(gameInfo.getTargetId())

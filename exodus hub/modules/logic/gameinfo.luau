@@ -296,8 +296,6 @@ function GameInfo.getPlayerDistance(id)
 	return (ownRoot.Position - otherRoot.Position).Magnitude
 end
 function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
--- Radius without the dynamic parry window: 8.5 studs + current resilience + ping travel.
--- Opponent resilience is read from the opponent's own DeflectRange attribute, never ours.
 function GameInfo.getPlayerDeflectRange(id)
 	local player = type(id) == "number" and players:GetPlayerByUserId(id)
 	if not player then return nil end
