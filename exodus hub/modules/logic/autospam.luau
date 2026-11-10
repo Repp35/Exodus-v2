@@ -372,13 +372,30 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
+	local sampleAge = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt or nil
+	local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported
+	local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
+	if not validSnapshot or not target or snapshot.locked == true then
+		s.returnWatchAt = nil
+		s.diversionSince, s.diversionSyncAt = nil, nil
+		return nil
+	end
+	if not sampleAge or sampleAge < 0 or sampleAge > T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE then
+		if not sampleAge or sampleAge < 0 or sampleAge > T.SHARED.SNAPSHOT_MAX_AGE then s.returnWatchAt = nil end
+		s.diversionSince, s.diversionSyncAt = nil, nil
+		return nil
+	end
+	if target ~= localPlayer.UserId and target ~= s.partner then
+		if targetChanged then return "distant_target" end
+		s.returnWatchAt = nil
+		return nil
+	end
 	local speed = snapshotSpeed(snapshot)
 	if finite(speed) and speed > 0 then s.returnSpeed = speed end
 	if s.returnWatchAt and s.activatedAt and time >= s.activatedAt + T.DEACTIVATION.RETURN_START_GRACE then
 		local timeout = returnTimeout({ syncSpeed = s.returnSpeed })
 		if timeout and time >= s.returnWatchAt and time - s.returnWatchAt >= timeout then return "return_timeout" end
 	end
-	local sampleAge = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt or nil; local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported; local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
 	if
 		sampleAge
 		and sampleAge >= 0
@@ -394,14 +411,6 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	then
 		local toward = s.root.Position - snapshot.position; local distance = toward.Magnitude; local closing = distance > 0 and snapshot.velocity:Dot(toward) / distance or 0; local radius, timeout = closeRadius(snapshot), returnTimeout(snapshot)
 		if radius and timeout and closing > 1 and math.max(0, distance - radius) / closing > math.max(0.05, timeout * 3) then return "return_timeout" end
-	end
-	if not validSnapshot or not target then
-		s.diversionSince, s.diversionSyncAt = nil, nil
-		return nil
-	end
-	if not sampleAge or sampleAge < 0 or sampleAge > T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE then
-		s.diversionSince, s.diversionSyncAt = nil, nil
-		return nil
 	end
 	local limit, speedFactor = distanceLimit(snapshot, s.partner); local partnerPosition = s.partner and gameInfo.getPlayerMotion(s.partner)
 	if limit and typeof(partnerPosition) == "Vector3" and s.root and s.root.Parent and (partnerPosition - s.root.Position).Magnitude > limit then return "opponent_distance" end
@@ -482,7 +491,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	if not target or target == s.target then return end
 	local previous, me = s.target, localPlayer.UserId
 	if s.active then
-		if snapshot and snapshot.targetUncertain ~= true and ((previous == me and target == s.partner) or (previous == s.partner and target == me)) then s.returnWatchAt = time else s.returnWatchAt = nil end
+		if snapshot and snapshot.locked ~= true and snapshot.targetUncertain ~= true and ((previous == me and target == s.partner) or (previous == s.partner and target == me)) then s.returnWatchAt = time else s.returnWatchAt = nil end
 	end
 	local completedPartner
 	if
@@ -826,12 +835,14 @@ function AutoSpam.onBallSync(data)
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
 	local stopped = false
-	if s.active and target and target ~= s.target and target ~= localPlayer.UserId and target ~= s.partner then stop(s, "distant_target"); utils.setManualSpamActive(false); stopped = true end
 	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then
+		if s.active and snapshot.locked ~= true and snapshot.targetUncertain ~= true and target ~= s.target and target ~= localPlayer.UserId and target ~= s.partner then
+			stop(s, "distant_target"); utils.setManualSpamActive(false); stopped = true
+		end
 		if not stopped and target ~= s.target then stopped = applyDeactivation(s, snapshot, time, serverTime, true) end
 		if not stopped and target == s.target then stopped = applyDeactivation(s, snapshot, time, serverTime, false) end
 		inspectTarget(s, target, time, snapshot, serverTime)
-		if s.active and not s.returnWatchAt and snapshot.targetUncertain ~= true and (target == localPlayer.UserId or target == s.partner) then s.returnWatchAt = time end
+		if s.active and not s.returnWatchAt and snapshot.locked ~= true and snapshot.targetUncertain ~= true and (target == localPlayer.UserId or target == s.partner) then s.returnWatchAt = time end
 	end
 	evaluate(s, time, true, serverTime, snapshot, stopped)
 end
