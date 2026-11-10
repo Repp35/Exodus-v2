@@ -326,7 +326,11 @@ end
 local function stop(s, reason)
 	if current ~= s then return end
 	if s.active then s.stoppedPartner = s.partner; s.stoppedAt = now() end
-	if s.active then s.active = false; s.lastDeactivatedAt = now(); utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
+	if s.active then
+		s.active = false; s.lastDeactivatedAt = now()
+		s.lastStopReason, s.lastStopAt = reason, s.lastDeactivatedAt
+		utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
+	end
 	s.reason, s.pending, s.awayAt, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil
 	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
 end
@@ -365,11 +369,9 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if distanceReason then return distanceReason end
 	s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
 	if target ~= localPlayer.UserId and target ~= s.partner then return nil end
-	if serverTime and finite(s.lastSwitchServerAt) and serverTime >= s.lastSwitchServerAt then
-		local ping = gameInfo.getAveragePing()
-		if not finite(ping) or ping < 0 then ping = 0 end
-		if serverTime - s.lastSwitchServerAt > s.switchTimeout + ping then return "switch_timeout" end
-	end
+	-- Do not stop a valid close clash because a packet arrived late.
+	-- Packet gaps are not proof the ball has left the opponent/self exchange.
+	-- Distance, diversion and authoritative third-party target still deactivate.
 	if not validSnapshot then return nil end
 	local diverted = false
 	if
@@ -803,6 +805,8 @@ function AutoSpam.getStatus()
 		phase = s and (s.active and "active" or "idle") or "detached",
 		active = s ~= nil and s.active,
 		lastGate = s and s.reason or "detached",
+		lastStopReason = s and s.lastStopReason or nil,
+		lastStopAt = s and s.lastStopAt or nil,
 		clashPartnerId = s and s.partner or -1,
 		clashStats = clashStats and {
 			partnerId = clashStats.partnerId,
