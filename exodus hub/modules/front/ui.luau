@@ -55,10 +55,6 @@ local toastLayer
 local responsiveScale
 local flowingTweens = {}
 local shortcutLabels = {}
-local glassSurfaces = {}
-local glassFolder
-local glassEffect
-local trackGlass
 
 -- palette
 local C = {
@@ -104,7 +100,6 @@ local function inst(cls, props, parent)
 		end
 	end
 	if parent then o.Parent = parent end
-	if trackGlass and o:IsA("GuiObject") then trackGlass(o) end
 	return o
 end
 local function corner(obj, r) return inst("UICorner", { CornerRadius = UDim.new(0, r) }, obj) end
@@ -337,10 +332,7 @@ local PARTICLE_COLORS = {
 
 -- cleanup
 local function cleanupUI()
-	trackGlass = nil; RunService:UnbindFromRenderStep("ExodusGlass")
-	if glassFolder then glassFolder:Destroy(); glassFolder = nil end
-	if glassEffect then glassEffect:Destroy(); glassEffect = nil end
-	table.clear(glassSurfaces); safeCancel(UIState.panelTween); safeCancel(UIState.btnTween); disconnectUIConnections(); UIState.connections = {}; UIState.pageGeneration += 1
+	safeCancel(UIState.panelTween); safeCancel(UIState.btnTween); disconnectUIConnections(); UIState.connections = {}; UIState.pageGeneration += 1
 	for _, tween in ipairs(UIState.pageTweens) do
 		safeCancel(tween)
 	end
@@ -359,75 +351,6 @@ local function cleanupUI()
 	screenGui = nil; floatingButton = nil; clashBall = nil; parryBall = nil; darkBall = nil; jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil; particleLayer = nil; titleBar = nil; minimizeButton = nil; reloadButton = nil; colLeft = nil; colRight = nil; killBtn = nil; toastLayer = nil; responsiveScale = nil; shortcutLabels = {}; autoClashTrack = nil; autoClashThumb = nil
 	autoParrySetVisual = nil; autoDarkSetVisual = nil; autoJumpSetVisual = nil
 	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil end
-end
-local function setupGlass()
-	glassFolder = Instance.new("Folder"); glassFolder.Name = "ExodusGlass"; glassEffect = Instance.new("DepthOfFieldEffect"); glassEffect.Name = "ExodusGlassFocus"; glassEffect.FarIntensity = 0; glassEffect.NearIntensity = 0.65; glassEffect.InFocusRadius = 0.1; glassEffect.Enabled = false
-	trackGlass = function(object, force)
-		if not force and (object.BackgroundTransparency <= 0 or object.BackgroundTransparency >= 1) then return end
-		local ancestor = object.Parent
-		while ancestor and not ancestor:IsA("ScreenGui") do
-			if ancestor:IsA("GuiObject") and ancestor.BackgroundTransparency < 1 then return end
-			ancestor = ancestor.Parent
-		end
-		if not ancestor then return end
-		local strips = {}
-		for index = 1, 9 do
-			local part = Instance.new("Part"); part.Name = "Backdrop"; part.Anchored = true; part.CanCollide = false; part.CanTouch = false; part.CanQuery = false; part.CastShadow = false; part.Material = Enum.Material.Glass; part.Transparency = 1; part.Size = Vector3.new(0.01, 0.01, 0.01); local mesh = Instance.new("BlockMesh"); mesh.Parent = part; part.Parent = glassFolder
-			strips[index] = { part = part, mesh = mesh }
-		end
-		glassSurfaces[#glassSurfaces + 1] = { object = object, strips = strips }
-	end
-	RunService:BindToRenderStep("ExodusGlass", Enum.RenderPriority.Camera.Value + 1, function()
-		local camera = workspace.CurrentCamera
-		if not camera then glassEffect.Enabled = false; glassFolder.Parent = nil; return end
-		glassFolder.Parent = camera; glassEffect.Parent = camera; local depth = math.max(0.15, -camera.NearPlaneZ + 0.05); glassEffect.FocusDistance = depth + 0.25
-		local function project(x, y)
-			local ray = camera:ViewportPointToRay(x, y); local origin = camera.CFrame:PointToObjectSpace(ray.Origin); local direction = camera.CFrame:VectorToObjectSpace(ray.Direction); return origin + direction * ((-depth - origin.Z) / direction.Z)
-		end
-		local anyVisible = false
-		for index = #glassSurfaces, 1, -1 do
-			local surface = glassSurfaces[index]; local object = surface.object
-			if not object.Parent then
-				for _, strip in ipairs(surface.strips) do
-					strip.part:Destroy()
-				end
-				table.remove(glassSurfaces, index)
-			else
-				local visible = object.BackgroundTransparency > 0 and object.BackgroundTransparency < 1; local node = object
-				while node do
-					if node:IsA("GuiObject") and not node.Visible then visible = false; break end
-					if node:IsA("CanvasGroup") and node.GroupTransparency >= 0.99 then visible = false; break end
-					if node:IsA("ScreenGui") and not node.Enabled then visible = false; break end
-					node = node.Parent
-				end
-				local position, size = object.AbsolutePosition, object.AbsoluteSize; local cornerObject = object:FindFirstChildOfClass("UICorner"); local radius = cornerObject
-						and math.min(
-							math.min(size.X, size.Y) / 2,
-							cornerObject.CornerRadius.Scale * math.min(size.X, size.Y) + cornerObject.CornerRadius.Offset
-						)
-					or 0
-				local edges = {
-					0,
-					radius / 4,
-					radius / 2,
-					radius * 0.75,
-					radius,
-					size.Y - radius,
-					size.Y - radius * 0.75,
-					size.Y - radius / 2,
-					size.Y - radius / 4,
-					size.Y,
-				}
-
-				for stripIndex, strip in ipairs(surface.strips) do
-					local top, bottom = edges[stripIndex], edges[stripIndex + 1]; local edgeDistance = math.min(top, size.Y - bottom); local inset = edgeDistance < radius and radius - math.sqrt(math.max(0, radius * radius - (radius - edgeDistance) ^ 2)) or 0; local left, right = math.max(0, position.X + inset), math.min(camera.ViewportSize.X, position.X + size.X - inset)
-					local y1, y2 = math.max(0, position.Y + top), math.min(camera.ViewportSize.Y, position.Y + bottom); local show = visible and right > left and y2 > y1; strip.part.Transparency = show and (1 - 1e-7) or 1
-					if show then local first, last = project(left, y1), project(right, y2); strip.mesh.Scale = Vector3.new((last.X - first.X) / 0.01, (first.Y - last.Y) / 0.01, 0.01); strip.part.CFrame = camera.CFrame * CFrame.new((first + last) / 2); anyVisible = true end
-				end
-			end
-		end
-		glassEffect.Enabled = anyVisible
-	end)
 end
 
 -- particles
@@ -451,7 +374,7 @@ end
 -- cards
 local function cardFrame(yPos, h, parent)
 	local f = inst("Frame", {
-		Size = UDim2.new(1, 0, 0, h),
+		Size = UDim2.new(1, -8, 0, h),
 		Position = UDim2.new(0, 0, 0, yPos),
 		BackgroundColor3 = C.card,
 		BackgroundTransparency = 0.1,
@@ -474,7 +397,7 @@ local function cardLabel(text, parent)
 		BackgroundTransparency = 1,
 		Text = text,
 		TextColor3 = C.accent,
-		TextSize = 10,
+		TextSize = 12,
 		Font = Enum.Font.GothamBold,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 7,
@@ -594,7 +517,7 @@ local function keyName(value)
 end
 local function makeKeycap(parent, configKey)
 	local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 32, 28, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey; keycap.Position = UDim2.new(1, -132, 0, 12); keycap.TextSize = 9; keycap.ZIndex = 11; shortcutLabels[configKey] = keycap; local arrow = makeBtn("⌄", 0, 0, 24, 28, parent, C.btnDark); arrow.Name = "ShortcutSettings"; arrow.Position = UDim2.new(1, -96, 0, 12)
-	arrow.ZIndex = 11; local editor = makeBtn("Atalho: " .. keyName(Utils.getConfigValue(configKey)), 10, CARD_H + 4, COL_W - 20, 30, parent, C.btnBlue); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
+	arrow.ZIndex = 11; local editor = makeBtn("Atalho: " .. keyName(Utils.getConfigValue(configKey)), 10, CARD_H + 4, COL_W - 28, 30, parent, C.btnBlue); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
 	local function expand()
 		expanded = not expanded; local delta = expanded and 44 or -44; editor.Visible = expanded; arrow.Text = expanded and "⌃" or "⌄"; parent.Size += UDim2.fromOffset(0, delta)
 		for _, sibling in ipairs(parent.Parent:GetChildren()) do
@@ -618,7 +541,7 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter, sho
 		BackgroundTransparency = 1,
 		Text = labelText,
 		TextColor3 = C.text,
-		TextSize = UIState.desktop and shortcutKey and 11 or 13,
+		TextSize = UIState.desktop and shortcutKey and 12 or 15,
 		Font = Enum.Font.GothamSemibold,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 7,
@@ -833,7 +756,7 @@ local function createSpamCard(yPos, parent)
 			if not enabled then setSpam(false) end
 		end, "SpamKeybind")
 	end
-	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true; local button = makeBtn(visible and "Mini UI: Visível" or "Mini UI: Oculto", 8, 22, COL_W - 16, 26, f, C.btnDark)
+	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true; local button = makeBtn(visible and "Mini UI: Visível" or "Mini UI: Oculto", 8, 22, COL_W - 24, 26, f, C.btnDark)
 	trackConn(button.Activated:Connect(function() showMini(Utils.getConfigValue("MiniSpamVisible") ~= true, button) end))
 	return nextCardY(yPos, CARD_H)
 end
@@ -913,7 +836,7 @@ function ExodusUI.setup(deps)
 		local old = playerGui:FindFirstChild("ExodusUISystem")
 		if old then old:Destroy() end
 	end
-	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.closing = false; UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil; UIState.btnTween = nil; shortcutLabels = {}; _G.ExodusUICleanup = cleanupUI; setupGlass()
+	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.closing = false; UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil; UIState.btnTween = nil; shortcutLabels = {}; _G.ExodusUICleanup = cleanupUI
 	screenGui = inst("ScreenGui", {
 		Name = "ExodusUISystem",
 		DisplayOrder = 100,
@@ -924,7 +847,7 @@ function ExodusUI.setup(deps)
 	})
 	responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
 	local function updateResponsiveScale()
-		local size = viewport(); responsiveScale.Scale = math.clamp(math.min((size.X - 20) / PW, (size.Y - 20) / PH), 0.55, 1)
+		local size = viewport(); responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
 	end
 	updateResponsiveScale(); local currentCamera = workspace.CurrentCamera or Camera
 	if currentCamera then trackConn(currentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale)) end
@@ -1062,7 +985,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 10,
 		Parent = screenGui,
 	})
-	corner(floatingButton, 999); trackGlass(floatingButton, true); local floatingStroke = stroke(floatingButton, C.accent, 2); floatingStroke.Transparency = 1; registerFlow(floatingStroke)
+	corner(floatingButton, 999); local floatingStroke = stroke(floatingButton, C.accent, 2); floatingStroke.Transparency = 1; registerFlow(floatingStroke)
 	task.defer(function()
 		if not floatingButton or not floatingButton.Parent then return end
 		twPlay(floatingButton, 0.38, { BackgroundTransparency = 0.1, TextTransparency = 0 }, EASE_OUT, DIR_OUT); twPlay(floatingStroke, 0.42, { Transparency = 0 }, EASE_OUT, DIR_OUT)
@@ -1277,7 +1200,7 @@ function ExodusUI.setup(deps)
 		Size = UDim2.new(0, PW, 0, PH),
 		Position = panelPos(),
 		BackgroundColor3 = C.bg,
-		BackgroundTransparency = 0.18,
+		BackgroundTransparency = 0.03,
 		GroupTransparency = 0,
 		Visible = false,
 		ZIndex = 5,
