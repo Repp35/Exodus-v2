@@ -46,7 +46,7 @@ local miniGui
 local configPanel
 local particleLayer
 local titleBar
-local closeButton
+local minimizeButton
 local reloadButton
 local colLeft
 local colRight
@@ -156,17 +156,28 @@ local function disconnectUIConnections()
 		safeDisconnect(UIState.connections[i]); UIState.connections[i] = nil
 	end
 end
-local function isKey(input, keyCode) return input and keyCode and input.KeyCode == keyCode end
+local function inputBinding(input)
+	if input.UserInputType == Enum.UserInputType.Keyboard then return input.KeyCode end
+	if
+		input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.MouseButton2
+		or input.UserInputType == Enum.UserInputType.MouseButton3
+	then
+		return input.UserInputType
+	end
+	return nil
+end
+local function isKey(input, binding) return input and binding and inputBinding(input) == binding end
 
 -- input
 local function bindInput()
 	trackConn(UIS.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed or UIState.keyCapture or input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+		if gameProcessed or UIState.keyCapture or UIS:GetFocusedTextBox() or not UIState.desktop or not inputBinding(input) then return end
 		local config = Utils.getConfig() or {}; local panicKey = config.Keybind; local spamKey = config.SpamKeybind
 		if isKey(input, panicKey) then
 			setSpam(false)
 			if type(Controls.onPanic) == "function" then Controls.onPanic() end
-		elseif isKey(input, spamKey) then
+		elseif isKey(input, spamKey) and config.ManualSpamEnabled == true then
 			setSpam(not UIState.spamOn)
 		elseif isKey(input, config.ParryKeybind) then
 			toggleSetting("AutoParry", "Auto Parry")
@@ -337,7 +348,7 @@ local function cleanupUI()
 		local oldOverlay = overlay:FindFirstChild("ExodusInformationOverlay")
 		if oldOverlay then oldOverlay:Destroy() end
 	end
-	screenGui = nil; floatingButton = nil; clashBall = nil; parryBall = nil; darkBall = nil; jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil; particleLayer = nil; titleBar = nil; closeButton = nil; reloadButton = nil; colLeft = nil; colRight = nil; killBtn = nil; toastLayer = nil; responsiveScale = nil; shortcutLabels = {}; autoClashTrack = nil; autoClashThumb = nil
+	screenGui = nil; floatingButton = nil; clashBall = nil; parryBall = nil; darkBall = nil; jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil; particleLayer = nil; titleBar = nil; minimizeButton = nil; reloadButton = nil; colLeft = nil; colRight = nil; killBtn = nil; toastLayer = nil; responsiveScale = nil; shortcutLabels = {}; autoClashTrack = nil; autoClashThumb = nil
 	autoParrySetVisual = nil; autoDarkSetVisual = nil; autoJumpSetVisual = nil
 	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil end
 end
@@ -484,46 +495,66 @@ local function bindKeyCapture(btn, onPicked)
 		local previousText, restColor = btn.Text, btn.BackgroundColor3; listening = true; UIState.keyCapture = true; btn.Text = "..."; twPlay(btn, 0.1, { BackgroundColor3 = Color3.fromRGB(80, 85, 160) })
 		local conn
 		conn = trackConn(UIS.InputBegan:Connect(function(input, gpe)
-			if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-			if input.KeyCode == Enum.KeyCode.Escape then btn.Text = previousText else onPicked(input.KeyCode) end
+			local binding = inputBinding(input)
+			if not binding then return end
+			if input.KeyCode == Enum.KeyCode.Escape then btn.Text = previousText else onPicked(binding) end
 			listening = false; UIState.keyCapture = false; safeDisconnect(conn); untrackConn(conn); twPlay(btn, 0.12, { BackgroundColor3 = restColor })
 		end))
 	end))
 end
 local function keyName(value)
-	local name = typeof(value) == "EnumItem" and value.Name or tostring(value or "—"); return #name > 6 and string.sub(name, 1, 6) or name
+	local names = {
+		MouseButton1 = "M1",
+		MouseButton2 = "M2",
+		MouseButton3 = "M3",
+		LeftControl = "LCtrl",
+		RightControl = "RCtrl",
+		LeftShift = "LShift",
+		RightShift = "RShift",
+	}
+
+	local name = typeof(value) == "EnumItem" and value.Name or tostring(value or "—"); return names[name] or name
 end
 local function makeKeycap(parent, configKey)
-	local button = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 38, 28, parent, C.btnDark); button.Name = "Shortcut_" .. configKey; button.Position = UDim2.new(1, -INNER_PAD - 90, 0.5, -14); button.TextSize = 9; button.ZIndex = 10; shortcutLabels[configKey] = button
-	bindKeyCapture(button, function(keyCode)
-		if setConfigValue(configKey, keyCode) then button.Text = keyName(keyCode) end
+	local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 32, 28, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey; keycap.Position = UDim2.new(1, -132, 0, 12); keycap.TextSize = 9; keycap.ZIndex = 11; shortcutLabels[configKey] = keycap; local arrow = makeBtn("⌄", 0, 0, 24, 28, parent, C.btnDark); arrow.Name = "ShortcutSettings"; arrow.Position = UDim2.new(1, -96, 0, 12)
+	arrow.ZIndex = 11; local editor = makeBtn("Atalho: " .. keyName(Utils.getConfigValue(configKey)), 10, CARD_H + 4, COL_W - 20, 30, parent, C.btnBlue); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
+	local function expand()
+		expanded = not expanded; local delta = expanded and 44 or -44; editor.Visible = expanded; arrow.Text = expanded and "⌃" or "⌄"; parent.Size += UDim2.fromOffset(0, delta)
+		for _, sibling in ipairs(parent.Parent:GetChildren()) do
+			if sibling:IsA("GuiObject") and sibling ~= parent and sibling.Position.Y.Offset > parent.Position.Y.Offset then sibling.Position += UDim2.fromOffset(0, delta) end
+		end
+		if parent.Parent:IsA("ScrollingFrame") then parent.Parent.CanvasSize += UDim2.fromOffset(0, delta) end
+	end
+	trackConn(arrow.Activated:Connect(expand)); trackConn(keycap.Activated:Connect(expand))
+	bindKeyCapture(editor, function(binding)
+		if setConfigValue(configKey, binding) then keycap.Text = keyName(binding); editor.Text = "Atalho: " .. keyName(binding) end
 	end)
-	return button
+	return keycap
 end
 
 -- cards
 local function createToggleCard(labelText, configKey, yPos, parent, onAfter, shortcutKey)
 	local f = cardFrame(yPos, CARD_H, parent)
 	inst("TextLabel", {
-		Size = UDim2.new(0.55, 0, 1, 0),
+		Size = UDim2.new(1, UIState.desktop and shortcutKey and -148 or -78, 0, CARD_H),
 		Position = UDim2.new(0, 14, 0, 0),
 		BackgroundTransparency = 1,
 		Text = labelText,
 		TextColor3 = C.text,
-		TextSize = (labelText == "Auto Deflexo Feroz" or labelText == "Distância do clash") and 11 or 14,
+		TextSize = UIState.desktop and shortcutKey and 11 or 13,
 		Font = Enum.Font.GothamSemibold,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 7,
 		Parent = f,
 	})
-	local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
+	local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0, 13)
 	if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey) end
 	if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
 	if configKey == "AutoParry" then autoParrySetVisual = setVisual end
 	if configKey == "AutoDark" then autoDarkSetVisual = setVisual end
 	if configKey == "AutoJump" then autoJumpSetVisual = setVisual end
 	trackConn(inst("TextButton", {
-		Size = UDim2.new(1, 0, 1, 0),
+		Size = UDim2.new(1, 0, 0, CARD_H),
 		BackgroundTransparency = 1,
 		Text = "",
 		ZIndex = 9,
@@ -543,7 +574,7 @@ local function createActionToggleCard(labelText, yPos, parent, onToggle, shortcu
 	if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey) end
 	local active = false
 	trackConn(inst("TextButton", {
-		Size = UDim2.new(1, 0, 1, 0),
+		Size = UDim2.new(1, 0, 0, CARD_H),
 		BackgroundTransparency = 1,
 		Text = "",
 		ZIndex = 9,
@@ -556,10 +587,11 @@ local function createActionToggleCard(labelText, yPos, parent, onToggle, shortcu
 	return setVisual
 end
 local function createActionShortcutCard(labelText, yPos, parent, configKey, onActivate)
-	local f = cardFrame(yPos, CARD_H, parent); cardLabel(labelText, f)
+	local f = cardFrame(yPos, CARD_H, parent); cardLabel(labelText, f); local label = f:FindFirstChildOfClass("TextLabel")
+	if label then label.Size = UDim2.new(1, -148, 0, CARD_H); label.Position = UDim2.fromOffset(14, 0); label.TextColor3 = C.text; label.TextSize = 11 end
 	if UIState.desktop and configKey then makeKeycap(f, configKey) end
 	trackConn(inst("TextButton", {
-		Size = UDim2.new(1, 0, 1, 0),
+		Size = UDim2.new(1, 0, 0, CARD_H),
 		BackgroundTransparency = 1,
 		Text = "",
 		ZIndex = 9,
@@ -713,47 +745,20 @@ local function createRateSelector(yPos, parent)
 	return nextCardY(yPos, RATE_CARD_H)
 end
 local function createKeybindSelector(yPos, parent)
-	local f = cardFrame(yPos, CARD_H, parent)
-	inst("TextLabel", {
-		Size = UDim2.new(0.55, 0, 1, 0),
-		Position = UDim2.new(0, 14, 0, 0),
-		BackgroundTransparency = 1,
-		Text = "Tecla de Atalho",
-		TextColor3 = C.text,
-		TextSize = 14,
-		Font = Enum.Font.GothamSemibold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 7,
-		Parent = f,
-	})
-	local config = Utils.getConfig(); local kbBtn = makeBtn(config.Keybind and config.Keybind.Name or "V", 0, 0, 88, 30, f, C.btnBlue); kbBtn.Position = UDim2.new(1, -100, 0.5, -15)
-	bindKeyCapture(kbBtn, function(keyCode)
-		setConfigValue("Keybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_OUT)
+	return createActionShortcutCard("Parar funções", yPos, parent, "Keybind", function()
+		setSpam(false)
+		if type(Controls.onPanic) == "function" then Controls.onPanic() end
 	end)
-	return nextCardY(yPos, CARD_H)
 end
 local function createSpamCard(yPos, parent)
 	if UIState.desktop then
-		local f = cardFrame(yPos, CARD_H, parent); cardLabel("Manual Spam", f); local action = makeBtn("Manual Spam: OFF", 8, 24, COL_W - 112, 30, f, C.btnBlue); action.Name = "ManualSpamButton"; action.Text = "Manual Spam: " .. (UIState.spamOn and "ON" or "OFF")
-		trackConn(action.Activated:Connect(function() setSpam(not UIState.spamOn) end))
-		makeKeycap(f, "SpamKeybind"); local arrow = makeBtn("⌄", 0, 0, 38, 28, f, C.btnDark); arrow.Name = "ManualSpamShortcutToggle"; arrow.Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -14); arrow.TextSize = 17; local editor = makeBtn("Selecionar tecla", 8, 60, COL_W - 16, 30, f, C.btnBlue); editor.Visible = false; local expanded = false
-		local function setExpanded(value)
-			expanded = value; editor.Visible = expanded; arrow.Text = expanded and "⌃" or "⌄"; f.Size = UDim2.new(1, 0, 0, expanded and CARD_H + 48 or CARD_H)
-			if parent:IsA("ScrollingFrame") then parent.CanvasSize = UDim2.new(0, 0, 0, yPos + (expanded and CARD_H + 48 or CARD_H) + CARD_GAP) end
-		end
-		trackConn(arrow.Activated:Connect(function() setExpanded(not expanded) end))
-		bindKeyCapture(editor, function(keyCode)
-			if setConfigValue("SpamKeybind", keyCode) then editor.Text = "Tecla: " .. keyName(keyCode); shortcutLabels.SpamKeybind.Text = keyName(keyCode) end
-		end)
-		return nextCardY(yPos, CARD_H)
+		return createToggleCard("Manual Spam", "ManualSpamEnabled", yPos, parent, function(enabled)
+			if not enabled then setSpam(false) end
+		end, "SpamKeybind")
 	end
-	local f = cardFrame(yPos, SPAM_CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true; local visBtn = makeBtn(visible and "Mini UI: Visivel" or "Mini UI: Oculto", 8, 24, COL_W - 16, 30, f, visible and Color3.fromRGB(0, 130, 65) or C.btnDark); visBtn.TextSize = 11
-	trackConn(visBtn.Activated:Connect(function() showMini(Utils.getConfigValue("MiniSpamVisible") ~= true, visBtn) end))
-	local config = Utils.getConfig(); local kbBtn = makeBtn(config.SpamKeybind and config.SpamKeybind.Name or "X", 8, 64, COL_W - 16, 32, f, C.btnBlue)
-	bindKeyCapture(kbBtn, function(keyCode)
-		setConfigValue("SpamKeybind", keyCode); kbBtn.Text = keyCode.Name; twPlay(kbBtn, 0.18, { BackgroundColor3 = C.btnBlue }, EASE_OUT)
-	end)
-	return nextCardY(yPos, SPAM_CARD_H)
+	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true; local button = makeBtn(visible and "Mini UI: Visível" or "Mini UI: Oculto", 8, 22, COL_W - 16, 26, f, C.btnDark)
+	trackConn(button.Activated:Connect(function() showMini(Utils.getConfigValue("MiniSpamVisible") ~= true, button) end))
+	return nextCardY(yPos, CARD_H)
 end
 local function togglePanel()
 	if not configPanel or not configPanel.Parent or not floatingButton or not floatingButton.Parent then return end
@@ -831,7 +836,7 @@ function ExodusUI.setup(deps)
 		local old = playerGui:FindFirstChild("ExodusUISystem")
 		if old then old:Destroy() end
 	end
-	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.closing = false; UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled; UIState.panelTween = nil; UIState.btnTween = nil; shortcutLabels = {}; _G.ExodusUICleanup = cleanupUI
+	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.closing = false; UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil; UIState.btnTween = nil; shortcutLabels = {}; _G.ExodusUICleanup = cleanupUI
 	screenGui = inst("ScreenGui", {
 		Name = "ExodusUISystem",
 		DisplayOrder = 100,
@@ -1261,38 +1266,24 @@ function ExodusUI.setup(deps)
 		ZIndex = 7,
 		Parent = titleGroup,
 	})
-	closeButton = inst("TextButton", {
+	minimizeButton = inst("TextButton", {
 		Size = UDim2.new(0, 30, 0, 30),
 		Position = UDim2.new(1, -PAD - 30, 0.5, -15),
-		BackgroundColor3 = C.red,
+		BackgroundColor3 = C.btnDark,
 		BackgroundTransparency = 0.3,
-		Text = "X",
+		Text = "—",
 		TextColor3 = Color3.new(1, 1, 1),
 		TextSize = 14,
 		Font = Enum.Font.GothamBold,
 		ZIndex = 7,
 		Parent = titleBar,
 	})
-	corner(closeButton, 8)
-	trackConn(closeButton.MouseEnter:Connect(function() twPlay(closeButton, 0.12, { BackgroundTransparency = 0 }) end))
-	trackConn(closeButton.MouseLeave:Connect(function() twPlay(closeButton, 0.12, { BackgroundTransparency = 0.3 }) end))
-	trackConn(closeButton.Activated:Connect(function() animateClose("close") end))
-	reloadButton = inst("TextButton", {
-		Size = UDim2.new(0, 30, 0, 30),
-		Position = UDim2.new(1, -PAD - 68, 0.5, -15),
-		BackgroundColor3 = C.btnBlue,
-		BackgroundTransparency = 0.3,
-		Text = "↻",
-		TextColor3 = C.text,
-		TextSize = 18,
-		Font = Enum.Font.GothamBold,
-		ZIndex = 7,
-		Parent = titleBar,
-	})
-	corner(reloadButton, 8)
-	trackConn(reloadButton.MouseEnter:Connect(function() twPlay(reloadButton, 0.12, { BackgroundTransparency = 0 }) end))
-	trackConn(reloadButton.MouseLeave:Connect(function() twPlay(reloadButton, 0.12, { BackgroundTransparency = 0.3 }) end))
-	trackConn(reloadButton.Activated:Connect(function() animateClose("reload") end))
+	corner(minimizeButton, 8)
+	trackConn(minimizeButton.MouseEnter:Connect(function() twPlay(minimizeButton, 0.12, { BackgroundTransparency = 0 }) end))
+	trackConn(minimizeButton.MouseLeave:Connect(function() twPlay(minimizeButton, 0.12, { BackgroundTransparency = 0.3 }) end))
+	trackConn(minimizeButton.Activated:Connect(function()
+		if UIState.panelOpen then togglePanel() end
+	end))
 	local pageGroups = {}
 	for index = 1, 4 do
 		pageGroups[index] = inst("CanvasGroup", {
@@ -1329,7 +1320,7 @@ function ExodusUI.setup(deps)
 	})
 	killBtn = inst("TextButton", {
 		Size = UDim2.new(0, 124, 0, 26),
-		Position = UDim2.new(0.5, -62, 1, -PAD - 26),
+		Position = UDim2.new(1, -PAD - 124, 1, -PAD - 26),
 		BackgroundColor3 = C.redDark,
 		BackgroundTransparency = 0.15,
 		Text = "Fechar Script",
@@ -1341,6 +1332,8 @@ function ExodusUI.setup(deps)
 	})
 	corner(killBtn, 6)
 	trackConn(killBtn.Activated:Connect(function() animateClose("close") end))
+	reloadButton = makeBtn("Recarregar", 0, 0, 124, 26, configPanel, C.btnBlue); reloadButton.Name = "ReloadHub"; reloadButton.Position = UDim2.new(1, -PAD - 256, 1, -PAD - 26); reloadButton.TextSize = 11
+	trackConn(reloadButton.Activated:Connect(function() animateClose("reload") end))
 	local yL = 4
 	local toggleCallbacks = {
 		AutoParry = paintParryBall,
@@ -1364,10 +1357,14 @@ function ExodusUI.setup(deps)
 
 	for _, definition in ipairs(UIConfig.panelComponents) do
 		local createComponent = components[definition.kind]
-		if createComponent then yR = createComponent(yR, colRight) end
+		if createComponent and (definition.kind ~= "keybind_selector" or UIState.desktop) then yR = createComponent(yR, colRight) end
 	end
 	colRight.CanvasSize = UDim2.new(0, 0, 0, yR)
-	local settingsLeft = inst("Frame", {
+	local settingsLeft = inst("ScrollingFrame", {
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		ScrollBarThickness = 3,
+		BorderSizePixel = 0,
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
 		Position = UDim2.new(0, 0, 0, 0),
 		BackgroundTransparency = 1,
@@ -1375,7 +1372,11 @@ function ExodusUI.setup(deps)
 		ZIndex = 6,
 		Parent = pageGroups[2],
 	})
-	local settingsRight = inst("Frame", {
+	local settingsRight = inst("ScrollingFrame", {
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		ScrollBarThickness = 3,
+		BorderSizePixel = 0,
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
 		Position = UDim2.new(0, COL_W + GAP, 0, 0),
 		BackgroundTransparency = 1,
@@ -1383,7 +1384,11 @@ function ExodusUI.setup(deps)
 		ZIndex = 6,
 		Parent = pageGroups[2],
 	})
-	local utilities = inst("Frame", {
+	local utilities = inst("ScrollingFrame", {
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		ScrollBarThickness = 3,
+		BorderSizePixel = 0,
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
 		Position = UDim2.new(0, 0, 0, 0),
 		BackgroundTransparency = 1,
@@ -1391,14 +1396,22 @@ function ExodusUI.setup(deps)
 		ZIndex = 6,
 		Parent = pageGroups[3],
 	})
-	local autosLeft = inst("Frame", {
+	local autosLeft = inst("ScrollingFrame", {
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		ScrollBarThickness = 3,
+		BorderSizePixel = 0,
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
 		Position = UDim2.new(0, 0, 0, 0),
 		BackgroundTransparency = 1,
 		ZIndex = 6,
 		Parent = pageGroups[4],
 	})
-	local autosRight = inst("Frame", {
+	local autosRight = inst("ScrollingFrame", {
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		ScrollBarThickness = 3,
+		BorderSizePixel = 0,
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
 		Position = UDim2.new(0, COL_W + GAP, 0, 0),
 		BackgroundTransparency = 1,
@@ -1518,12 +1531,12 @@ function ExodusUI.setup(deps)
 	})
 	local pageLabel = inst("TextLabel", {
 		Name = "PageLabel",
-		Size = UDim2.new(0, 108, 0, 26),
+		Size = UDim2.new(0, 82, 0, 26),
 		Position = UDim2.new(0, PAD + 34, 1, -PAD - 26),
 		BackgroundTransparency = 1,
 		Text = "1/4 Principal",
 		TextColor3 = C.text,
-		TextSize = 10,
+		TextSize = 9,
 		Font = Enum.Font.GothamBold,
 		ZIndex = 7,
 		Parent = configPanel,
@@ -1531,7 +1544,7 @@ function ExodusUI.setup(deps)
 	local nextPage = inst("TextButton", {
 		Name = "NextPage",
 		Size = UDim2.new(0, 32, 0, 26),
-		Position = UDim2.new(0, PAD + 144, 1, -PAD - 26),
+		Position = UDim2.new(0, PAD + 118, 1, -PAD - 26),
 		BackgroundColor3 = C.btnDark,
 		Text = "›",
 		TextColor3 = C.text,
@@ -1605,7 +1618,21 @@ function ExodusUI.setup(deps)
 				if autoDarkSetVisual then autoDarkSetVisual(changes.AutoDark == true) end
 			end
 			if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
+			if changes.ManualSpamEnabled == false and UIState.desktop then setSpam(false) end
 		end))
+	end
+	local currentGui = screenGui
+	local function refreshDevice()
+		local desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled
+		if desktop == UIState.desktop or UIState.closing then return end
+		task.defer(function()
+			if screenGui ~= currentGui or not currentGui.Parent then return end
+			local wasOpen = UIState.panelOpen; ExodusUI.setup(deps)
+			if wasOpen then togglePanel() end
+		end)
+	end
+	for _, property in ipairs({ "KeyboardEnabled", "MouseEnabled", "TouchEnabled" }) do
+		trackConn(UIS:GetPropertyChangedSignal(property):Connect(refreshDevice))
 	end
 	setSpam(Utils.isManualSpamActive(), true); return true
 end

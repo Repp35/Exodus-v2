@@ -7,7 +7,15 @@ local Keys = {}
 
 -- validation
 local function isFiniteNumber(value) return type(value) == "number" and value == value and value < math.huge and value > -math.huge end
-local function validKeyCode(value) return typeof(value) == "EnumItem" and value.EnumType == Enum.KeyCode end
+local function validKeyCode(value)
+	return typeof(value) == "EnumItem"
+		and (
+			value.EnumType == Enum.KeyCode
+			or value == Enum.UserInputType.MouseButton1
+			or value == Enum.UserInputType.MouseButton2
+			or value == Enum.UserInputType.MouseButton3
+		)
+end
 local validators = {
 	boolean = function(value) return type(value) == "boolean" end,
 	rate = function(value) return isFiniteNumber(value) and value >= 0 end,

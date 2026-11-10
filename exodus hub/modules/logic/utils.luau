@@ -199,7 +199,7 @@ end
 local function serializeConfig(config)
 	local data = {}
 	for key, value in pairs(config) do
-		data[key] = typeof(value) == "EnumItem" and value.EnumType == Enum.KeyCode and { keyCode = value.Name } or value
+		if typeof(value) == "EnumItem" then data[key] = value.EnumType == Enum.KeyCode and { keyCode = value.Name } or { mouseButton = value.Name } else data[key] = value end
 	end
 	return http:JSONEncode(data)
 end
@@ -211,6 +211,11 @@ local function persistenceAvailable()
 		and type(makefolder) == "function"
 end
 local function decodeKeyCode(value)
+	if type(value) == "table" and type(value.mouseButton) == "string" then
+		local buttons =
+			{ MouseButton1 = Enum.UserInputType.MouseButton1, MouseButton2 = Enum.UserInputType.MouseButton2, MouseButton3 = Enum.UserInputType.MouseButton3 }
+		return buttons[value.mouseButton]
+	end
 	if type(value) ~= "table" or type(value.keyCode) ~= "string" then return value end
 	local name = value.keyCode
 	local ok, keyCode = pcall(function() return Enum.KeyCode[name] end)
