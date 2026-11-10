@@ -31,7 +31,6 @@ local UIState = {
 	toastGeneration = 0,
 	toastTween = nil,
 	keyCapture = false,
-	revealObjects = {},
 }
 
 local setSpam
@@ -61,6 +60,7 @@ local shortcutLabels = {}
 local C = {
 	bg = Color3.fromRGB(8, 8, 22),
 	header = Color3.fromRGB(14, 14, 34),
+	card = Color3.fromRGB(20, 20, 44),
 	accent = Color3.fromRGB(99, 102, 241),
 	accentPink = Color3.fromRGB(236, 72, 153),
 	green = Color3.fromRGB(34, 197, 94),
@@ -80,18 +80,6 @@ local C = {
 	upDash = Color3.fromRGB(226, 135, 36),
 	hold = Color3.fromRGB(236, 72, 153),
 	inputBg = Color3.fromRGB(16, 16, 38),
-	glass = Color3.fromRGB(19, 22, 48),
-	glassBlue = Color3.fromRGB(25, 44, 82),
-	glassPurple = Color3.fromRGB(53, 37, 82),
-	glassPink = Color3.fromRGB(78, 32, 68),
-	glassCyan = Color3.fromRGB(18, 60, 82),
-	glassGold = Color3.fromRGB(76, 53, 31),
-	glassBorder = Color3.fromRGB(126, 143, 255),
-	cyan = Color3.fromRGB(56, 189, 248),
-	teal = Color3.fromRGB(45, 212, 191),
-	orange = Color3.fromRGB(251, 146, 60),
-	successGlass = Color3.fromRGB(20, 83, 55),
-	dangerGlass = Color3.fromRGB(93, 29, 43),
 }
 
 local GRAD = {
@@ -100,15 +88,7 @@ local GRAD = {
 	Color3.fromRGB(236, 72, 153),
 }
 
-local SURFACE_THEMES = {
-	{ base = C.glassBlue, glow = C.accent, border = C.cyan },
-	{ base = C.glassPurple, glow = C.accentPink, border = Color3.fromRGB(196, 132, 255) },
-	{ base = C.glassCyan, glow = C.cyan, border = C.teal },
-	{ base = C.glassPink, glow = C.accentPink, border = Color3.fromRGB(255, 128, 196) },
-	{ base = C.glassGold, glow = C.orange, border = Color3.fromRGB(255, 194, 92) },
-}
-
-local EASE_OUT, EASE_SINE, EASE_BACK = Enum.EasingStyle.Cubic, Enum.EasingStyle.Sine, Enum.EasingStyle.Back
+local EASE_OUT, EASE_SINE = Enum.EasingStyle.Cubic, Enum.EasingStyle.Sine
 local DIR_OUT, DIR_IN, DIR_INOUT = Enum.EasingDirection.Out, Enum.EasingDirection.In, Enum.EasingDirection.InOut
 
 -- helpers
@@ -124,27 +104,6 @@ local function inst(cls, props, parent)
 end
 local function corner(obj, r) return inst("UICorner", { CornerRadius = UDim.new(0, r) }, obj) end
 local function stroke(obj, col, th) return inst("UIStroke", { Color = col, Thickness = th or 1 }, obj) end
-local function applyGlass(obj, primary, secondary, transparency, borderColor, thickness)
-	local base, glow = primary or C.glass, secondary or C.accent; obj.BackgroundColor3 = base; obj.BackgroundTransparency = transparency == nil and 0.2 or transparency
-	local gradient = inst("UIGradient", {
-		Name = "GlassGradient",
-		Rotation = 25,
-		Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, base),
-			ColorSequenceKeypoint.new(0.52, glow),
-			ColorSequenceKeypoint.new(1, C.glass),
-		}),
-		Transparency = NumberSequence.new({
-			NumberSequenceKeypoint.new(0, 0.05),
-			NumberSequenceKeypoint.new(0.55, 0.16),
-			NumberSequenceKeypoint.new(1, 0.42),
-		}),
-	}, obj)
-	local edge = stroke(obj, borderColor or C.glassBorder, thickness or 1); edge.Transparency = 0.28; return gradient, edge
-end
-local function styleInput(input)
-	corner(input, 8); local _, edge = applyGlass(input, C.inputBg, C.glassBlue, 0.18, C.glassBorder, 1); return edge
-end
 
 -- animation
 local function attachFlow(s)
@@ -198,24 +157,6 @@ local function disconnectUIConnections()
 	end
 end
 local function isKey(input, keyCode) return input and keyCode and input.KeyCode == keyCode end
-local function animateButton(button, edge, hoverColor, restColor)
-	button.AutoButtonColor = false; local scale = inst("UIScale", { Scale = 1 }, button); local baseEdgeTransparency = edge and edge.Transparency or 0.28; local hovered = false
-	trackConn(button.MouseEnter:Connect(function()
-		hovered = true; twPlay(scale, 0.16, { Scale = 1.025 }, EASE_OUT, DIR_OUT)
-		if edge then twPlay(edge, 0.16, { Color = hoverColor or C.cyan, Transparency = 0.06 }, EASE_SINE, DIR_INOUT) end
-	end))
-	trackConn(button.MouseLeave:Connect(function()
-		hovered = false; twPlay(scale, 0.2, { Scale = 1 }, EASE_OUT, DIR_OUT)
-		if edge then twPlay(edge, 0.2, { Color = restColor or C.glassBorder, Transparency = baseEdgeTransparency }, EASE_SINE, DIR_INOUT) end
-	end))
-	trackConn(button.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then twPlay(scale, 0.07, { Scale = 0.95 }, EASE_OUT, DIR_OUT) end
-	end))
-	trackConn(button.InputEnded:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then twPlay(scale, 0.14, { Scale = hovered and 1.025 or 1 }, EASE_BACK, DIR_OUT) end
-	end))
-	return scale
-end
 
 -- input
 local function bindInput()
@@ -293,16 +234,7 @@ local function paintBall(ball, value, onText, offText, onColor, offColor, onSize
 	if not ball or not ball.Parent then return end
 	ball.Text = value and onText or offText
 	if onSize then ball.TextSize = value and onSize or offSize end
-	local color = value and onColor or offColor
-	local gradient = ball:FindFirstChild("GlassGradient")
-	if gradient and gradient:IsA("UIGradient") then
-		gradient.Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, color:Lerp(C.text, 0.08)),
-			ColorSequenceKeypoint.new(0.52, color),
-			ColorSequenceKeypoint.new(1, C.glass),
-		})
-	end
-	twPlay(ball, 0.28, { BackgroundColor3 = color }, EASE_SINE, DIR_INOUT)
+	twPlay(ball, 0.28, { BackgroundColor3 = value and onColor or offColor }, EASE_SINE, DIR_INOUT)
 end
 local function paintParryBall(value) paintBall(parryBall, value, "PARRY\nON", "PARRY\nOFF", C.green, C.red, 14, 14) end
 local function showBall(ball, visible, visibleKey, xKey, yKey, defaultX, defaultY)
@@ -393,7 +325,7 @@ local function cleanupUI()
 	for _, tween in ipairs(UIState.pageTweens) do
 		safeCancel(tween)
 	end
-	UIState.pageTweens = {}; UIState.revealObjects = {}; UIState.panelOpen = false; UIState.clashBallOn = false; UIState.closing = false; UIState.keyCapture = false; UIState.panelTween = nil; UIState.btnTween = nil; UIState.toastGeneration += 1; safeCancel(UIState.toastTween); UIState.toastTween = nil
+	UIState.pageTweens = {}; UIState.panelOpen = false; UIState.clashBallOn = false; UIState.closing = false; UIState.keyCapture = false; UIState.panelTween = nil; UIState.btnTween = nil; UIState.toastGeneration += 1; safeCancel(UIState.toastTween); UIState.toastTween = nil
 	UIState.btnIsDragging = function() return false end
 	for i = #flowingTweens, 1, -1 do
 		safeCancel(flowingTweens[i]); flowingTweens[i] = nil
@@ -430,43 +362,30 @@ end
 
 -- cards
 local function cardFrame(yPos, h, parent)
-	local theme = SURFACE_THEMES[(#UIState.revealObjects % #SURFACE_THEMES) + 1]
 	local f = inst("Frame", {
 		Size = UDim2.new(1, 0, 0, h),
 		Position = UDim2.new(0, 0, 0, yPos),
-		BackgroundColor3 = theme.base,
-		BackgroundTransparency = 0.24,
+		BackgroundColor3 = C.card,
+		BackgroundTransparency = 0.1,
 		ZIndex = 6,
 		Parent = parent,
 	})
-	corner(f, 12); f:SetAttribute("SurfaceAccent", theme.glow); local _, s = applyGlass(f, theme.base, theme.glow, 0.24, theme.border, 1); UIState.revealObjects[#UIState.revealObjects + 1] = { object = f, position = f.Position, transparency = 0.24 }
+	corner(f, 12); local s = stroke(f, C.border, 1)
 	trackConn(f.MouseEnter:Connect(function()
-		twPlay(s, 0.22, { Color = C.text, Transparency = 0.06 }, EASE_SINE, DIR_INOUT); twPlay(f, 0.22, { BackgroundTransparency = 0.12 }, EASE_SINE, DIR_INOUT)
+		twPlay(s, 0.22, { Color = C.accent }, EASE_SINE, DIR_INOUT); twPlay(f, 0.22, { BackgroundColor3 = Color3.fromRGB(24, 24, 50) }, EASE_SINE, DIR_INOUT)
 	end))
 	trackConn(f.MouseLeave:Connect(function()
-		twPlay(s, 0.25, { Color = theme.border, Transparency = 0.28 }, EASE_SINE, DIR_INOUT); twPlay(f, 0.25, { BackgroundTransparency = 0.24 }, EASE_SINE, DIR_INOUT)
+		twPlay(s, 0.25, { Color = C.border }, EASE_SINE, DIR_INOUT); twPlay(f, 0.25, { BackgroundColor3 = C.card }, EASE_SINE, DIR_INOUT)
 	end))
 	return f
 end
-local function revealCards()
-	for index, item in ipairs(UIState.revealObjects) do
-		local object, finalPosition = item.object, item.position
-		if object and object.Parent then
-			object.Position = UDim2.new(finalPosition.X.Scale, finalPosition.X.Offset, finalPosition.Y.Scale, finalPosition.Y.Offset + 10); object.BackgroundTransparency = 0.66
-			task.delay((index - 1) * 0.025, function()
-				if object.Parent then twPlay(object, 0.32, { Position = finalPosition, BackgroundTransparency = item.transparency }, EASE_OUT, DIR_OUT) end
-			end)
-		end
-	end
-end
 local function cardLabel(text, parent)
-	local accent = parent:GetAttribute("SurfaceAccent")
 	inst("TextLabel", {
 		Size = UDim2.new(1, -10, 0, 16),
 		Position = UDim2.new(0, 10, 0, 5),
 		BackgroundTransparency = 1,
 		Text = text,
-		TextColor3 = typeof(accent) == "Color3" and accent or C.accent,
+		TextColor3 = C.accent,
 		TextSize = 10,
 		Font = Enum.Font.GothamBold,
 		TextXAlignment = Enum.TextXAlignment.Left,
@@ -479,7 +398,7 @@ local function makeBtn(text, x, y, w, h, parent, bg)
 		Size = UDim2.new(0, w, 0, h),
 		Position = UDim2.new(0, x, 0, y),
 		BackgroundColor3 = bg or C.btnBlue,
-		BackgroundTransparency = 0.16,
+		BackgroundTransparency = 0.1,
 		Text = text,
 		TextColor3 = C.text,
 		TextSize = 13,
@@ -487,7 +406,7 @@ local function makeBtn(text, x, y, w, h, parent, bg)
 		ZIndex = 7,
 		Parent = parent,
 	})
-	corner(b, 8); local _, edge = applyGlass(b, bg or C.btnBlue, C.accent, 0.16, C.glassBorder, 1); animateButton(b, edge); return b
+	corner(b, 8); return b
 end
 showToast = function(message)
 	if not toastLayer or not toastLayer.Parent then return end
@@ -501,13 +420,13 @@ showToast = function(message)
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.new(0.5, 0, 1, 18),
 		Size = UDim2.fromOffset(190, 34),
-		BackgroundColor3 = isOff and C.dangerGlass or C.successGlass,
-		BackgroundTransparency = 0.16,
+		BackgroundColor3 = isOff and C.redDark or C.btnBlue,
+		BackgroundTransparency = 0.08,
 		GroupTransparency = 1,
 		ZIndex = 200,
 		Parent = toastLayer,
 	})
-	corner(toast, 10); applyGlass(toast, isOff and C.dangerGlass or C.successGlass, isOff and C.red or C.green, 0.16, isOff and C.red or C.green, 1)
+	corner(toast, 10); stroke(toast, isOff and C.red or C.accent, 1)
 	inst("TextLabel", {
 		Size = UDim2.new(1, -16, 1, 0),
 		Position = UDim2.new(0, 8, 0, 0),
@@ -538,11 +457,11 @@ local function makeToggle(trackParent, initial)
 		Size = UDim2.new(0, 48, 0, 26),
 		Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -13),
 		BackgroundColor3 = initial and C.toggleOn or C.toggleOff,
-		BackgroundTransparency = 0.22,
+		BackgroundTransparency = 0.1,
 		ZIndex = 7,
 		Parent = trackParent,
 	})
-	corner(track, 999); local _, trackEdge = applyGlass(track, initial and C.toggleOn or C.toggleOff, initial and C.accentPink or C.glassBlue, 0.22, C.glassBorder, 1)
+	corner(track, 999)
 	local thumb = inst("Frame", {
 		Size = UDim2.new(0, 20, 0, 20),
 		Position = initial and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10),
@@ -550,9 +469,9 @@ local function makeToggle(trackParent, initial)
 		ZIndex = 8,
 		Parent = track,
 	})
-	corner(thumb, 999); applyGlass(thumb, Color3.fromRGB(245, 247, 255), C.glassBlue, 0.04, C.text, 1)
+	corner(thumb, 999)
 	local function setVisual(v)
-		twPlay(track, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT); twPlay(trackEdge, 0.22, { Color = v and C.accentPink or C.glassBorder }, EASE_SINE, DIR_INOUT); twPlay(thumb, 0.25, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_SINE, DIR_INOUT)
+		twPlay(track, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT); twPlay(thumb, 0.25, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_SINE, DIR_INOUT)
 	end
 	return track, thumb, setVisual
 end
@@ -679,7 +598,7 @@ local function createParryTimingCard(yPos, parent)
 		ZIndex = 7,
 		Parent = f,
 	})
-	styleInput(input)
+	corner(input, 8); stroke(input, C.border, 1)
 	trackConn(input.FocusLost:Connect(function()
 		local value = tonumber(input.Text)
 		if not value or value ~= value or value == math.huge or value == -math.huge then value = (tonumber(Utils.getConfig().AutoParryWindowFactor) or 0.8) * 100 end
@@ -701,7 +620,7 @@ local function createCameraSensitivityCard(yPos, parent)
 		ZIndex = 7,
 		Parent = f,
 	})
-	styleInput(input)
+	corner(input, 8); stroke(input, C.border, 1)
 	trackConn(input.FocusLost:Connect(function()
 		local value = tonumber(input.Text)
 		if not value or value ~= value or value == math.huge or value == -math.huge or value < 0 then value = Utils.getConfigValue("CameraSensitivity") or 1 end
@@ -726,7 +645,7 @@ local function createRateSelector(yPos, parent)
 		ZIndex = 7,
 		Parent = f,
 	})
-	corner(modeTrack, 999); applyGlass(modeTrack, C.inputBg, C.glassPurple, 0.24, C.glassBorder, 1)
+	corner(modeTrack, 999); stroke(modeTrack, C.border, 1)
 	local modeThumb = inst("Frame", {
 		Size = UDim2.new(0, 44, 0, 24),
 		Position = UDim2.new(0, currentMode == "CPS" and 2 or (currentMode == "CPF" and 50 or 98), 0.5, -12),
@@ -735,7 +654,7 @@ local function createRateSelector(yPos, parent)
 		ZIndex = 8,
 		Parent = modeTrack,
 	})
-	corner(modeThumb, 999); applyGlass(modeThumb, C.accent, C.accentPink, 0.1, C.text, 1); local modeButtons = {}
+	corner(modeThumb, 999); stroke(modeThumb, C.text, 1); local modeButtons = {}
 	for index, mode in ipairs({ "CPS", "CPF", "Auto" }) do
 		local button = inst("TextButton", {
 			Size = UDim2.new(0, 48, 1, 0),
@@ -765,7 +684,7 @@ local function createRateSelector(yPos, parent)
 		ZIndex = 7,
 		Parent = f,
 	})
-	local inputStroke = styleInput(inputBox)
+	corner(inputBox, 8); local inputStroke = stroke(inputBox, C.border, 1)
 	local function paintRateMode(animated)
 		local isCPS = currentMode == "CPS"; local targetPosition = UDim2.new(0, isCPS and 2 or (currentMode == "CPF" and 50 or 98), 0.5, -12); local duration = animated and 0.32 or 0
 		twPlay(modeThumb, duration, {
@@ -912,7 +831,7 @@ function ExodusUI.setup(deps)
 		local old = playerGui:FindFirstChild("ExodusUISystem")
 		if old then old:Destroy() end
 	end
-	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.closing = false; UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled; UIState.panelTween = nil; UIState.btnTween = nil; UIState.revealObjects = {}; shortcutLabels = {}; _G.ExodusUICleanup = cleanupUI
+	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.closing = false; UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled; UIState.panelTween = nil; UIState.btnTween = nil; shortcutLabels = {}; _G.ExodusUICleanup = cleanupUI
 	screenGui = inst("ScreenGui", {
 		Name = "ExodusUISystem",
 		DisplayOrder = 100,
@@ -944,7 +863,7 @@ function ExodusUI.setup(deps)
 	})
 	local textService = game:GetService("TextService")
 	local function compactInformation(label)
-		local paddingX, paddingY = 8, 5; label.TextSize = 14; label.TextWrapped = false; label.TextXAlignment = Enum.TextXAlignment.Left; label.TextYAlignment = Enum.TextYAlignment.Top; label.BorderSizePixel = 0; label.ZIndex = 100; corner(label, 8); applyGlass(label, C.glassBlue, C.glassPurple, 0.24, C.glassBorder, 1)
+		local paddingX, paddingY = 8, 5; label.TextSize = 14; label.TextWrapped = false; label.TextXAlignment = Enum.TextXAlignment.Left; label.TextYAlignment = Enum.TextYAlignment.Top; label.BorderSizePixel = 0; label.ZIndex = 100
 		local padding = inst("UIPadding", {
 			PaddingLeft = UDim.new(0, paddingX),
 			PaddingRight = UDim.new(0, paddingX),
@@ -987,7 +906,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 20,
 		Parent = informationGui,
 	})
-	compactInformation(distanceLabel); compactInformation(travelLabel); local nextTravelUpdate = 0
+	compactInformation(distanceLabel); compactInformation(travelLabel); corner(travelLabel, 8); local nextTravelUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not travelLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true; travelLabel.Visible = visible; local time = os.clock()
@@ -1014,7 +933,7 @@ function ExodusUI.setup(deps)
 		end
 		travelLabel.Text = "SPD atual: " .. speedText .. "\n" .. travelLabel.Text
 	end))
-	local nextDistanceUpdate = 0
+	corner(distanceLabel, 8); local nextDistanceUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not distanceLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashDistanceVisible") == true; distanceLabel.Visible = visible; local time = os.clock()
@@ -1061,7 +980,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 10,
 		Parent = screenGui,
 	})
-	corner(floatingButton, 999); local _, floatingStroke = applyGlass(floatingButton, C.glassBlue, C.accentPink, 0.12, C.accent, 2); floatingStroke.Transparency = 1; registerFlow(floatingStroke); animateButton(floatingButton, floatingStroke)
+	corner(floatingButton, 999); local floatingStroke = stroke(floatingButton, C.accent, 2); floatingStroke.Transparency = 1; registerFlow(floatingStroke)
 	task.defer(function()
 		if not floatingButton or not floatingButton.Parent then return end
 		twPlay(floatingButton, 0.38, { BackgroundTransparency = 0.1, TextTransparency = 0 }, EASE_OUT, DIR_OUT); twPlay(floatingStroke, 0.42, { Transparency = 0 }, EASE_OUT, DIR_OUT)
@@ -1080,8 +999,8 @@ function ExodusUI.setup(deps)
 		ZIndex = 8,
 		Parent = screenGui,
 	})
-	corner(clashBall, 999); local _, clashStroke = applyGlass(clashBall, C.red, C.dangerGlass, 0.08, Color3.new(0, 0, 0), 2); animateButton(clashBall, clashStroke, C.text, Color3.new(0, 0, 0)); UIState.clashBallOn = config.AutoSpam or false; clashBall.Text = UIState.clashBallOn and "ON" or "OFF"; clashBall.TextSize = UIState.clashBallOn and 18 or 16
-	clashBall.BackgroundColor3 = UIState.clashBallOn and C.green or C.red; paintClashBall(); local parryX = config.ParryBallX or 14; local parryY = config.ParryBallY or (viewport().Y / 2 - CLASH_SIZE - 40)
+	corner(clashBall, 999); stroke(clashBall, Color3.new(0, 0, 0), 2); UIState.clashBallOn = config.AutoSpam or false; clashBall.Text = UIState.clashBallOn and "ON" or "OFF"; clashBall.TextSize = UIState.clashBallOn and 18 or 16; clashBall.BackgroundColor3 = UIState.clashBallOn and C.green or C.red; paintClashBall(); local parryX = config.ParryBallX or 14
+	local parryY = config.ParryBallY or (viewport().Y / 2 - CLASH_SIZE - 40)
 	parryBall = inst("TextButton", {
 		Name = "ExodusParryBall",
 		Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
@@ -1095,7 +1014,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 8,
 		Parent = screenGui,
 	})
-	corner(parryBall, 999); local _, parryStroke = applyGlass(parryBall, C.red, C.dangerGlass, 0.08, Color3.new(0, 0, 0), 2); animateButton(parryBall, parryStroke, C.text, Color3.new(0, 0, 0)); paintParryBall(config.AutoParry == true)
+	corner(parryBall, 999); stroke(parryBall, Color3.new(0, 0, 0), 2); paintParryBall(config.AutoParry == true)
 	local isParryDragging = makeDraggable(parryBall, parryBall, function()
 		setConfigValue("ParryBallX", parryBall.Position.X.Offset); setConfigValue("ParryBallY", parryBall.Position.Y.Offset)
 	end)
@@ -1132,7 +1051,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 8,
 		Parent = screenGui,
 	})
-	corner(darkBall, 999); local _, darkStroke = applyGlass(darkBall, C.darkOff, C.glassPurple, 0.08, Color3.new(0, 0, 0), 2); animateButton(darkBall, darkStroke, C.text, Color3.new(0, 0, 0)); paintDarkBall(config.AutoDark == true)
+	corner(darkBall, 999); stroke(darkBall, Color3.new(0, 0, 0), 2); paintDarkBall(config.AutoDark == true)
 	local isDarkDragging = makeDraggable(darkBall, darkBall, function()
 		setConfigValue("DarkBallX", darkBall.Position.X.Offset); setConfigValue("DarkBallY", darkBall.Position.Y.Offset)
 	end)
@@ -1155,7 +1074,7 @@ function ExodusUI.setup(deps)
 			ZIndex = 8,
 			Parent = screenGui,
 		})
-		corner(ball, 999); local _, ballStroke = applyGlass(ball, color, C.glassBlue, 0.08, Color3.new(0, 0, 0), 2); animateButton(ball, ballStroke, C.text, Color3.new(0, 0, 0))
+		corner(ball, 999); stroke(ball, Color3.new(0, 0, 0), 2)
 		local dragging = makeDraggable(ball, ball, function()
 			setConfigValue(xKey, ball.Position.X.Offset); setConfigValue(yKey, ball.Position.Y.Offset)
 		end)
@@ -1197,7 +1116,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 15,
 		Parent = screenGui,
 	})
-	corner(miniGui, 14); local _, miniStroke = applyGlass(miniGui, C.glass, C.glassPink, 0.18, C.glassBorder, 1.5)
+	corner(miniGui, 14)
 	corner(
 		inst("Frame", {
 			Size = UDim2.new(1, 8, 1, 8),
@@ -1210,7 +1129,7 @@ function ExodusUI.setup(deps)
 		}),
 		18
 	)
-	registerFlow(miniStroke)
+	registerFlow(stroke(miniGui, C.accent, 1.5))
 	local miniTitleBar = inst("Frame", {
 		Size = UDim2.new(1, 0, 0, 26),
 		BackgroundColor3 = Color3.fromRGB(20, 20, 46),
@@ -1219,17 +1138,16 @@ function ExodusUI.setup(deps)
 		ZIndex = 16,
 		Parent = miniGui,
 	})
-	corner(miniTitleBar, 14); applyGlass(miniTitleBar, C.glassBlue, C.glassPink, 0.2, C.accentPink, 1)
-	local miniTitleFill = inst("Frame", {
+	corner(miniTitleBar, 14)
+	inst("Frame", {
 		Size = UDim2.new(1, 0, 0, 12),
 		Position = UDim2.new(0, 0, 1, -12),
-		BackgroundColor3 = C.glassBlue,
-		BackgroundTransparency = 0.2,
+		BackgroundColor3 = Color3.fromRGB(20, 20, 46),
+		BackgroundTransparency = 0.05,
 		BorderSizePixel = 0,
 		ZIndex = 16,
 		Parent = miniTitleBar,
 	})
-	corner(miniTitleFill, 14); applyGlass(miniTitleFill, C.glassBlue, C.glassPurple, 0.2, C.accentPink, 1)
 	corner(
 		inst("Frame", {
 			Size = UDim2.new(0.5, 0, 0, 2),
@@ -1266,7 +1184,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 16,
 		Parent = miniGui,
 	})
-	corner(spamBtn, 10); local _, spamStroke = applyGlass(spamBtn, C.red, C.dangerGlass, 0.08, C.red, 1); animateButton(spamBtn, spamStroke, C.text, C.red)
+	corner(spamBtn, 10)
 	trackConn(spamBtn.Activated:Connect(function() setSpam(not UIState.spamOn) end))
 	miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY)
 	makeDraggable(miniTitleBar, miniGui, function()
@@ -1284,7 +1202,7 @@ function ExodusUI.setup(deps)
 		ClipsDescendants = true,
 		Parent = screenGui,
 	})
-	corner(configPanel, 16); local _, panelStroke = applyGlass(configPanel, C.glass, C.glassBlue, 0.18, C.glassBorder, 1.5); registerFlow(panelStroke)
+	corner(configPanel, 16); stroke(configPanel, C.accent, 1.5)
 	particleLayer = inst("Frame", {
 		Name = "ParticleLayer",
 		Size = UDim2.new(1, 0, 1, 0),
@@ -1307,7 +1225,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 6,
 		Parent = configPanel,
 	})
-	corner(titleBar, 16); local _, titleStroke = applyGlass(titleBar, C.glassBlue, C.glassPurple, 0.16, C.accent, 1); registerFlow(titleStroke)
+	corner(titleBar, 16)
 	makeDraggable(titleBar, configPanel, function()
 		setConfigValue("PanelX", configPanel.Position.X.Offset); setConfigValue("PanelY", configPanel.Position.Y.Offset)
 	end)
@@ -1355,7 +1273,9 @@ function ExodusUI.setup(deps)
 		ZIndex = 7,
 		Parent = titleBar,
 	})
-	corner(closeButton, 8); local _, closeStroke = applyGlass(closeButton, C.dangerGlass, C.red, 0.14, C.red, 1); animateButton(closeButton, closeStroke, C.text, C.red)
+	corner(closeButton, 8)
+	trackConn(closeButton.MouseEnter:Connect(function() twPlay(closeButton, 0.12, { BackgroundTransparency = 0 }) end))
+	trackConn(closeButton.MouseLeave:Connect(function() twPlay(closeButton, 0.12, { BackgroundTransparency = 0.3 }) end))
 	trackConn(closeButton.Activated:Connect(function() animateClose("close") end))
 	reloadButton = inst("TextButton", {
 		Size = UDim2.new(0, 30, 0, 30),
@@ -1369,7 +1289,9 @@ function ExodusUI.setup(deps)
 		ZIndex = 7,
 		Parent = titleBar,
 	})
-	corner(reloadButton, 8); local _, reloadStroke = applyGlass(reloadButton, C.glassBlue, C.cyan, 0.14, C.cyan, 1); animateButton(reloadButton, reloadStroke, C.text, C.cyan)
+	corner(reloadButton, 8)
+	trackConn(reloadButton.MouseEnter:Connect(function() twPlay(reloadButton, 0.12, { BackgroundTransparency = 0 }) end))
+	trackConn(reloadButton.MouseLeave:Connect(function() twPlay(reloadButton, 0.12, { BackgroundTransparency = 0.3 }) end))
 	trackConn(reloadButton.Activated:Connect(function() animateClose("reload") end))
 	local pageGroups = {}
 	for index = 1, 4 do
@@ -1417,7 +1339,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 7,
 		Parent = configPanel,
 	})
-	corner(killBtn, 6); local _, killStroke = applyGlass(killBtn, C.dangerGlass, C.red, 0.14, C.red, 1); animateButton(killBtn, killStroke, C.text, C.red)
+	corner(killBtn, 6)
 	trackConn(killBtn.Activated:Connect(function() animateClose("close") end))
 	local yL = 4
 	local toggleCallbacks = {
@@ -1618,8 +1540,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 7,
 		Parent = configPanel,
 	})
-	corner(previous, 6); local _, previousStroke = applyGlass(previous, C.glassBlue, C.cyan, 0.16, C.cyan, 1); animateButton(previous, previousStroke, C.text, C.cyan); corner(nextPage, 6); local _, nextStroke = applyGlass(nextPage, C.glassPurple, C.accentPink, 0.16, C.accentPink, 1); animateButton(nextPage, nextStroke, C.text, C.accentPink)
-	local pageNames = { "Principal", "Ajustes", "Utilidades", "Automáticos" }
+	corner(previous, 6); corner(nextPage, 6); local pageNames = { "Principal", "Ajustes", "Utilidades", "Automáticos" }
 	local function updateNavigation()
 		pageLabel.Text = tostring(page) .. "/" .. tostring(#pageGroups) .. " " .. pageNames[page]; previous.TextTransparency = 0; nextPage.TextTransparency = 0
 	end
@@ -1686,7 +1607,7 @@ function ExodusUI.setup(deps)
 			if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
 		end))
 	end
-	revealCards(); setSpam(Utils.isManualSpamActive(), true); return true
+	setSpam(Utils.isManualSpamActive(), true); return true
 end
 
 -- contract
