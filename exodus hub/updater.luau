@@ -86,6 +86,12 @@ return function(loadedRevision, request, options)
 				local safe = false; local ok, result = pcall(safeToUpdate)
 				if ok then safe = result == true end
 				if safe and running() and pendingRevision ~= currentRevision() and not _G.ExodusLoaderStartToken then
+					print("[Exodus] Atualizando hub...")
+					if type(_G.ExodusUIFadeOut) == "function" then
+						local fadeOk, fadeError = pcall(_G.ExodusUIFadeOut)
+						if not fadeOk then warn("[Exodus Updater] Transição: " .. tostring(fadeError)) end
+					end
+					if not running() then return end
 					_G.ExodusRequestedRevision = pendingRevision
 					local executed, executionError = xpcall(pendingSource, function(err) return debug.traceback(tostring(err), 2) end)
 					if not executed then _G.ExodusRequestedRevision = nil; warn("[Exodus Updater] " .. tostring(executionError)) end
