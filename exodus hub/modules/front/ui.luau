@@ -356,7 +356,7 @@ local function cleanupUI()
 	end
 	screenGui = nil; floatingButton = nil; clashBall = nil; parryBall = nil; darkBall = nil; jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil; particleLayer = nil; titleBar = nil; minimizeButton = nil; reloadButton = nil; colLeft = nil; colRight = nil; killBtn = nil; toastLayer = nil; responsiveScale = nil; shortcutLabels = {}; offOnVisuals = {}; autoClashTrack = nil
 	autoClashThumb = nil; autoParrySetVisual = nil; autoDarkSetVisual = nil; autoJumpSetVisual = nil
-	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil end
+	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil; _G.ExodusUIFadeOut = nil end
 end
 
 -- particles
@@ -815,6 +815,23 @@ local function restoreAfterReloadFailure(message)
 	if showToast then showToast("Reload failed") end
 	warn("[Exodus Reload] " .. tostring(message))
 end
+-- Public transition used by the updater and by a new loader instance.
+local function fadeOutForReplacement()
+	if not screenGui or not screenGui.Parent then return end
+	UIState.closing = true
+	safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
+	local duration = 0.3
+	if configPanel and configPanel.Parent and configPanel.Visible then
+		twPlay(configPanel, duration, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.96, PH * 0.96) }, EASE_OUT, DIR_IN)
+	end
+	if floatingButton and floatingButton.Parent then
+		twPlay(floatingButton, duration, { BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN)
+	end
+	for _, element in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall, miniGui }) do
+		if element and element.Parent then twPlay(element, duration, { Position = UDim2.new(0, OFFSCREEN_X, element.Position.Y.Scale, element.Position.Y.Offset) }, EASE_OUT, DIR_IN) end
+	end
+	task.wait(duration + 0.04)
+end
 local function animateClose(action)
 	if UIState.closing then return end
 	UIState.closing = true; safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
@@ -854,12 +871,13 @@ function ExodusUI.setup(deps)
 	end
 	Utils = deps.Utils; UIConfig = deps.UIConfig; GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam; Controls = type(deps.Controls) == "table" and deps.Controls or {}; local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	if type(_G.ExodusUICleanup) == "function" then
+		if type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
 		_G.ExodusUICleanup()
 	else
 		local old = playerGui:FindFirstChild("ExodusUISystem")
 		if old then old:Destroy() end
 	end
-	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.closing = false; UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil; UIState.btnTween = nil; shortcutLabels = {}; _G.ExodusUICleanup = cleanupUI
+	UIState.panelOpen = false; UIState.spamOn = false; UIState.clashBallOn = false; UIState.closing = false; UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil; UIState.btnTween = nil; shortcutLabels = {}; _G.ExodusUICleanup = cleanupUI; _G.ExodusUIFadeOut = fadeOutForReplacement
 	screenGui = inst("ScreenGui", {
 		Name = "ExodusUISystem",
 		DisplayOrder = 100,
@@ -869,6 +887,9 @@ function ExodusUI.setup(deps)
 		Parent = playerGui,
 	})
 	responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
+	-- The replacement UI fades in only after the previous UI has faded out.
+	responsiveScale.Scale = 0.96
+	local openingScale = responsiveScale
 	local function updateResponsiveScale()
 		local size = viewport(); responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
 	end
