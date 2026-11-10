@@ -641,10 +641,7 @@ function AutoSpam.bindCharacter(character)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
 		if not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent then connectHaunter() end
-		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now()
-		-- Lobby: no valid active ball for a sustained period. Reset transient dash/clash state.
-		-- Match: defer a death-triggered reset until no living opponent is within raw radius.
-		local liveSnapshot = gameInfo.getSnapshotAt(time)
+		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now(); local liveSnapshot = gameInfo.getSnapshotAt(time)
 		if not gameInfo.isSnapshotValid(liveSnapshot) then
 			s.lobbySince = s.lobbySince or time
 			if time - s.lobbySince >= 1 and not s.active then
@@ -762,15 +759,12 @@ function AutoSpam.stopSpam()
 end
 function AutoSpam.getPullEvent() return nil end
 function AutoSpam.getDashData()
-	local s = current
-	local ability = gameInfo and gameInfo.getDashAbility()
-	local speed = ability and tonumber(ability.DashSpeed) or 120
-	local duration = ability and tonumber(ability.DashTime) or 0.2
+	local s = current; local ability = gameInfo and gameInfo.getDashAbility(); local speed = ability and tonumber(ability.DashSpeed) or 120; local duration = ability and tonumber(ability.DashTime) or 0.2
 	return {
 		dashing = ability ~= nil and ability.Dashing == true,
 		speed = speed,
 		duration = duration,
-		idealTravel = speed * duration, -- Dash: 120 * 0.2 = 24 studs; actual movement is sampled.
+		idealTravel = speed * duration,
 		actualTravel = s and s.dashStart and (s.root.Position - s.dashStart).Magnitude or 0,
 		switchPartner = s and s.dashSwitchPartner or nil,
 		windowFactor = T.ACTIVATION.DASH_WINDOW_FACTOR,
