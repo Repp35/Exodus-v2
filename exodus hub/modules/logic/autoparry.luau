@@ -17,6 +17,7 @@ local state = {
 	root = nil,
 	connections = {},
 	fired = false,
+	gracePreTarget = false,
 	awaySeen = false,
 	cycle = 0,
 	target = -1,
@@ -33,8 +34,6 @@ local state = {
 	frameAllowance = 0,
 	triggerDistance = 0,
 	ping = 0,
-	legacyPing = 0.05,
-	legacyPingAt = 0,
 	pingRaw = nil,
 	pingCount = 0,
 	lastFireAt = 0,
@@ -80,14 +79,13 @@ end
 
 -- lifecycle
 local function resetTracking()
-	state.fired, state.awaySeen, state.cycle = false, false, 0
+	state.fired, state.awaySeen, state.cycle, state.gracePreTarget = false, false, 0, false
 	state.target, state.targetKnown, state.lastTargeted = -1, false, false
 	state.teleported, state.teleportSequence, state.sequence = false, nil, nil
 	state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
 	state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
 	state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
 	state.awayAt, state.awayTarget = nil, nil
-	state.legacyPing, state.legacyPingAt = 0.05, clock()
 	table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
@@ -156,7 +154,8 @@ local function observeTarget(target, time)
 		state.awaySeen = true; state.awayAt = time; state.awayTarget = target > 0 and target or nil
 	elseif target == me and previous ~= me and state.awaySeen then
 		if state.awayAt and state.awayTarget == previous and time >= state.awayAt then appendRecent(state.returns, { at = time, interval = time - state.awayAt }) end
-		state.fired = false; state.awaySeen = false; state.cycle += 1
+		if not state.gracePreTarget then state.fired = false end
+		state.gracePreTarget = false; state.awaySeen = false; state.cycle += 1
 		state.awayAt, state.awayTarget = nil, nil
 	end
 	state.target, state.targetKnown = target, true
@@ -171,10 +170,11 @@ end
 
 -- parry
 local function request(reason)
-	local redirectReturn = reason == "redirect_return"
+	local redirectReturn = reason == "redirect_return" or reason == "grace_parry_requested"
 	if state.fired or not state.player or (not redirectReturn and state.target ~= state.player.UserId) then return false end
 	local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote; local firedAt, speed, distance = clock(), state.speed, state.distance
 	state.fired, state.lastFireAt = true, firedAt
+	local gracePreTarget = reason == "grace_parry_requested" and state.target ~= state.player.UserId
 	local function sameCycle()
 		return state.generation == generation
 			and state.cycle == cycle
@@ -201,6 +201,7 @@ local function request(reason)
 		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível")) end
 		return false
 	end
+	if gracePreTarget then state.gracePreTarget = true end
 	local configured = configuredFactor()
 	if configured > 0 then
 		local geometry = radius(speed, configured)
@@ -212,21 +213,12 @@ local function tick(character, root, generation)
 	if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
 	if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
 	local time = clock()
-	if time - state.legacyPingAt >= 2 then
-		state.legacyPingAt = time
-		task.defer(function()
-			local ok, raw = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() / 1000 end)
-			if generation == state.generation and ok and finite(raw) and raw > 0 then state.legacyPing = state.legacyPing * 0.85 + raw * 0.15 end
-		end)
-	end
 	local value = gameInfo.getSnapshotAt(time)
 	if generation ~= state.generation or not state.bound or not state.alive then return end
 	if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
 	if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
 	if utils.isSpamActive() then phase("waiting", "spam_active"); return end
 	if state.teleported or value.teleported then phase("waiting", "teleport_lock"); return end
-	if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
-	if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
 	if state.fired then phase("waiting", "target_already_parried"); return end
 	if value.locked == true then
 		state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0
@@ -237,13 +229,14 @@ local function tick(character, root, generation)
 	if not value.ball.Parent then return end
 	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
 	if value.grace == true then
-		local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0; local graceSpeed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or 45; local graceRadius = math.clamp(graceSpeed * 0.40 + 6, 9, 90) * 1.4 + 10; local ping = math.clamp(state.legacyPing * 1.1 + 0.02, 0.02, 0.25)
-		local threshold = math.max(graceRadius, 4 + ping * graceSpeed + 2)
+		local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
 		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
-		state.closingSpeed, state.triggerDistance = closing, threshold
-		if distance <= threshold then request("grace_parry_requested") end
+		state.closingSpeed, state.triggerDistance = closing, 0
+		request("grace_parry_requested")
 		return
 	end
+	if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
+	if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
 	samplePing(); local geometry = radius(speed, configuredFactor())
 	if not geometry then return end
 	local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); threshold += math.max(closing, 0) * state.frameAllowance
@@ -360,7 +353,7 @@ function AutoParry.onBallSync(data)
 		state.target, state.targetKnown = target, true
 		if target == -1 then state.lastBall = nil end
 	end
-	if state.player and target == state.player.UserId and state.character and state.root and not state.fired then tick(state.character, state.root, state.generation) end
+	if state.player and (target == state.player.UserId or data.Grace == true) and state.character and state.root and not state.fired then tick(state.character, state.root, state.generation) end
 	return true
 end
 
