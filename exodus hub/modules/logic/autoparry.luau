@@ -17,7 +17,6 @@ local state = {
 	root = nil,
 	connections = {},
 	fired = false,
-	gracePreTarget = false,
 	awaySeen = false,
 	cycle = 0,
 	target = -1,
@@ -79,7 +78,7 @@ end
 
 -- lifecycle
 local function resetTracking()
-	state.fired, state.awaySeen, state.cycle, state.gracePreTarget = false, false, 0, false
+	state.fired, state.awaySeen, state.cycle = false, false, 0
 	state.target, state.targetKnown, state.lastTargeted = -1, false, false
 	state.teleported, state.teleportSequence, state.sequence = false, nil, nil
 	state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
@@ -154,8 +153,7 @@ local function observeTarget(target, time)
 		state.awaySeen = true; state.awayAt = time; state.awayTarget = target > 0 and target or nil
 	elseif target == me and previous ~= me and state.awaySeen then
 		if state.awayAt and state.awayTarget == previous and time >= state.awayAt then appendRecent(state.returns, { at = time, interval = time - state.awayAt }) end
-		if not state.gracePreTarget then state.fired = false end
-		state.gracePreTarget = false; state.awaySeen = false; state.cycle += 1
+		state.fired = false; state.awaySeen = false; state.cycle += 1
 		state.awayAt, state.awayTarget = nil, nil
 	end
 	state.target, state.targetKnown = target, true
@@ -170,11 +168,10 @@ end
 
 -- parry
 local function request(reason)
-	local redirectReturn = reason == "redirect_return" or reason == "grace_parry_requested"
+	local redirectReturn = reason == "redirect_return"
 	if state.fired or not state.player or (not redirectReturn and state.target ~= state.player.UserId) then return false end
 	local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote; local firedAt, speed, distance = clock(), state.speed, state.distance
 	state.fired, state.lastFireAt = true, firedAt
-	local gracePreTarget = reason == "grace_parry_requested" and state.target ~= state.player.UserId
 	local function sameCycle()
 		return state.generation == generation
 			and state.cycle == cycle
@@ -201,7 +198,6 @@ local function request(reason)
 		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível")) end
 		return false
 	end
-	if gracePreTarget then state.gracePreTarget = true end
 	local configured = configuredFactor()
 	if configured > 0 then
 		local geometry = radius(speed, configured)
@@ -227,7 +223,7 @@ local function tick(character, root, generation)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if not value.ball.Parent then return end
 	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
-	if value.grace == true then
+	if value.grace == true and value.targetUncertain ~= true and state.player and value.targetId == state.player.UserId then
 		local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
 		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 		state.closingSpeed, state.triggerDistance = closing, 0
