@@ -4,6 +4,7 @@ import sys
 
 root, output = map(Path, sys.argv[1:3])
 source = (root / 'exodus hub/modules/logic/autospam.luau').read_text()
+source = source.replace('typeof(', 'testTypeof(')
 source = source.replace('return AutoSpam\n', '''return AutoSpam, shouldDeactivate, inspectTarget, start, applyDeactivation,
     function(s,u,g,p) current=s; utils=u; gameInfo=g; localPlayer=p end
 ''')
@@ -13,7 +14,8 @@ V.__index=function(v,k) if k=="Magnitude" then return math.sqrt(v.X*v.X+v.Y*v.Y+
 V.__sub=function(a,b) return setmetatable({X=a.X-b.X,Y=a.Y-b.Y,Z=a.Z-b.Z},V) end
 function V:Dot(b) return self.X*b.X+self.Y*b.Y+self.Z*b.Z end
 local function vec(x) return setmetatable({X=x,Y=0,Z=0},V) end
-function typeof(v) if getmetatable(v)==V then return "Vector3" end return type(v) end
+local function vec3(x,y,z) return setmetatable({X=x,Y=y,Z=z},V) end
+function testTypeof(v) if getmetatable(v)==V then return "Vector3" end return typeof(v) end
 local clock=10
 local auto=false
 local manual=true
@@ -23,11 +25,13 @@ local snap={position=vec(5),velocity=vec(600),targetId=42,syncSpeed=600,syncAt=1
 local u={now=function() return clock end,isActive=function() return true end,
  getConfigValue=function(k) return k=="AutoSpam" end,isManualSpamActive=function() return manual end,
  setAutoSpamActive=function(v) auto=v end,setManualSpamActive=function(v) manual=v end,recordTransition=function() end}
+local distance=7
 local g={getBallFrozen=function() return false end,getBallSpeedLimits=function() return 16,600 end,
  getDeflectRangeParameters=function() return 8.5,7.5 end,getPlayerDeflectRange=function() return 8.5 end,
- getPlayerMotion=function() return vec(7) end,getPlayerDistance=function() return 7 end,
+ getPlayerMotion=function() return vec(distance) end,getPlayerDistance=function() return distance end,
  getDeflectGeometry=function() return {fullRadius=8.5,deflectWindow=.32} end,
- isSnapshotValid=function(v) return v.valid~=false end,getSnapshotAt=function() return snap end}
+ isSnapshotValid=function(v) return v.valid~=false end,getSnapshotAt=function() return snap end,
+ getDashAbility=function() return nil end,getClashContext=function() return nil end}
 local mod,reason,inspect,start,apply,inject=assert(loadstring(SOURCE))()
 inject(s,u,g,{UserId=42})
 local function check(t, target)
@@ -65,14 +69,44 @@ assert(check(40.2)==nil and s.returnWatchAt==nil)
 snap.valid=true; s.returnWatchAt=41; snap.targetUncertain=true
 assert(check(41.2)==nil and s.returnWatchAt==nil)
 snap.targetUncertain=false; s.returnWatchAt=42; snap.locked=true
-assert(check(42.2)==nil and s.returnWatchAt==nil)
+assert(check(42.2)=="ball_locked", "fresh locked ball must stop automatic spam")
 snap.locked=false; s.returnWatchAt=43; snap.syncAt=43
-assert(reason(s,snap,43.2,nil,false)==nil and s.returnWatchAt==nil)
+assert(reason(s,snap,43.2,nil,false)==nil and s.returnWatchAt==43, "short snapshot gaps must preserve the target-switch clock")
+assert(reason(s,snap,43.51,nil,false)==nil and s.returnWatchAt==nil, "a long blackout must clear the clock")
+-- A late fresh sample must still detect an overdue return at lower speed.
+s.returnWatchAt=43.6; snap.syncAt=43.6; snap.syncSpeed=16; s.target=42
+assert(reason(s,snap,43.75,nil,false)==nil and s.returnWatchAt==43.6)
+assert(check(43.83,42)=="return_timeout", "a brief gap lost the return timeout")
+-- Only fresh evidence can trigger spatial stops.
+s.returnWatchAt=nil; s.target=42; s.partner=7; s.active=true; s.activatedAt=44
+snap.syncSpeed=600; snap.position=vec(5); snap.targetId=42; snap.syncAt=44
+distance=56
+assert(reason(s,snap,44.2,nil,false)==nil, "stale data must not trigger distance stop")
+assert(check(44.21)=="opponent_distance", "distant opponent must stop auto spam")
+distance=30; snap.position=vec(56)
+assert(check(44.22)=="ball_distance", "distant ball must stop auto spam")
+distance=7; snap.position=vec(56)
+assert(check(44.23)==nil, "close clash must not stop on ball distance alone")
+distance=20; snap.position=vec3(-10,20,0); snap.velocity=vec3(0,100,0)
+assert(check(44.24)==nil, "diversion needs confirmation")
+assert(check(44.29)=="ball_diverted", "confirmed diversion must stop")
+snap.velocity=vec(600); snap.position=vec(5); distance=7
+assert(check(44.30,99)=="distant_target", "new opponent must stop the old clash")
+-- The lock must stop even when the incoming packet has no usable target.
+s.active=true; s.partner=7; s.target=42; s.activatedAt=44; auto=true; clock=44.4
+snap.valid=false; snap.targetId=-1
+mod.onBallSync({Source="packet",Sequence=1,TargetPlayerID=-1,Speed=600,Locked=true})
+assert(not auto and s.reason=="ball_locked", "locked packet without target must stop")
+snap.valid=true; snap.targetId=42; snap.locked=false
+-- A fresh paired packet re-arms after a blackout, even without a target change.
+s.active=true; s.partner=7; s.target=42; s.activatedAt=44.4; s.returnWatchAt=nil; auto=true; clock=44.5
+mod.onBallSync({Source="packet",Sequence=2,TargetPlayerID=42,Speed=600,Locked=false})
+assert(auto and s.returnWatchAt==clock, "fresh same-target packet must rearm the timer")
 -- Non-paired targets and teleports do not arm a return watch.
-s.target=42; s.returnWatchAt=44; snap.targetId=99; snap.syncAt=44.01
+s.target=42; s.active=true; s.partner=7; s.returnWatchAt=44; snap.targetId=99; snap.syncAt=44.01
 inspect(s,99,44.01,snap,nil); assert(s.returnWatchAt==nil)
-s.target=42; s.returnWatchAt=45; mod.onBallSync({Source="packet",Teleported=true})
-assert(s.returnWatchAt==nil)
+s.target=42; s.active=true; s.partner=7; s.returnWatchAt=45; auto=true; clock=45.01; mod.onBallSync({Source="packet",Teleported=true})
+assert(s.returnWatchAt==nil and not auto and s.reason=="ball_teleported", "teleport must stop auto spam")
 print("Auto Spam return timeout: PASS")
 '''
 output.write_text(script.replace('SOURCE', '[========[' + source + ']========]', 1))
