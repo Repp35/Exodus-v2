@@ -300,7 +300,13 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
 	if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < T.ACTIVATION.REACTIVATION_COOLDOWN) then return end
-	if not s.exchangeReadyAt or s.exchangePartner ~= partner or time < s.exchangeReadyAt or time - s.exchangeReadyAt > T.ACTIVATION.EXCHANGE_READY_TIME then return end
+	local haunter = reason == "haunter" or reason == "haunter_self"
+	if
+		not haunter
+		and (not s.exchangeReadyAt or s.exchangePartner ~= partner or time < s.exchangeReadyAt or time - s.exchangeReadyAt > T.ACTIVATION.EXCHANGE_READY_TIME)
+	then
+		return
+	end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if snapshot and snapshot.locked == true then return end
 	local distanceReason = distanceGate(s, snapshot, partner)
