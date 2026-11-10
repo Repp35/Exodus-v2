@@ -211,11 +211,13 @@ end
 local function tick(character, root, generation)
 	if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
 	if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
-	local time = clock(); samplePing()
+	local time = clock()
 	if time - state.legacyPingAt >= 2 then
 		state.legacyPingAt = time
-		local ok, raw = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() / 1000 end)
-		if ok and finite(raw) and raw > 0 then state.legacyPing = state.legacyPing * 0.85 + raw * 0.15 end
+		task.defer(function()
+			local ok, raw = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() / 1000 end)
+			if generation == state.generation and ok and finite(raw) and raw > 0 then state.legacyPing = state.legacyPing * 0.85 + raw * 0.15 end
+		end)
 	end
 	local value = gameInfo.getSnapshotAt(time)
 	if generation ~= state.generation or not state.bound or not state.alive then return end
@@ -233,16 +235,24 @@ local function tick(character, root, generation)
 	local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if not value.ball.Parent then return end
-	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; local geometry = radius(speed, configuredFactor())
+	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
+	if value.grace == true then
+		local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
+		local graceSpeed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or 45
+		local graceRadius = math.clamp(graceSpeed * 0.40 + 6, 9, 90) * 1.4 + 10
+		local ping = math.clamp(state.legacyPing * 1.1 + 0.02, 0.02, 0.25)
+		local threshold = math.max(graceRadius, 4 + ping * graceSpeed + 2)
+		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
+		state.closingSpeed, state.triggerDistance = closing, threshold
+		if distance <= threshold then request("grace_parry_requested") end
+		return
+	end
+	samplePing()
+	local geometry = radius(speed, configuredFactor())
 	if not geometry then return end
 	local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); threshold += math.max(closing, 0) * state.frameAllowance
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 	state.closingSpeed, state.triggerDistance = closing, threshold
-	if value.grace == true then
-		local graceSpeed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or 45; local graceRadius = math.clamp(graceSpeed * 0.40 + 6, 9, 90) * 1.4 + 10; local ping = math.clamp(state.legacyPing * 1.1 + 0.02, 0.02, 0.25); local killThreshold = 4 + ping * graceSpeed + 2
-		if distance <= graceRadius or distance <= killThreshold then request("grace_parry_requested") end
-		return
-	end
 	if closing > 0 and distance <= threshold then request("parry_requested") end
 end
 
