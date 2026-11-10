@@ -23,6 +23,9 @@ local T = {
 		DASH_RADIUS_MULTIPLIER = 22 / 15,
 		DASH_MAX_AGE = 0.35,
 		DASH_MIN_APPROACH = 3,
+		DASH_FAST_APPROACH = 1.25,
+		DASH_FAST_SPEED = 60,
+		DASH_MAX_SPEED = 400,
 		DASH_ALIGNMENT = 0.7,
 	},
 	DEACTIVATION = {
@@ -286,10 +289,17 @@ local function dashAssistPartner(s, snapshot, time)
 	if not playerIsAlive(partner) then return nil end
 	local opponent = gameInfo.getPlayerMotion(partner)
 	if typeof(opponent) ~= "Vector3" then return nil end
-	local own = s.root.Position; local movement = own - s.dashStart; local toward = opponent - s.dashStart; local startDistance = toward.Magnitude
-	if startDistance < 0.1 or movement.Magnitude < T.ACTIVATION.DASH_MIN_APPROACH then return nil end
+	local own = s.root.Position; local movement = own - s.dashStart; local toward = opponent - s.dashStart; local startDistance = toward.Magnitude; local elapsedTime = time - s.dashAt
+	if startDistance < 0.1 or elapsedTime <= 0 then return nil end
+	local measuredSpeed = movement.Magnitude / elapsedTime
+	if not finite(measuredSpeed) or measuredSpeed > T.ACTIVATION.DASH_MAX_SPEED then return nil end
+	local minimum = measuredSpeed >= T.ACTIVATION.DASH_FAST_SPEED and T.ACTIVATION.DASH_FAST_APPROACH or T.ACTIVATION.DASH_MIN_APPROACH
+	if movement.Magnitude < minimum or startDistance - (opponent - own).Magnitude < minimum then return nil end
 	if movement:Dot(toward) / (movement.Magnitude * startDistance) < T.ACTIVATION.DASH_ALIGNMENT then return nil end
-	if startDistance - (opponent - own).Magnitude < T.ACTIVATION.DASH_MIN_APPROACH then return nil end
+	if snapshot.targetId == localPlayer.UserId and typeof(snapshot.position) == "Vector3" and typeof(snapshot.velocity) == "Vector3" then
+		local ballToward = own - snapshot.position; local velocity = snapshot.velocity
+		if ballToward.Magnitude > 1 and velocity.Magnitude > 8 and velocity:Dot(ballToward) / (velocity.Magnitude * ballToward.Magnitude) < -0.35 then return nil end
+	end
 	local speed = snapshotSpeed(snapshot); local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
 	if not raw or (opponent - own).Magnitude > raw then return nil end
 	return partner

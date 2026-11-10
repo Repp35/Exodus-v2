@@ -11,11 +11,11 @@ local generation, lastTick = 0, -math.huge
 
 -- tuning
 local T = {
-	MIN_SPEED = 80,
+	MIN_SPEED = 70,
 	MAX_MEASURED_SPEED = 400,
 	MAX_SAMPLE_GAP = 0.15,
 	SIGNAL_GRACE = 0.22,
-	DETECTION_GAP = 0.25,
+	DETECTION_GAP = 0.06,
 	TICK_INTERVAL = 1 / 120,
 }
 
@@ -43,6 +43,8 @@ local function emit(player, record, position, velocity, previous, time, confirme
 			position = position,
 			velocity = velocity,
 			confirmed = confirmed,
+			signalAt = record.signalAt,
+			signalActive = record.signalActive,
 			previousPosition = previous,
 		})
 	end
