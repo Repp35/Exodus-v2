@@ -121,12 +121,16 @@ local function resilience()
 	}
 end
 local function configuredFactor()
-	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor"))
-	factor = finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
+	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); factor = finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
 	if remote and type(remote.getParrySendTiming) == "function" then
 		local interval, lastSentAt = remote.getParrySendTiming()
-		if finite(interval) and interval > 0 and interval < T.FAST_EXCHANGE_INTERVAL
-			and finite(lastSentAt) and clock() - lastSentAt <= T.FAST_EXCHANGE_RECENCY then
+		if
+			finite(interval)
+			and interval > 0
+			and interval < T.FAST_EXCHANGE_INTERVAL
+			and finite(lastSentAt)
+			and clock() - lastSentAt <= T.FAST_EXCHANGE_RECENCY
+		then
 			factor = math.min(1, factor * T.FAST_EXCHANGE_FACTOR)
 		end
 	end

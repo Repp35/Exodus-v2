@@ -13,13 +13,9 @@ end
 
 -- dispatch
 local function recordParrySent()
-	local now = os.clock()
-	lastParryInterval = lastParryAt and (now - lastParryAt) or nil
-	lastParryAt = now
+	local now = os.clock(); lastParryInterval = lastParryAt and (now - lastParryAt) or nil; lastParryAt = now
 end
-function Remote.getParrySendTiming()
-	return lastParryInterval, lastParryAt
-end
+function Remote.getParrySendTiming() return lastParryInterval, lastParryAt end
 local function send(ability, method, ...)
 	if ability == nil then return false, method .. " não equipado ou indisponível" end
 	local callback = ability[method]
