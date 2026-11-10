@@ -84,11 +84,12 @@ local function load(module, name)
 	return result
 end
 local function storage() return utils and utils.getReplicatedStorage() end
-local function ts() return child(storage(), "TS") end
+local function ts() return child(storage(), "Shared") or child(storage(), "TS") end
+local function sharedLayout() return child(storage(), "Shared") ~= nil end
 
 -- abilities
 local function getAbilities()
-	local module = child(ts(), "ClientAbilities")
+	local root = ts(); local module = child(child(root, "Abilities"), "ClientAbilities") or child(root, "ClientAbilities")
 	if abilityScript ~= module then abilityScript, abilities = module, nil end
 	if not module then return nil end
 	if not abilities then
@@ -105,7 +106,7 @@ local function getAbility(index, method)
 	return ability
 end
 local function getReplicator()
-	local folder = child(ts(), "BallReplicator"); local module = folder and (folder:IsA("ModuleScript") and folder or child(folder, "BallReplicator"))
+	local root = ts(); local folder = child(child(root, "Gameplay"), "BallReplicator") or child(root, "BallReplicator"); local module = folder and (folder:IsA("ModuleScript") and folder or child(folder, "BallReplicator"))
 	if module ~= replicatorScript then replicatorScript, replicator = module, nil end
 	if not replicator and module then
 		local ok, value = pcall(load, module, "BallReplicator")
@@ -299,7 +300,7 @@ function GameInfo.observeAbilityMode(callback)
 	return world:GetAttributeChangedSignal("CurGamemode"):Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
 end
 local function generatedRemote(id)
-	local remotes = child(ts(), "GeneratedNetworkRemotes"); local remote = child(remotes, "RE_" .. tostring(id)); return remote and remote:IsA("RemoteEvent") and remote or nil
+	local root = ts(); local remotes = child(child(root, "Network"), "GeneratedNetworkRemotes") or child(root, "GeneratedNetworkRemotes"); local remote = child(remotes, "RE_" .. tostring(id)); return remote and remote:IsA("RemoteEvent") and remote or nil
 end
 function GameInfo.getHaunterEvent() return generatedRemote(GAME_IDS.HAUNTER_REMOTE) end
 local function playerRoot(id)
@@ -317,14 +318,26 @@ function GameInfo.getPlayerDistance(id)
 	if not ownRoot or not ownRoot.Parent or not otherRoot then return nil end
 	return (ownRoot.Position - otherRoot.Position).Magnitude
 end
-function GameInfo.getDeflectRangeParameters() return T.RANGE_BASE, T.RANGE_BONUS_SPAN, T.RANGE_BONUS_STEP end
-function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
+function GameInfo.getDeflectRangeParameters() return T.RANGE_BASE, T.RANGE_BONUS_SPAN, sharedLayout() and 0.1125 or T.RANGE_BONUS_STEP end
+function GameInfo.getDeflectRange()
+	local player = players.LocalPlayer; local range = player and player:GetAttribute("DeflectRange") or nil
+	if sharedLayout() and player and type(GameInfo.getPlayerDeflectRange) == "function" then return GameInfo.getPlayerDeflectRange(player.UserId) end
+	return range
+end
 function GameInfo.getPlayerDeflectRange(id)
 	local player = type(id) == "number" and players:GetPlayerByUserId(id)
 	if not player then return nil end
 	local range = player:GetAttribute("DeflectRange")
 	if not finite(range) then return T.RANGE_BASE end
-	return math.clamp(range, T.RANGE_BASE, T.RANGE_BASE + T.RANGE_BONUS_SPAN)
+	range = math.clamp(range, T.RANGE_BASE, T.RANGE_BASE + T.RANGE_BONUS_SPAN)
+	if sharedLayout() and range > T.RANGE_BASE and type(GameInfo.getClashContext) == "function" then
+		local context = GameInfo.getClashContext(); local own = players.LocalPlayer
+		if context and own and (id == own.UserId or id == context.partnerId) then
+			local distance = GameInfo.getPlayerDistance(context.partnerId)
+			if finite(distance) and distance <= math.max(20, range + 8) then return T.RANGE_BASE end
+		end
+	end
+	return range
 end
 function GameInfo.getPlayerRawRadius(id, speed, includePing)
 	local range = GameInfo.getPlayerDeflectRange(id)
@@ -338,8 +351,15 @@ function GameInfo.getLastDeflectPressAt()
 	local ability = GameInfo.getDeflectAbility()
 	if not ability then return nil end
 	local pressedAt = ability.LastPressClock
-	if not finite(pressedAt) or pressedAt <= 0 then return 0 end
-	return pressedAt
+	if finite(pressedAt) and pressedAt > 0 then return pressedAt end
+	local latest
+	if type(ability.ClickInstances) == "table" then
+		for _, click in ipairs(ability.ClickInstances) do
+			local remaining = type(click) == "table" and click.Time
+			if finite(remaining) and remaining > 0 and remaining <= 1 then latest = latest and math.max(latest, remaining) or remaining end
+		end
+	end
+	return latest and (os.clock() - (1 - latest)) or 0
 end
 function GameInfo.getMinimumSpamInterval() return T.SPAM_MIN_INTERVAL end
 function GameInfo.getAutoSpamDelay()
@@ -636,7 +656,7 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
 		if finite(minimum) then window = math.max(window, minimum) end
 	end
 	local range = GameInfo.getDeflectRange()
-	if includeResilience ~= false and finite(range) then window += math.clamp((range - T.RANGE_BASE) / T.RANGE_BONUS_SPAN, 0, 1) * T.RANGE_WINDOW_BONUS end
+	if not sharedLayout() and includeResilience ~= false and finite(range) then window += math.clamp((range - T.RANGE_BASE) / T.RANGE_BONUS_SPAN, 0, 1) * T.RANGE_WINDOW_BONUS end
 	if inClash and type(gameBall.GetClashWindowScale) == "function" then
 		local scale = gameBall:GetClashWindowScale()
 		if finite(scale) and scale > 0 then window *= scale end
@@ -697,7 +717,9 @@ function GameInfo.isBallWithinDeflectRadius(factor)
 end
 function GameInfo.getDarkSealEventId() return GAME_IDS.DARK_EVENT end
 function GameInfo.createCrateNetwork()
-	local replicated = storage(); local network = replicated:WaitForChild("TS"):WaitForChild("Network"):WaitForChild("Network"); return require(network).Network.new()
+	local root = ts()
+	if not root then error("API externa ausente: Shared ou TS", 2) end
+	local network = root:WaitForChild("Network"):WaitForChild("Network"); return require(network).Network.new()
 end
 function GameInfo.spinCrate(network, crate, guard)
 	local owned = network:CSendFunction(GAME_IDS.CRATE_CHECK, crate)
