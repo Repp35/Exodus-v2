@@ -312,7 +312,7 @@ setSpam = function(v)
 end
 local PW, PH = 540, 380
 local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
-local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 48, 64, 118
+local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 40, 64, 118
 local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
 local CARD_SCALE = 1.06
