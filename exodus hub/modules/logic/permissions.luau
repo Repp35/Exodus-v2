@@ -63,7 +63,7 @@ local POLICIES = {
 				"apiVersion getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordTransition setAutoSpamActive trackCharacter untrackCharacter"
 			),
 			gameinfo = allow(
-				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRangeParameters getDashAbility getPlayerDeflectRange getPlayerRawRadius getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getAveragePing getSnapshotAt getTargetId isSnapshotValid"
+				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRangeParameters getDashAbility getPlayerDeflectRange getPlayerRawRadius getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getSnapshotAt getTargetId isSnapshotValid"
 			),
 			clashstats = allow("begin finish observe freeze get"),
 		},
