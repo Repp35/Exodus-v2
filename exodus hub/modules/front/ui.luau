@@ -312,7 +312,7 @@ setSpam = function(v)
 end
 local PW, PH = 540, 380
 local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
-local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 40, 64, 118
+local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 48, 64, 118
 local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
 local CARD_SCALE = 1.06
@@ -1500,7 +1500,8 @@ function ExodusUI.setup(deps)
 	-- anti-afk
 	local antiConnection
 	local antiGeneration = 0
-	createOffOnCard("Anti AFK", 0, utilities, {
+	local utilitiesY = 4
+	utilitiesY = createOffOnCard("Anti AFK", utilitiesY, utilities, {
 		onToggle = function(enabled)
 			if not enabled then
 				antiGeneration += 1
@@ -1540,7 +1541,8 @@ function ExodusUI.setup(deps)
 	end
 	for index, mode in ipairs(spinModes) do
 		local crate = mode[2]
-		local _, _, setSpinVisual = createOffOnCard(mode[1], nextCardY(0, CARD_H) * index, utilities, {
+		local setSpinVisual
+		utilitiesY, _, setSpinVisual = createOffOnCard(mode[1], utilitiesY, utilities, {
 			getState = function() return spinActive == crate end,
 			onToggle = function(enabled)
 				spinGeneration += 1
@@ -1563,6 +1565,8 @@ function ExodusUI.setup(deps)
 		})
 		spinButtons[crate] = setSpinVisual
 	end
+	utilities.CanvasSize = UDim2.fromOffset(0, utilitiesY + CARD_GAP)
+	utilities.CanvasPosition = Vector2.zero
 	local page = 1
 	local pageInputShield = inst("TextButton", {
 		Name = "PageInputShield",
@@ -1620,6 +1624,7 @@ function ExodusUI.setup(deps)
 		local target = page + direction
 		if target < 1 or target > #pageGroups then return end
 		page = target; UIState.pageGeneration += 1; local generation = UIState.pageGeneration
+		if page == 3 then utilities.CanvasPosition = Vector2.zero end
 		for _, tween in ipairs(UIState.pageTweens) do
 			safeCancel(tween)
 		end
