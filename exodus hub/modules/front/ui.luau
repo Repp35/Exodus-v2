@@ -171,7 +171,15 @@ local function makeDraggable(handle, target, onDragEnd, disableOnMobile)
 		if not isMouseDrag and not isTouchDrag then return end
 		local dx, dy = input.Position.X - startX, input.Position.Y - startY
 		if state == "Pressed" and (dx * dx + dy * dy) >= THRESH_SQ then state, wasDragged = "Dragging", true end
-		if state == "Dragging" then local vp, sz = viewport(), target.AbsoluteSize; target.Position = UDim2.new(0, math.clamp(input.Position.X - dragOffX, 0, vp.X - sz.X), 0, math.clamp(input.Position.Y - dragOffY, 0, vp.Y - sz.Y)) end
+		if state == "Dragging" then
+			local vp, sz = viewport(), target.AbsoluteSize
+			target.Position = UDim2.new(
+				0,
+				math.clamp(input.Position.X - dragOffX, 0, math.max(0, vp.X - sz.X)),
+				0,
+				math.clamp(input.Position.Y - dragOffY, 0, math.max(0, vp.Y - sz.Y))
+			)
+		end
 	end))
 	trackConn(UIS.InputEnded:Connect(function(input)
 		if input ~= dragInput or state == "Idle" then return end
@@ -1041,10 +1049,11 @@ function ExodusUI.setup(deps)
 		ClipsDescendants = true,
 		Parent = configPanel,
 	})
+	local particlePanel = configPanel
 	_spawn(function()
-		while configPanel and configPanel.Parent do
+		while configPanel == particlePanel and particlePanel.Parent do
 			_wait(math.random() * 0.6 + 0.15)
-			if configPanel and configPanel.Parent and configPanel.Visible then spawnParticle() end
+			if configPanel == particlePanel and particlePanel.Parent and particlePanel.Visible then spawnParticle() end
 		end
 	end)
 	titleBar = inst("Frame", {

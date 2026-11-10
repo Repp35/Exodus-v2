@@ -81,7 +81,10 @@ end
 local function disconnectAll(list)
 	for i = #list, 1, -1 do
 		local connection = list[i]; list[i] = nil
-		if connection then connection:Disconnect() end
+		if connection then
+			local ok, err = pcall(connection.Disconnect, connection)
+			if not ok then warn("Falha ao desconectar: " .. tostring(err)) end
+		end
 	end
 end
 
@@ -113,8 +116,8 @@ local function diagnosticsSnapshot()
 	for _, name in ipairs(names) do
 		local module = modules[name]
 		if type(module) == "table" and type(module.getStatus) == "function" then
-			local status = module.getStatus()
-			if type(status) == "table" then statuses[name] = snapshot(status) end
+			local ok, status = pcall(module.getStatus)
+			if ok and type(status) == "table" then statuses[name] = snapshot(status) end
 		end
 	end
 	local diagnostics = state.diagnostics
@@ -154,10 +157,11 @@ local function recordTransition(source, fromState, toState, reason)
 
 	state.diagnostics.lastTransition, state.diagnostics.lastTransitionAt = item, item.at
 	append(state.diagnostics.transitions, item)
-	if not refreshPending then
-		refreshPending = true
+	if state.active and not refreshPending then
+		refreshPending = true; local generation = state.lifecycle.generation
 		task.delay(0.1, function()
-			refreshPending = false; refreshNamespace()
+			refreshPending = false
+			if state.active and state.lifecycle.generation == generation then refreshNamespace() end
 		end)
 	end
 end
@@ -224,12 +228,19 @@ end
 function Utils.stop()
 	local previous = state.lifecycle.phase
 	state.active, state.manualSpam, state.autoSpam = false, false, false
-	notify(spamObservers); flushSave(); state.lifecycle.stoppedAt = os.clock()
+	local notified, notifyError = pcall(notify, spamObservers)
+	if not notified then warn("Falha ao avisar observadores: " .. tostring(notifyError)) end
+	local saved, saveError = pcall(flushSave)
+	if not saved then warn("Falha ao salvar configuração: " .. tostring(saveError)) end
+	state.lifecycle.stoppedAt = os.clock()
 	_G.ExodusOnBurst = function() end
-	if type(_G.ExodusUICleanup) == "function" then _G.ExodusUICleanup() end
+	if type(_G.ExodusUICleanup) == "function" then
+		local cleaned, cleanupError = pcall(_G.ExodusUICleanup)
+		if not cleaned then warn("Falha ao limpar interface: " .. tostring(cleanupError)) end
+	end
 	disconnectAll(state.characterConnections); disconnectAll(state.globalConnections)
 	state.config, state.urls, modules = {}, {}, {}
-	persistenceReady = false; table.clear(spamObservers); table.clear(configObservers)
+	persistenceReady, saveDirty = false, false; table.clear(spamObservers); table.clear(configObservers)
 	if type(_G.Exodus) == "table" then
 		local exodus = _G.Exodus
 		exodus.Started, exodus.UIReady, exodus.Runtime, exodus.UI = false, false, nil, nil
@@ -308,12 +319,24 @@ function Utils.setConfig(patch)
 	refreshNamespace(); queueSave(); return true
 end
 function Utils.loadConfig()
-	if type(isfile) ~= "function" then error("API externa ausente: isfile", 2) end
-	if type(readfile) ~= "function" then error("API externa ausente: readfile", 2) end
-	local _, folder = Utils.ensureDataFolder(); local path = folder .. "/config.json"; local migrated = false
-	if isfile(path) then
-		local data = http:JSONDecode(readfile(path))
-		if type(data) ~= "table" then error("Config inválida: config.json deve conter uma tabela", 2) end
+	if
+		type(isfile) ~= "function"
+		or type(readfile) ~= "function"
+		or type(writefile) ~= "function"
+		or type(isfolder) ~= "function"
+		or type(makefolder) ~= "function"
+	then
+		warn("Persistência indisponível; usando configuração da sessão"); return true
+	end
+	local ok, folder = pcall(function()
+		local _, path = Utils.ensureDataFolder(); return path
+	end)
+	if not ok then warn("Persistência indisponível: " .. tostring(folder)); return true end
+	local path = folder .. "/config.json"; local migrated = false; local checked, exists = pcall(isfile, path)
+	if not checked then warn("Não foi possível verificar a configuração: " .. tostring(exists)); return true end
+	if exists then
+		local loaded, data = pcall(function() return http:JSONDecode(readfile(path)) end)
+		if not loaded or type(data) ~= "table" then warn("Configuração salva inválida ou inacessível; usando padrões"); return true end
 		migrated = data.AutoClash ~= nil or data.AutoClashActivationMs ~= nil or data.AutoClashDeactivationMs ~= nil
 		if data.AutoSpam == nil and type(data.AutoClash) == "boolean" then data.AutoSpam = data.AutoClash end
 		if data.AutoParryFactor04Applied ~= true then

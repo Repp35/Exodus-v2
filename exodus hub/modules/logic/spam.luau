@@ -8,6 +8,7 @@ local function traceback(err) return debug.traceback(tostring(err), 2) end
 -- state
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
+local MAX_CATCH_UP = 256
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 
 -- config
@@ -76,11 +77,11 @@ local function sync()
 					if time >= due then
 						if time - due > 0.1 then due = time end
 						local pending = math.floor((time - due) / interval) + 1
-						for _ = 1, pending do
+						for _ = 1, math.min(pending, MAX_CATCH_UP) do
 							if not guard() then break end
 							request(boundUtils, boundRemote, token, guard)
 						end
-						due += pending * interval
+						if pending > MAX_CATCH_UP then due = time + interval else due += pending * interval end
 					end
 					if token == generation then task.wait(math.max(0, due - os.clock())) end
 				end

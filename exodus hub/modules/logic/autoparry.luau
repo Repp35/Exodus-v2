@@ -189,7 +189,8 @@ local function request(reason)
 			and not boundUtils.isSpamActive()
 			and (reason == "manual_parry" or boundUtils.getConfigValue("AutoParry") ~= false)
 	end
-	local sent, detail = boundRemote.fireParry(1, allowed)
+	local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
+	if not ok then detail, sent = sent, false end
 	if not sameCycle() then return false end
 	if sent ~= true then
 		state.fired = false; phase("waiting", "parry_attempt_failed"); local now = clock()

@@ -574,12 +574,15 @@ function AutoSpam.bindCharacter(character)
 		pendingReset = false,
 	}
 
-	current = s
-	local haunterConnection, haunterRemote
+	current = s; local haunterConnection, haunterRemote, nextHaunterCheck = nil, nil, 0
 	local function connectHaunter()
 		local event = gameInfo.getHaunterEvent()
 		if event == haunterRemote and haunterConnection and haunterConnection.Connected then return end
-		if haunterConnection then utils.untrackCharacter(haunterConnection); haunterConnection:Disconnect(); haunterConnection, haunterRemote = nil, nil end
+		if haunterConnection then
+			utils.untrackCharacter(haunterConnection); haunterConnection:Disconnect(); local index = table.find(s.connections, haunterConnection)
+			if index then table.remove(s.connections, index) end
+			haunterConnection, haunterRemote = nil, nil
+		end
 		if not event then return end
 		haunterRemote = event
 		haunterConnection = track(s, event.OnClientEvent, function(from, destination)
@@ -632,7 +635,10 @@ function AutoSpam.bindCharacter(character)
 		local function watchHumanoid(humanoid)
 			if humanoid:IsA("Humanoid") then
 				track(s, humanoid.Died, function()
-					if current == s and player.Character == model then freezeClashStats(player.UserId); stop(s, "player_died"); s.pendingReset = true end
+					if current ~= s or player.Character ~= model then return end
+					local id = player.UserId
+					if id ~= localPlayer.UserId and id ~= s.partner and not (clashStats and not clashStats.frozen and id == clashStats.partnerId) then return end
+					freezeClashStats(id); stop(s, "player_died"); s.pendingReset = true
 				end)
 			end
 		end
@@ -651,8 +657,9 @@ function AutoSpam.bindCharacter(character)
 	track(s, players.PlayerAdded, watchPlayer)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
-		if not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent then connectHaunter() end
-		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local time = now(); local clashContext = gameInfo.getClashContext()
+		local time = now()
+		if (not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent) and time >= nextHaunterCheck then nextHaunterCheck = time + 0.25; connectHaunter() end
+		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext()
 		local liveSnapshot
 		if not s.lobbyCheckAt or time - s.lobbyCheckAt >= 0.25 then s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time); s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot) end
 		if not s.lobbySnapshotValid then
