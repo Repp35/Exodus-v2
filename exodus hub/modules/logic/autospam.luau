@@ -67,9 +67,9 @@ local function distanceLimit(snapshot, partner)
 	if not finite(speed) or speed <= 0 then return nil end
 	local minimum, maximum = gameInfo.getBallSpeedLimits()
 	if not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
-	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local base = (T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor) - 15; local ownRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId); local otherRange = partner and gameInfo.getPlayerDeflectRange(partner)
-	if not ownRange or not otherRange then return base + 15, factor end
-	return base + math.clamp(ownRange - 8.5, 0, 7.5) + math.clamp(otherRange - 8.5, 0, 7.5), factor
+	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local base = T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - 15 - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor; local ownRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId); local otherRange = partner and gameInfo.getPlayerDeflectRange(partner)
+	if not ownRange or not otherRange then return base + 15 * factor, factor end
+	return base + (math.clamp(ownRange - 8.5, 0, 7.5) + math.clamp(otherRange - 8.5, 0, 7.5)) * factor, factor
 end
 local function distanceGate(s, snapshot, partner, knownPosition, knownLimit, knownFactor)
 	local limit, factor = knownLimit, knownFactor
@@ -733,6 +733,12 @@ function AutoSpam.onBallSync(data)
 		if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
 	end
 	local stopped = false
+	-- Authoritative target changes take priority over Locked and proximity gates.
+	if s.active and target and target ~= s.target and target ~= localPlayer.UserId and target ~= s.partner then
+		stop(s, "distant_target")
+		utils.setManualSpamActive(false)
+		stopped = true
+	end
 	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then
 		if not stopped and target ~= s.target then stopped = applyDeactivation(s, snapshot, time, serverTime, true) end
 		if not stopped and target == s.target then stopped = applyDeactivation(s, snapshot, time, serverTime, false) end
