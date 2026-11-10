@@ -42,7 +42,7 @@ return function(loadedRevision, request)
 		local pending, chunk, nextCheck, failures = nil, nil, 0, 0
 		while running() do
 			if os.clock() >= nextCheck then
-				nextCheck = os.clock() + 5; local revision, err = latestRevision()
+				nextCheck = os.clock() + 1; local revision, err = latestRevision()
 				if not running() then return end
 				if revision then
 					failures = 0

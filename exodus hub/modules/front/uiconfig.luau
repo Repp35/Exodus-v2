@@ -21,11 +21,6 @@ UIConfig.panelToggles = {
 	},
 	{
 		kind = "toggle",
-		label = "Auto Aim Lock",
-		key = "AutoAimLock",
-	},
-	{
-		kind = "toggle",
 		label = "Mini Clash UI",
 		key = "ClashBallVisible",
 	},

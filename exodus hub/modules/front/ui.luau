@@ -1228,7 +1228,7 @@ function ExodusUI.setup(deps)
 		paintDarkBall(value)
 		if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
 	end)
-	local fierceYPos, miniDarkCard = createToggleCard("Mini Dark UI", "DarkBallVisible", darkYPos, autosLeft, showDarkBall); local _, fierceCard = createToggleCard("Auto Fierce", "AutoFierce", fierceYPos, autosLeft)
+	local fierceYPos, miniDarkCard = createToggleCard("Mini Dark UI", "DarkBallVisible", darkYPos, autosLeft, showDarkBall); local aimYPos, fierceCard = createToggleCard("Auto Fierce", "AutoFierce", fierceYPos, autosLeft); createToggleCard("Auto Aim Lock", "AutoAimLock", aimYPos, autosLeft)
 	local jumpYPos = createToggleCard("Auto Jump", "AutoJump", 4, autosRight, function(value)
 		paintJumpBall(value)
 		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
