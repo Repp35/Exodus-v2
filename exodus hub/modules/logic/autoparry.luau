@@ -2,7 +2,7 @@
 
 -- dependencies
 local AutoParry = {}
-local utils, gameInfo, remote
+local utils, gameInfo, remote, autoParrySignature
 
 -- state
 local state = {
@@ -40,13 +40,18 @@ local state = {
 	lastErrorAt = -math.huge,
 	clicks = {},
 	returns = {},
+	autoParryCps = 0,
+	lastAutoParryClickAt = nil,
+	windowFactor = 0.8,
 	awayAt = nil,
 	awayTarget = nil,
 }
 
 -- tuning
 local T = {
-	DEFAULT_WINDOW_FACTOR = 0.40,
+	DEFAULT_WINDOW_FACTOR = 0.8,
+	CPS_BOOST_START = 2,
+	CPS_BOOST_FULL = 2.5,
 	PRESSURE_SAMPLE_LIMIT = 100,
 	PRESSURE_WINDOW = 3,
 	TARGET_SEQUENCE_MODULUS = 65536,
@@ -86,6 +91,7 @@ local function resetTracking()
 	state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
 	state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
 	state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
+	state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, T.DEFAULT_WINDOW_FACTOR
 	state.awayAt, state.awayTarget = nil, nil
 	table.clear(state.clicks); table.clear(state.returns)
 end
@@ -114,10 +120,25 @@ end
 local function configuredFactor()
 	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
 end
+local function factorForCps(cps)
+	local base = configuredFactor()
+	if not finite(cps) or cps <= T.CPS_BOOST_START then return base end
+	local span = T.CPS_BOOST_FULL - T.CPS_BOOST_START; local progress = span > 0 and math.clamp((cps - T.CPS_BOOST_START) / span, 0, 1) or 1; return base + (1 - base) * progress
+end
+local function activeWindowFactor(at)
+	local cps = state.autoParryCps
+	if state.lastAutoParryClickAt and finite(at) and at > state.lastAutoParryClickAt then local interval = at - state.lastAutoParryClickAt; cps = interval > 0 and 1 / interval or math.huge end
+	state.windowFactor = math.clamp(factorForCps(cps), 0, 1); return state.windowFactor
+end
+local function recordAutoParryRemote(signature)
+	if signature ~= autoParrySignature then return end
+	local now, previous = clock(), state.lastAutoParryClickAt; local interval = previous and now - previous or nil; state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0
+	state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(factorForCps(state.autoParryCps), 0, 1)
+end
 local function minimumBallSpeed() return T.MIN_PARRY_SPEED end
 local function radius(speed, factor, baseWindow)
 	speed = finite(speed) and math.max(speed, 0) or 0; factor = tonumber(factor)
-	if not finite(factor) then factor = configuredFactor() end
+	if not finite(factor) then factor = activeWindowFactor(clock()) end
 	factor = math.clamp(factor, 0, 1); return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
 end
 
@@ -198,7 +219,7 @@ local function request(reason)
 			and not boundUtils.isSpamActive()
 			and (reason == "manual_parry" or boundUtils.getConfigValue("AutoParry") ~= false)
 	end
-	local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
+	local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed, autoParrySignature)
 	if not ok then detail, sent = sent, false end
 	if not sameCycle() then return false end
 	if sent ~= true then
@@ -206,10 +227,14 @@ local function request(reason)
 		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível")) end
 		return false
 	end
-	local configured = configuredFactor()
-	if configured > 0 then
-		local geometry = radius(speed, configured)
-		if geometry then local denominator = speed * geometry.leadTime; local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured; appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed }) end
+	local factor = activeWindowFactor(firedAt)
+	if factor > 0 then
+		local geometry = radius(speed, factor)
+		if geometry then
+			local denominator = speed * geometry.leadTime
+			local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, factor) or factor
+			appendRecent(state.clicks, { at = firedAt, factor = used, configured = factor, speed = speed })
+		end
 	end
 	phase("fired", reason); return true
 end
@@ -239,7 +264,7 @@ local function tick(character, root, generation)
 	end
 	if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
 	if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
-	samplePing(); local geometry = radius(speed, configuredFactor())
+	samplePing(); local geometry = radius(speed, activeWindowFactor(time))
 	if not geometry then return end
 	local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); threshold += math.max(closing, 0) * state.frameAllowance
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
@@ -255,9 +280,14 @@ function AutoParry.setup(deps)
 			if type(deps[name][method]) ~= "function" then return false, "dependência ausente: " .. name .. "." .. method end
 		end
 	end
+	if remote and type(remote.setParryObserver) == "function" then remote.setParryObserver(nil) end
 	detach("setup"); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote; state.player = utils.getLocalPlayer()
 	if not state.player then return false, "Players.LocalPlayer indisponível" end
-	resetTracking(); phase("detached", "setup_complete"); return true
+	autoParrySignature = remote.getAutoParrySignature()
+	if type(autoParrySignature) ~= "table" then return false, "assinatura do AutoParry indisponível" end
+	resetTracking(); local observed, detail = remote.setParryObserver(recordAutoParryRemote)
+	if observed ~= true then autoParrySignature = nil; return false, tostring(detail or "observador do AutoParry indisponível") end
+	phase("detached", "setup_complete"); return true
 end
 function AutoParry.bindCharacter(character)
 	if not utils or not gameInfo or not remote then return false, "dependências não inicializadas" end
@@ -291,7 +321,7 @@ end
 function AutoParry.fire()
 	if not state.alive or not state.bound or state.fired or state.teleported then return false end
 	if not state.player or state.target ~= state.player.UserId then return false end
-	local g = radius(state.speed, configuredFactor())
+	local g = radius(state.speed, activeWindowFactor(clock()))
 	if not g or state.distance > g.fullRadius then return false end
 	return request("manual_parry")
 end
@@ -307,7 +337,7 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
 	if not vector(position) or not vector(velocity) or not vector(own) then return false end
 	samplePing(); local speed = tonumber(value.syncSpeed)
 	if not finite(speed) or speed <= 0 then speed = velocity.Magnitude end
-	local g = radius(speed, configuredFactor())
+	local g = radius(speed, activeWindowFactor(time))
 	if not g then return false end
 	local distance, closing, threshold = trajectory(position, velocity, own, speed, g)
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
@@ -322,8 +352,9 @@ end
 function AutoParry.resetState() detach("reset") end
 function AutoParry.detachCharacter() detach("detach") end
 function AutoParry.teardown()
+	if remote and type(remote.setParryObserver) == "function" then remote.setParryObserver(nil) end
 	detach("teardown")
-	utils, gameInfo, remote, state.player = nil, nil, nil, nil
+	utils, gameInfo, remote, state.player, autoParrySignature = nil, nil, nil, nil, nil
 end
 
 -- ball-sync
@@ -341,6 +372,7 @@ function AutoParry.onBallSync(data)
 		state.teleported, state.teleportSequence = true, sequence
 		state.lastBall = nil
 		state.speed, state.distance, state.approaching = 0, 0, false
+		state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, T.DEFAULT_WINDOW_FACTOR
 		state.awayAt, state.awayTarget = nil, nil
 		table.clear(state.clicks); table.clear(state.returns); phase("waiting", "teleport_lock"); return true
 	end
@@ -462,12 +494,12 @@ function AutoParry.getPressure()
 	}
 end
 function AutoParry.getStatus()
-	local geometry = AutoParry.getRadius("geometry", utils and configuredFactor() or 0.5); local target = AutoParry.getTargetStatus()
+	local geometry = AutoParry.getRadius("geometry", utils and activeWindowFactor(clock()) or T.DEFAULT_WINDOW_FACTOR); local target = AutoParry.getTargetStatus()
 	return {
 		schema = utils and utils.apiVersion() or nil,
 		api = {
 			name = "AutoParry",
-			version = 10,
+			version = 11,
 			endpoints = { "getRadius", "getTiming", "getStatus", "getTargetStatus" },
 			radiusModes = { "geometry", "tti", "speed_distance" },
 			defaultWindowFactor = T.DEFAULT_WINDOW_FACTOR,
@@ -503,6 +535,9 @@ function AutoParry.getStatus()
 		},
 
 		ping = { oneWay = state.ping, raw = state.pingRaw, samples = state.pingCount },
+		cps = state.autoParryCps,
+		windowFactor = state.windowFactor,
+		cpsGate = { boostStart = T.CPS_BOOST_START, fullBoost = T.CPS_BOOST_FULL },
 		target = target,
 		pressure = AutoParry.getPressure(),
 		cycle = { fired = state.fired, armed = not state.fired, lastFireAt = state.lastFireAt, lastTTI = geometry.tti },
@@ -522,7 +557,7 @@ end
 AutoParry.__contract = {
 	requires = { Remote = "remote", GameInfo = "gameinfo", Utils = "utils" },
 	requiresMethods = {
-		Remote = { "fireParry" },
+		Remote = { "getAutoParrySignature", "setParryObserver", "fireParry" },
 		GameInfo = {
 			"getSnapshotAt",
 			"isSnapshotValid",
@@ -570,7 +605,7 @@ AutoParry.__contract = {
 
 	onBallSync = true,
 	bindCharacter = true,
-	version = 10,
+	version = 11,
 }
 
 return AutoParry
