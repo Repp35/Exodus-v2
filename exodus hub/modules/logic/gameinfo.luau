@@ -296,6 +296,22 @@ function GameInfo.getPlayerDistance(id)
 	return (ownRoot.Position - otherRoot.Position).Magnitude
 end
 function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
+-- Radius without the dynamic parry window: 8.5 studs + current resilience + ping travel.
+-- Opponent resilience is read from the opponent's own DeflectRange attribute, never ours.
+function GameInfo.getPlayerDeflectRange(id)
+	local player = type(id) == "number" and players:GetPlayerByUserId(id)
+	if not player then return nil end
+	local range = player:GetAttribute("DeflectRange")
+	if not finite(range) then return T.RANGE_BASE end
+	return math.clamp(range, T.RANGE_BASE, T.RANGE_BASE + T.RANGE_BONUS_SPAN)
+end
+function GameInfo.getPlayerRawRadius(id, speed, includePing)
+	local range = GameInfo.getPlayerDeflectRange(id)
+	if not range then return nil end
+	local latency = includePing and GameInfo.getAveragePing() or 0
+	if not finite(latency) or latency < 0 then latency = 0 end
+	return range + (finite(speed) and math.max(0, speed) * latency or 0)
+end
 function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
 function GameInfo.getLastDeflectPressAt()
 	local ability = GameInfo.getDeflectAbility()
@@ -656,6 +672,8 @@ GameInfo.__contract = {
 		"areAbilitiesEnabled",
 		"observeAbilityMode",
 		"getDeflectRange",
+		"getPlayerDeflectRange",
+		"getPlayerRawRadius",
 		"getPlayerDistance",
 		"getPlayerMotion",
 		"getHaunterEvent",
