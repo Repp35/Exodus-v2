@@ -316,12 +316,15 @@ local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 48, 64, 118
 local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
 local CARD_SCALE = 1.06
-local OFF_ON_MIN_H, OFF_ON_MAX_H = 42, 46
-local OFF_ON_CARD_H = math.clamp(CARD_H - 4, OFF_ON_MIN_H, OFF_ON_MAX_H)
+-- Shared card sizing: the standard toggle defines the height for every card.
+local CARD_MAX_H = CARD_H
+local function cardHeight(height)
+	return math.clamp(height or CARD_H, 0, CARD_MAX_H)
+end
 local function offOnText(labelText, value)
 	local color = value and "#22C55E" or "#EF4444"; return labelText .. ': <font color="' .. color .. '">' .. (value and "ON" or "OFF") .. "</font>"
 end
-local function nextCardY(yPos, cardHeight) return yPos + cardHeight * CARD_SCALE + CARD_GAP end
+local function nextCardY(yPos, height) return yPos + cardHeight(height) * CARD_SCALE + CARD_GAP end
 
 -- panel
 local function panelPos()
@@ -380,7 +383,7 @@ end
 -- cards
 local function cardFrame(yPos, h, parent)
 	local f = inst("Frame", {
-		Size = UDim2.new(1, -22, 0, h),
+		Size = UDim2.new(1, -22, 0, cardHeight(h)),
 		Position = UDim2.new(0, 2, 0, yPos),
 		BackgroundColor3 = C.card,
 		BackgroundTransparency = 0.1,
@@ -579,7 +582,7 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter, sho
 	return nextCardY(yPos, CARD_H), f
 end
 local function createOffOnCard(labelText, yPos, parent, options)
-	options = options or {}; local cardHeight = math.clamp(options.height or OFF_ON_CARD_H, OFF_ON_MIN_H, OFF_ON_MAX_H); local configKey, state = options.configKey, false
+	options = options or {}; local cardHeight = CARD_H; local configKey, state = options.configKey, false
 	local function readState()
 		if options.getState then return options.getState() == true end
 		if configKey then return Utils.getConfigValue(configKey) == true end
