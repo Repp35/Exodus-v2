@@ -1540,7 +1540,7 @@ function ExodusUI.setup(deps)
 	end
 	for index, mode in ipairs(spinModes) do
 		local crate = mode[2]
-		local _, _, setSpinVisual = createOffOnCard(mode[1], (OFF_ON_CARD_H * CARD_SCALE + CARD_GAP) * index, utilities, {
+		local _, _, setSpinVisual = createOffOnCard(mode[1], nextCardY(0, CARD_H) * index, utilities, {
 			getState = function() return spinActive == crate end,
 			onToggle = function(enabled)
 				spinGeneration += 1
