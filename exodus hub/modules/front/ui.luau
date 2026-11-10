@@ -312,7 +312,7 @@ setSpam = function(v, silent)
 end
 local PW, PH = 540, 380
 local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
-local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 64, 80, 118
+local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 52, 68, 118
 local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
 local function nextCardY(yPos, cardHeight) return yPos + cardHeight + CARD_GAP end
@@ -374,8 +374,8 @@ end
 -- cards
 local function cardFrame(yPos, h, parent)
 	local f = inst("Frame", {
-		Size = UDim2.new(1, -8, 0, h),
-		Position = UDim2.new(0, 0, 0, yPos),
+		Size = UDim2.new(1, -40, 0, h),
+		Position = UDim2.new(0, 16, 0, yPos),
 		BackgroundColor3 = C.card,
 		BackgroundTransparency = 0.1,
 		ZIndex = 6,
@@ -516,8 +516,8 @@ local function keyName(value)
 	local name = typeof(value) == "EnumItem" and value.Name or tostring(value or "—"); return names[name] or name
 end
 local function makeKeycap(parent, configKey)
-	local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 32, 32, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey; keycap.Position = UDim2.new(1, -132, 0, 16); keycap.TextSize = 9; keycap.ZIndex = 11; shortcutLabels[configKey] = keycap; local arrow = makeBtn("⌄", 0, 0, 24, 32, parent, C.btnDark); arrow.Name = "ShortcutSettings"; arrow.Position = UDim2.new(1, -96, 0, 16)
-	arrow.ZIndex = 11; local editor = makeBtn("Atalho: " .. keyName(Utils.getConfigValue(configKey)), 10, CARD_H + 4, COL_W - 28, 30, parent, C.btnBlue); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
+	local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 32, 28, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey; keycap.Position = UDim2.new(1, -132, 0, 12); keycap.TextSize = 9; keycap.ZIndex = 11; shortcutLabels[configKey] = keycap; local arrow = makeBtn("⌄", 0, 0, 24, 28, parent, C.btnDark); arrow.Name = "ShortcutSettings"; arrow.Position = UDim2.new(1, -96, 0, 12)
+	arrow.ZIndex = 11; local editor = makeBtn("Atalho: " .. keyName(Utils.getConfigValue(configKey)), 10, CARD_H + 4, COL_W - 60, 30, parent, C.btnBlue); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
 	local function expand()
 		expanded = not expanded; local delta = expanded and 44 or -44; editor.Visible = expanded; arrow.Text = expanded and "⌃" or "⌄"; parent.Size += UDim2.fromOffset(0, delta)
 		for _, sibling in ipairs(parent.Parent:GetChildren()) do
@@ -535,19 +535,21 @@ end
 -- cards
 local function createToggleCard(labelText, configKey, yPos, parent, onAfter, shortcutKey)
 	local f = cardFrame(yPos, CARD_H, parent)
-	inst("TextLabel", {
+	local label = inst("TextLabel", {
 		Size = UDim2.new(1, UIState.desktop and shortcutKey and -148 or -78, 0, CARD_H),
 		Position = UDim2.new(0, 14, 0, 0),
 		BackgroundTransparency = 1,
 		Text = labelText,
 		TextColor3 = C.text,
 		TextSize = UIState.desktop and shortcutKey and 11 or 13,
+		TextScaled = UIState.desktop and shortcutKey ~= nil,
 		Font = Enum.Font.GothamSemibold,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 7,
 		Parent = f,
 	})
-	local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0, 17)
+	if UIState.desktop and shortcutKey then inst("UITextSizeConstraint", { MaxTextSize = 11 }, label) end
+	local config = Utils.getConfig(); local initial = configKey and config[configKey] or false; local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0, 11)
 	if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey) end
 	if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
 	if configKey == "AutoParry" then autoParrySetVisual = setVisual end
@@ -669,8 +671,8 @@ local function createRateSelector(yPos, parent)
 	})
 	cardLabel("Taxa do Spam", f); local currentMode = config.SpamRateMode
 	local modeTrack = inst("Frame", {
-		Size = UDim2.new(0, 144, 0, 28),
-		Position = UDim2.new(0, 12, 0, 40),
+		Size = UDim2.new(0, 120, 0, 28),
+		Position = UDim2.new(0, 10, 0, 32),
 		BackgroundColor3 = C.inputBg,
 		BackgroundTransparency = 0.05,
 		BorderSizePixel = 0,
@@ -679,8 +681,8 @@ local function createRateSelector(yPos, parent)
 	})
 	corner(modeTrack, 999); stroke(modeTrack, C.border, 1)
 	local modeThumb = inst("Frame", {
-		Size = UDim2.new(0, 44, 0, 24),
-		Position = UDim2.new(0, currentMode == "CPS" and 2 or (currentMode == "CPF" and 50 or 98), 0.5, -12),
+		Size = UDim2.new(0, 36, 0, 24),
+		Position = UDim2.new(0, currentMode == "CPS" and 2 or (currentMode == "CPF" and 42 or 82), 0.5, -12),
 		BackgroundColor3 = currentMode == "CPS" and C.accent or C.accentPink,
 		BorderSizePixel = 0,
 		ZIndex = 8,
@@ -689,8 +691,8 @@ local function createRateSelector(yPos, parent)
 	corner(modeThumb, 999); stroke(modeThumb, C.text, 1); local modeButtons = {}
 	for index, mode in ipairs({ "CPS", "CPF", "Auto" }) do
 		local button = inst("TextButton", {
-			Size = UDim2.new(0, 48, 1, 0),
-			Position = UDim2.new(0, (index - 1) * 48, 0, 0),
+			Size = UDim2.new(0, 40, 1, 0),
+			Position = UDim2.new(0, (index - 1) * 40, 0, 0),
 			BackgroundTransparency = 1,
 			Text = mode,
 			TextColor3 = mode == currentMode and C.text or C.subtext,
@@ -702,8 +704,8 @@ local function createRateSelector(yPos, parent)
 		modeButtons[mode] = button
 	end
 	local inputBox = inst("TextBox", {
-		Size = UDim2.new(0, 62, 0, 30),
-		Position = UDim2.new(1, -74, 0, 39),
+		Size = UDim2.new(0, 54, 0, 30),
+		Position = UDim2.new(1, -64, 0, 31),
 		BackgroundColor3 = C.inputBg,
 		BackgroundTransparency = 0.1,
 		Text = currentMode == "Auto" and "Auto" or tostring(config[currentMode]),
@@ -718,7 +720,7 @@ local function createRateSelector(yPos, parent)
 	})
 	corner(inputBox, 8); local inputStroke = stroke(inputBox, C.border, 1)
 	local function paintRateMode(animated)
-		local isCPS = currentMode == "CPS"; local targetPosition = UDim2.new(0, isCPS and 2 or (currentMode == "CPF" and 50 or 98), 0.5, -12); local duration = animated and 0.32 or 0
+		local isCPS = currentMode == "CPS"; local targetPosition = UDim2.new(0, isCPS and 2 or (currentMode == "CPF" and 42 or 82), 0.5, -12); local duration = animated and 0.32 or 0
 		twPlay(modeThumb, duration, {
 			Position = targetPosition,
 			BackgroundColor3 = isCPS and C.accent or C.accentPink,
@@ -756,7 +758,7 @@ local function createSpamCard(yPos, parent)
 			if not enabled then setSpam(false) end
 		end, "SpamKeybind")
 	end
-	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true; local button = makeBtn(visible and "Mini UI: Visível" or "Mini UI: Oculto", 8, 26, COL_W - 24, 30, f, C.btnDark)
+	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true; local button = makeBtn(visible and "Mini UI: Visível" or "Mini UI: Oculto", 8, 22, COL_W - 56, 26, f, C.btnDark)
 	trackConn(button.Activated:Connect(function() showMini(Utils.getConfigValue("MiniSpamVisible") ~= true, button) end))
 	return nextCardY(yPos, CARD_H)
 end
