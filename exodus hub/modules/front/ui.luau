@@ -1555,12 +1555,12 @@ function ExodusUI.setup(deps)
 	})
 	corner(previous, 6); corner(nextPage, 6); local pageNames = { "Principal", "Ajustes", "Utilidades", "Automáticos" }
 	local function updateNavigation()
-		pageLabel.Text = tostring(page) .. "/" .. tostring(#pageGroups) .. " " .. pageNames[page]; previous.TextTransparency = 0; nextPage.TextTransparency = 0
+		pageLabel.Text = tostring(page) .. "/" .. tostring(#pageGroups) .. " " .. pageNames[page]; previous.TextTransparency = page == 1 and 0.7 or 0; nextPage.TextTransparency = page == #pageGroups and 0.7 or 0; previous.AutoButtonColor = page > 1; nextPage.AutoButtonColor = page < #pageGroups
 	end
 	updateNavigation()
 	local function changePage(direction)
 		local target = page + direction
-		if target < 1 then target = #pageGroups elseif target > #pageGroups then target = 1 end
+		if target < 1 or target > #pageGroups then return end
 		page = target; UIState.pageGeneration += 1; local generation = UIState.pageGeneration
 		for _, tween in ipairs(UIState.pageTweens) do
 			safeCancel(tween)
