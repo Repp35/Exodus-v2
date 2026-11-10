@@ -580,8 +580,7 @@ function AutoParry.getStatus()
 	}
 end
 function AutoParry.getCpsStatus()
-	local cps = remote and remote.getParryCps() or 0
-	return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
+	local cps = remote and remote.getParryCps() or 0; return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
 end
 
 -- contract

@@ -19,16 +19,11 @@ local function pruneParryTimes(now)
 	end
 end
 local function recordParrySent()
-	local now = os.clock()
-	lastParryInterval = lastParryAt and (now - lastParryAt) or nil
-	lastParryAt = now
-	pruneParryTimes(now)
-	parryTimes[#parryTimes + 1] = now
+	local now = os.clock(); lastParryInterval = lastParryAt and (now - lastParryAt) or nil; lastParryAt = now; pruneParryTimes(now); parryTimes[#parryTimes + 1] = now
 end
 function Remote.getParrySendTiming() return lastParryInterval, lastParryAt end
 function Remote.getParryCps()
-	pruneParryTimes(os.clock())
-	return #parryTimes
+	pruneParryTimes(os.clock()); return #parryTimes
 end
 local function send(ability, method, ...)
 	if ability == nil then return false, method .. " não equipado ou indisponível" end
