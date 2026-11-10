@@ -369,9 +369,6 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	if distanceReason then return distanceReason end
 	s.switchTimeout = T.DEACTIVATION.MIN_SPEED_TIMEOUT + (T.DEACTIVATION.MAX_SPEED_TIMEOUT - T.DEACTIVATION.MIN_SPEED_TIMEOUT) * factor
 	if target ~= localPlayer.UserId and target ~= s.partner then return nil end
-	-- Do not stop a valid close clash because a packet arrived late.
-	-- Packet gaps are not proof the ball has left the opponent/self exchange.
-	-- Distance, diversion and authoritative third-party target still deactivate.
 	if not validSnapshot then return nil end
 	local diverted = false
 	if
