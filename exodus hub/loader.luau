@@ -163,14 +163,15 @@ end
 
 -- urls
 local function resolveLatestRevision()
-	local url = "https://api.github.com/repos/" .. REPOSITORY .. "/commits/" .. BRANCH .. "?exodus_cache=" .. CACHE_BUSTER
-	local body, requestError = request(url, { ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Loader" })
+	local url = "https://api.github.com/repos/" .. REPOSITORY .. "/commits/" .. BRANCH .. "?exodus_cache=" .. CACHE_BUSTER; local body, requestError = request(url, { ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Loader" })
 	if body then
-		local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
-		local sha = ok and type(document) == "table" and document.sha
+		local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and document.sha
 		if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
 	end
-	local feed, feedError = request("https://github.com/" .. REPOSITORY .. "/commits/" .. BRANCH .. ".atom?exodus_cache=" .. CACHE_BUSTER, { ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Loader" })
+	local feed, feedError = request(
+		"https://github.com/" .. REPOSITORY .. "/commits/" .. BRANCH .. ".atom?exodus_cache=" .. CACHE_BUSTER,
+		{ ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Loader" }
+	)
 	local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
 	if sha and #sha == 40 then return sha end
 	return nil, feedError or requestError or "SHA mais recente indisponível"
@@ -417,8 +418,7 @@ local function startInternal()
 	if not stopPreviousRuntime() then return false, "Loader", "falha ao encerrar a sessão anterior" end
 	clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
 	if not playerReady then return false, "Loader", playerError end
-	local version, revisionError = resolveLatestRevision(); local localRoot = not version and findCompleteLocalRoot() or nil
-	local unpinned = not version and not localRoot
+	local version, revisionError = resolveLatestRevision(); local localRoot = not version and findCompleteLocalRoot() or nil; local unpinned = not version and not localRoot
 	if unpinned then version = BRANCH; warn("[Exodus] SHA indisponível; carregando main sem atualizador automático: " .. tostring(revisionError)) end
 	local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, localRoot)
 	if not loaded then return false, moduleName, loadError end
@@ -456,7 +456,9 @@ local function startInternal()
 		end,
 	})
 	if not uiReady then utils.stop(); return false, uiModule, uiError end
-	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); Exodus.Revision = version; if unpinned then Exodus.Revision = nil end; printStartup("Exodus: iniciado"); return true
+	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); Exodus.Revision = version
+	if unpinned then Exodus.Revision = nil end
+	printStartup("Exodus: iniciado"); return true
 end
 
 -- rollback
