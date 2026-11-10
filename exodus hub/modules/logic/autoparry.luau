@@ -118,8 +118,7 @@ local function resilience()
 	}
 end
 local function configuredFactor()
-	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor"))
-	factor = finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
+	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); factor = finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
 	if remote and remote.getParryCps() > 2 then factor = 1 end
 	return factor
 end
@@ -569,8 +568,7 @@ function AutoParry.getStatus()
 	}
 end
 function AutoParry.getCpsStatus()
-	local cps = remote and remote.getParryCps() or 0
-	return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
+	local cps = remote and remote.getParryCps() or 0; return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
 end
 
 -- contract

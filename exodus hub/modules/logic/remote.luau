@@ -5,7 +5,6 @@ local Remote = {}
 local gameInfo
 local lastParryAt, lastParryInterval
 
-
 -- lifecycle
 function Remote.setup(deps)
 	if type(deps) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependência inválida: GameInfo" end
@@ -14,14 +13,10 @@ end
 
 -- dispatch
 local function recordParrySent()
-	local now = os.clock()
-	lastParryInterval = lastParryAt and (now - lastParryAt) or nil
-	lastParryAt = now
+	local now = os.clock(); lastParryInterval = lastParryAt and (now - lastParryAt) or nil; lastParryAt = now
 end
 function Remote.getParrySendTiming() return lastParryInterval, lastParryAt end
-function Remote.getParryCps()
-	return type(lastParryInterval) == "number" and lastParryInterval > 0 and 1 / lastParryInterval or 0
-end
+function Remote.getParryCps() return type(lastParryInterval) == "number" and lastParryInterval > 0 and 1 / lastParryInterval or 0 end
 local function send(ability, method, ...)
 	if ability == nil then return false, method .. " não equipado ou indisponível" end
 	local callback = ability[method]
