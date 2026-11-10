@@ -9,6 +9,8 @@ local function traceback(err) return debug.traceback(tostring(err), 2) end
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
 local MAX_DELAY_DEBT = 0.2
+local POLL_INTERVAL = 0.01
+local ERROR_RETRY_INTERVAL = 0.03
 local nextAllowedAt = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 
@@ -67,7 +69,7 @@ local function sync()
 				if interval then due = math.max(due, time - MAX_DELAY_DEBT) end
 				local gameDelay = boundGameInfo.getAutoSpamDelay()
 				if inFlight or (mode == "Auto" and gameDelay == nil) then
-					task.wait(0.05)
+					task.wait(POLL_INTERVAL)
 				else
 					local readyAt = math.max(nextAllowedAt, interval and due or time)
 					if type(gameDelay) == "number" and gameDelay == gameDelay and gameDelay > 0 and gameDelay < math.huge then readyAt = math.max(readyAt, time + gameDelay) end
@@ -75,7 +77,7 @@ local function sync()
 						request(boundUtils, boundRemote, token, guard, minimum)
 						if interval then due += interval end
 					else
-						task.wait(math.clamp(readyAt - time, 1 / 240, 0.05))
+						task.wait(math.clamp(readyAt - time, 1 / 240, POLL_INTERVAL))
 					end
 				end
 			end
@@ -89,7 +91,7 @@ local function sync()
 				if not reported then warn("[Spam] " .. tostring(reportError)) end
 			end
 			local retryToken = generation
-			task.delay(0.1, function()
+			task.delay(ERROR_RETRY_INTERVAL, function()
 				if retryToken == generation and utils == boundUtils and boundUtils.isActive() then sync() end
 			end)
 		end
