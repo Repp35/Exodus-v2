@@ -54,7 +54,6 @@ local T = {
 	FAST_EXCHANGE_FACTOR = 1.30,
 	FAST_EXCHANGE_RECENCY = 1,
 	GRACE_COOLDOWN = 0.03,
-	GRACE_KILL_DISTANCE = 5,
 	PRESSURE_SAMPLE_LIMIT = 100,
 	PRESSURE_WINDOW = 3,
 	TARGET_SEQUENCE_MODULUS = 65536,
@@ -241,11 +240,11 @@ local function request(reason)
 		local geometry = radius(speed, configured)
 		if geometry then local denominator = speed * geometry.leadTime; local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured; appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed }) end
 	end
-	if state.localGraceActive and firedAt <= state.localGraceUntil then state.graceHandled = true end
+	if state.localGraceActive then state.graceHandled = true end
 	phase("fired", reason); return true
 end
 local function requestGrace()
-	if state.graceHandled or not state.localGraceActive or clock() > state.localGraceUntil or not state.player or state.target ~= state.player.UserId then return false end
+	if state.graceHandled or state.fired or not state.localGraceActive or not state.player or state.target ~= state.player.UserId then return false end
 	local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote
 	local function allowed()
 		return state.generation == generation
@@ -269,7 +268,7 @@ local function requestGrace()
 		return false
 	end
 	state.graceHandled, state.fired, state.lastFireAt = true, true, clock()
-	phase("fired", "local_grace_parry_requested"); return true
+	phase("fired", "sync_grace_parry_requested"); return true
 end
 local function tick(character, root, generation)
 	if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
@@ -288,18 +287,18 @@ local function tick(character, root, generation)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if not value.ball.Parent then return end
 	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; samplePing(); local fullWindow = radius(speed, 1); local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
-	local targeted = value.targetUncertain ~= true and state.player ~= nil and value.targetId == state.player.UserId; local inKillDistance = value.mode ~= "training" and distance <= T.GRACE_KILL_DISTANCE
-	if not targeted or not inKillDistance then
-		state.localGraceActive, state.graceHandled, state.localGraceUntil = false, false, 0
+	local targeted = value.targetUncertain ~= true and state.player ~= nil and value.targetId == state.player.UserId
+	-- Grace comes exclusively from the server sync. Rearm only on a false -> true edge.
+	local syncGrace = value.mode ~= "training" and value.grace == true and targeted
+	if not syncGrace then
+		state.localGraceActive, state.graceHandled = false, false
 	elseif not state.localGraceActive then
-		state.localGraceActive, state.graceHandled = true, false
-		state.localGraceUntil = time + math.clamp(state.ping + 0.075, 0.075, 0.350)
+		state.localGraceActive, state.graceHandled = true, state.fired
 	end
-	local localGrace = state.localGraceActive and time <= state.localGraceUntil and fullWindow ~= nil and distance <= fullWindow.fullRadius
-	if localGrace then
+	if syncGrace then
 		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, true
-		state.closingSpeed, state.triggerDistance = closing, fullWindow.fullRadius
-		if not state.graceHandled and time - state.lastFireAt >= T.GRACE_COOLDOWN then requestGrace() end
+		state.closingSpeed, state.triggerDistance = closing, fullWindow and fullWindow.fullRadius or 0
+		if not state.graceHandled and not state.fired and time - state.lastFireAt >= T.GRACE_COOLDOWN then requestGrace() end
 		return
 	end
 	if state.fired then phase("waiting", "target_already_parried"); return end
