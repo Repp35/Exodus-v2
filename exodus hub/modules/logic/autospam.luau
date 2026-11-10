@@ -379,6 +379,18 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		if timeout and time >= s.returnWatchAt and time - s.returnWatchAt >= timeout then return "return_timeout" end
 	end
 	local sampleAge = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt or nil; local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported; local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
+	if
+		sampleAge and sampleAge >= 0 and sampleAge <= T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE
+		and snapshot and not snapshot.teleported
+		and s.root and s.root.Parent
+		and s.activatedAt
+		and time - s.activatedAt >= T.DEACTIVATION.RETURN_START_GRACE
+		and typeof(snapshot.position) == "Vector3"
+		and typeof(snapshot.velocity) == "Vector3"
+	then
+		local toward = s.root.Position - snapshot.position; local distance = toward.Magnitude; local closing = distance > 0 and snapshot.velocity:Dot(toward) / distance or 0; local radius, timeout = closeRadius(snapshot), returnTimeout(snapshot)
+		if radius and timeout and closing > 1 and math.max(0, distance - radius) / closing > math.max(0.05, timeout * 3) then return "return_timeout" end
+	end
 	if not validSnapshot or not target then
 		s.diversionSince, s.diversionSyncAt = nil, nil
 		return nil
@@ -390,16 +402,6 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 	local limit, speedFactor = distanceLimit(snapshot, s.partner); local partnerPosition = s.partner and gameInfo.getPlayerMotion(s.partner)
 	if limit and typeof(partnerPosition) == "Vector3" and s.root and s.root.Parent and (partnerPosition - s.root.Position).Magnitude > limit then return "opponent_distance" end
 	if target ~= localPlayer.UserId and target ~= s.partner and targetChanged then return "distant_target" end
-	if
-		target == localPlayer.UserId
-		and s.activatedAt
-		and time - s.activatedAt >= T.DEACTIVATION.RETURN_START_GRACE
-		and typeof(snapshot.position) == "Vector3"
-		and typeof(snapshot.velocity) == "Vector3"
-	then
-		local toward = s.root.Position - snapshot.position; local distance = toward.Magnitude; local closing = distance > 0 and snapshot.velocity:Dot(toward) / distance or 0; local radius, timeout = closeRadius(snapshot), returnTimeout(snapshot)
-		if radius and timeout and closing > 1 and math.max(0, distance - radius) / closing > math.max(0.05, timeout * 3) then return "return_timeout" end
-	end
 	local protected = false
 	if validSnapshot and target and (target == localPlayer.UserId or target == s.partner) then
 		local speed = snapshotSpeed(snapshot)
