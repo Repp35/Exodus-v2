@@ -40,6 +40,8 @@ local state = {
 	pingRaw = nil,
 	pingCount = 0,
 	lastFireAt = 0,
+	lastApParryAt = nil,
+	lastApParryInterval = nil,
 	lastErrorAt = -math.huge,
 	clicks = {},
 	returns = {},
@@ -117,9 +119,18 @@ local function resilience()
 		source = "DeflectRange",
 	}
 end
+local function apCps()
+	local interval = state.lastApParryInterval
+	return finite(interval) and interval > 0 and 1 / interval or 0
+end
+local function recordApParry()
+	local now = clock()
+	state.lastApParryInterval = state.lastApParryAt and (now - state.lastApParryAt) or nil
+	state.lastApParryAt = now
+end
 local function configuredFactor()
 	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); factor = finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
-	if remote and remote.getParryCps() > 2 then factor = 1 end
+	if apCps() > 2 then factor = 1 end
 	return factor
 end
 local function minimumBallSpeed() return T.MIN_PARRY_SPEED end
@@ -222,6 +233,7 @@ local function request(reason)
 		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível")) end
 		return false
 	end
+	recordApParry()
 	local configured = configuredFactor()
 	if configured > 0 then
 		local geometry = radius(speed, configured)
@@ -254,6 +266,7 @@ local function requestGrace()
 		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Grace deflect indisponível")) end
 		return false
 	end
+	recordApParry()
 	state.graceHandled, state.fired, state.lastFireAt = true, true, clock()
 	phase("fired", "sync_grace_parry_requested"); return true
 end
@@ -307,7 +320,7 @@ function AutoParry.setup(deps)
 	end
 	detach("setup"); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote; state.player = utils.getLocalPlayer()
 	if not state.player then return false, "Players.LocalPlayer indisponível" end
-	resetTracking(); phase("detached", "setup_complete"); return true
+	resetTracking(); state.lastApParryAt, state.lastApParryInterval = nil, nil; phase("detached", "setup_complete"); return true
 end
 function AutoParry.bindCharacter(character)
 	if not utils or not gameInfo or not remote then return false, "dependências não inicializadas" end
@@ -568,14 +581,14 @@ function AutoParry.getStatus()
 	}
 end
 function AutoParry.getCpsStatus()
-	local cps = remote and remote.getParryCps() or 0; return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
+	local cps = apCps(); return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
 end
 
 -- contract
 AutoParry.__contract = {
 	requires = { Remote = "remote", GameInfo = "gameinfo", Utils = "utils" },
 	requiresMethods = {
-		Remote = { "fireParry", "getParrySendTiming", "getParryCps" },
+		Remote = { "fireParry" },
 		GameInfo = {
 			"getSnapshotAt",
 			"isSnapshotValid",
