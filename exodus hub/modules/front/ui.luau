@@ -317,7 +317,11 @@ local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
 local CARD_SCALE = 1.06
 local CARD_MAX_H = CARD_H
-local function cardHeight(height) return math.clamp(height or CARD_H, 0, CARD_MAX_H) end
+-- Standard controls share the toggle height. Composite controls can request
+-- their own intrinsic height; spacing always follows the rendered height.
+local function cardHeight(height)
+	return math.max(0, height or CARD_MAX_H)
+end
 local function offOnText(labelText, value)
 	local color = value and "#22C55E" or "#EF4444"; return labelText .. ': <font color="' .. color .. '">' .. (value and "ON" or "OFF") .. "</font>"
 end
