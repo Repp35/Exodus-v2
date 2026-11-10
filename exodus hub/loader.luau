@@ -415,9 +415,7 @@ local function startInternal()
 	if not stopPreviousRuntime() then return false, "Loader", "falha ao encerrar a sessão anterior" end
 	clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
 	if not playerReady then return false, "Loader", playerError end
-	local localRoot = findCompleteLocalRoot()
-	local version, revisionError
-	if not localRoot then version, revisionError = resolveLatestRevision() end
+	local version, revisionError = resolveLatestRevision(); local localRoot = not version and findCompleteLocalRoot() or nil
 	if not localRoot and not version then return false, "Loader", "SHA indisponível e nenhum conjunto local completo: " .. tostring(revisionError) end
 	local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, localRoot)
 	if not loaded then return false, moduleName, loadError end

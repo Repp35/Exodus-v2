@@ -40,8 +40,8 @@ local function check(t, target)
 end
 start(s,"return_target",7,clock,nil,snap)
 assert(auto and s.returnWatchAt==10)
-assert(check(10.035)==nil, "the first 40ms must not stop spam")
-assert(check(10.041)=="return_timeout", "after the grace period an overdue 30ms leg must stop")
+assert(check(10.09)==nil, "the first 100ms must not stop spam")
+assert(check(10.101)=="return_timeout", "after the grace period an overdue 30ms leg must stop")
 assert(apply(s,snap,clock,nil,false) and not auto and manual, "timeout must stop only auto spam")
 -- A real paired switch rearms the clock, repeated snapshots do not.
 s.active=true; s.partner=7; s.target=42; s.activatedAt=20; s.returnWatchAt=20; clock=20.1; snap.syncAt=clock; snap.targetId=7

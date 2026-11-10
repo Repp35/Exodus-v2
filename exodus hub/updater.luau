@@ -22,13 +22,20 @@ return function(loadedRevision, request)
 		return true
 	end
 	local function latestRevision()
-		local body, err = request("https://github.com/Repp35/Exodus-v2/commits/main.atom?exodus_cache=" .. tostring(os.time()), {
-			["Accept"] = "application/atom+xml",
+		local body, err = request("https://api.github.com/repos/Repp35/Exodus-v2/commits/main?exodus_cache=" .. tostring(os.time()), {
+			["Accept"] = "application/vnd.github+json",
 			["User-Agent"] = "Exodus-Hub-Updater",
 		})
-		if not body then return nil, err end
-		local entry = body:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
-		if not sha or #sha ~= 40 then return nil, "Feed de commits inválido" end
+		if body then
+			local ok, document = pcall(game:GetService("HttpService").JSONDecode, game:GetService("HttpService"), body); local sha = ok and type(document) == "table" and document.sha
+			if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
+		end
+		local feed, feedError = request(
+			"https://github.com/Repp35/Exodus-v2/commits/main.atom?exodus_cache=" .. tostring(os.time()),
+			{ ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Updater" }
+		)
+		local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
+		if not sha or #sha ~= 40 then return nil, feedError or err or "SHA indisponível" end
 		return sha
 	end
 	task.spawn(function()
@@ -58,7 +65,8 @@ return function(loadedRevision, request)
 					warn("[Exodus Updater] Falha ao baixar loader: " .. tostring(err)); pending = nil
 				end
 			end
-			if chunk and running() and safeToUpdate() then
+			local safe, ready = pcall(safeToUpdate)
+			if chunk and running() and safe and ready then
 				print("[Exodus Updater] Atualizando o hub...")
 				local ok, err = xpcall(chunk, function(value) return debug.traceback(tostring(value), 2) end)
 				if not ok then warn("[Exodus Updater] Falha ao reiniciar: " .. tostring(err)) end
