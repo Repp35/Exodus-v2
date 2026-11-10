@@ -33,6 +33,8 @@ local state = {
 	frameAllowance = 0,
 	triggerDistance = 0,
 	ping = 0,
+	legacyPing = 0.05,
+	legacyPingAt = 0,
 	pingRaw = nil,
 	pingCount = 0,
 	lastFireAt = 0,
@@ -85,6 +87,7 @@ local function resetTracking()
 	state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
 	state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
 	state.awayAt, state.awayTarget = nil, nil
+	state.legacyPing, state.legacyPingAt = 0.05, clock()
 	table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
@@ -208,7 +211,13 @@ end
 local function tick(character, root, generation)
 	if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
 	if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
-	local time = clock(); samplePing(); local value = gameInfo.getSnapshotAt(time)
+	local time = clock(); samplePing()
+	if time - state.legacyPingAt >= 2 then
+		state.legacyPingAt = time
+		local ok, raw = pcall(function() return game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue() / 1000 end)
+		if ok and finite(raw) and raw > 0 then state.legacyPing = state.legacyPing * 0.85 + raw * 0.15 end
+	end
+	local value = gameInfo.getSnapshotAt(time)
 	if generation ~= state.generation or not state.bound or not state.alive then return end
 	if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
 	if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
@@ -229,7 +238,15 @@ local function tick(character, root, generation)
 	local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); threshold += math.max(closing, 0) * state.frameAllowance
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 	state.closingSpeed, state.triggerDistance = closing, threshold
-	if value.grace == true and distance <= threshold then request("grace_parry_requested") elseif closing > 0 and distance <= threshold then request("parry_requested") end
+	if value.grace == true then
+		local graceSpeed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or 45
+		local graceRadius = math.clamp(graceSpeed * 0.40 + 6, 9, 90) * 1.4 + 10
+		local ping = math.clamp(state.legacyPing * 1.1 + 0.02, 0.02, 0.25)
+		local killThreshold = 4 + ping * graceSpeed + 2
+		if distance <= graceRadius or distance <= killThreshold then request("grace_parry_requested") end
+		return
+	end
+	if closing > 0 and distance <= threshold then request("parry_requested") end
 end
 
 -- setup
