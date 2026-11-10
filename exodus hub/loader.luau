@@ -563,14 +563,16 @@ local function reloadLatest(onFailure)
 	end)
 	return true
 end
+local startupPerformed = false
 local function startInternal()
-	printStartup("Exodus: iniciando")
+	local requestedRevision = validRevision(_G.ExodusRequestedRevision) and _G.ExodusRequestedRevision or nil; _G.ExodusRequestedRevision = nil; local version, revisionError = requestedRevision, nil
+	if not version then version, revisionError = resolveLatestRevision() end
+	if not version then version = readSavedRevision() end
+	if not requestedRevision and Exodus.Started == true and Exodus.UIReady == true and validRevision(version) and Exodus.Revision == version then return true end
+	local sourceRoot = version and findCompleteCacheRoot(version) or findCompleteLocalRoot(); startupPerformed = true; printStartup("Exodus: iniciando")
 	if not stopPreviousRuntime() then return false, "Loader", "falha ao encerrar a sessão anterior" end
 	clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
 	if not playerReady then return false, "Loader", playerError end
-	local requestedRevision = validRevision(_G.ExodusRequestedRevision) and _G.ExodusRequestedRevision or nil; _G.ExodusRequestedRevision = nil; local version = requestedRevision or readSavedRevision(); local sourceRoot = version and findCompleteCacheRoot(version) or findCompleteLocalRoot()
-	local revisionError
-	if not version and not sourceRoot then version, revisionError = resolveLatestRevision() end
 	local unpinned = not validRevision(version) and not sourceRoot
 	if unpinned then version = BRANCH; warn("[Exodus] SHA indisponível; carregando main até a próxima verificação: " .. tostring(revisionError)) end
 	local cacheRevision = validRevision(version) and version or nil
@@ -624,12 +626,13 @@ function Loader.start()
 	if startLock or _G.ExodusLoaderStartToken then return false, "Loader", "startup já em andamento" end
 	local ready, reason = validateExecutor()
 	if not ready then return false, "Loader", reason end
-	startLock = true; _G.ExodusLoaderStartToken = startToken; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules; Exodus.Loader = Loader; Modules.Loader = Loader
+	startLock = true; startupPerformed = false; _G.ExodusLoaderStartToken = startToken; Exodus.Modules = Modules; _G.Exodus = Exodus; _G.ExodusModules = Modules
 	local ok, started, moduleName, startError = xpcall(startInternal, function(err) return debug.traceback(tostring(err), 2) end)
 	startLock = false
 	if _G.ExodusLoaderStartToken == startToken then _G.ExodusLoaderStartToken = nil end
 	if not ok then rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry(); return false, "Loader", started end
 	if started ~= true then rollbackLoaded(activeLoaded); activeLoaded = nil; clearRegistry(); return started, moduleName, startError end
+	if startupPerformed then Exodus.Loader = Loader; Modules.Loader = Loader; _G.ExodusLoaderSessionToken = startToken end
 	activeLoaded = nil; return started, moduleName, startError
 end
 local function startSafely()
@@ -645,14 +648,14 @@ local function startSafely()
 end
 local started = startSafely()
 Exodus.Started = started == true
-if started then
+if started and startupPerformed then
 	local revision = Exodus.Revision or readSavedRevision() or BRANCH
 	task.spawn(function()
 		local source = validRevision(revision) and readCacheFile(revision, "updater.luau")
 		local fetchError
 		if not source then source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "updater.luau") end
 		if not source then warn("[Exodus Updater] " .. tostring(fetchError)); return end
-		if not Exodus.Started or (Exodus.Revision and validRevision(revision) and Exodus.Revision ~= revision) then return end
+		if _G.ExodusLoaderSessionToken ~= startToken or not Exodus.Started or (Exodus.Revision and validRevision(revision) and Exodus.Revision ~= revision) then return end
 		if validRevision(revision) then saveCacheFile(revision, "updater.luau", source) end
 		local chunk, compileError = compile("Exodus updater", source)
 		if not chunk then warn("[Exodus Updater] " .. tostring(compileError)); return end

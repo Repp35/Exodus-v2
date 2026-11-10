@@ -49,11 +49,12 @@ return function(loadedRevision, request, options)
 	task.spawn(function()
 		local pendingRevision
 		local pendingSource
-		local nextCheck = 0
+		local nextCheck = os.clock() + 5
 		while running() do
 			local now = os.clock()
 			if now >= nextCheck and not pendingRevision then
 				local revision, checkError, checkMetadata = latestRevision()
+				if not running() then return end
 				if revision then
 					local current = currentRevision()
 					if revision ~= current and revision ~= loadedRevision then pendingRevision = revision; nextCheck = now else nextCheck = now + 5 end
@@ -66,6 +67,7 @@ return function(loadedRevision, request, options)
 					"https://raw.githubusercontent.com/Repp35/Exodus-v2/" .. pendingRevision .. "/exodus%20hub/loader.luau?exodus_cache=" .. tostring(os.time()),
 					{ ["User-Agent"] = "Exodus-Hub-Updater" }
 				)
+				if not running() then return end
 				if source then
 					local chunk, compileError = loadstring(source, "Exodus updater loader")
 					if chunk then
@@ -83,7 +85,7 @@ return function(loadedRevision, request, options)
 			if pendingRevision and pendingSource and running() then
 				local safe = false; local ok, result = pcall(safeToUpdate)
 				if ok then safe = result == true end
-				if safe then
+				if safe and running() and pendingRevision ~= currentRevision() and not _G.ExodusLoaderStartToken then
 					_G.ExodusRequestedRevision = pendingRevision
 					local executed, executionError = xpcall(pendingSource, function(err) return debug.traceback(tostring(err), 2) end)
 					if not executed then _G.ExodusRequestedRevision = nil; warn("[Exodus Updater] " .. tostring(executionError)) end
