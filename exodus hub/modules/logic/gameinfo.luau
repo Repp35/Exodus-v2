@@ -108,8 +108,8 @@ local function getReplicator()
 	local folder = child(ts(), "BallReplicator"); local module = folder and (folder:IsA("ModuleScript") and folder or child(folder, "BallReplicator"))
 	if module ~= replicatorScript then replicatorScript, replicator = module, nil end
 	if not replicator and module then
-		local value = load(module, "BallReplicator")
-		if value then
+		local ok, value = pcall(load, module, "BallReplicator")
+		if ok then
 			if type(value.BallReplicator) == "table" then
 				replicator = value.BallReplicator
 			elseif value.syncData ~= nil then
@@ -460,10 +460,57 @@ function GameInfo.applyPacket(value)
 	end
 	packet, packetAt = table.clone(value), os.clock(); syncReceivedAt = packetAt; return true
 end
+local function decodeBallPacketFallback(value)
+	if typeof(value) ~= "buffer" or buffer.len(value) < 92 then return nil end
+	local flags = buffer.readu8(value, 0); local serverTime = buffer.readf64(value, 3); local x, y, z = buffer.readf32(value, 11), buffer.readf32(value, 15), buffer.readf32(value, 19); local dx, dy, dz = buffer.readf32(value, 23), buffer.readf32(value, 27), buffer.readf32(value, 31); local speed, accel, maximum = buffer.readf32(value, 35), buffer.readf32(value, 39), buffer.readf32(value, 43)
+	local curve, curveMax = buffer.readf32(value, 47), buffer.readf32(value, 51); local target, highlight, possessor = buffer.readf64(value, 55), buffer.readf64(value, 63), buffer.readf64(value, 83)
+	if
+		not finite(serverTime)
+		or not finite(x)
+		or not finite(y)
+		or not finite(z)
+		or not finite(dx)
+		or not finite(dy)
+		or not finite(dz)
+		or not finite(speed)
+		or speed < 0
+		or not finite(accel)
+		or not finite(maximum)
+		or maximum < 0
+		or not finite(curve)
+		or curve < 0
+		or not finite(curveMax)
+		or curveMax < 0
+		or not finite(target)
+		or not finite(highlight)
+		or not finite(possessor)
+	then
+		return nil
+	end
+	return {
+		seq = buffer.readu16(value, 1),
+		serverTime = serverTime,
+		position = Vector3.new(x, y, z),
+		speed = speed,
+		targetId = target,
+		highlightId = highlight,
+		possessorId = possessor,
+		teleported = bit32.btest(flags, 1),
+		locked = bit32.btest(flags, 2),
+		grace = bit32.btest(flags, 4),
+		oldGrace = bit32.btest(flags, 8),
+		possessed = bit32.btest(flags, 32),
+	}
+end
 function GameInfo.decodeBallPacket(value)
-	local provider = getReplicator()
-	if not provider or type(provider.Decode) ~= "function" then error("API externa ausente: BallReplicator.Decode", 2) end
-	local decoded = provider:Decode(value)
+	local ok, provider = pcall(getReplicator)
+	local decoded
+	if ok and provider and type(provider.Decode) == "function" then
+		local success, result = pcall(provider.Decode, provider, value)
+		if success then decoded = result else decoded = decodeBallPacketFallback(value) end
+	else
+		decoded = decodeBallPacketFallback(value)
+	end
 	if type(decoded) ~= "table" then return nil end
 	return {
 		Sequence = decoded.seq,
