@@ -219,10 +219,11 @@ local function request(reason)
 		local geometry = radius(speed, configured)
 		if geometry then local denominator = speed * geometry.leadTime; local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured; appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed }) end
 	end
+	if state.localGraceActive and firedAt <= state.localGraceUntil then state.graceHandled = true end
 	phase("fired", reason); return true
 end
 local function requestGrace()
-	if state.graceHandled or not state.player or state.target ~= state.player.UserId then return false end
+	if state.graceHandled or not state.localGraceActive or clock() > state.localGraceUntil or not state.player or state.target ~= state.player.UserId then return false end
 	local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote
 	local function allowed()
 		return state.generation == generation
