@@ -221,6 +221,32 @@ local function request(reason)
 	end
 	phase("fired", reason); return true
 end
+local function requestGrace()
+	if state.graceHandled or not state.player or state.target ~= state.player.UserId then return false end
+	local generation, cycle = state.generation, state.cycle
+	local boundUtils, boundRemote = utils, remote
+	local function allowed()
+		return state.generation == generation and state.cycle == cycle
+			and state.alive and state.bound and state.player ~= nil
+			and state.target == state.player.UserId and not state.teleported
+			and utils == boundUtils and remote == boundRemote
+			and boundUtils.isActive() and not boundUtils.isSpamActive()
+			and boundUtils.getConfigValue("AutoParry") ~= false
+	end
+	local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
+	if not ok then detail, sent = sent, false end
+	if sent ~= true or not allowed() then
+		local now = clock()
+		if now - state.lastErrorAt >= 1 then
+			state.lastErrorAt = now
+			boundUtils.recordError("AutoParry", tostring(detail or "Grace deflect indisponível"))
+		end
+		return false
+	end
+	state.graceHandled, state.lastFireAt = true, clock()
+	phase("fired", "local_grace_parry_requested")
+	return true
+end
 local function tick(character, root, generation)
 	if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
 	if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
@@ -230,7 +256,6 @@ local function tick(character, root, generation)
 	if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
 	if utils.isSpamActive() then phase("waiting", "spam_active"); return end
 	if state.teleported or value.teleported then phase("waiting", "teleport_lock"); return end
-	if state.fired then phase("waiting", "target_already_parried"); return end
 	if value.locked == true then
 		state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0
 		phase("waiting", "ball_locked"); return
@@ -251,10 +276,11 @@ local function tick(character, root, generation)
 		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, true
 		state.closingSpeed, state.triggerDistance = closing, fullWindow.fullRadius
 		if not state.graceHandled and time - state.lastFireAt >= T.GRACE_COOLDOWN then
-			if request("local_grace_parry_requested") then state.graceHandled = true end
+			requestGrace()
 		end
 		return
 	end
+	if state.fired then phase("waiting", "target_already_parried"); return end
 	if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
 	if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
 	samplePing(); local geometry = radius(speed, configuredFactor())
