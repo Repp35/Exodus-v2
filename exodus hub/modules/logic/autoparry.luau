@@ -212,8 +212,7 @@ end
 local function tick(character, root, generation)
 	if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
 	if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
-	local time = clock()
-	local value = gameInfo.getSnapshotAt(time)
+	local time = clock(); local value = gameInfo.getSnapshotAt(time)
 	if generation ~= state.generation or not state.bound or not state.alive then return end
 	if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
 	if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
@@ -232,8 +231,7 @@ local function tick(character, root, generation)
 		local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
 		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 		state.closingSpeed, state.triggerDistance = closing, 0
-		request("grace_parry_requested")
-		return
+		request("grace_parry_requested"); return
 	end
 	if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
 	if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
