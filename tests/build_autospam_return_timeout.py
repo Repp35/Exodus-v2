@@ -43,6 +43,14 @@ assert(auto and s.returnWatchAt==10)
 assert(check(10.09)==nil, "the first 100ms must not stop spam")
 assert(check(10.101)=="return_timeout", "after the grace period an overdue 30ms leg must stop")
 assert(apply(s,snap,clock,nil,false) and not auto and manual, "timeout must stop only auto spam")
+-- A slow exchange cannot immediately restart; a later fast exchange can.
+snap.targetId=7; snap.syncAt=10.20; clock=10.20; inspect(s,7,clock,snap,nil)
+assert(s.stoppedPartner==7 and not auto, "slow switch must keep the return lock")
+snap.targetId=42; snap.syncAt=10.29; clock=10.29; inspect(s,42,clock,snap,nil)
+assert(s.stoppedPartner==7, "another slow switch must not unlock")
+snap.targetId=7; snap.syncAt=10.31; clock=10.31; inspect(s,7,clock,snap,nil)
+assert(s.stoppedPartner==nil, "a fast switch must unlock the same opponent")
+start(s,"close_return",7,clock,nil,snap); assert(auto, "fast exchange must allow reactivation")
 -- A real paired switch rearms the clock, repeated snapshots do not.
 s.active=true; s.partner=7; s.target=42; s.activatedAt=20; s.returnWatchAt=20; clock=20.1; snap.syncAt=clock; snap.targetId=7
 inspect(s,7,clock,snap,nil); assert(s.returnWatchAt==clock)

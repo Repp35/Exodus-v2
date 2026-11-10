@@ -73,6 +73,13 @@ local function snapshotSpeed(snapshot)
 	if not snapshot then return nil end
 	local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
 end
+local function returnTimeout(snapshot)
+	local speed = snapshotSpeed(snapshot); local minimum, maximum = gameInfo.getBallSpeedLimits()
+	if not finite(speed) or speed <= 0 or not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
+	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
+	local window = 0.85 - 0.65 * factor
+	local floor = 0.22 + 0.10 * math.clamp((speed - minimum) / 250, 0, 1); return T.DEACTIVATION.RETURN_TIMEOUT_FAST * math.max(window, floor) / 0.32
+end
 local function resetExchange(s)
 	s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil
 	s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
@@ -306,6 +313,7 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
 	if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < T.ACTIVATION.REACTIVATION_COOLDOWN) then return end
+	if s.lastStopReason == "return_timeout" and s.stoppedPartner == partner then return end
 	local haunter = reason == "haunter" or reason == "haunter_self"
 	if
 		not haunter
@@ -394,10 +402,8 @@ local function shouldDeactivate(s, snapshot, time, serverTime, targetChanged)
 		and speedFactor
 		and (target == localPlayer.UserId or target == s.partner)
 	then
-		local speed = snapshotSpeed(snapshot); local minimum = gameInfo.getBallSpeedLimits()
-		local baseWindow = 0.85 - 0.65 * speedFactor
-		local clashFloor = 0.22 + 0.10 * math.clamp((speed - minimum) / 250, 0, 1); local timeout = T.DEACTIVATION.RETURN_TIMEOUT_FAST * math.max(baseWindow, clashFloor) / 0.32
-		if time >= s.returnWatchAt and time - s.returnWatchAt >= timeout then return "return_timeout" end
+		local timeout = returnTimeout(snapshot)
+		if timeout and time >= s.returnWatchAt and time - s.returnWatchAt >= timeout then return "return_timeout" end
 	end
 	local protected = false
 	if validSnapshot and target and (target == localPlayer.UserId or target == s.partner) then
@@ -512,7 +518,16 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		and s.stoppedAt
 		and time - s.stoppedAt >= T.ACTIVATION.REACTIVATION_COOLDOWN
 	then
-		s.stoppedPartner, s.stoppedAt = nil, nil
+		local timeout = s.lastStopReason == "return_timeout"
+				and snapshot
+				and snapshot.targetUncertain ~= true
+				and snapshot.locked ~= true
+				and returnTimeout(snapshot)
+			or nil
+		local fastReturn = timeout and finite(s.lastSwitchAt) and time >= s.lastSwitchAt and time - s.lastSwitchAt < timeout
+		if s.lastStopReason ~= "return_timeout" or fastReturn then
+			s.stoppedPartner, s.stoppedAt = nil, nil
+		end
 	end
 	if previous and previous ~= target and (previous == me or target == me) and s.dashStart then
 		s.dashSwitchPartner, s.dashSwitchAt = previous == me and target or previous, time
