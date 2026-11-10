@@ -229,7 +229,11 @@ local function tick(character, root, generation)
 	local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); threshold += math.max(closing, 0) * state.frameAllowance
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 	state.closingSpeed, state.triggerDistance = closing, threshold
-	if closing > 0 and distance <= threshold then request("parry_requested") end
+	if value.grace == true and distance <= threshold then
+		request("grace_parry_requested")
+	elseif closing > 0 and distance <= threshold then
+		request("parry_requested")
+	end
 end
 
 -- setup
