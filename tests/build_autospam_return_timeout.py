@@ -69,7 +69,7 @@ assert(check(40.2)==nil and s.returnWatchAt==nil)
 snap.valid=true; s.returnWatchAt=41; snap.targetUncertain=true
 assert(check(41.2)==nil and s.returnWatchAt==nil)
 snap.targetUncertain=false; s.returnWatchAt=42; snap.locked=true
-assert(check(42.2)=="ball_locked", "fresh locked ball must stop automatic spam")
+assert(check(42.2)==nil and s.returnWatchAt==nil, "locked flag alone must not stop automatic spam")
 snap.locked=false; s.returnWatchAt=43; snap.syncAt=43
 assert(reason(s,snap,43.2,nil,false)==nil and s.returnWatchAt==43, "short snapshot gaps must preserve the target-switch clock")
 assert(reason(s,snap,43.51,nil,false)==nil and s.returnWatchAt==nil, "a long blackout must clear the clock")
@@ -92,12 +92,15 @@ assert(check(44.24)==nil, "diversion needs confirmation")
 assert(check(44.29)=="ball_diverted", "confirmed diversion must stop")
 snap.velocity=vec(600); snap.position=vec(5); distance=7
 assert(check(44.30,99)=="distant_target", "new opponent must stop the old clash")
--- The lock must stop even when the incoming packet has no usable target.
+-- A locked packet is not itself a reason to stop automatic spam.
 s.active=true; s.partner=7; s.target=42; s.activatedAt=44; auto=true; clock=44.4
 snap.valid=false; snap.targetId=-1
 mod.onBallSync({Source="packet",Sequence=1,TargetPlayerID=-1,Speed=600,Locked=true})
-assert(not auto and s.reason=="ball_locked", "locked packet without target must stop")
+assert(auto and s.active, "locked packet without target must not stop auto spam")
 snap.valid=true; snap.targetId=42; snap.locked=false
+g.getBallFrozen=function() return true end
+assert(apply(s,snap,clock,nil,false) and not auto and s.reason=="frozen", "freezing ability must still stop auto spam")
+g.getBallFrozen=function() return false end
 -- A fresh paired packet re-arms after a blackout, even without a target change.
 s.active=true; s.partner=7; s.target=42; s.activatedAt=44.4; s.returnWatchAt=nil; auto=true; clock=44.5
 mod.onBallSync({Source="packet",Sequence=2,TargetPlayerID=42,Speed=600,Locked=false})
@@ -106,7 +109,7 @@ assert(auto and s.returnWatchAt==clock, "fresh same-target packet must rearm the
 s.target=42; s.active=true; s.partner=7; s.returnWatchAt=44; snap.targetId=99; snap.syncAt=44.01
 inspect(s,99,44.01,snap,nil); assert(s.returnWatchAt==nil)
 s.target=42; s.active=true; s.partner=7; s.returnWatchAt=45; auto=true; clock=45.01; mod.onBallSync({Source="packet",Teleported=true})
-assert(s.returnWatchAt==nil and not auto and s.reason=="ball_teleported", "teleport must stop auto spam")
+assert(s.returnWatchAt==nil and auto and s.active, "teleport must reset tracking without stopping auto spam")
 print("Auto Spam return timeout: PASS")
 '''
 output.write_text(script.replace('SOURCE', '[========[' + source + ']========]', 1))
