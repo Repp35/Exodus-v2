@@ -643,11 +643,8 @@ function AutoSpam.bindCharacter(character)
 		if current ~= s then return end
 		if not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent then connectHaunter() end
 		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local time = now()
-		local clashContext
-		if not s.clashContextAt or time - s.clashContextAt >= 0.15 then
-			s.clashContextAt, s.cachedClashContext = time, gameInfo.getClashContext()
-		end
-		clashContext = s.cachedClashContext
+		-- No cached clash context in activation decisions: never delay a new clash.
+		local clashContext = gameInfo.getClashContext()
 		local liveSnapshot
 		if not s.lobbyCheckAt or time - s.lobbyCheckAt >= 0.25 then s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time); s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot) end
 		if not s.lobbySnapshotValid then
@@ -693,7 +690,8 @@ function AutoSpam.bindCharacter(character)
 			s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 			return
 		end
-		if s.active or s.pending or s.dashStart or utils.isManualSpamActive() then evaluate(s, time, false) end
+		-- Evaluate every frame: also detects the FIRST dash frame while dashStart is nil.
+		evaluate(s, time, false)
 		if typeof(s.lastRootPosition) == "Vector3" and (s.root.Position - s.lastRootPosition).Magnitude > T.ACTIVATION.HAUNTER_RANGE then
 			s.recentRootPosition, s.recentRootAt = s.lastRootPosition, time
 		end
