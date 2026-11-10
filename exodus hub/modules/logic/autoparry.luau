@@ -580,14 +580,15 @@ function AutoParry.getStatus()
 	}
 end
 function AutoParry.getCpsStatus()
-	local interval, lastSentAt = remote and remote.getParrySendTiming(); local recent = type(lastSentAt) == "number" and clock() - lastSentAt <= T.FAST_EXCHANGE_RECENCY; local cps = recent and finite(interval) and interval > 0 and 1 / interval or 0; return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
+	local cps = remote and remote.getParryCps() or 0
+	return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
 end
 
 -- contract
 AutoParry.__contract = {
 	requires = { Remote = "remote", GameInfo = "gameinfo", Utils = "utils" },
 	requiresMethods = {
-		Remote = { "fireParry", "getParrySendTiming" },
+		Remote = { "fireParry", "getParrySendTiming", "getParryCps" },
 		GameInfo = {
 			"getSnapshotAt",
 			"isSnapshotValid",
