@@ -194,7 +194,14 @@ local function observeSnapshot(snapshot, time)
 	local order = sequenceOrder(snapshot.syncSequence)
 	if order == "old" then return false end
 	if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then return false end
-	if order == "new" then state.sequence = snapshot.syncSequence end
+	if order == "new" then
+		state.sequence = snapshot.syncSequence
+		-- Training packets describe a new practice ball/shot; they are not match target cycles.
+		if mode == "training" then
+			state.fired, state.graceHandled, state.localGraceActive, state.localGraceUntil = false, false, false, 0
+			state.cycle += 1
+		end
+	end
 	observeTarget(snapshot.targetId, time); return true
 end
 
@@ -282,7 +289,7 @@ local function tick(character, root, generation)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if not value.ball.Parent then return end
 	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; samplePing(); local fullWindow = radius(speed, 1); local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
-	local targeted = value.targetUncertain ~= true and state.player ~= nil and value.targetId == state.player.UserId; local inKillDistance = distance <= T.GRACE_KILL_DISTANCE
+	local targeted = value.targetUncertain ~= true and state.player ~= nil and value.targetId == state.player.UserId; local inKillDistance = value.mode ~= "training" and distance <= T.GRACE_KILL_DISTANCE
 	if not targeted or not inKillDistance then
 		state.localGraceActive, state.graceHandled, state.localGraceUntil = false, false, 0
 	elseif not state.localGraceActive then
