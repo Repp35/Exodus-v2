@@ -2,12 +2,12 @@
 
 -- dependencies
 local Remote = {}
-local utils, gameInfo
+local gameInfo
 
 -- lifecycle
 function Remote.setup(deps)
-	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências inválidas: Utils ou GameInfo" end
-	utils, gameInfo = deps.Utils, deps.GameInfo; return true
+	if type(deps) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependência inválida: GameInfo" end
+	gameInfo = deps.GameInfo; return true
 end
 
 -- dispatch
@@ -38,7 +38,7 @@ function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), "
 
 -- contract
 Remote.__contract = {
-	requires = { Utils = "utils", GameInfo = "gameinfo" },
+	requires = { GameInfo = "gameinfo" },
 	requiresMethods = {
 		GameInfo = { "getDeflectAbility", "getDarkSealAbility", "getFierceDeflectAbility", "getDashAbility" },
 	},

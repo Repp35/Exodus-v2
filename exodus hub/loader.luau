@@ -2,7 +2,7 @@
 
 -- logging
 local function printRawError(moduleName, message, filePath)
-	local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message)); local warned = false
+	local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message))
 	if type(warn) == "function" then warn(output) elseif type(print) == "function" then print(output) end
 end
 local function printStartup(message)
@@ -245,16 +245,6 @@ local function loadModules(urls, localRoot)
 end
 
 -- setup
-local function resolveDeps(loaded, consumer, requires)
-	local deps = {}
-	if type(requires) ~= "table" then return deps end
-	for depName, sourceKey in pairs(requires) do
-		local dependency = loaded[sourceKey]
-		if dependency == nil then error(("API interna ausente: dependência %s (%s)"):format(tostring(depName), tostring(sourceKey)), 2) end
-		deps[depName] = loaded.permissions.wrap(consumer, sourceKey, dependency)
-	end
-	return deps
-end
 local function contractOf(module)
 	if type(module) ~= "table" then return {} end
 	return module.__contract or {}
@@ -265,15 +255,7 @@ local function collectCharacterBinds(loaded)
 		local module = loaded[name]
 		if name ~= "utils" and type(module) == "table" then
 			local contract = contractOf(module); local hasBindFlag = contract.bindCharacter == true; local hasBindFn = type(module.bindCharacter) == "function"; local hasDetachFn = type(module.detachCharacter) == "function"
-			if hasBindFlag and hasBindFn and hasDetachFn then
-				binds[#binds + 1] = {
-					name = name,
-					bind = loaded.permissions.wrap("character", name, module).bindCharacter,
-					detach = loaded.permissions.wrap("character", name, module).detachCharacter,
-				}
-			elseif hasBindFlag then
-				return nil, name, "contrato bindCharacter incompleto"
-			end
+			if hasBindFlag and hasBindFn and hasDetachFn then local api = loaded.permissions.wrap("character", name, module); binds[#binds + 1] = { name = name, bind = api.bindCharacter, detach = api.detachCharacter } elseif hasBindFlag then return nil, name, "contrato bindCharacter incompleto" end
 		end
 	end
 	return binds
@@ -285,30 +267,7 @@ local function initializeModules(loaded)
 		if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
 			local module = loaded[name]
 			if type(module) ~= "table" or type(module.setup) ~= "function" then error("API interna ausente: " .. name .. ".setup", 2) end
-			local contract = contractOf(module); local deps, missingDependency = resolveDeps(loaded, name, contract.requires)
-			if not deps then error(("%s: dependência não carregada: %s"):format(name, tostring(missingDependency)), 2) end
-			if contract.requiresMethods ~= nil then
-				if type(contract.requiresMethods) ~= "table" then error(name .. ": requiresMethods inválido", 2) end
-				for dependencyName, methods in pairs(contract.requiresMethods) do
-					local dependency = deps[dependencyName]
-					if type(dependency) ~= "table" or type(methods) ~= "table" then error(name .. ": dependência inválida: " .. tostring(dependencyName), 2) end
-					for _, method in ipairs(methods) do
-						if type(method) ~= "string" or type(dependency[method]) ~= "function" then error(("API interna ausente: %s.%s (exigida por %s)"):format(tostring(dependencyName), tostring(method), name), 2) end
-					end
-				end
-			end
-			if contract.requiresVersions ~= nil then
-				if type(contract.requiresVersions) ~= "table" then error(name .. ": requiresVersions inválido", 2) end
-				for dependencyName, minimum in pairs(contract.requiresVersions) do
-					local sourceName = contract.requires[dependencyName]; local dependencyContract = contractOf(loaded[sourceName]); local version = dependencyContract.version
-					if type(minimum) ~= "number" or type(version) ~= "number" or version < minimum then
-						error(
-							("API incompatível: %s requer versão %s; encontrada %s"):format(tostring(dependencyName), tostring(minimum), tostring(version)),
-							2
-						)
-					end
-				end
-			end
+			local deps = loaded.permissions.resolve(name, loaded)
 			if name == "character" then deps.characterBinds = characterBinds end
 			local initialized, setupError = module.setup(deps)
 			if initialized ~= true then error(("%s.setup falhou: %s"):format(name, tostring(setupError or initialized)), 2) end
@@ -424,16 +383,11 @@ local function bindRuntime(loaded)
 end
 
 -- interface
-local function loadInterface(interface, utils, controls, uiConfig, gameInfo, autoSpam)
+local function loadInterface(loaded, controls)
+	local interface = loaded.ui
 	if type(interface) ~= "table" then return false, "UI", "módulo não carregado" end
 	if type(interface.setup) ~= "function" then return false, "UI", "setup ausente" end
-	local setupResult, setupError = interface.setup({
-		Utils = utils,
-		Controls = controls,
-		UIConfig = uiConfig,
-		GameInfo = gameInfo,
-		AutoSpam = autoSpam,
-	})
+	local dependencies = loaded.permissions.resolve("ui", loaded); dependencies.Controls = controls; local setupResult, setupError = interface.setup(dependencies)
 	if setupResult ~= true then return false, "UI", setupError end
 	return true
 end
@@ -461,15 +415,7 @@ local function startInternal()
 	if not localRoot and not version then return false, "Loader", "SHA indisponível e nenhum conjunto local completo: " .. tostring(revisionError) end
 	local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, localRoot)
 	if not loaded then return false, moduleName, loadError end
-	activeLoaded = loaded
-	for _, entry in ipairs(MODULE_MANIFEST) do
-		local name = entry.name; local module = loaded[name]; local contract = module and module.__contract; local methods = type(contract) == "table" and contract.provides or nil
-		if type(methods) ~= "table" then error(name .. ": contrato provides ausente ou inválido", 2) end
-		for _, method in ipairs(methods) do
-			if type(module) ~= "table" or type(module[method]) ~= "function" then error("API interna ausente: " .. name .. "." .. tostring(method), 2) end
-		end
-	end
-	local utils = loaded.utils
+	activeLoaded = loaded; local utils = loaded.utils
 	if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
 	utils.start(); utils.setLifecyclePhase("loading"); Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot()
 	for _, entry in ipairs(MODULE_MANIFEST) do
@@ -491,24 +437,17 @@ local function startInternal()
 	utils.setLifecyclePhase("binding"); local runtime, runtimeError = bindRuntime(loaded, utils)
 	if type(runtime) ~= "table" then utils.stop(); return false, "Runtime", runtimeError end
 	Exodus.Runtime = runtime; _G.ExodusOnBurst = loaded.autoparry.fire
-	local uiReady, uiModule, uiError = loadInterface(
-		loaded.ui,
-		loaded.permissions.wrap("ui", "utils", utils),
-		{
-			onAutoDarkChanged = function() loaded.autodark.sync() end,
-			onAutoJumpChanged = function() loaded.autojump.sync() end,
-			onUpDash = function()
-				local ok, err = loaded.movement.upDash()
-				if not ok then utils.recordError("UpDash", err or "Dash indisponível") end
-			end,
-			onPanic = function()
-				loaded.autoparry.resetState(); loaded.autospam.stopSpam()
-			end,
-		},
-		loaded.permissions.wrap("ui", "uiconfig", loaded.uiconfig),
-		loaded.permissions.wrap("ui", "gameinfo", loaded.gameinfo),
-		loaded.permissions.wrap("ui", "autospam", loaded.autospam)
-	)
+	local uiReady, uiModule, uiError = loadInterface(loaded, {
+		onAutoDarkChanged = function() loaded.autodark.sync() end,
+		onAutoJumpChanged = function() loaded.autojump.sync() end,
+		onUpDash = function()
+			local ok, err = loaded.movement.upDash()
+			if not ok then utils.recordError("UpDash", err or "Dash indisponível") end
+		end,
+		onPanic = function()
+			loaded.autoparry.resetState(); loaded.autospam.stopSpam()
+		end,
+	})
 	if not uiReady then utils.stop(); return false, uiModule, uiError end
 	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); Exodus.Revision = version; printStartup("Exodus: iniciado"); return true
 end

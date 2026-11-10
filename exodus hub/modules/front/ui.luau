@@ -1401,8 +1401,29 @@ end
 
 -- contract
 ExodusUI.__contract = {
-	requires = { GameInfo = "gameinfo", AutoSpam = "autospam" },
-	requiresMethods = { GameInfo = { "areAbilitiesEnabled", "observeAbilityMode", "getSnapshotAt", "isSnapshotValid" }, AutoSpam = { "getStatus" } },
+	requires = { Utils = "utils", UIConfig = "uiconfig", GameInfo = "gameinfo", AutoSpam = "autospam" },
+	requiresMethods = {
+		Utils = {
+			"getConfig",
+			"getConfigValue",
+			"getLocalPlayer",
+			"isActive",
+			"isManualSpamActive",
+			"setConfig",
+			"setManualSpamActive",
+			"normalizeSpamRate",
+			"observeConfig",
+			"observeSpam",
+			"recordError",
+			"stop",
+			"name",
+			"version",
+			"author",
+		},
+		GameInfo = { "areAbilitiesEnabled", "observeAbilityMode", "getSnapshotAt", "isSnapshotValid" },
+		AutoSpam = { "getStatus" },
+	},
+
 	provides = { "setup" },
 }
 

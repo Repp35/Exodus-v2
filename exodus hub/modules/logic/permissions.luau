@@ -12,7 +12,7 @@ end
 
 -- policy-table
 local POLICIES = {
-	permissions = { provide = allow("validate wrap policy"), consume = {} },
+	permissions = { provide = allow("validate wrap resolve policy"), consume = {} },
 	config = { provide = allow("register defaults validatePatch normalizePatch validate getRegistry"), consume = {} },
 	uiconfig = { provide = allow(""), consume = {}, data = allow("panelToggles panelComponents") },
 	utils = {
@@ -31,7 +31,7 @@ local POLICIES = {
 	},
 	remote = {
 		provide = allow("setup fireParry fireDark fireFierce fireDash"),
-		consume = { utils = allow(""), gameinfo = allow("getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
+		consume = { gameinfo = allow("getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
 	},
 	autoparry = {
 		provide = allow(
@@ -52,9 +52,8 @@ local POLICIES = {
 			"setup bindCharacter detachCharacter teardown onBallSync isActive getPullEvent stopSpam getTargetSwitch getActivationContext getDashData getStatus"
 		),
 		consume = {
-			autoparry = allow("tryRedirectReturn"),
 			utils = allow(
-				"apiVersion createClashLog appendClashLog getConfig getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
+				"apiVersion createClashLog appendClashLog getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
 			),
 			gameinfo = allow(
 				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDashAbility getPlayerDeflectRange getPlayerRawRadius getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getAveragePing getSnapshotAt getTargetId isSnapshotValid"
@@ -84,7 +83,7 @@ local POLICIES = {
 		consume = {
 			utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
 			gameinfo = allow(
-				"areAbilitiesEnabled getDeflectServerEvents getLastDeflectPressAt getDeflectWindow getLocalPing getSnapshotAt isSnapshotValid getBallFrozen isBallWithinDeflectRadius"
+				"areAbilitiesEnabled getDeflectServerEvents getLastDeflectPressAt getDeflectWindow getLocalPing getSnapshotAt isSnapshotValid getBallFrozen"
 			),
 			autoparry = allow("beginFierce cancelFierce"),
 			remote = allow("fireFierce"),
@@ -167,12 +166,22 @@ local function validate(name, module)
 		if not entry.provide[method] then deny(name, "api.expose." .. tostring(method)) end
 		if type(module[method]) ~= "function" then error(name .. ": API declarada ausente: " .. method, 2) end
 	end
-	for dependencyName, source in pairs(contract.requires or {}) do
-		if not entry.consume[source] then deny(name, "api.consume." .. tostring(source)) end
-		local requirements = contract.requiresMethods and contract.requiresMethods[dependencyName]
-		for _, method in ipairs(requirements or {}) do
+	local requires, requirements, versions = contract.requires or {}, contract.requiresMethods or {}, contract.requiresVersions or {}
+	if type(requires) ~= "table" or type(requirements) ~= "table" or type(versions) ~= "table" then error(name .. ": dependências inválidas", 2) end
+	for dependencyName, source in pairs(requires) do
+		if type(dependencyName) ~= "string" or type(source) ~= "string" then error(name .. ": dependência inválida", 2) end
+		if not entry.consume[source] then deny(name, "api.consume." .. source) end
+	end
+	for dependencyName, methods in pairs(requirements) do
+		local source = requires[dependencyName]
+		if not source or type(methods) ~= "table" then error(name .. ": dependência inválida: " .. tostring(dependencyName), 2) end
+		for _, method in ipairs(methods) do
+			if type(method) ~= "string" then error(name .. ": nome de método inválido", 2) end
 			if not entry.consume[source][method] then deny(name, "api.consume." .. source .. "." .. method) end
 		end
+	end
+	for dependencyName, minimum in pairs(versions) do
+		if not requires[dependencyName] or type(minimum) ~= "number" then error(name .. ": versão de dependência inválida: " .. tostring(dependencyName), 2) end
 	end
 	return true
 end
@@ -206,9 +215,39 @@ local function wrap(consumer, source, provider)
 	setmetatable(view, metatable); table.freeze(view); metatable.__metatable = "locked"; table.freeze(metatable); return view
 end
 
+-- dependency-resolution
+local function resolve(consumer, loaded)
+	if type(loaded) ~= "table" or type(loaded[consumer]) ~= "table" then error("Permissions: módulo não carregado: " .. tostring(consumer), 2) end
+	local contract = loaded[consumer].__contract
+	if type(contract) ~= "table" then error(consumer .. ": contrato ausente", 2) end
+	local requires, methods, versions = contract.requires or {}, contract.requiresMethods or {}, contract.requiresVersions or {}
+	if type(requires) ~= "table" then error(consumer .. ": requires inválido", 2) end
+	if type(methods) ~= "table" then error(consumer .. ": requiresMethods inválido", 2) end
+	if type(versions) ~= "table" then error(consumer .. ": requiresVersions inválido", 2) end
+	local dependencies = {}
+	for dependencyName, source in pairs(requires) do
+		local provider = loaded[source]
+		if type(provider) ~= "table" then error(("API interna ausente: dependência %s (%s)"):format(tostring(dependencyName), tostring(source)), 2) end
+		dependencies[dependencyName] = wrap(consumer, source, provider)
+	end
+	for dependencyName, required in pairs(methods) do
+		local dependency = dependencies[dependencyName]
+		if type(dependency) ~= "table" or type(required) ~= "table" then error(consumer .. ": dependência inválida: " .. tostring(dependencyName), 2) end
+		for _, method in ipairs(required) do
+			if type(method) ~= "string" or type(rawget(dependency, method)) ~= "function" then error(("API interna ausente: %s.%s (exigida por %s)"):format(tostring(dependencyName), tostring(method), consumer), 2) end
+		end
+	end
+	for dependencyName, minimum in pairs(versions) do
+		local source = requires[dependencyName]; local provider = source and loaded[source]; local providerContract = type(provider) == "table" and provider.__contract; local version = type(providerContract) == "table" and providerContract.version or nil
+		if type(minimum) ~= "number" or type(version) ~= "number" or version < minimum then error(("API incompatível: %s requer versão %s; encontrada %s"):format(tostring(dependencyName), tostring(minimum), tostring(version)), 2) end
+	end
+	return dependencies
+end
+
 -- api
 Permissions.validate = validate
 Permissions.wrap = wrap
+Permissions.resolve = resolve
 Permissions.policy = function(name)
 	local entry = policy(name); local result = { provides = {}, consumes = {} }
 	for method in pairs(entry.provide) do
@@ -226,7 +265,7 @@ end
 
 -- contract
 Permissions.__contract = {
-	provides = { "validate", "wrap", "policy" },
+	provides = { "validate", "wrap", "resolve", "policy" },
 	requires = {},
 }
 
