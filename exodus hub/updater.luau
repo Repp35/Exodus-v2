@@ -3,14 +3,21 @@
 -- runtime
 
 return function(loadedRevision, request)
-	local players = game:GetService("Players"); local workspace = game:GetService("Workspace"); local token = {}; _G.ExodusUpdaterToken = token
+	local players = game:GetService("Players"); local token = {}; _G.ExodusUpdaterToken = token
 	local function running() return _G.ExodusUpdaterToken == token and type(_G.Exodus) == "table" and _G.Exodus.Started == true end
 	local function safeToUpdate()
 		local exodus = _G.Exodus; local modules = exodus and exodus.Modules; local info = modules and modules.gameinfo; local auto = modules and modules.autospam; local player = players.LocalPlayer
 		if not player or not info or not auto then return false end
-		if type(info.getTargetId) ~= "function" or type(info.getClashContext) ~= "function" or type(auto.isActive) ~= "function" then return false end
+		if
+			type(info.getTargetId) ~= "function"
+			or type(info.getBallTargetAttribute) ~= "function"
+			or type(info.getClashContext) ~= "function"
+			or type(auto.isActive) ~= "function"
+		then
+			return false
+		end
 		local target = info.getTargetId()
-		if target == player.UserId or workspace:GetAttribute("GameBallTarget") == player.UserId then return false end
+		if target == player.UserId or info.getBallTargetAttribute() == player.UserId then return false end
 		if auto.isActive() or info.getClashContext() then return false end
 		return true
 	end

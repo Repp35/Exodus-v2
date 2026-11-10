@@ -44,8 +44,6 @@ local state = {
 
 -- tuning
 local T = {
-	BONUS_CAP = 7.5,
-	RESILIENCE_STEP = 0.225,
 	DEFAULT_WINDOW_FACTOR = 0.40,
 	PRESSURE_SAMPLE_LIMIT = 100,
 	PRESSURE_WINDOW = 3,
@@ -95,16 +93,16 @@ end
 -- geometry
 local function rangeBonus()
 	if not state.alive or not state.bound then return 0 end
-	local g = gameInfo.getDeflectGeometry(0, 0, 0, false, 0); return g and math.clamp(g.resilienceBonus, 0, T.BONUS_CAP) or 0
+	local _, cap = gameInfo.getDeflectRangeParameters(); local g = gameInfo.getDeflectGeometry(0, 0, 0, false, 0); return g and math.clamp(g.resilienceBonus, 0, cap) or 0
 end
 local function resilience()
-	local bonus = rangeBonus()
+	local bonus = rangeBonus(); local _, cap, step = gameInfo.getDeflectRangeParameters()
 	return {
-		stack = math.floor(bonus / T.RESILIENCE_STEP + 0.5),
+		stack = math.floor(bonus / step + 0.5),
 		size = bonus,
-		perParry = T.RESILIENCE_STEP,
-		cap = T.BONUS_CAP,
-		maxStack = math.ceil(T.BONUS_CAP / T.RESILIENCE_STEP),
+		perParry = step,
+		cap = cap,
+		maxStack = math.ceil(cap / step),
 		source = "DeflectRange",
 	}
 end
@@ -512,6 +510,7 @@ AutoParry.__contract = {
 			"getBallVelocity",
 			"getRootPosition",
 			"getDeflectGeometry",
+			"getDeflectRangeParameters",
 			"getProjectedDeflectRadius",
 		},
 		Utils = {

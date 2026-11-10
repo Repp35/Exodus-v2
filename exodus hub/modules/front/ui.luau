@@ -1280,12 +1280,12 @@ function ExodusUI.setup(deps)
 			if not spinActive then return end
 			local generation = spinGeneration
 			task.spawn(function()
-				local network = require(game:GetService("ReplicatedStorage"):WaitForChild("TS"):WaitForChild("Network"):WaitForChild("Network")).Network.new()
+				local network = GameInfo.createCrateNetwork()
 				if generation ~= spinGeneration or spinActive ~= crate then return end
 				while generation == spinGeneration and spinActive == crate and screenGui and screenGui.Parent and Utils.isActive() do
-					local owned = network:CSendFunction(4.702176977990345e76, crate)
-					if generation ~= spinGeneration or spinActive ~= crate then break end
-					network:CSendEvent(owned == true and 1.796923298985336e75 or 1.0038569313364564e77, crate); task.wait(0.3)
+					local sent = GameInfo.spinCrate(network, crate, function() return generation == spinGeneration and spinActive == crate end)
+					if not sent then break end
+					task.wait(0.3)
 				end
 			end)
 		end)
@@ -1420,7 +1420,7 @@ ExodusUI.__contract = {
 			"version",
 			"author",
 		},
-		GameInfo = { "areAbilitiesEnabled", "observeAbilityMode", "getSnapshotAt", "isSnapshotValid" },
+		GameInfo = { "areAbilitiesEnabled", "observeAbilityMode", "getSnapshotAt", "isSnapshotValid", "createCrateNetwork", "spinCrate" },
 		AutoSpam = { "getStatus" },
 	},
 

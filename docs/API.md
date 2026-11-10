@@ -33,3 +33,9 @@ Os nomes de funções existentes foram mantidos. Os módulos carregados continua
 `utils.getConfig()` e `utils.getConfigSnapshot()` retornam cópias da configuração; `utils.getConfigValue(chave)` busca um valor. Para alterar configurações, use `utils.setConfig(patch)` e as regras de `config`, em vez de modificar cópias. `utils.observeConfig` e `utils.observeSpam` retornam conexões que devem ser desconectadas durante a limpeza.
 
 `gameinfo.getSnapshotAt(tempo)` retorna uma leitura de estado da bola; os consumidores devem usar `gameinfo.isSnapshotValid` antes de depender dela. O loader envia eventos de sincronização aos módulos que declaram `onBallSync`. `character` organiza as vinculações dos módulos que declaram `bindCharacter`.
+
+## Raios e conexão com o jogo
+
+`gameinfo.getDeflectRangeParameters()` fornece o raio-base, o limite de bônus e o incremento de resiliência. `gameinfo.getPlayerDeflectRange` e `getPlayerRawRadius` leem o alcance de jogadores; `getDeflectWindow`, `getDeflectGeometry` e `getProjectedDeflectRadius` calculam janelas e distâncias. Esses valores têm finalidades diferentes e não devem ser substituídos uns pelos outros sem rever o comportamento.
+
+Os identificadores de habilidades, eventos e caixas ficam em `GAME_IDS`, em `gameinfo.luau`. O mesmo módulo localiza os recursos do jogo, expõe o alvo informado pelo jogo ao atualizador e fornece as operações para abertura de caixas; `remote` despacha habilidades. A interface não precisa conhecer os identificadores nem carregar diretamente a rede de caixas. Alterações futuras na estrutura do jogo podem exigir atualização desse adaptador.

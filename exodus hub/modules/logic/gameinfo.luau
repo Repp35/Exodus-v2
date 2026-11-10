@@ -29,6 +29,7 @@ local T = {
 	WINDOW_SPREAD = 0.65,
 	RANGE_BASE = 8.5,
 	RANGE_BONUS_SPAN = 7.5,
+	RANGE_BONUS_STEP = 0.225,
 	RANGE_WINDOW_BONUS = 0.12,
 	AP_WINDOW_LOW_SPEED = 0.45,
 	AP_WINDOW_HIGH_SPEED = 0.25,
@@ -36,6 +37,24 @@ local T = {
 	PING_SAMPLE_COUNT = 8,
 	TARGET_CONFIRM_INTERVAL = 1 / 60,
 	TARGET_HOLD_TIME = 0.1,
+}
+
+-- game-identifiers
+local GAME_IDS = {
+	DEFLECT = 1,
+	DASH = 2,
+	FIERCE = 19,
+	DARK = 20,
+	HAUNTER_REMOTE = 9.150098456648103e76,
+	COOLDOWN_REMOTE = 5.520474058077904e76,
+	PARRIED_REMOTE = 9.611859444202098e76,
+	COOLDOWN_EVENT = 5.93848805167512e76,
+	COOLDOWN_STOP = 6.60750295352893e76,
+	DARK_EVENT = 2.4141700243704228e76,
+	MANIFEST_REMOTE = 9.318024238496386e76,
+	CRATE_CHECK = 4.702176977990345e76,
+	CRATE_OWNED = 1.796923298985336e75,
+	CRATE_NEW = 1.0038569313364564e77,
 }
 
 -- runtime-state
@@ -118,8 +137,9 @@ local function targetNumber(value)
 	if type(value) == "string" then value = tonumber(value) end
 	return finite(value) and value > 0 and value or nil
 end
+function GameInfo.getBallTargetAttribute() return world:GetAttribute("GameBallTarget") end
 local function targetId(data, currentBall)
-	local time = os.clock(); local player = players and players.LocalPlayer; local primary = type(data) == "table" and targetNumber(data.TargetPlayerID) or nil; local attribute = targetNumber(world:GetAttribute("GameBallTarget")); local highlight = type(data) == "table" and targetNumber(data.HighlightTargetPlayerID) or nil; local character = player and player.Character
+	local time = os.clock(); local player = players and players.LocalPlayer; local primary = type(data) == "table" and targetNumber(data.TargetPlayerID) or nil; local attribute = targetNumber(GameInfo.getBallTargetAttribute()); local highlight = type(data) == "table" and targetNumber(data.HighlightTargetPlayerID) or nil; local character = player and player.Character
 	local visual = character and character:FindFirstChild("PlayerBallHighlight"); local visualTargeted = visual ~= nil and visual.Enabled == true
 	local color = currentBall and currentBall.Color
 	local redBall = typeof(color) == "Color3" and color.R >= 0.65 and color.R > color.G * 1.5 and color.R > color.B * 1.5 or false
@@ -277,9 +297,10 @@ function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode")
 function GameInfo.observeAbilityMode(callback)
 	return world:GetAttributeChangedSignal("CurGamemode"):Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
 end
-function GameInfo.getHaunterEvent()
-	local folder = child(child(storage(), "TS"), "GeneratedNetworkRemotes"); local event = child(folder, "RE_" .. tostring(9.150098456648103e76)); return event and event:IsA("RemoteEvent") and event or nil
+local function generatedRemote(id)
+	local remotes = child(ts(), "GeneratedNetworkRemotes"); local remote = child(remotes, "RE_" .. tostring(id)); return remote and remote:IsA("RemoteEvent") and remote or nil
 end
+function GameInfo.getHaunterEvent() return generatedRemote(GAME_IDS.HAUNTER_REMOTE) end
 local function playerRoot(id)
 	local player = type(id) == "number" and players:GetPlayerByUserId(id); local character = player and player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
 	if root and root.Parent then return root, character end
@@ -295,6 +316,7 @@ function GameInfo.getPlayerDistance(id)
 	if not ownRoot or not ownRoot.Parent or not otherRoot then return nil end
 	return (ownRoot.Position - otherRoot.Position).Magnitude
 end
+function GameInfo.getDeflectRangeParameters() return T.RANGE_BASE, T.RANGE_BONUS_SPAN, T.RANGE_BONUS_STEP end
 function GameInfo.getDeflectRange() return players.LocalPlayer and players.LocalPlayer:GetAttribute("DeflectRange") or nil end
 function GameInfo.getPlayerDeflectRange(id)
 	local player = type(id) == "number" and players:GetPlayerByUserId(id)
@@ -310,7 +332,7 @@ function GameInfo.getPlayerRawRadius(id, speed, includePing)
 	if not finite(latency) or latency < 0 then latency = 0 end
 	return range + (finite(speed) and math.max(0, speed) * latency or 0)
 end
-function GameInfo.getDeflectAbility() return getAbility(1, "Deflect") end
+function GameInfo.getDeflectAbility() return getAbility(GAME_IDS.DEFLECT, "Deflect") end
 function GameInfo.getLastDeflectPressAt()
 	local ability = GameInfo.getDeflectAbility()
 	if not ability then return nil end
@@ -337,7 +359,7 @@ function GameInfo.getAutoSpamDelay()
 	end
 	return delay
 end
-function GameInfo.getDashAbility() return getAbility(2, "Dash") end
+function GameInfo.getDashAbility() return getAbility(GAME_IDS.DASH, "Dash") end
 function GameInfo.isPlayerDashing(player)
 	if not player then return false end
 	if player == players.LocalPlayer then local ability = GameInfo.getDashAbility(); return ability ~= nil and ability.Dashing == true end
@@ -353,20 +375,17 @@ function GameInfo.isPlayerDashing(player)
 	end
 	return false
 end
-function GameInfo.getFierceDeflectAbility() return getAbility(19, "ActivateAndBlock") end
-function GameInfo.getDarkSealAbility() return getAbility(20, "SendEvent") end
-local function generatedRemote(id)
-	local remotes = child(ts(), "GeneratedNetworkRemotes"); local remote = child(remotes, "RE_" .. tostring(id)); return remote and remote:IsA("RemoteEvent") and remote or nil
-end
+function GameInfo.getFierceDeflectAbility() return getAbility(GAME_IDS.FIERCE, "ActivateAndBlock") end
+function GameInfo.getDarkSealAbility() return getAbility(GAME_IDS.DARK, "SendEvent") end
 function GameInfo.getDeflectServerEvents()
-	local first, second = generatedRemote(5.520474058077904e76), generatedRemote(9.611859444202098e76)
+	local first, second = generatedRemote(GAME_IDS.COOLDOWN_REMOTE), generatedRemote(GAME_IDS.PARRIED_REMOTE)
 	if not first then return nil end
 	return { cooldown = first.OnClientEvent, parried = second and second.OnClientEvent or nil }
 end
 function GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
-	if abilityId ~= 1 then return nil end
-	if eventId == 5.93848805167512e76 and finite(value) then return value > 0 and "started" or "reset", math.max(value, 0) end
-	if eventId == 6.60750295352893e76 then return "stopped", 0 end
+	if abilityId ~= GAME_IDS.DEFLECT then return nil end
+	if eventId == GAME_IDS.COOLDOWN_EVENT and finite(value) then return value > 0 and "started" or "reset", math.max(value, 0) end
+	if eventId == GAME_IDS.COOLDOWN_STOP then return "stopped", 0 end
 	return nil
 end
 function GameInfo.getHeldDeflectServerCooldown()
@@ -627,7 +646,16 @@ function GameInfo.isBallWithinDeflectRadius(factor)
 	if not finite(speed) or speed <= 0 then return false end
 	local geometry = GameInfo.getDeflectGeometry(speed, nil, factor, false); return geometry ~= nil and (snapshot.position - root.Position).Magnitude <= geometry.fullRadius
 end
-function GameInfo.getManifestRemote() return generatedRemote(9.318024238496386e76) end
+function GameInfo.getDarkSealEventId() return GAME_IDS.DARK_EVENT end
+function GameInfo.createCrateNetwork()
+	local replicated = storage(); local network = replicated:WaitForChild("TS"):WaitForChild("Network"):WaitForChild("Network"); return require(network).Network.new()
+end
+function GameInfo.spinCrate(network, crate, guard)
+	local owned = network:CSendFunction(GAME_IDS.CRATE_CHECK, crate)
+	if type(guard) == "function" and not guard() then return false end
+	network:CSendEvent(owned == true and GAME_IDS.CRATE_OWNED or GAME_IDS.CRATE_NEW, crate); return true
+end
+function GameInfo.getManifestRemote() return generatedRemote(GAME_IDS.MANIFEST_REMOTE) end
 function GameInfo.getClashContext()
 	local player = players.LocalPlayer
 	if not player then return nil end
@@ -635,7 +663,7 @@ function GameInfo.getClashContext()
 	if type(lastAt) ~= "number" or type(by) ~= "number" or type(target) ~= "number" then return nil end
 	local partnerId = by == player.UserId and target or (target == player.UserId and by or nil)
 	if not partnerId or partnerId <= 0 or partnerId == player.UserId then return nil end
-	local age, currentTarget = world:GetServerTimeNow() - lastAt, world:GetAttribute("GameBallTarget")
+	local age, currentTarget = world:GetServerTimeNow() - lastAt, GameInfo.getBallTargetAttribute()
 	if age < 0 or (age > 1 and (age > 2.5 or currentTarget ~= target)) then return nil end
 	local partner = players:GetPlayerByUserId(partnerId); local ownRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart"); local partnerRoot = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
 	if not ownRoot or not partnerRoot or (ownRoot.Position - partnerRoot.Position).Magnitude > 35 then return nil end
@@ -670,6 +698,7 @@ GameInfo.__contract = {
 		"areAbilitiesEnabled",
 		"observeAbilityMode",
 		"getDeflectRange",
+		"getDeflectRangeParameters",
 		"getPlayerDeflectRange",
 		"getPlayerRawRadius",
 		"getPlayerDistance",
@@ -691,6 +720,9 @@ GameInfo.__contract = {
 		"isPlayerDashing",
 		"getFierceDeflectAbility",
 		"getDarkSealAbility",
+		"getDarkSealEventId",
+		"createCrateNetwork",
+		"spinCrate",
 		"getBallSpeedLimits",
 		"getSnapshot",
 		"getSnapshotAt",
@@ -699,6 +731,7 @@ GameInfo.__contract = {
 		"getSyncSequence",
 		"decodeBallPacket",
 		"getTargetId",
+		"getBallTargetAttribute",
 		"applySync",
 		"installBallWatcher",
 		"bindBallSync",

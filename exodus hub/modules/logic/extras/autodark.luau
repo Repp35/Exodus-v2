@@ -4,9 +4,6 @@
 local AutoDark = {}
 local utils, remote, gameInfo, world
 
--- tuning
-local T = { DARK_EVENT = 2.4141700243704228e76 }
-
 -- state
 local connection
 
@@ -24,7 +21,7 @@ function AutoDark.sync()
 	connection = runService.Heartbeat:Connect(function()
 		if not utils.getConfigValue("AutoDark") or not gameInfo.areAbilitiesEnabled() then return end
 		local camera = world.CurrentCamera
-		if camera then remote.fireDark(T.DARK_EVENT, camera.CFrame) end
+		if camera then remote.fireDark(gameInfo.getDarkSealEventId(), camera.CFrame) end
 	end)
 	utils.trackGlobal(connection); return true
 end
@@ -42,7 +39,7 @@ AutoDark.__contract = {
 	requiresMethods = {
 		Utils = { "getConfigValue", "getWorkspace", "getRunService", "trackGlobal", "untrackGlobal" },
 		Remote = { "fireDark" },
-		GameInfo = { "areAbilitiesEnabled" },
+		GameInfo = { "areAbilitiesEnabled", "getDarkSealEventId" },
 	},
 
 	provides = { "setup", "sync", "teardown" },

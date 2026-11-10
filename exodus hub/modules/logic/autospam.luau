@@ -67,11 +67,11 @@ local function distanceLimit(snapshot, partner)
 	if not finite(speed) or speed <= 0 then return nil end
 	local minimum, maximum = gameInfo.getBallSpeedLimits()
 	if not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
-	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
-	local base = T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - 15 - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor
+	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local rangeBase, bonusCap = gameInfo.getDeflectRangeParameters(); local totalBonus = bonusCap * 2
+	local base = T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - totalBonus - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor
 	local ownRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId); local otherRange = partner and gameInfo.getPlayerDeflectRange(partner)
-	if not ownRange or not otherRange then return base + 15 * factor, factor end
-	return base + (math.clamp(ownRange - 8.5, 0, 7.5) + math.clamp(otherRange - 8.5, 0, 7.5)) * factor, factor
+	if not ownRange or not otherRange then return base + totalBonus * factor, factor end
+	return base + (math.clamp(ownRange - rangeBase, 0, bonusCap) + math.clamp(otherRange - rangeBase, 0, bonusCap)) * factor, factor
 end
 local function distanceGate(s, snapshot, partner, knownPosition, knownLimit, knownFactor)
 	local limit, factor = knownLimit, knownFactor
@@ -671,7 +671,7 @@ function AutoSpam.bindCharacter(character)
 			s.lobbySince = nil
 		end
 		if s.pendingReset and (not s.resetCheckAt or time - s.resetCheckAt >= 0.15) then
-			s.resetCheckAt = time; local safe = true; local snapshot = gameInfo.getSnapshotAt(time); local speed = snapshot and (snapshot.syncSpeed or snapshot.speed) or 16; local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true) or 8.5
+			s.resetCheckAt = time; local safe = true; local snapshot = gameInfo.getSnapshotAt(time); local speed = snapshot and (snapshot.syncSpeed or snapshot.speed) or 16; local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true) or gameInfo.getDeflectRangeParameters()
 			for _, player in ipairs(players:GetPlayers()) do
 				if player ~= localPlayer and playerIsAlive(player.UserId) then
 					local position = gameInfo.getPlayerMotion(player.UserId)
@@ -868,6 +868,7 @@ AutoSpam.__contract = {
 			"getPlayerMotion",
 			"getHaunterEvent",
 			"getDeflectGeometry",
+			"getDeflectRangeParameters",
 			"getDashAbility",
 			"getPlayerDeflectRange",
 			"getPlayerRawRadius",
