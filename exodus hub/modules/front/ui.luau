@@ -465,27 +465,6 @@ local function createActionToggleCard(labelText, yPos, parent, onToggle)
 	}).Activated:Connect(onToggle))
 	return setVisual
 end
-local function createApCpsCard(yPos, parent)
-	local f = cardFrame(yPos, CARD_H, parent)
-	local label = inst("TextLabel", {
-		Size = UDim2.new(1, -20, 1, 0),
-		Position = UDim2.new(0, 12, 0, 0),
-		BackgroundTransparency = 1,
-		Text = "CPS do AP: 0.00 | Bônus: inativo",
-		TextColor3 = C.text,
-		TextSize = 12,
-		Font = Enum.Font.GothamSemibold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 7,
-		Parent = f,
-	})
-	local nextUpdate = 0
-	trackConn(RunService.Heartbeat:Connect(function()
-		if not f.Parent or os.clock() < nextUpdate then return end
-		nextUpdate = os.clock() + 0.1; local status = AutoParry.getCpsStatus(); label.Text = string.format("CPS do AP: %.2f | Bônus: %s", status.cps, status.boosted and "fator 1.0" or "inativo")
-	end))
-	return nextCardY(yPos, CARD_H)
-end
 local function createParryTimingCard(yPos, parent)
 	local f = cardFrame(yPos, CARD_H, parent)
 	inst("TextLabel", {
@@ -773,6 +752,31 @@ function ExodusUI.setup(deps)
 		Parent = informationGui,
 	})
 	compactInformation(distanceLabel); compactInformation(travelLabel); corner(travelLabel, 8); local nextTravelUpdate = 0
+	local apCpsLabel = inst("TextLabel", {
+		Name = "AutoParryCps",
+		Size = UDim2.fromOffset(1, 1),
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 12),
+		BackgroundColor3 = C.header,
+		BackgroundTransparency = 0.2,
+		Text = "CPS do AP: 0.00 | Fator: normal",
+		TextColor3 = C.text,
+		TextSize = 14,
+		Font = Enum.Font.GothamSemibold,
+		Visible = true,
+		ZIndex = 20,
+		Parent = informationGui,
+	})
+	compactInformation(apCpsLabel); corner(apCpsLabel, 8)
+	local nextApCpsUpdate = 0
+	trackConn(RunService.Heartbeat:Connect(function()
+		if not apCpsLabel.Parent or os.clock() < nextApCpsUpdate then return end
+		nextApCpsUpdate = os.clock() + 0.1
+		local status = AutoParry.getCpsStatus()
+		apCpsLabel.Position = UDim2.new(0.5, 0, 0, distanceLabel.Visible and (distanceLabel.AbsoluteSize.Y + 12) or 12)
+		apCpsLabel.Text = string.format("CPS do AP: %.2f | Fator: %s", status.cps, status.boosted and "1.0" or "normal")
+	end))
+
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not travelLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true; travelLabel.Visible = visible; local time = os.clock()
@@ -1257,7 +1261,7 @@ function ExodusUI.setup(deps)
 		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
 	end)
 	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall); local upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); local _, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft)
-	local cpsYPos = createApCpsCard(parryYPos, settingsLeft); createCameraSensitivityCard(cpsYPos, settingsLeft); local travelYPos = createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight); createToggleCard("Tempo da bola", "ClashTravelTimeVisible", travelYPos, settingsRight)
+	createCameraSensitivityCard(parryYPos, settingsLeft); local travelYPos = createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight); createToggleCard("Tempo da bola", "ClashTravelTimeVisible", travelYPos, settingsRight)
 	local function updateAbilityVisibility(enabled)
 		darkCard.Visible, miniDarkCard.Visible, upDashCard.Visible, fierceCard.Visible, autoUpDashCard.Visible = enabled, enabled, enabled, enabled, enabled
 		darkBall.Visible, upDashBall.Visible = enabled, enabled
