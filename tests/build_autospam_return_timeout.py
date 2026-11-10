@@ -40,22 +40,22 @@ local function check(t, target)
 end
 start(s,"return_target",7,clock,nil,snap)
 assert(auto and s.returnWatchAt==10)
-assert(check(10.05)==nil, "the first 60ms must not stop spam")
-assert(check(10.061)=="return_timeout", "after the grace period an overdue 50ms leg must stop")
+assert(check(10.035)==nil, "the first 40ms must not stop spam")
+assert(check(10.041)=="return_timeout", "after the grace period an overdue 30ms leg must stop")
 assert(apply(s,snap,clock,nil,false) and not auto and manual, "timeout must stop only auto spam")
 -- A real paired switch rearms the clock, repeated snapshots do not.
 s.active=true; s.partner=7; s.target=42; s.activatedAt=20; s.returnWatchAt=20; clock=20.1; snap.syncAt=clock; snap.targetId=7
 inspect(s,7,clock,snap,nil); assert(s.returnWatchAt==clock)
-assert(check(20.145,7)==nil); inspect(s,7,20.18,snap,nil); assert(s.returnWatchAt==20.1)
-assert(check(20.151,7)=="return_timeout")
+assert(check(20.125,7)==nil); inspect(s,7,20.18,snap,nil); assert(s.returnWatchAt==20.1)
+assert(check(20.131,7)=="return_timeout")
 -- A late target packet must not erase the overdue interval before checking it.
-assert(check(20.152,42)=="return_timeout")
+assert(check(20.132,42)=="return_timeout")
 -- At low speed allow a longer flight.
 s.returnWatchAt=30; s.target=42; snap.syncSpeed=16
-assert(check(30.13)==nil); assert(check(30.134)=="return_timeout")
+assert(check(30.079)==nil); assert(check(30.081)=="return_timeout")
 -- Intermediate speed follows the game's window curve, not a fixed 85ms.
 s.returnWatchAt=35; snap.syncSpeed=308
-assert(check(35.08)==nil); assert(check(35.083)=="return_timeout")
+assert(check(35.048)==nil); assert(check(35.051)=="return_timeout")
 -- Alternation at 25 complete cycles per second has two switches per cycle.
 snap.syncSpeed=600; s.target=42; s.activatedAt=36; s.returnWatchAt=36
 for i=1,20 do
