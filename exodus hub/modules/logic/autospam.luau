@@ -29,13 +29,8 @@ local T = {
 		DASH_ALIGNMENT = 0.7,
 	},
 	DEACTIVATION = {
-		MIN_SPEED_DISTANCE = 20,
-		MAX_SPEED_DISTANCE = 55,
-		RETURN_START_GRACE = 0.1,
-		DIRECTION_ALIGNMENT = 0.75,
-		AWAY_ALIGNMENT = 0.3,
-		DIVERSION_CONFIRM = 0.04,
-		DIVERSION_MAX_SAMPLE_AGE = 0.12,
+		MIN_DISTANCE = 20,
+		MAX_DISTANCE_REFERENCE = 51,
 	},
 	SHARED = {
 		MIN_RETURN = 1 / 25,
@@ -72,11 +67,6 @@ local function snapshotSpeed(snapshot)
 	if not snapshot then return nil end
 	local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
 end
-local function returnTimeout(snapshot)
-	local speed = snapshotSpeed(snapshot); local minimum, maximum = gameInfo.getBallSpeedLimits()
-	if not finite(speed) or speed <= 0 or not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
-	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); return 0.1 * (1 - 0.5 * factor)
-end
 local function resetExchange(s)
 	s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil
 	s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
@@ -85,24 +75,33 @@ local function distanceToPlayer(id) return id and gameInfo.getPlayerDistance(id)
 local function distanceLimit(snapshot, partner)
 	local speed = snapshotSpeed(snapshot)
 	if not finite(speed) or speed <= 0 then return nil end
-	local minimum, maximum = gameInfo.getBallSpeedLimits()
-	if not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
-	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local rangeBase, bonusCap = gameInfo.getDeflectRangeParameters(); local totalBonus = bonusCap * 2
-	local base = T.DEACTIVATION.MIN_SPEED_DISTANCE + (T.DEACTIVATION.MAX_SPEED_DISTANCE - totalBonus - T.DEACTIVATION.MIN_SPEED_DISTANCE) * factor
-	local ownRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId); local otherRange = partner and gameInfo.getPlayerDeflectRange(partner)
-	if not ownRange or not otherRange then return base + totalBonus * factor, factor end
-	return base + (math.clamp(ownRange - rangeBase, 0, bonusCap) + math.clamp(otherRange - rangeBase, 0, bonusCap)) * factor, factor
+	local minimum, maximum = gameInfo.getBallSpeedLimits(); local baseRange, maximumResilience = gameInfo.getDeflectRangeParameters(); local ownRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId); local otherRange = partner and gameInfo.getPlayerDeflectRange(partner); local ownRaw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
+	local otherRaw = partner and gameInfo.getPlayerRawRadius(partner, speed, true)
+	if
+		not finite(minimum)
+		or not finite(maximum)
+		or maximum <= minimum
+		or not finite(baseRange)
+		or not finite(maximumResilience)
+		or not finite(ownRange)
+		or not finite(otherRange)
+		or not finite(ownRaw)
+		or not finite(otherRaw)
+	then
+		return nil
+	end
+	local speedFactor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); local baseAtMaxSpeed = T.DEACTIVATION.MAX_DISTANCE_REFERENCE - maximumResilience * 2
+	local baseDistance = T.DEACTIVATION.MIN_DISTANCE + (baseAtMaxSpeed - T.DEACTIVATION.MIN_DISTANCE) * speedFactor
+	local ownResilience = math.clamp(ownRange - baseRange, 0, maximumResilience); local otherResilience = math.clamp(otherRange - baseRange, 0, maximumResilience); local ownPing = math.max(0, ownRaw - ownRange); local otherPing = math.max(0, otherRaw - otherRange); return baseDistance + (ownResilience + otherResilience) * speedFactor + ownPing + otherPing
 end
-local function distanceGate(s, snapshot, partner, knownPosition, knownLimit, knownFactor)
-	local limit, factor = knownLimit, knownFactor
-	if not limit then limit, factor = distanceLimit(snapshot, partner) end
-	if not limit or not s.root or not s.root.Parent or not partner or not snapshot or typeof(snapshot.position) ~= "Vector3" then return "distance_unavailable", nil, factor end
-	local other = typeof(knownPosition) == "Vector3" and knownPosition or gameInfo.getPlayerMotion(partner)
-	if typeof(other) ~= "Vector3" then return "distance_unavailable", limit, factor end
+local function distanceGate(s, snapshot, partner)
+	if not s.root or not s.root.Parent or not snapshot or typeof(snapshot.position) ~= "Vector3" then return "distance_unavailable" end
+	local speed = snapshotSpeed(snapshot); local g = finite(speed) and speed > 0 and gameInfo.getDeflectGeometry(speed, "game", T.ACTIVATION.RADIUS_FACTOR, false); local other = partner and gameInfo.getPlayerMotion(partner); local opponentLimit = distanceLimit(snapshot, partner)
+	if not g or typeof(other) ~= "Vector3" or not opponentLimit then return "distance_unavailable" end
 	local own = s.root.Position; local opponentDistance = (other - own).Magnitude; local ballDistance = (snapshot.position - own).Magnitude
-	if opponentDistance > limit then return "opponent_distance", limit, factor end
-	if ballDistance > limit then return "ball_distance", limit, factor end
-	return nil, limit, factor
+	if opponentDistance > opponentLimit then return "opponent_distance" end
+	if math.max(0, ballDistance - g.noWindowParryRadius) / speed > g.effectiveWindow then return "ball_distance" end
+	return nil
 end
 local function playerIsAlive(id)
 	local player = id and players:GetPlayerByUserId(id); local character = player and player.Character; local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid"); return humanoid ~= nil and humanoid.Health > 0
@@ -115,11 +114,6 @@ local function geometry(snapshot, factor)
 	local g = gameInfo.getDeflectGeometry(speed, "game", factor, false)
 	if not g then return nil end
 	return g, speed, g.deflectWindow
-end
-local function closeRadius(snapshot)
-	local speed = snapshotSpeed(snapshot)
-	if not finite(speed) or speed <= 0 then return nil end
-	local g = gameInfo.getDeflectGeometry(speed, 0, 1, false); return g and g.fullRadius or nil
 end
 local function returnWindow(window, speed, base)
 	local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0; return math.max(T.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
@@ -165,7 +159,6 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
 	if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < T.ACTIVATION.REACTIVATION_COOLDOWN) then return end
-	if s.lastStopReason == "return_timeout" and s.stoppedPartner == partner then return end
 	local haunter = reason == "haunter" or reason == "haunter_self"
 	if
 		not haunter
@@ -174,20 +167,11 @@ local function start(s, reason, partner, time, serverTime, snapshot)
 		return
 	end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time); local distanceReason = distanceGate(s, snapshot, partner)
-	if distanceReason and distanceReason ~= "distance_unavailable" then return end
+	if distanceReason then return end
 	if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
 	s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil
 	s.dashSwitchPartner, s.dashSwitchAt = nil, nil
-	s.activatedAt = time; s.returnWatchAt = nil; s.returnSpeed = snapshotSpeed(snapshot)
-	if
-		not haunter
-		and snapshot
-		and snapshot.targetUncertain ~= true
-		and snapshot.targetId == s.target
-		and (s.target == localPlayer.UserId or s.target == partner)
-	then
-		s.returnWatchAt = time
-	end
+	s.activatedAt = time
 	s.diversionSince, s.diversionSyncAt = nil, nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
 	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
@@ -214,7 +198,6 @@ local function stop(s, reason)
 		utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
 	end
 	s.reason, s.pending, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil
-	s.returnWatchAt, s.returnSpeed = nil, nil
 	resetExchange(s)
 end
 local function stopBoth(s, reason)
@@ -223,107 +206,39 @@ local function stopBoth(s, reason)
 	s.haunterPartner, s.haunterUntil = nil, nil
 	utils.setManualSpamActive(false)
 end
-local function shouldDeactivate(s, snapshot, time, targetChanged)
+local function shouldDeactivate(s, snapshot, time)
 	if not utils.isActive() then return "hub_inactive" end
 	if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
 	if gameInfo.getBallFrozen() == true then return "frozen" end
-	local sampleAge = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt or nil; local validSnapshot = snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported; local target = validSnapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
-	if not validSnapshot or not target or snapshot.locked == true then
-		s.returnWatchAt = nil
-		s.diversionSince, s.diversionSyncAt = nil, nil
+	local age = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt
+	if
+		not snapshot
+		or not gameInfo.isSnapshotValid(snapshot)
+		or snapshot.teleported
+		or snapshot.locked == true
+		or snapshot.targetUncertain == true
+		or not age
+		or age < 0
+		or age > T.SHARED.SNAPSHOT_MAX_AGE
+	then
 		return nil
 	end
-	if not sampleAge or sampleAge < 0 or sampleAge > T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE then
-		if not sampleAge or sampleAge < 0 or sampleAge > T.SHARED.SNAPSHOT_MAX_AGE then s.returnWatchAt = nil end
-		s.diversionSince, s.diversionSyncAt = nil, nil
-		return nil
-	end
+	local target = userId(snapshot.targetId)
+	if not target then return nil end
 	if target ~= localPlayer.UserId and target ~= s.partner then
-		if targetChanged then return "distant_target" end
-		s.returnWatchAt = nil; return nil
+		local position = gameInfo.getPlayerMotion(target); local g = geometry(snapshot, 1)
+		if g and s.root and s.root.Parent and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > g.fullRadius then return "distant_target" end
 	end
-	local speed = snapshotSpeed(snapshot)
-	if finite(speed) and speed > 0 then s.returnSpeed = speed end
-	if s.returnWatchAt and s.activatedAt and time >= s.activatedAt + T.DEACTIVATION.RETURN_START_GRACE then
-		local timeout = returnTimeout({ syncSpeed = s.returnSpeed })
-		if timeout and time >= s.returnWatchAt and time - s.returnWatchAt >= timeout then return "return_timeout" end
-	end
-	if
-		sampleAge
-		and sampleAge >= 0
-		and sampleAge <= T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE
-		and snapshot
-		and not snapshot.teleported
-		and s.root
-		and s.root.Parent
-		and s.activatedAt
-		and time - s.activatedAt >= T.DEACTIVATION.RETURN_START_GRACE
-		and typeof(snapshot.position) == "Vector3"
-		and typeof(snapshot.velocity) == "Vector3"
-	then
-		local toward = s.root.Position - snapshot.position; local distance = toward.Magnitude; local closing = distance > 0 and snapshot.velocity:Dot(toward) / distance or 0; local radius, timeout = closeRadius(snapshot), returnTimeout(snapshot)
-		if radius and timeout and closing > 1 and math.max(0, distance - radius) / closing > math.max(0.05, timeout * 3) then return "return_timeout" end
-	end
-	local limit, speedFactor = distanceLimit(snapshot, s.partner); local partnerPosition = s.partner and gameInfo.getPlayerMotion(s.partner)
-	if limit and typeof(partnerPosition) == "Vector3" and s.root and s.root.Parent and (partnerPosition - s.root.Position).Magnitude > limit then return "opponent_distance" end
-	if target ~= localPlayer.UserId and target ~= s.partner and targetChanged then return "distant_target" end
-	local protected = false
-	if validSnapshot and target and (target == localPlayer.UserId or target == s.partner) then
-		local speed = snapshotSpeed(snapshot)
-		if finite(speed) and speed > 0 and typeof(partnerPosition) == "Vector3" then local g = gameInfo.getDeflectGeometry(speed, 0, 1, false); protected = g ~= nil and (partnerPosition - s.root.Position).Magnitude <= g.fullRadius end
-	end
-	if protected then
-		s.diversionSince, s.diversionSyncAt = nil, nil
-		return nil
-	end
-	local distanceReason = distanceGate(s, snapshot, s.partner, partnerPosition, limit, speedFactor)
-	if distanceReason == "distance_unavailable" then
-		s.diversionSince, s.diversionSyncAt = nil, nil
-		return nil
-	end
-	if distanceReason then return distanceReason end
-	if target ~= localPlayer.UserId and target ~= s.partner then return nil end
-	if not validSnapshot then return nil end
-	local diverted = false
-	if
-		finite(snapshot.syncAt)
-		and snapshot.syncAt > 0
-		and time - snapshot.syncAt <= T.DEACTIVATION.DIVERSION_MAX_SAMPLE_AGE
-		and snapshot.targetUncertain ~= true
-	then
-		local radius = closeRadius(snapshot); local partnerPosition = gameInfo.getPlayerMotion(s.partner); local velocity = snapshot.velocity
-		if
-			radius
-			and typeof(snapshot.position) == "Vector3"
-			and typeof(partnerPosition) == "Vector3"
-			and typeof(velocity) == "Vector3"
-			and velocity.Magnitude > 1
-		then
-			local own = s.root.Position; local axis = partnerPosition - own; local towardMe = own - snapshot.position; local towardPartner = partnerPosition - snapshot.position; local speed = velocity.Magnitude
-			if axis.Magnitude > 1 and towardMe.Magnitude > radius and towardPartner.Magnitude > radius then
-				local alignment = math.abs(velocity:Dot(axis) / (speed * axis.Magnitude)); local awayMe = velocity:Dot(towardMe) / (speed * towardMe.Magnitude); local awayPartner = velocity:Dot(towardPartner) / (speed * towardPartner.Magnitude); diverted = alignment < T.DEACTIVATION.DIRECTION_ALIGNMENT
-					and awayMe < -T.DEACTIVATION.AWAY_ALIGNMENT
-					and awayPartner < -T.DEACTIVATION.AWAY_ALIGNMENT
-			end
-		end
-	end
-	if diverted then
-		if not s.diversionSince then
-			s.diversionSince, s.diversionSyncAt = time, snapshot.syncAt
-		elseif snapshot.syncAt ~= s.diversionSyncAt and time - s.diversionSince >= T.DEACTIVATION.DIVERSION_CONFIRM then
-			return "ball_diverted"
-		end
-	else
-		s.diversionSince, s.diversionSyncAt = nil, nil
-	end
+	local reason = distanceGate(s, snapshot, s.partner)
+	if reason ~= "distance_unavailable" then return reason end
 	return nil
 end
-local function applyDeactivation(s, snapshot, time, targetChanged)
+local function applyDeactivation(s, snapshot, time)
 	if not s.active then return false end
-	local reason = shouldDeactivate(s, snapshot, time, targetChanged)
+	local reason = shouldDeactivate(s, snapshot, time)
 	if not reason then return false end
 	stop(s, reason)
-	if reason == "distant_target" or reason == "ball_diverted" then utils.setManualSpamActive(false) end
+	if reason == "distant_target" then utils.setManualSpamActive(false) end
 	return true
 end
 
@@ -342,18 +257,6 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	syncManualPartner(s)
 	if not target or target == s.target then return end
 	local previous, me = s.target, localPlayer.UserId
-	if s.active then
-		if
-			snapshot
-			and snapshot.locked ~= true
-			and snapshot.targetUncertain ~= true
-			and ((previous == me and target == s.partner) or (previous == s.partner and target == me))
-		then
-			s.returnWatchAt = time
-		else
-			s.returnWatchAt = nil
-		end
-	end
 	local completedPartner
 	if
 		previous
@@ -380,10 +283,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		and s.stoppedAt
 		and time - s.stoppedAt >= T.ACTIVATION.REACTIVATION_COOLDOWN
 	then
-		local timeout = s.lastStopReason == "return_timeout" and snapshot and snapshot.targetUncertain ~= true and returnTimeout(snapshot) or nil; local fastReturn = timeout and finite(s.lastSwitchAt) and time >= s.lastSwitchAt and time - s.lastSwitchAt < timeout
-		if s.lastStopReason ~= "return_timeout" or fastReturn then
-			s.stoppedPartner, s.stoppedAt = nil, nil
-		end
+		s.stoppedPartner, s.stoppedAt = nil, nil
 	end
 	if previous and previous ~= target and (previous == me or target == me) and s.dashStart then
 		s.dashSwitchPartner, s.dashSwitchAt = previous == me and target or previous, time
@@ -430,9 +330,9 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 		resetExchange(s)
 	end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now(), false); resetExchange(s); s.target = nil; return end
+	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now()); resetExchange(s); s.target = nil; return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
-	if not fresh and applyDeactivation(s, snapshot, time, false) then blockedActivation = true end
+	if not fresh and applyDeactivation(s, snapshot, time) then blockedActivation = true end
 	sampleOwnDash(s, time)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
@@ -668,7 +568,7 @@ function AutoSpam.onBallSync(data)
 	if finite(sequence) then s.sequence = sequence end
 	if data.Teleported == true then
 		s.target, s.stoppedPartner = nil, nil
-		s.returnWatchAt = nil; resetExchange(s)
+		resetExchange(s)
 		s.haunterPartner, s.haunterUntil = nil, nil
 		return
 	end
@@ -697,28 +597,9 @@ function AutoSpam.onBallSync(data)
 	end
 	local stopped = false
 	if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then
-		if
-			s.active
-			and snapshot.locked ~= true
-			and snapshot.targetUncertain ~= true
-			and target ~= s.target
-			and target ~= localPlayer.UserId
-			and target ~= s.partner
-		then
-			stop(s, "distant_target"); utils.setManualSpamActive(false); stopped = true
-		end
-		if not stopped and target ~= s.target then stopped = applyDeactivation(s, snapshot, time, true) end
-		if not stopped and target == s.target then stopped = applyDeactivation(s, snapshot, time, false) end
+		if not stopped and target ~= s.target then stopped = applyDeactivation(s, snapshot, time) end
+		if not stopped and target == s.target then stopped = applyDeactivation(s, snapshot, time) end
 		inspectTarget(s, target, time, snapshot, serverTime)
-		if
-			s.active
-			and not s.returnWatchAt
-			and snapshot.locked ~= true
-			and snapshot.targetUncertain ~= true
-			and (target == localPlayer.UserId or target == s.partner)
-		then
-			s.returnWatchAt = time
-		end
 	end
 	evaluate(s, time, true, serverTime, snapshot, stopped)
 end
@@ -823,7 +704,6 @@ AutoSpam.__contract = {
 			"getBallFrozen",
 			"getTargetId",
 			"getBallSpeedLimits",
-			"getAveragePing",
 			"getClashContext",
 		},
 		ClashStats = { "begin", "finish", "observe", "freeze", "get" },
