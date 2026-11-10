@@ -1499,8 +1499,7 @@ function ExodusUI.setup(deps)
 
 	-- anti-afk
 	local antiConnection
-	local antiGeneration = 0
-	local utilitiesY = 4
+	local antiGeneration = 0; local utilitiesY = 4
 	utilitiesY = createOffOnCard("Anti AFK", utilitiesY, utilities, {
 		onToggle = function(enabled)
 			if not enabled then
@@ -1565,9 +1564,7 @@ function ExodusUI.setup(deps)
 		})
 		spinButtons[crate] = setSpinVisual
 	end
-	utilities.CanvasSize = UDim2.fromOffset(0, utilitiesY + CARD_GAP)
-	utilities.CanvasPosition = Vector2.zero
-	local page = 1
+	utilities.CanvasSize = UDim2.fromOffset(0, utilitiesY + CARD_GAP); utilities.CanvasPosition = Vector2.zero; local page = 1
 	local pageInputShield = inst("TextButton", {
 		Name = "PageInputShield",
 		Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
