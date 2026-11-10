@@ -316,11 +316,8 @@ local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 48, 64, 118
 local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
 local CARD_SCALE = 1.06
--- Shared card sizing: the standard toggle defines the height for every card.
 local CARD_MAX_H = CARD_H
-local function cardHeight(height)
-	return math.clamp(height or CARD_H, 0, CARD_MAX_H)
-end
+local function cardHeight(height) return math.clamp(height or CARD_H, 0, CARD_MAX_H) end
 local function offOnText(labelText, value)
 	local color = value and "#22C55E" or "#EF4444"; return labelText .. ': <font color="' .. color .. '">' .. (value and "ON" or "OFF") .. "</font>"
 end
