@@ -258,7 +258,8 @@ local function setJumpBall(v)
 end
 local MINI_W, MINI_H = 120, 90
 local function showMini(v, visBtn)
-	setConfigValue("MiniSpamVisible", v); local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30; twPlay(miniGui, (v and 0.22) or 0.18, { Position = v and UDim2.new(0, miniX, 0, miniY) or UDim2.new(0, MINI_OFF_X, 0, miniY) }, EASE_OUT, DIR_OUT)
+	setConfigValue("MiniSpamVisible", v); local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30; miniGui.Visible = v == true
+	if v then twPlay(miniGui, 0.22, { Position = UDim2.new(0, miniX, 0, miniY) }, EASE_OUT, DIR_OUT) else miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY) end
 	if visBtn and visBtn.Parent then visBtn.Text = v and "Mini UI: Visivel" or "Mini UI: Oculto"; twPlay(visBtn, 0.15, { BackgroundColor3 = v and Color3.fromRGB(0, 130, 65) or C.btnDark }) end
 end
 setSpam = function(v)
@@ -948,6 +949,7 @@ function ExodusUI.setup(deps)
 	local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30
 	miniGui = inst("Frame", {
 		Name = "ExodusSpamMini",
+		Visible = config.MiniSpamVisible == true,
 		Size = UDim2.new(0, MINI_W, 0, MINI_H),
 		BackgroundColor3 = C.header,
 		BorderSizePixel = 0,
