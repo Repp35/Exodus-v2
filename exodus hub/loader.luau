@@ -539,21 +539,26 @@ local function waitForLocalPlayer(timeout)
 	return false, "LocalPlayer indisponível após esperar " .. timeout .. "s"
 end
 local reloadInFlight = false
-local function reloadLatest()
-	if reloadInFlight then return false end
+local function reloadLatest(onFailure)
+	local function fail(message)
+		warn("[Exodus Reload] " .. tostring(message))
+		if type(onFailure) == "function" then task.defer(onFailure, message) end
+		reloadInFlight = false
+	end
+	if reloadInFlight then fail("reload já em andamento"); return false end
 	reloadInFlight = true
 	task.spawn(function()
 		local revision, revisionError = resolveLatestRevision()
-		if not revision then warn("[Exodus Reload] " .. tostring(revisionError)); reloadInFlight = false; return end
+		if not revision then fail(revisionError); return end
 		local source = readCacheFile(revision, "loader.luau")
 		local fetchError
 		if not source then source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau") end
-		if not source then warn("[Exodus Reload] " .. tostring(fetchError)); reloadInFlight = false; return end
+		if not source then fail(fetchError); return end
 		saveCacheFile(revision, "loader.luau", source); local chunk, compileError = compile("reload loader", source)
-		if not chunk then warn("[Exodus Reload] " .. tostring(compileError)); reloadInFlight = false; return end
+		if not chunk then fail(compileError); return end
 		_G.ExodusRequestedRevision = revision
 		local ok, executionError = xpcall(chunk, function(err) return debug.traceback(tostring(err), 2) end)
-		if not ok then _G.ExodusRequestedRevision = nil; warn("[Exodus Reload] " .. tostring(executionError)) end
+		if not ok then _G.ExodusRequestedRevision = nil; fail(executionError); return end
 		reloadInFlight = false
 	end)
 	return true

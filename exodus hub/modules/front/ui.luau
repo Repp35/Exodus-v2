@@ -776,6 +776,17 @@ local function togglePanel()
 		end
 	end
 end
+local function restoreAfterReloadFailure(message)
+	if not configPanel or not configPanel.Parent then return end
+	UIState.closing = false; UIState.panelOpen = true; configPanel.Visible = true; configPanel.Size = UDim2.new(0, PW * 0.96, 0, PH * 0.96); configPanel.GroupTransparency = 1
+	if floatingButton and floatingButton.Parent then floatingButton.Size = UDim2.new(0, 42, 0, 42); floatingButton.BackgroundTransparency = 1; floatingButton.TextTransparency = 1 end
+	twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
+	if floatingButton and floatingButton.Parent then twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN) end
+	local config = Utils.getConfig()
+	if not UIState.desktop then showClashBall(config.ClashBallVisible == true); showParryBall(config.ParryBallVisible == true); showDarkBall(config.DarkBallVisible == true); showJumpBall(config.JumpBallVisible == true); showUpDashBall(config.UpDashBallVisible == true); showMini(config.MiniSpamVisible == true) end
+	if showToast then showToast("Reload falhou") end
+	warn("[Exodus Reload] " .. tostring(message))
+end
 local function animateClose(action)
 	if UIState.closing then return end
 	UIState.closing = true; safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
@@ -786,7 +797,7 @@ local function animateClose(action)
 	end
 	task.delay(0.32, function()
 		if not UIState.closing then return end
-		if action == "reload" and type(Controls.onReload) == "function" then Controls.onReload() elseif type(Controls.onClose) == "function" then Controls.onClose() elseif Utils and type(Utils.stop) == "function" then Utils.stop() end
+		if action == "reload" and type(Controls.onReload) == "function" then Controls.onReload(restoreAfterReloadFailure) elseif type(Controls.onClose) == "function" then Controls.onClose() elseif Utils and type(Utils.stop) == "function" then Utils.stop() end
 	end)
 end
 
