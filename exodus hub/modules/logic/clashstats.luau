@@ -19,13 +19,13 @@ local function snapshotSpeed(snapshot)
 	local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
 end
 local function formatPoint(point)
-	if typeof(point) ~= "Vector3" then return "indisponível" end
+	if typeof(point) ~= "Vector3" then return "unavailable" end
 	return string.format("%.2f, %.2f, %.2f", point.X, point.Y, point.Z)
 end
 local function formatSample(title, sample)
-	if not sample then return title .. ": indisponível\n" end
+	if not sample then return title .. ": unavailable\n" end
 	return string.format(
-		"%s\nMinha posição: %s\nPosição do oponente: %s\nPosição da bola: %s\nDistância: %s studs\nVelocidade: %s\n",
+		"%s\nMy position: %s\nOpponent position: %s\nBall position: %s\nDistance: %s studs\nSpeed: %s\n",
 		title,
 		formatPoint(sample.own),
 		formatPoint(sample.opponent),
@@ -58,12 +58,12 @@ function ClashStats.finish(reason, time)
 		utils.appendClashLog(
 			log,
 			string.format(
-				"Oponente: %s\nVencedor: %s\nDuração: %.3f s\nCPS médio: %.2f\nTempo do target até a morte observada: %s\nPenúltimo target: %s\n\n%s\n%s",
+				"Opponent: %s\nWinner: %s\nDuration: %.3f s\nAverage CPS: %.2f\nTarget time until death: %s\nPrevious target: %s\n\n%s\n%s",
 				opponent and opponent.Name or tostring(stats.partnerId),
 				reason == "jogador morreu" and (opponent and opponent.Name or tostring(stats.partnerId)) or localPlayer.Name,
 				stats.duration,
 				stats.cps,
-				stats.fatalTravelTime and string.format("%.3f s (%.0f ms)", stats.fatalTravelTime, stats.fatalTravelTime * 1000) or "indisponível",
+				stats.fatalTravelTime and string.format("%.3f s (%.0f ms)", stats.fatalTravelTime, stats.fatalTravelTime * 1000) or "unavailable",
 				stats.penultimateTravelTime
 						and string.format(
 							"%s — %.3f s (%.0f ms)",
@@ -71,8 +71,8 @@ function ClashStats.finish(reason, time)
 							stats.penultimateTravelTime,
 							stats.penultimateTravelTime * 1000
 						)
-					or "indisponível",
-				formatSample("INÍCIO", stats.startSample),
+					or "unavailable",
+				formatSample("START", stats.startSample),
 				formatSample("FIM", stats.endSample)
 			)
 		)

@@ -63,6 +63,7 @@ local C = {
 	card = Color3.fromRGB(20, 20, 44),
 	accent = Color3.fromRGB(99, 102, 241),
 	accentPink = Color3.fromRGB(236, 72, 153),
+	autoMode = Color3.fromRGB(16, 154, 201),
 	green = Color3.fromRGB(34, 197, 94),
 	red = Color3.fromRGB(239, 68, 68),
 	redDark = Color3.fromRGB(153, 27, 27),
@@ -293,18 +294,18 @@ local function setJumpBall(v)
 	paintJumpBall(v)
 	if showToast then showToast("Auto Jump " .. (v and "On" or "Off")) end
 end
-local MINI_W, MINI_H = 120, 90
+local MINI_W, MINI_H = 120, 102
 local function showMini(v, visBtn)
 	if UIState.desktop then v = false end
 	setConfigValue("MiniSpamVisible", v); local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30; miniGui.Visible = v == true
 	if v then twPlay(miniGui, 0.22, { Position = UDim2.new(0, miniX, 0, miniY) }, EASE_OUT, DIR_OUT) else miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY) end
-	if visBtn and visBtn.Parent then visBtn.Text = v and "Mini UI: Visivel" or "Mini UI: Oculto"; twPlay(visBtn, 0.15, { BackgroundColor3 = v and Color3.fromRGB(0, 130, 65) or C.btnDark }) end
+	if visBtn and visBtn.Parent then visBtn.Text = v and "Mini UI: Visible" or "Mini UI: Hidden"; twPlay(visBtn, 0.15, { BackgroundColor3 = v and Color3.fromRGB(0, 130, 65) or C.btnDark }) end
 end
 setSpam = function(v, silent)
 	UIState.spamOn = v; Utils.setManualSpamActive(v); local spamBtn = miniGui and miniGui:FindFirstChild("SpamButton")
 	if spamBtn then
-		spamBtn.Text = v and "ON" or "OFF"; twPlay(spamBtn, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT); twPlay(spamBtn, 0.08, { Size = UDim2.new(1, -22, 0, 44) }, EASE_SINE, DIR_OUT)
-		task.delay(0.08, function() twPlay(spamBtn, 0.28, { Size = UDim2.new(1, -16, 0, 48) }, EASE_OUT, DIR_OUT) end)
+		spamBtn.Text = v and "ON" or "OFF"; twPlay(spamBtn, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT); twPlay(spamBtn, 0.08, { Size = UDim2.new(1, -22, 0, 40) }, EASE_SINE, DIR_OUT)
+		task.delay(0.08, function() twPlay(spamBtn, 0.28, { Size = UDim2.new(1, -16, 0, 44) }, EASE_OUT, DIR_OUT) end)
 	end
 	local panelBtn = configPanel and configPanel:FindFirstChild("ManualSpamButton", true)
 	if panelBtn then panelBtn.Text = "Manual Spam: " .. (v and "ON" or "OFF"); twPlay(panelBtn, 0.18, { BackgroundColor3 = v and C.green or C.btnBlue }, EASE_SINE, DIR_INOUT) end
@@ -315,7 +316,8 @@ local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
 local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 48, 64, 118
 local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
-local function nextCardY(yPos, cardHeight) return yPos + cardHeight + CARD_GAP end
+local CARD_SCALE = 1.06
+local function nextCardY(yPos, cardHeight) return yPos + cardHeight * CARD_SCALE + CARD_GAP end
 
 -- panel
 local function panelPos()
@@ -374,14 +376,14 @@ end
 -- cards
 local function cardFrame(yPos, h, parent)
 	local f = inst("Frame", {
-		Size = UDim2.new(1, -12, 0, h),
-		Position = UDim2.new(0, 4, 0, yPos),
+		Size = UDim2.new(1, -22, 0, h),
+		Position = UDim2.new(0, 2, 0, yPos),
 		BackgroundColor3 = C.card,
 		BackgroundTransparency = 0.1,
 		ZIndex = 6,
 		Parent = parent,
 	})
-	corner(f, 12); local s = stroke(f, C.border, 1)
+	inst("UIScale", { Scale = CARD_SCALE }, f); corner(f, 12); local s = stroke(f, C.border, 1)
 	trackConn(f.MouseEnter:Connect(function()
 		twPlay(s, 0.22, { Color = C.accent }, EASE_SINE, DIR_INOUT); twPlay(f, 0.22, { BackgroundColor3 = Color3.fromRGB(24, 24, 50) }, EASE_SINE, DIR_INOUT)
 	end))
@@ -517,17 +519,17 @@ local function keyName(value)
 end
 local function makeKeycap(parent, configKey)
 	local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 32, 28, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey; keycap.Position = UDim2.new(1, -132, 0, 10); keycap.TextSize = 9; keycap.ZIndex = 11; shortcutLabels[configKey] = keycap; local arrow = makeBtn("⌄", 0, 0, 24, 28, parent, C.btnDark); arrow.Name = "ShortcutSettings"; arrow.Position = UDim2.new(1, -96, 0, 10)
-	arrow.ZIndex = 11; local editor = makeBtn("Atalho: " .. keyName(Utils.getConfigValue(configKey)), 10, CARD_H + 4, 0, 30, parent, C.btnBlue); editor.Size = UDim2.new(1, -20, 0, 30); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
+	arrow.ZIndex = 11; local editor = makeBtn("Shortcut: " .. keyName(Utils.getConfigValue(configKey)), 10, CARD_H + 4, 0, 30, parent, C.btnBlue); editor.Size = UDim2.new(1, -20, 0, 30); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
 	local function expand()
-		expanded = not expanded; local delta = expanded and 44 or -44; editor.Visible = expanded; arrow.Text = expanded and "⌃" or "⌄"; parent.Size += UDim2.fromOffset(0, delta)
+		expanded = not expanded; local delta = expanded and 44 or -44; editor.Visible = expanded; arrow.Text = expanded and "⌃" or "⌄"; parent.Size += UDim2.fromOffset(0, delta); local layoutDelta = delta * CARD_SCALE
 		for _, sibling in ipairs(parent.Parent:GetChildren()) do
-			if sibling:IsA("GuiObject") and sibling ~= parent and sibling.Position.Y.Offset > parent.Position.Y.Offset then sibling.Position += UDim2.fromOffset(0, delta) end
+			if sibling:IsA("GuiObject") and sibling ~= parent and sibling.Position.Y.Offset > parent.Position.Y.Offset then sibling.Position += UDim2.fromOffset(0, layoutDelta) end
 		end
-		if parent.Parent:IsA("ScrollingFrame") then parent.Parent.CanvasSize += UDim2.fromOffset(0, delta) end
+		if parent.Parent:IsA("ScrollingFrame") then parent.Parent.CanvasSize += UDim2.fromOffset(0, layoutDelta) end
 	end
 	trackConn(arrow.Activated:Connect(expand)); trackConn(keycap.Activated:Connect(expand))
 	bindKeyCapture(editor, function(binding)
-		if setConfigValue(configKey, binding) then keycap.Text = keyName(binding); editor.Text = "Atalho: " .. keyName(binding) end
+		if setConfigValue(configKey, binding) then keycap.Text = keyName(binding); editor.Text = "Shortcut: " .. keyName(binding) end
 	end)
 	return keycap
 end
@@ -610,7 +612,7 @@ local function createParryTimingCard(yPos, parent)
 		Size = UDim2.new(1, -100, 1, 0),
 		Position = UDim2.new(0, 14, 0, 0),
 		BackgroundTransparency = 1,
-		Text = "Antecipação AP (%)",
+		Text = "AP Timing (%)",
 		TextColor3 = C.text,
 		TextSize = 13,
 		Font = Enum.Font.GothamSemibold,
@@ -641,7 +643,7 @@ local function createParryTimingCard(yPos, parent)
 	return nextCardY(yPos, CARD_H)
 end
 local function createCameraSensitivityCard(yPos, parent)
-	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Sensibilidade da câmera", f)
+	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Camera Sensitivity", f)
 	local input = inst("TextBox", {
 		Size = UDim2.new(0, 62, 0, 30),
 		Position = UDim2.new(1, -74, 0.5, -15),
@@ -669,7 +671,7 @@ local function createRateSelector(yPos, parent)
 		CPF = config.CPF,
 		SpamRateMode = config.SpamRateMode,
 	})
-	cardLabel("Taxa do Spam", f); local currentMode = config.SpamRateMode
+	cardLabel("Spam Rate", f); local currentMode = config.SpamRateMode
 	local modeTrack = inst("Frame", {
 		Size = UDim2.new(0, 120, 0, 28),
 		Position = UDim2.new(0, 10, 0, 29),
@@ -683,7 +685,7 @@ local function createRateSelector(yPos, parent)
 	local modeThumb = inst("Frame", {
 		Size = UDim2.new(0, 36, 0, 24),
 		Position = UDim2.new(0, currentMode == "CPS" and 2 or (currentMode == "CPF" and 42 or 82), 0.5, -12),
-		BackgroundColor3 = currentMode == "CPS" and C.accent or C.accentPink,
+		BackgroundColor3 = currentMode == "CPS" and C.accent or (currentMode == "CPF" and C.accentPink or C.autoMode),
 		BorderSizePixel = 0,
 		ZIndex = 8,
 		Parent = modeTrack,
@@ -710,7 +712,7 @@ local function createRateSelector(yPos, parent)
 		BackgroundTransparency = 0.1,
 		Text = currentMode == "Auto" and "Auto" or tostring(config[currentMode]),
 		TextEditable = currentMode ~= "Auto",
-		PlaceholderText = "Taxa",
+		PlaceholderText = "Rate",
 		ClearTextOnFocus = false,
 		TextColor3 = C.text,
 		TextSize = 13,
@@ -723,7 +725,7 @@ local function createRateSelector(yPos, parent)
 		local isCPS = currentMode == "CPS"; local targetPosition = UDim2.new(0, isCPS and 2 or (currentMode == "CPF" and 42 or 82), 0.5, -12); local duration = animated and 0.32 or 0
 		twPlay(modeThumb, duration, {
 			Position = targetPosition,
-			BackgroundColor3 = isCPS and C.accent or C.accentPink,
+			BackgroundColor3 = isCPS and C.accent or (currentMode == "CPF" and C.accentPink or C.autoMode),
 		}, EASE_OUT, DIR_OUT)
 		for mode, button in pairs(modeButtons) do
 			twPlay(button, animated and 0.2 or 0, {
@@ -747,7 +749,7 @@ local function createRateSelector(yPos, parent)
 	return nextCardY(yPos, RATE_CARD_H)
 end
 local function createKeybindSelector(yPos, parent)
-	return createActionShortcutCard("Parar funções", yPos, parent, "Keybind", function()
+	return createActionShortcutCard("Stop Functions", yPos, parent, "Keybind", function()
 		setSpam(false)
 		if type(Controls.onPanic) == "function" then Controls.onPanic() end
 	end)
@@ -758,7 +760,7 @@ local function createSpamCard(yPos, parent)
 			if not enabled then setSpam(false) end
 		end, "SpamKeybind")
 	end
-	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true; local button = makeBtn(visible and "Mini UI: Visível" or "Mini UI: Oculto", 8, 22, 0, 22, f, C.btnDark); button.Size = UDim2.new(1, -16, 0, 22)
+	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true; local button = makeBtn(visible and "Mini UI: Visible" or "Mini UI: Hidden", 8, 22, 0, 22, f, C.btnDark); button.Size = UDim2.new(1, -16, 0, 22)
 	trackConn(button.Activated:Connect(function() showMini(Utils.getConfigValue("MiniSpamVisible") ~= true, button) end))
 	return nextCardY(yPos, CARD_H)
 end
@@ -791,7 +793,7 @@ local function restoreAfterReloadFailure(message)
 	if floatingButton and floatingButton.Parent then twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN) end
 	local config = Utils.getConfig()
 	if not UIState.desktop then showClashBall(config.ClashBallVisible == true); showParryBall(config.ParryBallVisible == true); showDarkBall(config.DarkBallVisible == true); showJumpBall(config.JumpBallVisible == true); showUpDashBall(config.UpDashBallVisible == true); showMini(config.MiniSpamVisible == true) end
-	if showToast then showToast("Reload falhou") end
+	if showToast then showToast("Reload failed") end
 	warn("[Exodus Reload] " .. tostring(message))
 end
 local function animateClose(action)
@@ -829,7 +831,7 @@ function ExodusUI.setup(deps)
 		or type(deps.GameInfo) ~= "table"
 		or type(deps.AutoSpam) ~= "table"
 	then
-		return false, "dependência ausente: Utils, Controls ou UIConfig"
+		return false, "missing dependency: Utils, Controls or UIConfig"
 	end
 	Utils = deps.Utils; UIConfig = deps.UIConfig; GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam; Controls = type(deps.Controls) == "table" and deps.Controls or {}; local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	if type(_G.ExodusUICleanup) == "function" then
@@ -890,7 +892,7 @@ function ExodusUI.setup(deps)
 		Position = UDim2.new(0.5, 0, 0, 0),
 		BackgroundColor3 = C.header,
 		BackgroundTransparency = 0.2,
-		Text = "SPD atual: —\nClash: —\nCPS: —",
+		Text = "Current SPD: —\nClash: —\nCPS: —",
 		TextColor3 = C.text,
 		TextSize = 14,
 		Font = Enum.Font.GothamSemibold,
@@ -905,7 +907,7 @@ function ExodusUI.setup(deps)
 		Position = UDim2.new(0.5, 0, 1, -20),
 		BackgroundColor3 = C.header,
 		BackgroundTransparency = 0.2,
-		Text = "Tempo da bola: —",
+		Text = "Ball travel time: —",
 		TextColor3 = C.text,
 		TextSize = 14,
 		Font = Enum.Font.GothamSemibold,
@@ -925,20 +927,20 @@ function ExodusUI.setup(deps)
 			if not speed or speed ~= speed or speed <= 0 or speed == math.huge then speed = snapshot.speed end
 		end
 		local speedText = type(speed) == "number" and speed == speed and speed >= 0 and speed < math.huge and string.format("%.0f", speed) or "—"
-		if not stats then travelLabel.Text = "SPD atual: " .. speedText .. "\nTempo da bola: —"; return end
+		if not stats then travelLabel.Text = "Current SPD: " .. speedText .. "\nBall travel time: —"; return end
 		local me = Players.LocalPlayer and Players.LocalPlayer.UserId
 		if stats.frozen then
 			if stats.deceasedId then
-				local who = stats.deceasedId == me and "Você" or "Oponente"; local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "indisponível"; local previousWho = stats.penultimateTarget == me and "você" or (stats.penultimateTarget == stats.partnerId and "oponente" or "—")
-				local previous = stats.penultimateTravelTime and string.format("%.0f ms", stats.penultimateTravelTime * 1000) or "indisponível"; travelLabel.Text = who .. " morreu\nTarget até a morte: " .. value .. "\nPenúltimo (" .. previousWho .. "): " .. previous
+				local who = stats.deceasedId == me and "You" or "Opponent"; local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "unavailable"; local previousWho = stats.penultimateTarget == me and "you" or (stats.penultimateTarget == stats.partnerId and "opponent" or "—")
+				local previous = stats.penultimateTravelTime and string.format("%.0f ms", stats.penultimateTravelTime * 1000) or "unavailable"; travelLabel.Text = who .. " died\nTarget time to death: " .. value .. "\nPrevious (" .. previousWho .. "): " .. previous
 			else
-				travelLabel.Text = "Clash encerrado\nTempo final: indisponível"
+				travelLabel.Text = "Clash ended\nFinal time: unavailable"
 			end
 		else
-			local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"; local who = stats.travelTarget == me and "Você" or (stats.travelTarget == stats.partnerId and "Oponente" or "—"); local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
-			local lastWho = stats.lastTravelTarget == me and "você" or (stats.lastTravelTarget == stats.partnerId and "oponente" or "—"); travelLabel.Text = "Target: " .. who .. " | Tempo: " .. value .. "\nÚltima troca (" .. lastWho .. "): " .. last
+			local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"; local who = stats.travelTarget == me and "You" or (stats.travelTarget == stats.partnerId and "Opponent" or "—"); local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
+			local lastWho = stats.lastTravelTarget == me and "you" or (stats.lastTravelTarget == stats.partnerId and "opponent" or "—"); travelLabel.Text = "Target: " .. who .. " | Time: " .. value .. "\nLast exchange (" .. lastWho .. "): " .. last
 		end
-		travelLabel.Text = "SPD atual: " .. speedText .. "\n" .. travelLabel.Text
+		travelLabel.Text = "Current SPD: " .. speedText .. "\n" .. travelLabel.Text
 	end))
 	corner(distanceLabel, 8); local nextDistanceUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
@@ -960,16 +962,17 @@ function ExodusUI.setup(deps)
 			end
 			local cps = type(stats.currentCps) == "number" and string.format("%.2f", stats.currentCps) or "—"
 			distanceLabel.Text = string.format(
-				"SPD atual: %s\nInício: %s\n%s: %s\nCPS atual: %s | %.2fs",
+				"Current SPD: %s\nStart: %s\n%s: %s\nCurrent CPS: %s | %.2fs",
 				speedText,
 				sampleText(stats.startSample),
-				stats.frozen and (stats.endReason or "Fim") or "Atual",
+				stats.frozen and (stats.endReason == "jogador morreu" and "Player died" or (stats.endReason == "oponente morreu" and "Opponent died" or "End"))
+					or "Current",
 				sampleText(stats.endSample),
 				cps,
 				stats.duration or 0
 			)
 		else
-			distanceLabel.Text = "SPD atual: " .. speedText .. "\nClash: —\nCPS atual: —"
+			distanceLabel.Text = "Current SPD: " .. speedText .. "\nClash: —\nCurrent CPS: —"
 		end
 	end))
 	bindInput()
@@ -1138,7 +1141,7 @@ function ExodusUI.setup(deps)
 	)
 	registerFlow(stroke(miniGui, C.accent, 1.5))
 	local miniTitleBar = inst("Frame", {
-		Size = UDim2.new(1, 0, 0, 26),
+		Size = UDim2.new(1, 0, 0, 44),
 		BackgroundColor3 = Color3.fromRGB(20, 20, 46),
 		BackgroundTransparency = 0.05,
 		BorderSizePixel = 0,
@@ -1180,8 +1183,8 @@ function ExodusUI.setup(deps)
 	})
 	local spamBtn = inst("TextButton", {
 		Name = "SpamButton",
-		Size = UDim2.new(1, -16, 0, 48),
-		Position = UDim2.new(0, 8, 0, 32),
+		Size = UDim2.new(1, -16, 0, 44),
+		Position = UDim2.new(0, 8, 0, 50),
 		BackgroundColor3 = C.red,
 		BorderSizePixel = 0,
 		Text = "OFF",
@@ -1325,7 +1328,7 @@ function ExodusUI.setup(deps)
 		Position = UDim2.new(1, -PAD - 124, 1, -PAD - 26),
 		BackgroundColor3 = C.redDark,
 		BackgroundTransparency = 0.15,
-		Text = "Fechar Script",
+		Text = "Close Script",
 		TextColor3 = Color3.fromRGB(255, 200, 200),
 		TextSize = 11,
 		Font = Enum.Font.GothamBold,
@@ -1334,7 +1337,7 @@ function ExodusUI.setup(deps)
 	})
 	corner(killBtn, 6)
 	trackConn(killBtn.Activated:Connect(function() animateClose("close") end))
-	reloadButton = makeBtn("Recarregar", 0, 0, 124, 26, configPanel, C.btnBlue); reloadButton.Name = "ReloadHub"; reloadButton.Position = UDim2.new(1, -PAD - 256, 1, -PAD - 26); reloadButton.TextSize = 11
+	reloadButton = makeBtn("Reload", 0, 0, 124, 26, configPanel, C.btnBlue); reloadButton.Name = "ReloadHub"; reloadButton.Position = UDim2.new(1, -PAD - 256, 1, -PAD - 26); reloadButton.TextSize = 11
 	trackConn(reloadButton.Activated:Connect(function() animateClose("reload") end))
 	local yL = 4
 	local toggleCallbacks = {
@@ -1443,8 +1446,8 @@ function ExodusUI.setup(deps)
 	else
 		upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", upDashYPos, autosRight, showUpDashBall)
 	end
-	local autoDashYPos, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft); local travelYPos = createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight)
-	createToggleCard("Tempo da bola", "ClashTravelTimeVisible", travelYPos, settingsRight)
+	local autoDashYPos, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft); local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 4, settingsRight)
+	createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight)
 	local function updateAbilityVisibility(enabled)
 		for _, card in ipairs({ darkCard, miniDarkCard, jumpCard, miniJumpCard, upDashCard, fierceCard, autoUpDashCard }) do
 			if card then card.Visible = enabled end
@@ -1460,10 +1463,10 @@ function ExodusUI.setup(deps)
 	paintAnti = createActionToggleCard("Anti AFK", 0, utilities, function()
 		if antiConnection then antiGeneration += 1; antiConnection:Disconnect(); untrackConn(antiConnection); antiConnection = nil; paintAnti(false); return false end
 		local player = Utils.getLocalPlayer(); local ok, virtualUser = pcall(game.GetService, game, "VirtualUser")
-		if not player then Utils.recordError("AntiAFK", "Jogador indisponível"); return false end
+		if not player then Utils.recordError("AntiAFK", "Player unavailable"); return false end
 		local function pulse()
 			local inputOk, err = pcall(function()
-				if not ok or not virtualUser then error("VirtualUser indisponível") end
+				if not ok or not virtualUser then error("VirtualUser unavailable") end
 				virtualUser:CaptureController(); virtualUser:ClickButton2(Vector2.new(0, 0))
 			end)
 			if not inputOk then
@@ -1482,7 +1485,7 @@ function ExodusUI.setup(deps)
 		end)
 		paintAnti(true); return true
 	end, nil, true)
-	local spinActive, spinGeneration, spinButtons = nil, 0, {}; local spinModes = { { "Espada", "SwordCrate" }, { "Emote", "EmoteCrate" }, { "Explosão", "FinisherCrate" } }
+	local spinActive, spinGeneration, spinButtons = nil, 0, {}; local spinModes = { { "Sword", "SwordCrate" }, { "Emote", "EmoteCrate" }, { "Explosion", "FinisherCrate" } }
 	local function paintSpin()
 		for _, mode in ipairs(spinModes) do
 			if spinButtons[mode[2]] then spinButtons[mode[2]](spinActive == mode[2]) end
@@ -1490,7 +1493,7 @@ function ExodusUI.setup(deps)
 	end
 	for index, mode in ipairs(spinModes) do
 		local crate = mode[2]
-		spinButtons[crate] = createActionToggleCard(mode[1], CARD_H + 8 + (index - 1) * (CARD_H + 8), utilities, function()
+		spinButtons[crate] = createActionToggleCard(mode[1], (CARD_H * CARD_SCALE + CARD_GAP) * index, utilities, function()
 			spinGeneration += 1
 			if spinActive == crate then spinActive = nil else spinActive = crate end
 			paintSpin()
@@ -1536,7 +1539,7 @@ function ExodusUI.setup(deps)
 		Size = UDim2.new(0, 82, 0, 26),
 		Position = UDim2.new(0, PAD + 34, 1, -PAD - 26),
 		BackgroundTransparency = 1,
-		Text = "1/4 Principal",
+		Text = "1/4 Main",
 		TextColor3 = C.text,
 		TextSize = 9,
 		Font = Enum.Font.GothamBold,
@@ -1555,7 +1558,7 @@ function ExodusUI.setup(deps)
 		ZIndex = 7,
 		Parent = configPanel,
 	})
-	corner(previous, 6); corner(nextPage, 6); local pageNames = { "Principal", "Ajustes", "Utilidades", "Automáticos" }
+	corner(previous, 6); corner(nextPage, 6); local pageNames = { "Main", "Settings", "Utilities", "Automatic" }
 	local function updateNavigation()
 		pageLabel.Text = tostring(page) .. "/" .. tostring(#pageGroups) .. " " .. pageNames[page]; previous.TextTransparency = page == 1 and 0.7 or 0; nextPage.TextTransparency = page == #pageGroups and 0.7 or 0; previous.AutoButtonColor = page > 1; nextPage.AutoButtonColor = page < #pageGroups
 	end
