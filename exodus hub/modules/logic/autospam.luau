@@ -314,7 +314,6 @@ local function start(s, reason, partner, time, serverTime, snapshot)
 		return
 	end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
-	if snapshot and snapshot.mode == "training" then return end
 	if snapshot and snapshot.locked == true then return end
 	local distanceReason = distanceGate(s, snapshot, partner)
 	if distanceReason and distanceReason ~= "distance_unavailable" then return end
@@ -562,10 +561,6 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	syncManualPartner(s)
 	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now(), nil, false); resetExchange(s); s.target = nil; return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
-	if snapshot and snapshot.mode == "training" then
-		if s.active then stop(s, "training_area") end
-		resetExchange(s); s.target = nil; return
-	end
 	if not fresh and applyDeactivation(s, snapshot, time, nil, false) then blockedActivation = true end
 	sampleOwnDash(s, time)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end

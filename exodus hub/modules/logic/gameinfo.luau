@@ -111,8 +111,6 @@ end
 function GameInfo.isTrainingArea() return inTrainingArea() end
 function GameInfo.fireTrainingParry()
 	if not inTrainingArea() then return false, "fora da arena de treino" end
-	local limit = world:GetAttribute("CPS_LIMIT")
-	if finite(limit) and limit < 1 then return false, "bloqueio de treino indisponível" end
 	local endpoint = child(child(child(storage(), "Training"), "Remotes"), "Block"); local camera = world.CurrentCamera
 	if not endpoint or not endpoint:IsA("RemoteEvent") or not camera then return false, "bloqueio de treino indisponível" end
 	endpoint:FireServer(camera.CFrame.Position, camera.CFrame.LookVector); return true
@@ -374,7 +372,6 @@ function GameInfo.getPlayerDistance(id)
 end
 function GameInfo.getDeflectRangeParameters() return T.RANGE_BASE, T.RANGE_BONUS_SPAN, sharedLayout() and 0.1125 or T.RANGE_BONUS_STEP end
 function GameInfo.getDeflectRange()
-	if inTrainingArea() then return T.RANGE_BASE end
 	local player = players.LocalPlayer; local range = player and player:GetAttribute("DeflectRange") or nil
 	if sharedLayout() and player and type(GameInfo.getPlayerDeflectRange) == "function" then return GameInfo.getPlayerDeflectRange(player.UserId) end
 	return range
@@ -416,16 +413,8 @@ function GameInfo.getLastDeflectPressAt()
 	end
 	return latest and (os.clock() - (1 - latest)) or 0
 end
-function GameInfo.getMinimumSpamInterval()
-	if inTrainingArea() then
-		local limit = world:GetAttribute("CPS_LIMIT")
-		if not finite(limit) then limit = 16 end
-		return limit >= 1 and math.max(T.SPAM_MIN_INTERVAL, 1 / math.floor(limit)) or 1
-	end
-	return T.SPAM_MIN_INTERVAL
-end
+function GameInfo.getMinimumSpamInterval() return T.SPAM_MIN_INTERVAL end
 function GameInfo.getAutoSpamDelay()
-	if inTrainingArea() then local limit = world:GetAttribute("CPS_LIMIT"); return (not finite(limit) or limit >= 1) and 0 or nil end
 	local ability = GameInfo.getDeflectAbility()
 	if not ability then return nil end
 	local time = os.clock(); local last = ability.LastPressClock; local delay = finite(last) and math.max(0, T.SPAM_MIN_INTERVAL - (time - last)) or 0; local limit = world:GetAttribute("CPS_LIMIT")
@@ -736,7 +725,7 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
 	end
 	if not finite(speed) or high <= low then return nil end
 	local window = T.WINDOW_BASE - T.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer; local inClash = false
-	if not inTrainingArea() and gameBall and player and type(gameBall.IsInClash) == "function" then inClash = gameBall:IsInClash(player) == true end
+	if gameBall and player and type(gameBall.IsInClash) == "function" then inClash = gameBall:IsInClash(player) == true end
 	if inClash and type(gameBall.GetClashMinWindow) == "function" then
 		local minimum = gameBall:GetClashMinWindow(speed)
 		if finite(minimum) then window = math.max(window, minimum) end
@@ -750,7 +739,6 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
 	return window
 end
 function GameInfo.getBallFrozen()
-	if inTrainingArea() then return false end
 	if not ballData or not ballData.Parent then ballData = child(world, "BallData") end
 	if not ballData then return nil end
 	return ballData:GetAttribute("Frozen") == true

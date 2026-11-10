@@ -32,7 +32,7 @@ info.bindBallSync(function() end); assert(receiver, "training ball listener must
 receiver(vec(10),vec(-20),99.9,42,nil,20)
 assert(info.isTrainingArea())
 local snap=info.getSnapshotAt(os.clock()); assert(snap.mode=="training" and snap.targeted and snap.targetId==42 and math.abs(snap.position.X-8)<.001 and info.isSnapshotValid(snap))
-assert(math.abs(info.getMinimumSpamInterval()-1/16)<.0001)
+assert(math.abs(info.getMinimumSpamInterval()-.0301)<.0001)
 local remote=assert(loadstring(SOURCE_REMOTE))(); assert(remote.setup({GameInfo=info}) and remote.fireParry() and sent==1)
 receiver(vec(10),vec(-20),99.91,0,"target",20); snap=info.getSnapshotAt(os.clock()); assert(snap.targetId==-1 and not snap.targeted)
 assert(info.getSnapshotAt(os.clock()+1)==nil, "stale ball must not be used")
