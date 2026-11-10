@@ -10,8 +10,9 @@ Este documento descreve as interfaces atuais do hub. O registro de referência d
 | `config`, `uiconfig` | Validação, valores padrão e definições dos controles da interface. |
 | `utils` | Estado da sessão, configuração, observadores, conexões e diagnósticos. |
 | `gameinfo` | Informações do jogo, habilidade, estado da bola, geometria e eventos de sincronização. |
+| `clashstats` | Estado, métricas e registros de cada clash; recebe somente o contexto do jogo e os serviços de diagnóstico. |
 | `remote` | Chamadas às habilidades obtidas por `gameinfo`. |
-| `autoparry`, `autospam`, `spam` | Regras de parry, confronto e envio repetido. |
+| `autoparry`, `autospam`, `spam` | Regras de parry, decisão do confronto e envio repetido; as métricas do clash ficam em `clashstats`. |
 | `dash`, `movement` | Detecção de dash e ações de movimento. |
 | `autodark`, `autofierce`, `autojump`, `autodash`, `camera` | Recursos adicionais. |
 | `character` | Vincula e desvincula os módulos quando o personagem muda. |

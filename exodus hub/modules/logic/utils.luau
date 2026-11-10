@@ -47,6 +47,11 @@ local function append(list, value)
 	list[#list + 1] = value
 	if #list > T.HISTORY_LIMIT then table.remove(list, 1) end
 end
+local function setValues(target, source)
+	for key, value in pairs(source or {}) do
+		target[key] = value
+	end
+end
 
 -- observers
 local function connectObserver(list, observer)
@@ -198,6 +203,38 @@ local function serializeConfig(config)
 	end
 	return http:JSONEncode(data)
 end
+local function persistenceAvailable()
+	return type(isfile) == "function"
+		and type(readfile) == "function"
+		and type(writefile) == "function"
+		and type(isfolder) == "function"
+		and type(makefolder) == "function"
+end
+local function decodeKeyCode(value)
+	if type(value) ~= "table" or type(value.keyCode) ~= "string" then return value end
+	local name = value.keyCode
+	local ok, keyCode = pcall(function() return Enum.KeyCode[name] end)
+	if ok and keyCode then return keyCode end
+	warn("Config ignorada: KeyCode inválido " .. tostring(name)); return nil
+end
+local function migrateConfig(data)
+	local migrated = data.AutoClash ~= nil or data.AutoClashActivationMs ~= nil or data.AutoClashDeactivationMs ~= nil
+	if data.AutoSpam == nil and type(data.AutoClash) == "boolean" then data.AutoSpam, migrated = data.AutoClash, true end
+	if data.AutoParryFactor04Applied ~= true then
+		data.AutoParryWindowFactor, data.AutoParryFactor04Applied, migrated = 0.4, true, true
+	end
+	local patch = {}
+	for key, value in pairs(data) do
+		if key ~= "AutoClash" and key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" then
+			value = decodeKeyCode(value)
+			if value ~= nil then
+				local valid, reason = configModule.validatePatch({ [key] = value })
+				if valid then patch[key] = value else warn("Config ignorada: " .. tostring(reason)) end
+			end
+		end
+	end
+	return patch, migrated
+end
 local function saveConfig()
 	if not persistenceReady or not saveDirty then return end
 	if type(writefile) ~= "function" then error("API externa ausente: writefile", 2) end
@@ -311,23 +348,12 @@ function Utils.setConfig(patch)
 	else
 		normalized = snapshot(patch)
 	end
-	for key, value in pairs(normalized) do
-		state.config[key] = value
-	end
-	notify(configObservers, normalized)
+	setValues(state.config, normalized); notify(configObservers, normalized)
 	if normalized.SpamRateMode ~= nil or normalized.CPS ~= nil or normalized.CPF ~= nil then notify(spamObservers) end
 	refreshNamespace(); queueSave(); return true
 end
 function Utils.loadConfig()
-	if
-		type(isfile) ~= "function"
-		or type(readfile) ~= "function"
-		or type(writefile) ~= "function"
-		or type(isfolder) ~= "function"
-		or type(makefolder) ~= "function"
-	then
-		warn("Persistência indisponível; usando configuração da sessão"); return true
-	end
+	if not persistenceAvailable() then warn("Persistência indisponível; usando configuração da sessão"); return true end
 	local ok, folder = pcall(function()
 		local _, path = Utils.ensureDataFolder(); return path
 	end)
@@ -337,27 +363,8 @@ function Utils.loadConfig()
 	if exists then
 		local loaded, data = pcall(function() return http:JSONDecode(readfile(path)) end)
 		if not loaded or type(data) ~= "table" then warn("Configuração salva inválida ou inacessível; usando padrões"); return true end
-		migrated = data.AutoClash ~= nil or data.AutoClashActivationMs ~= nil or data.AutoClashDeactivationMs ~= nil
-		if data.AutoSpam == nil and type(data.AutoClash) == "boolean" then data.AutoSpam = data.AutoClash end
-		if data.AutoParryFactor04Applied ~= true then
-			data.AutoParryWindowFactor, data.AutoParryFactor04Applied, migrated = 0.4, true, true
-		end
-		local patch = {}
-		for key, value in pairs(data) do
-			if key ~= "AutoClash" and key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" then
-				if type(value) == "table" and type(value.keyCode) == "string" then
-					local name = value.keyCode
-					local ok, keyCode = pcall(function() return Enum.KeyCode[name] end)
-					value = ok and keyCode or nil
-					if not value then warn("Config ignorada: KeyCode inválido " .. name) end
-				end
-				if value ~= nil then
-					local valid, reason = configModule.validatePatch({ [key] = value })
-					if valid then patch[key] = value else warn("Config ignorada: " .. tostring(reason)) end
-				end
-			end
-		end
-		Utils.setConfig(patch)
+		local patch
+		patch, migrated = migrateConfig(data); Utils.setConfig(patch)
 	end
 	persistenceReady = true
 	if migrated then queueSave() end
@@ -369,10 +376,7 @@ function Utils.setConfigModule(module)
 end
 function Utils.setModuleURLs(urls)
 	if type(urls) ~= "table" then error("URLs de módulos inválidas", 2) end
-	for key, value in pairs(urls) do
-		state.urls[key] = value
-	end
-	refreshNamespace(); return true
+	setValues(state.urls, urls); refreshNamespace(); return true
 end
 function Utils.trackGlobal(connection) return track(state.globalConnections, connection) end
 function Utils.untrackGlobal(connection) return untrack(state.globalConnections, connection) end

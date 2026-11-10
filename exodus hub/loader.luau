@@ -26,6 +26,7 @@ local MODULE_MANIFEST = {
 	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
 	{ name = "utils", path = "modules/logic/utils.luau" },
 	{ name = "gameinfo", path = "modules/logic/gameinfo.luau" },
+	{ name = "clashstats", path = "modules/logic/clashstats.luau" },
 	{ name = "autodark", path = "modules/logic/extras/autodark.luau" },
 	{ name = "movement", path = "modules/logic/movement.luau" },
 	{ name = "autojump", path = "modules/logic/extras/autojump.luau" },
@@ -136,7 +137,20 @@ local function stopPreviousRuntime()
 		return ok, result
 	end
 	if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then attempt("gameinfo", Modules.gameinfo.stopMaintenance) end
-	for _, name in ipairs({ "character", "spam", "autodash", "autospam", "autodark", "autofierce", "autojump", "camera", "movement", "dash", "autoparry" }) do
+	for _, name in ipairs({
+		"character",
+		"spam",
+		"autodash",
+		"autospam",
+		"clashstats",
+		"autodark",
+		"autofierce",
+		"autojump",
+		"camera",
+		"movement",
+		"dash",
+		"autoparry",
+	}) do
 		local module = Modules[name]
 		if type(module) == "table" then
 			if type(module.teardown) == "function" then attempt(name, module.teardown) elseif type(module.resetState) == "function" then attempt(name, module.resetState) end
@@ -400,6 +414,25 @@ local function loadInterface(loaded, controls)
 	if setupResult ~= true then return false, "UI", setupError end
 	return true
 end
+local function stopStartup(utils, moduleName, reason)
+	utils.stop(); return false, moduleName, reason
+end
+local function configureModules(loaded, utils, urls)
+	for _, entry in ipairs(MODULE_MANIFEST) do
+		local module = loaded[entry.name]
+		if type(module) == "table" and module.__config and not loaded.config.register(entry.name, module.__config) then return false, "Config", "schema duplicado ou inválido: " .. entry.name end
+	end
+	if type(utils.setConfigModule) ~= "function" or not utils.setConfigModule(loaded.config) then return false, "Utils", "schema de Config indisponível" end
+	local defaults = loaded.config.defaults()
+	if type(defaults) ~= "table" then return false, "Config", "defaults inválidos" end
+	local configValid, configReason = loaded.config.validate(defaults)
+	if configValid ~= true then return false, "Config", configReason end
+	utils.setLifecyclePhase("configuring")
+	if not utils.setConfig(defaults) then return false, "Utils", "setConfig rejeitou a configuração inicial" end
+	if type(utils.loadConfig) == "function" then utils.loadConfig() end
+	if not utils.setModuleURLs(urls) then return false, "Utils", "setModuleURLs rejeitou as URLs dos módulos" end
+	return true
+end
 
 -- start
 local activeLoaded
@@ -424,25 +457,13 @@ local function startInternal()
 	if not loaded then return false, moduleName, loadError end
 	activeLoaded = loaded; local utils = loaded.utils
 	if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
-	utils.start(); utils.setLifecyclePhase("loading"); Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot()
-	for _, entry in ipairs(MODULE_MANIFEST) do
-		local module = loaded[entry.name]
-		if type(module) == "table" and module.__config and not loaded.config.register(entry.name, module.__config) then utils.stop(); return false, "Config", "schema duplicado ou inválido: " .. entry.name end
-	end
-	if type(utils.setConfigModule) ~= "function" or not utils.setConfigModule(loaded.config) then utils.stop(); return false, "Utils", "schema de Config indisponível" end
-	local defaults = loaded.config.defaults()
-	if type(defaults) ~= "table" then utils.stop(); return false, "Config", "defaults inválidos" end
-	local configValid, configReason = loaded.config.validate(defaults)
-	if configValid ~= true then utils.stop(); return false, "Config", configReason end
-	utils.setLifecyclePhase("configuring")
-	if not utils.setConfig(defaults) then utils.stop(); return false, "Utils", "setConfig rejeitou a configuração inicial" end
-	if type(utils.loadConfig) == "function" then utils.loadConfig() end
-	if not utils.setModuleURLs(urls) then utils.stop(); return false, "Utils", "setModuleURLs rejeitou as URLs dos módulos" end
+	utils.start(); utils.setLifecyclePhase("loading"); Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot(); local configured, configModuleName, configError = configureModules(loaded, utils, urls)
+	if not configured then return stopStartup(utils, configModuleName, configError) end
 	Exodus.Config = utils.getConfigSnapshot(); Exodus.ModuleURLs = utils.getModuleURLsSnapshot(); utils.setLifecyclePhase("initializing"); local modulesReady, failedModule, modulesError = initializeModules(loaded)
-	if not modulesReady then utils.stop(); return false, failedModule, modulesError end
-	if not utils.setDiagnosticsModules(loaded) then utils.stop(); return false, "Utils", "setDiagnosticsModules rejeitou os módulos" end
-	utils.setLifecyclePhase("binding"); local runtime, runtimeError = bindRuntime(loaded, utils)
-	if type(runtime) ~= "table" then utils.stop(); return false, "Runtime", runtimeError end
+	if not modulesReady then return stopStartup(utils, failedModule, modulesError) end
+	if not utils.setDiagnosticsModules(loaded) then return stopStartup(utils, "Utils", "setDiagnosticsModules rejeitou os módulos") end
+	utils.setLifecyclePhase("binding"); local runtime, runtimeError = bindRuntime(loaded)
+	if type(runtime) ~= "table" then return stopStartup(utils, "Runtime", runtimeError) end
 	Exodus.Runtime = runtime; _G.ExodusOnBurst = loaded.autoparry.fire
 	local uiReady, uiModule, uiError = loadInterface(loaded, {
 		onAutoDarkChanged = function() loaded.autodark.sync() end,
@@ -455,7 +476,7 @@ local function startInternal()
 			loaded.autoparry.resetState(); loaded.autospam.stopSpam()
 		end,
 	})
-	if not uiReady then utils.stop(); return false, uiModule, uiError end
+	if not uiReady then return stopStartup(utils, uiModule, uiError) end
 	Exodus.Context = loaded; Exodus.UIReady = uiReady == true; Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready"); Exodus.Started = true; Exodus.Version = utils.version(); Exodus.Revision = version
 	if unpinned then Exodus.Revision = nil end
 	printStartup("Exodus: iniciado"); return true

@@ -4,28 +4,34 @@
 local Config = {}
 local Registry = {}
 local Keys = {}
-local SupportedKinds = {
-	boolean = true,
-	rate = true,
-	delay = true,
-	delayMs = true,
-	position = true,
-	keyCode = true,
-	rateMode = true,
-}
 
 -- validation
 local function isFiniteNumber(value) return type(value) == "number" and value == value and value < math.huge and value > -math.huge end
 local function validKeyCode(value) return typeof(value) == "EnumItem" and value.EnumType == Enum.KeyCode end
+local validators = {
+	boolean = function(value) return type(value) == "boolean" end,
+	rate = function(value) return isFiniteNumber(value) and value >= 0 end,
+	delay = function(value) return isFiniteNumber(value) and value >= 0 and value <= 5 end,
+	delayMs = function(value) return isFiniteNumber(value) and value >= 0 and value <= 400 end,
+	position = function(value) return isFiniteNumber(value) and value >= -10000 and value <= 10000 end,
+	keyCode = validKeyCode,
+	rateMode = function(value) return value == "CPS" or value == "CPF" or value == "Auto" end,
+}
+
+local validationErrors = {
+	boolean = "flag inválida: %s",
+	rate = "taxa inválida: %s",
+	delay = "atraso inválido: %s",
+	delayMs = "tempo inválido: %s",
+	position = "posição inválida: %s",
+	keyCode = "keybind inválido: %s",
+	rateMode = "SpamRateMode inválido",
+}
+
 local function validateValue(key, kind, value: any)
-	if kind == "boolean" and type(value) ~= "boolean" then return false, "flag inválida: " .. key end
-	if kind == "rate" and (not isFiniteNumber(value) or value < 0) then return false, "taxa inválida: " .. key end
-	if kind == "delay" and (not isFiniteNumber(value) or value < 0 or value > 5) then return false, "atraso inválido: " .. key end
-	if kind == "delayMs" and (not isFiniteNumber(value) or value < 0 or value > 400) then return false, "tempo inválido: " .. key end
-	if kind == "position" and (not isFiniteNumber(value) or value < -10000 or value > 10000) then return false, "posição inválida: " .. key end
-	if kind == "keyCode" and not validKeyCode(value) then return false, "keybind inválido: " .. key end
-	if kind == "rateMode" and value ~= "CPS" and value ~= "CPF" and value ~= "Auto" then return false, "SpamRateMode inválido" end
-	return true
+	local validator = validators[kind]
+	if validator and validator(value) then return true end
+	local message = validationErrors[kind] or "valor inválido: %s"; return false, message:find("%s", 1, true) and message:format(key) or message
 end
 local function copy(source)
 	local result = {}
@@ -40,7 +46,7 @@ function Config.register(name, definition)
 	if type(name) ~= "string" or type(definition) ~= "table" or Registry[name] then return false end
 	local schema = type(definition.schema) == "table" and definition.schema or {}; local defaults = type(definition.defaults) == "table" and definition.defaults or {}
 	for key, kind in pairs(schema) do
-		if type(key) ~= "string" or not SupportedKinds[kind] or Keys[key] then return false end
+		if type(key) ~= "string" or not validators[kind] or Keys[key] then return false end
 	end
 	for key, value in pairs(defaults) do
 		local kind = schema[key]

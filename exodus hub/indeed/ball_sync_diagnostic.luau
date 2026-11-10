@@ -237,11 +237,11 @@ local function disconnectAll()
 end
 local function stop(reason)
 	if Runtime.stopped then return end
-	Runtime.stopped = true; disconnectAll()
+	Runtime.stopped = true
 	for _, state in pairs(Runtime.remoteStates) do
 		log(("REMOTE SUMMARY %s: captured=%d limit=%d"):format(state.path, state.events, CONFIG.MAX_EVENTS_PER_REMOTE))
 	end
-	log("observation ended: " .. tostring(reason or "manual")); local ok, err = saveFile()
+	disconnectAll(); log("observation ended: " .. tostring(reason or "manual")); local ok, err = saveFile()
 	if ok then print(CONFIG.TAG .. " saved " .. CONFIG.LOG_PATH) else warn(CONFIG.TAG .. " could not save TXT: " .. tostring(err)) end
 end
 local API = {

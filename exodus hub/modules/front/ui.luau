@@ -126,14 +126,13 @@ local function trackConn(c)
 	if c and type(c.Disconnect) == "function" then UIState.connections[#UIState.connections + 1] = c end
 	return c
 end
-local function safe(fn, ...) return fn(...) end
 local function untrackConn(c)
 	for i = #UIState.connections, 1, -1 do
 		if UIState.connections[i] == c then table.remove(UIState.connections, i); return end
 	end
 end
 local function safeDisconnect(c)
-	if c then safe(function() c:Disconnect() end) end
+	if c then c:Disconnect() end
 end
 local function disconnectUIConnections()
 	for i = #UIState.connections, 1, -1 do
@@ -149,7 +148,7 @@ local function bindInput()
 		local config = Utils.getConfig() or {}; local panicKey = config.Keybind; local spamKey = config.SpamKeybind
 		if isKey(input, panicKey) then
 			setSpam(false)
-			if type(Controls.onPanic) == "function" then safe(Controls.onPanic) end
+			if type(Controls.onPanic) == "function" then Controls.onPanic() end
 		elseif isKey(input, spamKey) then
 			setSpam(not UIState.spamOn)
 		end
@@ -184,7 +183,7 @@ local function makeDraggable(handle, target, onDragEnd, disableOnMobile)
 	trackConn(UIS.InputEnded:Connect(function(input)
 		if input ~= dragInput or state == "Idle" then return end
 		state, dragInput = "Idle", nil
-		if wasDragged and onDragEnd then safe(onDragEnd) end
+		if wasDragged and onDragEnd then onDragEnd() end
 		wasDragged = false
 	end))
 	return function() return state == "Dragging" end
@@ -203,17 +202,22 @@ end
 local CLASH_SIZE = 64
 local OFFSCREEN_X = -CLASH_SIZE - 40
 local autoClashTrack, autoClashThumb, autoParrySetVisual, autoDarkSetVisual, autoJumpSetVisual
-local function paintParryBall(value)
-	if not parryBall or not parryBall.Parent then return end
-	parryBall.Text = value and "PARRY\nON" or "PARRY\nOFF"; parryBall.TextSize = 14; twPlay(parryBall, 0.28, { BackgroundColor3 = value and C.green or C.red }, EASE_SINE, DIR_INOUT)
+local function paintBall(ball, value, onText, offText, onColor, offColor, onSize, offSize)
+	if not ball or not ball.Parent then return end
+	ball.Text = value and onText or offText
+	if onSize then ball.TextSize = value and onSize or offSize end
+	twPlay(ball, 0.28, { BackgroundColor3 = value and onColor or offColor }, EASE_SINE, DIR_INOUT)
 end
-local function showParryBall(value)
-	setConfigValue("ParryBallVisible", value); local config = Utils.getConfig(); local x = config.ParryBallX or 14; local y = config.ParryBallY or (viewport().Y / 2 - CLASH_SIZE - 40); twPlay(parryBall, value and 0.22 or 0.18, { Position = value and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
+local function paintParryBall(value) paintBall(parryBall, value, "PARRY\nON", "PARRY\nOFF", C.green, C.red, 14, 14) end
+local function showBall(ball, visible, visibleKey, xKey, yKey, defaultX, defaultY)
+	setConfigValue(visibleKey, visible); local config = Utils.getConfig(); local x = config[xKey] or defaultX; local y = config[yKey] or defaultY; twPlay(ball, visible and 0.22 or 0.18, { Position = visible and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
 end
-local function paintClashBall()
-	if not clashBall or not clashBall.Parent then return end
-	twPlay(clashBall, 0.28, { BackgroundColor3 = UIState.clashBallOn and C.green or C.red }, EASE_SINE, DIR_INOUT); clashBall.Text = UIState.clashBallOn and "ON" or "OFF"; clashBall.TextSize = UIState.clashBallOn and 18 or 16
+local function pulseBall(ball)
+	twPlay(ball, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
+	task.delay(0.08, function() twPlay(ball, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
 end
+local function showParryBall(value) showBall(parryBall, value, "ParryBallVisible", "ParryBallX", "ParryBallY", 14, viewport().Y / 2 - CLASH_SIZE - 40) end
+local function paintClashBall() paintBall(clashBall, UIState.clashBallOn, "ON", "OFF", C.green, C.red, 18, 16) end
 local function syncAutoSpamToggle()
 	if not (autoClashTrack and autoClashThumb) then return end
 	local v = UIState.clashBallOn; twPlay(autoClashTrack, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT); twPlay(autoClashThumb, 0.32, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_OUT, DIR_OUT)
@@ -221,35 +225,26 @@ end
 local function setClashBall(v, silent)
 	UIState.clashBallOn = v; setConfigValue("AutoSpam", v)
 	if silent then return end
-	paintClashBall(); twPlay(clashBall, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
-	task.delay(0.08, function() twPlay(clashBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
+	paintClashBall(); pulseBall(clashBall)
 end
-local function showClashBall(v)
-	setConfigValue("ClashBallVisible", v); local config = Utils.getConfig(); local clashX = config.ClashBallX or 14; local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2); twPlay(clashBall, (v and 0.22) or 0.18, { Position = v and UDim2.new(0, clashX, 0, clashY) or UDim2.new(0, OFFSCREEN_X, 0, clashY) }, EASE_OUT, DIR_OUT)
-end
-local function paintDarkBall(v)
-	if not darkBall or not darkBall.Parent then return end
-	twPlay(darkBall, 0.28, { BackgroundColor3 = v and C.darkOn or C.darkOff }, EASE_SINE, DIR_INOUT); darkBall.Text = v and "ON" or "OFF"; darkBall.TextSize = v and 18 or 16
-end
-local function showDarkBall(v)
-	setConfigValue("DarkBallVisible", v); local config = Utils.getConfig(); local x = config.DarkBallX or 14; local y = config.DarkBallY or (viewport().Y / 2 + CLASH_SIZE / 2 + 8); twPlay(darkBall, v and 0.22 or 0.18, { Position = v and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
-end
+local function showClashBall(v) showBall(clashBall, v, "ClashBallVisible", "ClashBallX", "ClashBallY", 14, viewport().Y / 2 - CLASH_SIZE / 2) end
+local function paintDarkBall(v) paintBall(darkBall, v, "ON", "OFF", C.darkOn, C.darkOff, 18, 16) end
+local function showDarkBall(v) showBall(darkBall, v, "DarkBallVisible", "DarkBallX", "DarkBallY", 14, viewport().Y / 2 + CLASH_SIZE / 2 + 8) end
 local function setDarkBall(v)
 	if not setConfigValue("AutoDark", v) then return end
 	if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
 	paintDarkBall(v)
 	if autoDarkSetVisual then autoDarkSetVisual(v) end
-	twPlay(darkBall, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
-	task.delay(0.08, function() twPlay(darkBall, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
+	pulseBall(darkBall)
 end
 local function showMovementBall(ball, visible, visibleKey, xKey, yKey, yOffset)
-	setConfigValue(visibleKey, visible); local config = Utils.getConfig(); local x = config[xKey] or (CLASH_SIZE + 22); local y = config[yKey] or (viewport().Y / 2 + yOffset); twPlay(ball, visible and 0.22 or 0.18, { Position = visible and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, DIR_OUT)
+	showBall(ball, visible, visibleKey, xKey, yKey, CLASH_SIZE + 22, viewport().Y / 2 + yOffset)
 end
 local function showJumpBall(v) showMovementBall(jumpBall, v, "JumpBallVisible", "JumpBallX", "JumpBallY", -CLASH_SIZE / 2) end
 local function showUpDashBall(v) showMovementBall(upDashBall, v, "UpDashBallVisible", "UpDashBallX", "UpDashBallY", CLASH_SIZE / 2 + 8) end
 local function paintJumpBall(v)
 	if autoJumpSetVisual then autoJumpSetVisual(v) end
-	if jumpBall and jumpBall.Parent then jumpBall.Text = v and "JUMP\nON" or "JUMP\nOFF"; twPlay(jumpBall, 0.2, { BackgroundColor3 = v and C.jumpOn or C.jumpOff }, EASE_SINE, DIR_INOUT) end
+	paintBall(jumpBall, v, "JUMP\nON", "JUMP\nOFF", C.jumpOn, C.jumpOff)
 end
 local function setJumpBall(v)
 	if not setConfigValue("AutoJump", v) then return end
@@ -413,7 +408,7 @@ local function bindKeyCapture(btn, onPicked)
 		conn = trackConn(UIS.InputBegan:Connect(function(input, gpe)
 			if gpe then return end
 			if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-			safe(onPicked, input.KeyCode); listening = false; safeDisconnect(conn); untrackConn(conn)
+			onPicked(input.KeyCode); listening = false; safeDisconnect(conn); untrackConn(conn)
 		end))
 	end))
 end
@@ -942,8 +937,7 @@ function ExodusUI.setup(deps)
 		CLASH_SIZE / 2 + 8,
 		function(ball)
 			if type(Controls.onUpDash) == "function" then Controls.onUpDash() end
-			twPlay(ball, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_OUT)
-			task.delay(0.08, function() twPlay(ball, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end)
+			pulseBall(ball)
 		end
 	)
 	local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30

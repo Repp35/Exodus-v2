@@ -110,7 +110,7 @@ AutoDash.__contract = {
 		Utils = { "getPlayers", "getLocalPlayer", "getRunService", "getConfigValue", "isActive", "now", "trackCharacter", "untrackCharacter" },
 		GameInfo = { "areAbilitiesEnabled", "getClashContext", "getSnapshotAt", "isSnapshotValid", "getDeflectGeometry" },
 		Dash = { "setHandler", "tick" },
-		Movement = { "upDash", "dashToward" },
+		Movement = { "upDash" },
 		AutoSpam = { "getActivationContext" },
 	},
 

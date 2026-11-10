@@ -19,23 +19,25 @@ local function send(ability, method, ...)
 	if result == false then return false, method .. " recusado" end
 	return true
 end
+local function allowed(guard)
+	if type(guard) ~= "function" then return true end
+	local result = guard(); return result ~= nil and result ~= false
+end
 function Remote.fireParry(_flag, guard)
 	if not gameInfo then return false, "Remote não inicializado" end
 	if gameInfo.isTrainingArea() then
-		if type(guard) == "function" and not guard() then return false, "Deflect cancelado" end
+		if not allowed(guard) then return false, "Deflect cancelado" end
 		return gameInfo.fireTrainingParry()
 	end
 	local ability = gameInfo.getDeflectAbility()
 	if not ability then return false, "Deflect indisponível" end
-	if type(guard) == "function" then
-		if not guard() then return false, "Deflect cancelado" end
-	end
+	if not allowed(guard) then return false, "Deflect cancelado" end
 	return send(ability, "Deflect")
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), "SendEvent", eventId, cameraFrame) end
 function Remote.fireFierce(guard)
 	local ability = gameInfo and gameInfo.getFierceDeflectAbility()
-	if type(guard) == "function" and not guard() then return false, "Fierce cancelado" end
+	if not allowed(guard) then return false, "Fierce cancelado" end
 	return send(ability, "ActivateAndBlock")
 end
 function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), "Dash") end

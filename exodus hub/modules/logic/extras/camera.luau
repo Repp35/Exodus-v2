@@ -2,7 +2,7 @@
 
 -- state
 local Camera = {}
-local utils, gameInfo, autoSpam, runService
+local utils, runService
 local cameraEpoch = 0
 local cameraInput, cameraOriginal, cameraWrapped, configConnection
 local sensitivity = 1
@@ -45,8 +45,8 @@ end
 
 -- lifecycle
 function Camera.setup(deps)
-	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.AutoSpam) ~= "table" then return false, "dependências ausentes" end
-	Camera.teardown(); utils, gameInfo, autoSpam = deps.Utils, deps.GameInfo, deps.AutoSpam; runService = utils.getRunService()
+	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
+	Camera.teardown(); utils = deps.Utils; runService = utils.getRunService()
 	if not runService then return false, "RunService indisponível" end
 	sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or 1; startCamera()
 	configConnection = utils.observeConfig(function(changes)
@@ -55,16 +55,14 @@ function Camera.setup(deps)
 	utils.trackGlobal(configConnection); return true
 end
 function Camera.teardown()
-	stopCamera(); utils, gameInfo, autoSpam, runService = nil, nil, nil, nil
+	stopCamera(); utils, runService = nil, nil
 end
 
 -- contract
 Camera.__contract = {
-	requires = { Utils = "utils", GameInfo = "gameinfo", AutoSpam = "autospam" },
+	requires = { Utils = "utils" },
 	requiresMethods = {
-		Utils = { "getLocalPlayer", "getRunService", "getWorkspace", "getConfigValue", "isActive", "observeConfig", "trackGlobal", "untrackGlobal" },
-		GameInfo = { "getPlayerMotion", "getClashContext" },
-		AutoSpam = { "getActivationContext" },
+		Utils = { "getLocalPlayer", "getRunService", "getConfigValue", "isActive", "observeConfig", "trackGlobal", "untrackGlobal" },
 	},
 
 	provides = { "setup", "teardown" },
