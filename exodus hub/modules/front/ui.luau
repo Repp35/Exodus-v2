@@ -294,7 +294,7 @@ local function setJumpBall(v)
 	paintJumpBall(v)
 	if showToast then showToast("Auto Jump " .. (v and "On" or "Off")) end
 end
-local MINI_W, MINI_H = 120, 102
+local MINI_W, MINI_H = 120, 90
 local function showMini(v, visBtn)
 	if UIState.desktop then v = false end
 	setConfigValue("MiniSpamVisible", v); local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30; miniGui.Visible = v == true
@@ -304,9 +304,9 @@ end
 setSpam = function(v, silent)
 	UIState.spamOn = v; Utils.setManualSpamActive(v); local spamButton = miniGui and miniGui:FindFirstChild("SpamButton")
 	if spamButton then
-		spamButton.Text = v and "ON" or "OFF"; twPlay(spamButton, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT); twPlay(spamButton, 0.08, { Size = UDim2.new(1, -22, 0, 40) }, EASE_SINE, DIR_OUT)
+		spamButton.Text = v and "ON" or "OFF"; twPlay(spamButton, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT); twPlay(spamButton, 0.08, { Size = UDim2.new(1, -22, 0, 44) }, EASE_SINE, DIR_OUT)
 		task.delay(0.08, function()
-			if spamButton.Parent then twPlay(spamButton, 0.28, { Size = UDim2.new(1, -16, 0, 44) }, EASE_OUT, DIR_OUT) end
+			if spamButton.Parent then twPlay(spamButton, 0.28, { Size = UDim2.new(1, -16, 0, 48) }, EASE_BACK, DIR_OUT) end
 		end)
 	end
 	local panelBtn = configPanel and configPanel:FindFirstChild("ManualSpamButton", true)
@@ -1162,7 +1162,7 @@ function ExodusUI.setup(deps)
 	)
 	registerFlow(stroke(miniGui, C.accent, 1.5))
 	local miniTitleBar = inst("Frame", {
-		Size = UDim2.new(1, 0, 0, 44),
+		Size = UDim2.new(1, 0, 0, 26),
 		BackgroundColor3 = Color3.fromRGB(20, 20, 46),
 		BackgroundTransparency = 0.05,
 		BorderSizePixel = 0,
@@ -1196,7 +1196,7 @@ function ExodusUI.setup(deps)
 		BackgroundTransparency = 1,
 		Text = "Spam",
 		TextColor3 = C.subtext,
-		TextSize = 14,
+		TextScaled = true,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		Font = Enum.Font.GothamBold,
 		ZIndex = 17,
@@ -1204,8 +1204,8 @@ function ExodusUI.setup(deps)
 	})
 	local spamButton = inst("TextButton", {
 		Name = "SpamButton",
-		Size = UDim2.new(1, -16, 0, 44),
-		Position = UDim2.new(0, 8, 0, 50),
+		Size = UDim2.new(1, -16, 0, 48),
+		Position = UDim2.new(0, 8, 0, 32),
 		BackgroundColor3 = UIState.spamOn and C.green or C.red,
 		BorderSizePixel = 0,
 		Text = UIState.spamOn and "ON" or "OFF",
