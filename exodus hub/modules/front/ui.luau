@@ -767,16 +767,11 @@ function ExodusUI.setup(deps)
 		ZIndex = 20,
 		Parent = informationGui,
 	})
-	compactInformation(apCpsLabel); corner(apCpsLabel, 8)
-	local nextApCpsUpdate = 0
+	compactInformation(apCpsLabel); corner(apCpsLabel, 8); local nextApCpsUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not apCpsLabel.Parent or os.clock() < nextApCpsUpdate then return end
-		nextApCpsUpdate = os.clock() + 0.1
-		local status = AutoParry.getCpsStatus()
-		apCpsLabel.Position = UDim2.new(0.5, 0, 0, distanceLabel.Visible and (distanceLabel.AbsoluteSize.Y + 12) or 12)
-		apCpsLabel.Text = string.format("CPS do AP: %.2f | Fator: %s", status.cps, status.boosted and "1.0" or "normal")
+		nextApCpsUpdate = os.clock() + 0.1; local status = AutoParry.getCpsStatus(); apCpsLabel.Position = UDim2.new(0.5, 0, 0, distanceLabel.Visible and (distanceLabel.AbsoluteSize.Y + 12) or 12); apCpsLabel.Text = string.format("CPS do AP: %.2f | Fator: %s", status.cps, status.boosted and "1.0" or "normal")
 	end))
-
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not travelLabel.Parent then return end
 		local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true; travelLabel.Visible = visible; local time = os.clock()
