@@ -3,7 +3,7 @@
 -- runtime
 
 return function(loadedRevision, request)
-	local players = game:GetService("Players"); local token = {}; _G.ExodusUpdaterToken = token; local CHECK_INTERVAL = 60
+	local players = game:GetService("Players"); local token = {}; _G.ExodusUpdaterToken = token; local CHECK_INTERVAL = 5
 	local function running() return _G.ExodusUpdaterToken == token and type(_G.Exodus) == "table" and _G.Exodus.Started == true end
 	local function safeToUpdate()
 		local exodus = _G.Exodus; local modules = exodus and exodus.Modules; local info = modules and modules.gameinfo; local auto = modules and modules.autospam; local player = players.LocalPlayer
