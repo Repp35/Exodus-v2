@@ -120,13 +120,10 @@ local function resilience()
 	}
 end
 local function apCps()
-	local interval = state.lastApParryInterval
-	return finite(interval) and interval > 0 and 1 / interval or 0
+	local interval = state.lastApParryInterval; return finite(interval) and interval > 0 and 1 / interval or 0
 end
 local function recordApParry()
-	local now = clock()
-	state.lastApParryInterval = state.lastApParryAt and (now - state.lastApParryAt) or nil
-	state.lastApParryAt = now
+	local now = clock(); state.lastApParryInterval = state.lastApParryAt and (now - state.lastApParryAt) or nil; state.lastApParryAt = now
 end
 local function configuredFactor()
 	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); factor = finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
@@ -233,8 +230,7 @@ local function request(reason)
 		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível")) end
 		return false
 	end
-	recordApParry()
-	local configured = configuredFactor()
+	recordApParry(); local configured = configuredFactor()
 	if configured > 0 then
 		local geometry = radius(speed, configured)
 		if geometry then local denominator = speed * geometry.leadTime; local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured; appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed }) end
@@ -320,7 +316,9 @@ function AutoParry.setup(deps)
 	end
 	detach("setup"); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote; state.player = utils.getLocalPlayer()
 	if not state.player then return false, "Players.LocalPlayer indisponível" end
-	resetTracking(); state.lastApParryAt, state.lastApParryInterval = nil, nil; phase("detached", "setup_complete"); return true
+	resetTracking()
+	state.lastApParryAt, state.lastApParryInterval = nil, nil
+	phase("detached", "setup_complete"); return true
 end
 function AutoParry.bindCharacter(character)
 	if not utils or not gameInfo or not remote then return false, "dependências não inicializadas" end
