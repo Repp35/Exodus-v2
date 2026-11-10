@@ -170,9 +170,10 @@ local function sequenceOrder(incoming)
 end
 local function observeTarget(target, time)
 	if not state.player or not finite(target) then return end
+	if target <= 0 then state.targetKnown = false; return end
 	if target == state.target and state.targetKnown then return end
 	local me, previous = state.player.UserId, state.target; state.lastTargeted = previous == me
-	if previous == me and target ~= me then
+	if previous == me and target > 0 and target ~= me then
 		state.awaySeen = true; state.awayAt = time; state.awayTarget = target > 0 and target or nil
 	elseif target == me and previous ~= me and state.awaySeen then
 		if state.awayAt and state.awayTarget == previous and time >= state.awayAt then appendRecent(state.returns, { at = time, interval = time - state.awayAt }) end
@@ -182,6 +183,7 @@ local function observeTarget(target, time)
 	state.target, state.targetKnown = target, true
 end
 local function observeSnapshot(snapshot, time)
+	if snapshot.targetUncertain == true then return false end
 	local mode = snapshot.mode == "training" and "training" or "match"
 	if state.mode ~= mode then
 		state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false
@@ -198,7 +200,7 @@ end
 -- parry
 local function request(reason)
 	local redirectReturn = reason == "redirect_return"
-	if state.fired or not state.player or (not redirectReturn and state.target ~= state.player.UserId) then return false end
+	if state.fired or not state.player or (not redirectReturn and (not state.targetKnown or state.target ~= state.player.UserId)) then return false end
 	local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote; local firedAt, speed, distance = clock(), state.speed, state.distance
 	state.fired, state.lastFireAt = true, firedAt
 	local function sameCycle()
@@ -210,7 +212,7 @@ local function request(reason)
 			and state.bound
 			and state.fired
 			and state.player ~= nil
-			and (redirectReturn or state.target == state.player.UserId)
+			and (redirectReturn or (state.targetKnown and state.target == state.player.UserId))
 	end
 	local function allowed()
 		return sameCycle()
@@ -343,11 +345,8 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 	state.closingSpeed, state.triggerDistance = closing, threshold
 	if closing <= 0 or distance > threshold then return false end
-	local alreadyFired, previousFireAt = state.fired, state.lastFireAt; local generation, cycle = state.generation, state.cycle; state.fired = false; local sent = request("redirect_return")
-	if not sent and state.generation == generation and state.cycle == cycle then
-		state.fired, state.lastFireAt = alreadyFired, previousFireAt
-	end
-	return sent
+	if state.fired then return false end
+	return request("redirect_return")
 end
 function AutoParry.resetState() detach("reset") end
 function AutoParry.detachCharacter() detach("detach") end
@@ -386,7 +385,6 @@ function AutoParry.onBallSync(data)
 	if not finite(target) then return true end
 	observeTarget(target, clock())
 	if target <= 0 then
-		state.target, state.targetKnown = target, true
 		if target == -1 then state.lastBall = nil end
 	end
 	if state.player and (target == state.player.UserId or data.Grace == true) and state.character and state.root and not state.fired then tick(state.character, state.root, state.generation) end
