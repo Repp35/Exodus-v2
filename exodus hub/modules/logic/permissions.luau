@@ -103,7 +103,11 @@ local POLICIES = {
 	},
 	camera = {
 		provide = allow("setup teardown"),
-		consume = { utils = allow("getConfigValue getLocalPlayer isActive observeConfig trackGlobal untrackGlobal") },
+		consume = {
+			utils = allow("getConfigValue getLocalPlayer getRunService getWorkspace isActive observeConfig trackGlobal untrackGlobal"),
+			gameinfo = allow("getPlayerMotion getClashContext"),
+			autospam = allow("getActivationContext"),
+		},
 	},
 	autodash = {
 		provide = allow("setup bindCharacter detachCharacter teardown"),

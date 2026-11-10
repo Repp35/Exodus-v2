@@ -2,7 +2,7 @@
 
 -- state
 local Camera = {}
-local utils
+local utils, gameInfo, autoSpam, runService
 local cameraEpoch = 0
 local cameraInput, cameraOriginal, cameraWrapped, configConnection
 local sensitivity = 1
@@ -10,6 +10,7 @@ local sensitivity = 1
 -- helpers
 local function stopCamera()
 	cameraEpoch += 1
+	if runService then runService:UnbindFromRenderStep("ExodusAimLock") end
 	if cameraInput and cameraInput.getRotation == cameraWrapped then cameraInput.getRotation = cameraOriginal end
 	if configConnection then
 		if utils then utils.untrackGlobal(configConnection) end
@@ -45,21 +46,37 @@ end
 
 -- lifecycle
 function Camera.setup(deps)
-	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "Utils ausente" end
-	Camera.teardown(); utils = deps.Utils; sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or 1; startCamera()
+	if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.AutoSpam) ~= "table" then return false, "dependências ausentes" end
+	Camera.teardown(); utils, gameInfo, autoSpam = deps.Utils, deps.GameInfo, deps.AutoSpam; runService = utils.getRunService()
+	if not runService then return false, "RunService indisponível" end
+	sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or 1; startCamera()
+	runService:BindToRenderStep("ExodusAimLock", Enum.RenderPriority.Camera.Value + 1, function()
+		if not utils or not utils.isActive() or utils.getConfigValue("AutoAimLock") ~= true then return end
+		local context = autoSpam.getActivationContext(); local partner = context and context.active and context.partner
+		if not partner then local clash = gameInfo.getClashContext(); partner = clash and clash.partnerId end
+		if type(partner) ~= "number" or partner <= 0 then return end
+		local position = gameInfo.getPlayerMotion(partner); local workspace = utils.getWorkspace(); local camera = workspace and workspace.CurrentCamera
+		if typeof(position) ~= "Vector3" or not camera or (position - camera.CFrame.Position).Magnitude < 0.001 then return end
+		camera.CFrame = CFrame.lookAt(camera.CFrame.Position, position)
+	end)
 	configConnection = utils.observeConfig(function(changes)
 		if changes.CameraSensitivity ~= nil then sensitivity = tonumber(changes.CameraSensitivity) or 1 end
 	end)
 	utils.trackGlobal(configConnection); return true
 end
 function Camera.teardown()
-	stopCamera(); utils = nil
+	stopCamera(); utils, gameInfo, autoSpam, runService = nil, nil, nil, nil
 end
 
 -- contract
 Camera.__contract = {
-	requires = { Utils = "utils" },
-	requiresMethods = { Utils = { "getLocalPlayer", "getConfigValue", "isActive", "observeConfig", "trackGlobal", "untrackGlobal" } },
+	requires = { Utils = "utils", GameInfo = "gameinfo", AutoSpam = "autospam" },
+	requiresMethods = {
+		Utils = { "getLocalPlayer", "getRunService", "getWorkspace", "getConfigValue", "isActive", "observeConfig", "trackGlobal", "untrackGlobal" },
+		GameInfo = { "getPlayerMotion", "getClashContext" },
+		AutoSpam = { "getActivationContext" },
+	},
+
 	provides = { "setup", "teardown" },
 }
 

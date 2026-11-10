@@ -21,6 +21,11 @@ UIConfig.panelToggles = {
 	},
 	{
 		kind = "toggle",
+		label = "Auto Aim Lock",
+		key = "AutoAimLock",
+	},
+	{
+		kind = "toggle",
 		label = "Mini Clash UI",
 		key = "ClashBallVisible",
 	},
@@ -46,6 +51,7 @@ UIConfig.__config = {
 		ParryBallX = "position",
 		ParryBallY = "position",
 		AutoSpam = "boolean",
+		AutoAimLock = "boolean",
 		AutoDark = "boolean",
 		AutoFierce = "boolean",
 		AutoJump = "boolean",
@@ -85,6 +91,7 @@ UIConfig.__config = {
 		CameraSensitivity = 1,
 		ParryBallVisible = false,
 		AutoSpam = true,
+		AutoAimLock = false,
 		AutoDark = false,
 		AutoFierce = false,
 		AutoJump = false,

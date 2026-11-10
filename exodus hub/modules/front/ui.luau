@@ -1128,10 +1128,13 @@ function ExodusUI.setup(deps)
 			Parent = configPanel,
 		})
 	end
-	colLeft = inst("Frame", {
+	colLeft = inst("ScrollingFrame", {
 		Size = UDim2.new(0, COL_W, 0, CONTENT_H),
 		Position = UDim2.new(0, 0, 0, 0),
 		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 4,
+		CanvasSize = UDim2.new(0, 0, 0, 0),
 		ZIndex = 6,
 		Parent = pageGroups[1],
 	})
@@ -1169,7 +1172,7 @@ function ExodusUI.setup(deps)
 	for _, definition in ipairs(UIConfig.panelToggles) do
 		if definition.kind == "toggle" then yL = createToggleCard(definition.label, definition.key, yL, colLeft, toggleCallbacks[definition.key]) end
 	end
-	local yR = 4
+	colLeft.CanvasSize = UDim2.new(0, 0, 0, yL); local yR = 4
 	local components = {
 		rate_selector = createRateSelector,
 		keybind_selector = createKeybindSelector,
