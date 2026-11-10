@@ -323,7 +323,9 @@ function Utils.loadConfig()
 		for key, value in pairs(data) do
 			if key ~= "AutoClash" and key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" then
 				if type(value) == "table" and type(value.keyCode) == "string" then
-					local name = value.keyCode; value = Enum.KeyCode[name]
+					local name = value.keyCode
+					local ok, keyCode = pcall(function() return Enum.KeyCode[name] end)
+					value = ok and keyCode or nil
 					if not value then warn("Config ignorada: KeyCode inválido " .. name) end
 				end
 				if value ~= nil then
