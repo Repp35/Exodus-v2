@@ -220,8 +220,8 @@ end
 local function migrateConfig(data)
 	local migrated = data.AutoClash ~= nil or data.AutoClashActivationMs ~= nil or data.AutoClashDeactivationMs ~= nil
 	if data.AutoSpam == nil and type(data.AutoClash) == "boolean" then data.AutoSpam, migrated = data.AutoClash, true end
-	if data.AutoParryFactor04Applied ~= true then
-		data.AutoParryWindowFactor, data.AutoParryFactor04Applied, migrated = 0.4, true, true
+	if data.AutoParryFactor08Applied ~= true then
+		data.AutoParryWindowFactor, data.AutoParryFactor08Applied, migrated = 0.8, true, true
 	end
 	local patch = {}
 	for key, value in pairs(data) do
