@@ -319,6 +319,8 @@ local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 48, 64, 118
 local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
 local CARD_SCALE = 1.06
+local ACTION_CARD_MIN_H, ACTION_CARD_MAX_H = 42, 46
+local ACTION_CARD_H = math.clamp(CARD_H - 4, ACTION_CARD_MIN_H, ACTION_CARD_MAX_H)
 local function nextCardY(yPos, cardHeight) return yPos + cardHeight * CARD_SCALE + CARD_GAP end
 
 -- panel
@@ -577,16 +579,27 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter, sho
 	return nextCardY(yPos, CARD_H), f
 end
 local function createActionToggleCard(labelText, yPos, parent, onToggle, shortcutKey, managesState)
-	local f = cardFrame(yPos, CARD_H, parent); cardLabel(labelText, f); local _, _, setVisual = makeToggle(f, false)
-	if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey) end
-	local active = false
-	trackConn(inst("TextButton", {
-		Size = UDim2.new(1, 0, 0, CARD_H),
-		BackgroundTransparency = 1,
-		Text = "",
+	local f = cardFrame(yPos, ACTION_CARD_H, parent)
+	local control = inst("TextButton", {
+		Size = UDim2.new(1, 0, 0, ACTION_CARD_H),
+		BackgroundColor3 = C.red,
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		Text = labelText .. ": OFF",
+		TextColor3 = C.text,
+		TextSize = 13,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Center,
 		ZIndex = 9,
 		Parent = f,
-	}).Activated:Connect(function()
+	})
+	corner(control, 10)
+	local function setVisual(v)
+		control.Text = labelText .. ": " .. (v and "ON" or "OFF"); twPlay(control, 0.22, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT)
+	end
+	if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey) end
+	local active = false
+	trackConn(control.Activated:Connect(function()
 		local result = onToggle()
 		if managesState then active = result == nil and not active or result == true; setVisual(active) end
 		if showToast then showToast(labelText .. (managesState and (active and " On" or " Off") or " On")) end
@@ -1514,7 +1527,7 @@ function ExodusUI.setup(deps)
 	end
 	for index, mode in ipairs(spinModes) do
 		local crate = mode[2]
-		spinButtons[crate] = createActionToggleCard(mode[1], (CARD_H * CARD_SCALE + CARD_GAP) * index, utilities, function()
+		spinButtons[crate] = createActionToggleCard(mode[1], (ACTION_CARD_H * CARD_SCALE + CARD_GAP) * index, utilities, function()
 			spinGeneration += 1
 			if spinActive == crate then spinActive = nil else spinActive = crate end
 			paintSpin()
