@@ -374,8 +374,8 @@ end
 -- cards
 local function cardFrame(yPos, h, parent)
 	local f = inst("Frame", {
-		Size = UDim2.new(1, -40, 0, h),
-		Position = UDim2.new(0, 16, 0, yPos),
+		Size = UDim2.new(1, -12, 0, h),
+		Position = UDim2.new(0, 4, 0, yPos),
 		BackgroundColor3 = C.card,
 		BackgroundTransparency = 0.1,
 		ZIndex = 6,
@@ -517,7 +517,7 @@ local function keyName(value)
 end
 local function makeKeycap(parent, configKey)
 	local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 32, 28, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey; keycap.Position = UDim2.new(1, -132, 0, 12); keycap.TextSize = 9; keycap.ZIndex = 11; shortcutLabels[configKey] = keycap; local arrow = makeBtn("⌄", 0, 0, 24, 28, parent, C.btnDark); arrow.Name = "ShortcutSettings"; arrow.Position = UDim2.new(1, -96, 0, 12)
-	arrow.ZIndex = 11; local editor = makeBtn("Atalho: " .. keyName(Utils.getConfigValue(configKey)), 10, CARD_H + 4, COL_W - 60, 30, parent, C.btnBlue); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
+	arrow.ZIndex = 11; local editor = makeBtn("Atalho: " .. keyName(Utils.getConfigValue(configKey)), 10, CARD_H + 4, 0, 30, parent, C.btnBlue); editor.Size = UDim2.new(1, -20, 0, 30); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
 	local function expand()
 		expanded = not expanded; local delta = expanded and 44 or -44; editor.Visible = expanded; arrow.Text = expanded and "⌃" or "⌄"; parent.Size += UDim2.fromOffset(0, delta)
 		for _, sibling in ipairs(parent.Parent:GetChildren()) do
@@ -704,8 +704,8 @@ local function createRateSelector(yPos, parent)
 		modeButtons[mode] = button
 	end
 	local inputBox = inst("TextBox", {
-		Size = UDim2.new(0, 54, 0, 30),
-		Position = UDim2.new(1, -64, 0, 31),
+		Size = UDim2.new(0, 54, 0, 28),
+		Position = UDim2.new(1, -64, 0, 32),
 		BackgroundColor3 = C.inputBg,
 		BackgroundTransparency = 0.1,
 		Text = currentMode == "Auto" and "Auto" or tostring(config[currentMode]),
@@ -758,7 +758,7 @@ local function createSpamCard(yPos, parent)
 			if not enabled then setSpam(false) end
 		end, "SpamKeybind")
 	end
-	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true; local button = makeBtn(visible and "Mini UI: Visível" or "Mini UI: Oculto", 8, 22, COL_W - 56, 26, f, C.btnDark)
+	local f = cardFrame(yPos, CARD_H, parent); cardLabel("Manual Spam", f); local visible = Utils.getConfigValue("MiniSpamVisible") == true; local button = makeBtn(visible and "Mini UI: Visível" or "Mini UI: Oculto", 8, 22, 0, 26, f, C.btnDark); button.Size = UDim2.new(1, -16, 0, 26)
 	trackConn(button.Activated:Connect(function() showMini(Utils.getConfigValue("MiniSpamVisible") ~= true, button) end))
 	return nextCardY(yPos, CARD_H)
 end
@@ -1172,7 +1172,7 @@ function ExodusUI.setup(deps)
 		BackgroundTransparency = 1,
 		Text = "Spam",
 		TextColor3 = C.subtext,
-		TextScaled = true,
+		TextSize = 14,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		Font = Enum.Font.GothamBold,
 		ZIndex = 17,
