@@ -482,9 +482,7 @@ local function createApCpsCard(yPos, parent)
 	local nextUpdate = 0
 	trackConn(RunService.Heartbeat:Connect(function()
 		if not f.Parent or os.clock() < nextUpdate then return end
-		nextUpdate = os.clock() + 0.1
-		local status = AutoParry.getCpsStatus()
-		label.Text = string.format("CPS do AP: %.2f | Bônus: %s", status.cps, status.boosted and "+70%" or "inativo")
+		nextUpdate = os.clock() + 0.1; local status = AutoParry.getCpsStatus(); label.Text = string.format("CPS do AP: %.2f | Bônus: %s", status.cps, status.boosted and "+70%" or "inativo")
 	end))
 	return nextCardY(yPos, CARD_H)
 end
