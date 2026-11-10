@@ -297,7 +297,7 @@ local function start(s, reason, partner, time, serverTime, snapshot)
 	local distanceReason = distanceGate(s, snapshot, partner)
 	if distanceReason and distanceReason ~= "distance_unavailable" then return end
 	if clashStats and clashStats.frozen then beginClashStats(partner, time) end
-	s.active, s.partner, s.pending, s.stoppedPartner = true, partner, nil, nil
+	s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil
 	s.dashSwitchPartner, s.dashSwitchAt = nil, nil
 	s.activatedAt, s.switchTimeout = time, nil
 	s.diversionSince, s.diversionSyncAt = nil, nil
@@ -325,7 +325,8 @@ end
 -- deactivation
 local function stop(s, reason)
 	if current ~= s then return end
-	if s.active then s.stoppedPartner = s.partner end
+	-- Prevent automatic recovery from the same exchange, not all future clashes.
+	if s.active then s.stoppedPartner = s.partner; s.stoppedAt = now() end
 	if s.active then s.active = false; s.lastDeactivatedAt = now(); utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason) end
 	s.reason, s.pending, s.awayAt, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil
 	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
@@ -429,6 +430,13 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	syncManualPartner(s)
 	if not target or target == s.target then return end
 	local previous, me = s.target, localPlayer.UserId
+	-- A NEW confirmed target exchange can begin a fresh clash with the same
+	-- opponent. Never resume merely because a dash ended or distance decreased.
+	if s.stoppedPartner and previous and previous ~= target
+		and ((previous == me and target == s.stoppedPartner) or (target == me and previous == s.stoppedPartner))
+		and s.stoppedAt and time - s.stoppedAt >= T.ACTIVATION.REACTIVATION_COOLDOWN then
+		s.stoppedPartner, s.stoppedAt = nil, nil
+	end
 	if previous and previous ~= target and (previous == me or target == me) and s.dashStart then
 		s.dashSwitchPartner, s.dashSwitchAt = previous == me and target or previous, time
 	elseif previous and previous ~= target then
@@ -556,6 +564,7 @@ function AutoSpam.bindCharacter(character)
 		partner = nil,
 		pending = nil,
 		stoppedPartner = nil,
+		stoppedAt = nil,
 		reason = "waiting",
 		generation = generation,
 		lastRootPosition = root.Position,
