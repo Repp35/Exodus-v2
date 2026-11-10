@@ -35,7 +35,7 @@ local POLICIES = {
 	},
 	autoparry = {
 		provide = allow(
-			"setup bindCharacter fire tryRedirectReturn beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"
+			"setup bindCharacter fire tryRedirectReturn beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getCpsStatus getStatus"
 		),
 		consume = {
 			utils = allow(
@@ -147,6 +147,7 @@ local POLICIES = {
 			uiconfig = allow("panelToggles panelComponents"),
 			gameinfo = allow("areAbilitiesEnabled observeAbilityMode getSnapshotAt isSnapshotValid createCrateNetwork spinCrate"),
 			autospam = allow("getStatus"),
+			autoparry = allow("getCpsStatus"),
 		},
 	},
 }
