@@ -715,6 +715,8 @@ AutoSpam.__contract = {
 		"detachCharacter",
 		"teardown",
 		"onBallSync",
+		"isActive",
+		"getActivationContext",
 		"getStatus",
 		"getTargetSwitch",
 		"getDashData",

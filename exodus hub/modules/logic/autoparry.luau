@@ -574,6 +574,7 @@ AutoParry.__contract = {
 			"getProjectedDeflectRadius",
 		},
 		Utils = {
+			"apiVersion",
 			"getLocalPlayer",
 			"getRunService",
 			"getConfigValue",
@@ -582,6 +583,7 @@ AutoParry.__contract = {
 			"trackCharacter",
 			"untrackCharacter",
 			"recordError",
+			"recordTransition",
 		},
 	},
 

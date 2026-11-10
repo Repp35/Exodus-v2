@@ -835,6 +835,7 @@ GameInfo.__contract = {
 	requiresMethods = { Utils = { "now", "apiVersion", "getPlayers", "getReplicatedStorage", "getWorkspace", "getRunService", "trackGlobal", "untrackGlobal" } },
 	provides = {
 		"setup",
+		"applyPacket",
 		"isTrainingArea",
 		"fireTrainingParry",
 		"getBall",
@@ -873,6 +874,9 @@ GameInfo.__contract = {
 		"createCrateNetwork",
 		"spinCrate",
 		"getBallSpeedLimits",
+		"getManifestRemote",
+		"getClashContext",
+		"getStatus",
 		"getSnapshot",
 		"getSnapshotAt",
 		"isSnapshotValid",

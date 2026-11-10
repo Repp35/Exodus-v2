@@ -99,7 +99,7 @@ end
 
 -- contract
 Config.__contract = {
-	provides = { "register", "defaults", "validate", "normalizePatch" },
+	provides = { "register", "defaults", "validate", "validatePatch", "normalizePatch", "getRegistry" },
 	requires = {},
 }
 
