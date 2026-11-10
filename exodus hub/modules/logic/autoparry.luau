@@ -30,6 +30,7 @@ local state = {
 	distance = 0,
 	approaching = false,
 	closingSpeed = 0,
+	frameAllowance = 0,
 	triggerDistance = 0,
 	ping = 0,
 	pingRaw = nil,
@@ -50,6 +51,8 @@ local T = {
 	TARGET_SEQUENCE_MODULUS = 65536,
 	TARGET_SEQUENCE_HALF = 32768,
 	MIN_PARRY_SPEED = 16,
+	FRAME_BASE = 1 / 60,
+	MAX_FRAME_ALLOWANCE = 0.12,
 }
 
 -- helpers
@@ -79,7 +82,7 @@ local function resetTracking()
 	state.target, state.targetKnown, state.lastTargeted = -1, false, false
 	state.teleported, state.teleportSequence, state.sequence = false, nil, nil
 	state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
-	state.closingSpeed, state.triggerDistance = 0, 0
+	state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
 	state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
 	state.awayAt, state.awayTarget = nil, nil
 	table.clear(state.clicks); table.clear(state.returns)
@@ -223,7 +226,7 @@ local function tick(character, root, generation)
 	if not value.ball.Parent then return end
 	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; local geometry = radius(speed, configuredFactor())
 	if not geometry then return end
-	local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry)
+	local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); threshold += math.max(closing, 0) * state.frameAllowance
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 	state.closingSpeed, state.triggerDistance = closing, threshold
 	if closing > 0 and distance <= threshold then request("parry_requested") end
@@ -251,7 +254,11 @@ function AutoParry.bindCharacter(character)
 	if not signal or not player then return false, "RunService ou jogador indisponível" end
 	state.root, state.character, state.player, state.alive, state.bound = root, character, player, true, true
 	resetTracking(); phase("waiting", "character_bound"); gameInfo.getDeflectCooldownState()
-	track(signal:Connect(function() tick(character, root, generation) end))
+	track(signal:Connect(function(deltaTime)
+		if generation ~= state.generation then return end
+		if finite(deltaTime) and deltaTime >= 0 then state.frameAllowance = math.clamp(deltaTime - T.FRAME_BASE, 0, T.MAX_FRAME_ALLOWANCE) end
+		tick(character, root, generation)
+	end))
 	track(character.AncestryChanged:Connect(function(_, parent)
 		if not parent and generation == state.generation then detach("character_removed") end
 	end))
@@ -469,6 +476,7 @@ function AutoParry.getStatus()
 			distanceToRadius = state.distance - state.triggerDistance,
 			triggerDistance = state.triggerDistance,
 			closingSpeed = state.closingSpeed,
+			frameAllowance = state.frameAllowance,
 			deflectWindow = geometry.deflectWindow,
 			effectiveWindow = geometry.effectiveWindow,
 			leadTime = geometry.leadTime,

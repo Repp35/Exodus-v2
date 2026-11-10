@@ -87,8 +87,19 @@ local function sync()
 				end
 			end
 		end, traceback)
-		if token == generation then cancel(ok and "spam_disabled" or "spam_error") end
-		if not ok then error(err, 0) end
+		if token ~= generation then return end
+		cancel(ok and "spam_disabled" or "spam_error")
+		if not ok then
+			status.lastError = tostring(err); local time = os.clock()
+			if time - status.lastErrorAt >= 1 then
+				status.lastErrorAt = time; local reported, reportError = pcall(boundUtils.recordError, "Spam", status.lastError)
+				if not reported then warn("[Spam] " .. tostring(reportError)) end
+			end
+			local retryToken = generation
+			task.delay(0.1, function()
+				if retryToken == generation and utils == boundUtils and boundUtils.isActive() then sync() end
+			end)
+		end
 	end)
 end
 

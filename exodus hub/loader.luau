@@ -307,15 +307,21 @@ local function bindRuntime(loaded)
 	table.sort(ballSyncSubscribers, function(a, b)
 		local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3; return left == right and a.name < b.name or left < right
 	end)
-	local function callSync(name, handler, data)
-		local result, detail = handler(data)
-		if result == false then error(("%s.onBallSync: %s"):format(name, tostring(detail)), 2) end
-		return detail or data
-	end
+	local syncErrors = {}
 	local function notifyBallSync(decodedData)
 		if type(decodedData) ~= "table" then return end
 		for _, sub in ipairs(ballSyncSubscribers) do
-			callSync(sub.name, sub.handler, decodedData)
+			local ok, err = xpcall(function()
+				local result, detail = sub.handler(decodedData)
+				if result == false then error(tostring(detail), 0) end
+			end, function(value) return debug.traceback(tostring(value), 2) end)
+			if not ok then
+				local time = os.clock()
+				if not syncErrors[sub.name] or time - syncErrors[sub.name] >= 1 then
+					syncErrors[sub.name] = time; local reported, reportError = pcall(utils.recordError, sub.name .. ".onBallSync", err)
+					if not reported then printRawError(sub.name, reportError) end
+				end
+			end
 		end
 	end
 	local pendingSyncRefresh = false
