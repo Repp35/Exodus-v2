@@ -3,8 +3,7 @@
 -- runtime
 
 return function(loadedRevision, request)
-	local players = game:GetService("Players"); local token = {}; _G.ExodusUpdaterToken = token
-	local CHECK_INTERVAL = 60
+	local players = game:GetService("Players"); local token = {}; _G.ExodusUpdaterToken = token; local CHECK_INTERVAL = 60
 	local function running() return _G.ExodusUpdaterToken == token and type(_G.Exodus) == "table" and _G.Exodus.Started == true end
 	local function safeToUpdate()
 		local exodus = _G.Exodus; local modules = exodus and exodus.Modules; local info = modules and modules.gameinfo; local auto = modules and modules.autospam; local player = players.LocalPlayer
@@ -31,10 +30,8 @@ return function(loadedRevision, request)
 			local ok, document = pcall(game:GetService("HttpService").JSONDecode, game:GetService("HttpService"), body); local sha = ok and type(document) == "table" and document.sha
 			if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
 		end
-		local feed, feedError = request(
-			"https://github.com/Repp35/Exodus-v2/commits/main.atom",
-			{ ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Updater" }
-		)
+		local feed, feedError =
+			request("https://github.com/Repp35/Exodus-v2/commits/main.atom", { ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Updater" })
 		local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
 		if not sha or #sha ~= 40 then return nil, feedError or err or "SHA indisponível" end
 		return sha
