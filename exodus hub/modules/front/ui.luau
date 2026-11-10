@@ -318,6 +318,9 @@ local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
 local CARD_SCALE = 1.06
 local OFF_ON_MIN_H, OFF_ON_MAX_H = 42, 46
 local OFF_ON_CARD_H = math.clamp(CARD_H - 4, OFF_ON_MIN_H, OFF_ON_MAX_H)
+local function offOnText(labelText, value)
+	local color = value and "#22C55E" or "#EF4444"; return labelText .. ': <font color="' .. color .. '">' .. (value and "ON" or "OFF") .. "</font>"
+end
 local function nextCardY(yPos, cardHeight) return yPos + cardHeight * CARD_SCALE + CARD_GAP end
 
 -- panel
@@ -585,20 +588,21 @@ local function createOffOnCard(labelText, yPos, parent, options)
 	state = readState(); local f = cardFrame(yPos, cardHeight, parent)
 	local control = inst("TextButton", {
 		Size = UDim2.new(1, options.rightAligned and -72 or 0, 0, cardHeight),
-		BackgroundColor3 = state and C.green or C.red,
+		BackgroundColor3 = C.card,
 		BackgroundTransparency = 0.08,
 		BorderSizePixel = 0,
-		Text = labelText .. ": " .. (state and "ON" or "OFF"),
+		Text = offOnText(labelText, state),
 		TextColor3 = C.text,
 		TextSize = 13,
 		Font = Enum.Font.GothamBold,
+		RichText = true,
 		TextXAlignment = Enum.TextXAlignment.Center,
 		ZIndex = 9,
 		Parent = f,
 	})
 	corner(control, 10)
 	local function setVisual(value)
-		state = value == true; control.Text = labelText .. ": " .. (state and "ON" or "OFF"); twPlay(control, 0.22, { BackgroundColor3 = state and C.green or C.red }, EASE_SINE, DIR_INOUT)
+		state = value == true; control.Text = offOnText(labelText, state)
 	end
 	if configKey then offOnVisuals[configKey] = setVisual end
 	if UIState.desktop and options.shortcutKey then makeKeycap(f, options.shortcutKey, options.rightAligned, cardHeight) end
