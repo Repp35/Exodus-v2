@@ -19,6 +19,7 @@ local state = {
 	fired = false,
 	graceHandled = false,
 	localGraceActive = false,
+	localGraceUntil = 0,
 	awaySeen = false,
 	cycle = 0,
 	target = -1,
@@ -50,6 +51,7 @@ local state = {
 local T = {
 	DEFAULT_WINDOW_FACTOR = 0.40,
 	GRACE_COOLDOWN = 0.03,
+	GRACE_KILL_DISTANCE = 4,
 	PRESSURE_SAMPLE_LIMIT = 100,
 	PRESSURE_WINDOW = 3,
 	TARGET_SEQUENCE_MODULUS = 65536,
@@ -83,6 +85,7 @@ end
 -- lifecycle
 local function resetTracking()
 	state.fired, state.graceHandled, state.localGraceActive, state.awaySeen, state.cycle = false, false, false, false, 0
+	state.localGraceUntil = 0
 	state.target, state.targetKnown, state.lastTargeted = -1, false, false
 	state.teleported, state.teleportSequence, state.sequence = false, nil, nil
 	state.mode = nil
@@ -169,6 +172,7 @@ local function observeSnapshot(snapshot, time)
 		state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false
 		state.fired, state.graceHandled, state.localGraceActive, state.awaySeen, state.teleported, state.teleportSequence =
 			false, false, false, false, false, nil
+		state.localGraceUntil = 0
 		state.awayAt, state.awayTarget = nil, nil
 	end
 	local order = sequenceOrder(snapshot.syncSequence)
@@ -234,17 +238,16 @@ local function tick(character, root, generation)
 	local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if not value.ball.Parent then return end
-	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; samplePing(); local fullWindow = radius(speed, 1); local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0; local localGrace = fullWindow ~= nil
-		and distance <= fullWindow.fullRadius
-		and closing > 0
-		and value.targetUncertain ~= true
-		and state.player ~= nil
-		and value.targetId == state.player.UserId
-	if not localGrace then
-		state.localGraceActive, state.graceHandled = false, false
+	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; samplePing(); local fullWindow = radius(speed, 1); local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0; local targeted = value.targetUncertain ~= true and state.player ~= nil and value.targetId == state.player.UserId
+	local inKillDistance = distance <= T.GRACE_KILL_DISTANCE
+	if not targeted or not inKillDistance then
+		state.localGraceActive, state.graceHandled, state.localGraceUntil = false, false, 0
 	elseif not state.localGraceActive then
-		state.localGraceActive = true
+		state.localGraceActive, state.graceHandled = true, false
+		state.localGraceUntil = time + math.clamp(state.ping + 0.075, 0.075, 0.350)
 	end
+	local localGrace = state.localGraceActive and time <= state.localGraceUntil
+		and fullWindow ~= nil and distance <= fullWindow.fullRadius
 	if localGrace then
 		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, true
 		state.closingSpeed, state.triggerDistance = closing, fullWindow.fullRadius
