@@ -37,7 +37,7 @@ local POLICIES = {
 		},
 	},
 	remote = {
-		provide = allow("setup fireParry fireDark fireFierce fireDash"),
+		provide = allow("setup getAutoParrySignature setParryObserver fireParry fireDark fireFierce fireDash"),
 		consume = { gameinfo = allow("isTrainingArea fireTrainingParry getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
 	},
 	autoparry = {
@@ -51,7 +51,7 @@ local POLICIES = {
 			gameinfo = allow(
 				"getBallPosition getBallVelocity getDeflectCooldownState getDeflectGeometry getDeflectRangeParameters getProjectedDeflectRadius getAveragePing getRootPosition getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
 			),
-			remote = allow("fireParry"),
+			remote = allow("getAutoParrySignature setParryObserver fireParry"),
 		},
 	},
 	autospam = {
