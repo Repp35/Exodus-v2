@@ -20,6 +20,7 @@ local T = {
 		HAUNTER_RANGE = 11,
 		HAUNTER_MATCH_RADIUS = 5,
 		DASH_WINDOW_FACTOR = 0.4,
+		DASH_RADIUS_MULTIPLIER = 1.15,
 		DASH_MAX_AGE = 0.35,
 		DASH_MIN_APPROACH = 3,
 		DASH_ALIGNMENT = 0.7,
@@ -289,11 +290,8 @@ local function dashAssistPartner(s, snapshot, time)
 	if startDistance < 0.1 or movement.Magnitude < T.ACTIVATION.DASH_MIN_APPROACH then return nil end
 	if movement:Dot(toward) / (movement.Magnitude * startDistance) < T.ACTIVATION.DASH_ALIGNMENT then return nil end
 	if startDistance - (opponent - own).Magnitude < T.ACTIVATION.DASH_MIN_APPROACH then return nil end
-	local speed = snapshotSpeed(snapshot); local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true); local g = gameInfo.getDeflectGeometry(speed, "ap", T.ACTIVATION.DASH_WINDOW_FACTOR, false)
-	if not raw or not g then return nil end
-	if (opponent - own).Magnitude > raw then return nil end
-	local allowed = raw + speed * g.deflectWindow * T.ACTIVATION.DASH_WINDOW_FACTOR
-	if (snapshot.position - own).Magnitude > allowed then return nil end
+	local speed = snapshotSpeed(snapshot); local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
+	if not raw or (opponent - own).Magnitude > raw then return nil end
 	return partner
 end
 
@@ -325,7 +323,11 @@ local function shouldActivate(s, snapshot, time)
 	if snapshot and snapshot.locked == true then return false end
 	if snapshot and snapshot.targetUncertain == true then return false end
 	if gameInfo.getBallFrozen() == true or not s.pending then return false end
-	local g = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); local expectedTarget = s.pending.outgoing and s.pending.partner or localPlayer.UserId; return g ~= nil and s.target == expectedTarget and snapshot.targetId == expectedTarget and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
+	local expectedTarget = s.pending.outgoing and s.pending.partner or localPlayer.UserId
+	if not snapshot or s.target ~= expectedTarget or snapshot.targetId ~= expectedTarget then return false end
+	local factor = T.ACTIVATION.RADIUS_FACTOR
+	if dashAssistPartner(s, snapshot, time) == s.pending.partner then factor *= T.ACTIVATION.DASH_RADIUS_MULTIPLIER end
+	local g = geometry(s, snapshot, factor); return g ~= nil and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
 end
 
 -- deactivation
@@ -500,15 +502,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	end
 	if not s.active and completedPartner and completedPartner ~= s.stoppedPartner and snapshot.targetUncertain ~= true then
 		local activation = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); local limit = distanceLimit(snapshot, completedPartner); local partnerDistance = distanceToPlayer(s, completedPartner)
-		if
-			activation
-			and limit
-			and partnerDistance
-			and partnerDistance <= limit
-			and (snapshot.position - s.root.Position).Magnitude <= activation.fullRadius
-		then
-			s.pending = { partner = completedPartner, closeReturn = true, outgoing = target ~= me }
-		end
+		if activation and limit and partnerDistance and partnerDistance <= limit then s.pending = { partner = completedPartner, closeReturn = true, outgoing = target ~= me } end
 	end
 end
 
@@ -527,19 +521,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	sampleOwnDash(s, time)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
-	local target = userId(snapshot.targetId)
 	if fresh then observeClashStats(s, snapshot, time, true) end
-	if
-		not s.active
-		and not blockedActivation
-		and utils.getConfigValue("AutoSpam") == true
-		and snapshot.targetUncertain ~= true
-		and snapshot.locked ~= true
-		and gameInfo.getBallFrozen() ~= true
-	then
-		local partner = dashAssistPartner(s, snapshot, time)
-		if partner and (target == localPlayer.UserId or target == partner) and partner ~= s.stoppedPartner then start(s, "dash_assist", partner, time, serverTime, snapshot) end
-	end
 	if fresh and utils.isManualSpamActive() then
 		local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(s, snapshot, 1)
 		if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
