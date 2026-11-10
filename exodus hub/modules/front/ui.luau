@@ -6,6 +6,7 @@ local Utils
 local UIConfig
 local GameInfo
 local AutoSpam
+local AutoParry
 local Controls: any = {}
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -464,6 +465,29 @@ local function createActionToggleCard(labelText, yPos, parent, onToggle)
 	}).Activated:Connect(onToggle))
 	return setVisual
 end
+local function createApCpsCard(yPos, parent)
+	local f = cardFrame(yPos, CARD_H, parent)
+	local label = inst("TextLabel", {
+		Size = UDim2.new(1, -20, 1, 0),
+		Position = UDim2.new(0, 12, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "CPS do AP: 0.00 | Bônus: inativo",
+		TextColor3 = C.text,
+		TextSize = 12,
+		Font = Enum.Font.GothamSemibold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 7,
+		Parent = f,
+	})
+	local nextUpdate = 0
+	trackConn(RunService.Heartbeat:Connect(function()
+		if not f.Parent or os.clock() < nextUpdate then return end
+		nextUpdate = os.clock() + 0.1
+		local status = AutoParry.getCpsStatus()
+		label.Text = string.format("CPS do AP: %.2f | Bônus: %s", status.cps, status.boosted and "+70%" or "inativo")
+	end))
+	return nextCardY(yPos, CARD_H)
+end
 local function createParryTimingCard(yPos, parent)
 	local f = cardFrame(yPos, CARD_H, parent)
 	inst("TextLabel", {
@@ -677,10 +701,11 @@ function ExodusUI.setup(deps)
 		or type(deps.UIConfig.panelComponents) ~= "table"
 		or type(deps.GameInfo) ~= "table"
 		or type(deps.AutoSpam) ~= "table"
+		or type(deps.AutoParry) ~= "table"
 	then
 		return false, "dependência ausente: Utils, Controls ou UIConfig"
 	end
-	Utils = deps.Utils; UIConfig = deps.UIConfig; GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam; Controls = type(deps.Controls) == "table" and deps.Controls or {}; local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+	Utils = deps.Utils; UIConfig = deps.UIConfig; GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam; AutoParry = deps.AutoParry; Controls = type(deps.Controls) == "table" and deps.Controls or {}; local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
 	if type(_G.ExodusUICleanup) == "function" then
 		_G.ExodusUICleanup()
 	else
@@ -1234,7 +1259,7 @@ function ExodusUI.setup(deps)
 		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
 	end)
 	local dashYPos = createToggleCard("Mini Auto Jump", "JumpBallVisible", jumpYPos, autosRight, showJumpBall); local upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", dashYPos, autosRight, showUpDashBall); local _, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft)
-	createCameraSensitivityCard(parryYPos, settingsLeft); local travelYPos = createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight); createToggleCard("Tempo da bola", "ClashTravelTimeVisible", travelYPos, settingsRight)
+	local cpsYPos = createApCpsCard(parryYPos, settingsLeft); createCameraSensitivityCard(cpsYPos, settingsLeft); local travelYPos = createToggleCard("Distância do clash", "ClashDistanceVisible", 4, settingsRight); createToggleCard("Tempo da bola", "ClashTravelTimeVisible", travelYPos, settingsRight)
 	local function updateAbilityVisibility(enabled)
 		darkCard.Visible, miniDarkCard.Visible, upDashCard.Visible, fierceCard.Visible, autoUpDashCard.Visible = enabled, enabled, enabled, enabled, enabled
 		darkBall.Visible, upDashBall.Visible = enabled, enabled
@@ -1406,7 +1431,7 @@ end
 
 -- contract
 ExodusUI.__contract = {
-	requires = { Utils = "utils", UIConfig = "uiconfig", GameInfo = "gameinfo", AutoSpam = "autospam" },
+	requires = { Utils = "utils", UIConfig = "uiconfig", GameInfo = "gameinfo", AutoSpam = "autospam", AutoParry = "autoparry" },
 	requiresMethods = {
 		Utils = {
 			"getConfig",
@@ -1427,6 +1452,7 @@ ExodusUI.__contract = {
 		},
 		GameInfo = { "areAbilitiesEnabled", "observeAbilityMode", "getSnapshotAt", "isSnapshotValid", "createCrateNetwork", "spinCrate" },
 		AutoSpam = { "getStatus" },
+		AutoParry = { "getCpsStatus" },
 	},
 
 	provides = { "setup" },
