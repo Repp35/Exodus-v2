@@ -57,7 +57,7 @@ function Camera.setup(deps)
 		if type(partner) ~= "number" or partner <= 0 then return end
 		local position = gameInfo.getPlayerMotion(partner); local workspace = utils.getWorkspace(); local camera = workspace and workspace.CurrentCamera
 		if typeof(position) ~= "Vector3" or not camera or (position - camera.CFrame.Position).Magnitude < 0.001 then return end
-		local aimPoint = position + Vector3.new(0, 4.5, 0); local goal = CFrame.lookAt(camera.CFrame.Position, aimPoint); local strength = 1 - math.exp(-12 * math.clamp(deltaTime, 0, 0.1)); camera.CFrame = camera.CFrame:Lerp(goal, strength)
+		local aimPoint = position + Vector3.new(0, 4.5, 0); local goal = CFrame.lookAt(camera.CFrame.Position, aimPoint); local strength = 1 - math.exp(-1.2 * math.clamp(deltaTime, 0, 0.1)); camera.CFrame = camera.CFrame:Lerp(goal, strength)
 	end)
 	configConnection = utils.observeConfig(function(changes)
 		if changes.CameraSensitivity ~= nil then sensitivity = tonumber(changes.CameraSensitivity) or 1 end

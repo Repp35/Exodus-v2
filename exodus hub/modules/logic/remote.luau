@@ -3,20 +3,14 @@
 -- dependencies
 local Remote = {}
 local gameInfo
-local lastParryAt, lastParryInterval
 
 -- lifecycle
 function Remote.setup(deps)
 	if type(deps) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependência inválida: GameInfo" end
-	gameInfo = deps.GameInfo; lastParryAt, lastParryInterval = nil, nil; return true
+	gameInfo = deps.GameInfo; return true
 end
 
 -- dispatch
-local function recordParrySent()
-	local now = os.clock(); lastParryInterval = lastParryAt and (now - lastParryAt) or nil; lastParryAt = now
-end
-function Remote.getParrySendTiming() return lastParryInterval, lastParryAt end
-function Remote.getParryCps() return type(lastParryInterval) == "number" and lastParryInterval > 0 and 1 / lastParryInterval or 0 end
 local function send(ability, method, ...)
 	if ability == nil then return false, method .. " não equipado ou indisponível" end
 	local callback = ability[method]
@@ -29,18 +23,14 @@ function Remote.fireParry(_flag, guard)
 	if not gameInfo then return false, "Remote não inicializado" end
 	if gameInfo.isTrainingArea() then
 		if type(guard) == "function" and not guard() then return false, "Deflect cancelado" end
-		local sent, detail = gameInfo.fireTrainingParry()
-		if sent == true then recordParrySent() end
-		return sent, detail
+		return gameInfo.fireTrainingParry()
 	end
 	local ability = gameInfo.getDeflectAbility()
 	if not ability then return false, "Deflect indisponível" end
 	if type(guard) == "function" then
 		if not guard() then return false, "Deflect cancelado" end
 	end
-	local sent, detail = send(ability, "Deflect")
-	if sent == true then recordParrySent() end
-	return sent, detail
+	return send(ability, "Deflect")
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), "SendEvent", eventId, cameraFrame) end
 function Remote.fireFierce(guard)
@@ -57,7 +47,7 @@ Remote.__contract = {
 		GameInfo = { "isTrainingArea", "fireTrainingParry", "getDeflectAbility", "getDarkSealAbility", "getFierceDeflectAbility", "getDashAbility" },
 	},
 
-	provides = { "setup", "fireParry", "getParrySendTiming", "getParryCps", "fireDark", "fireFierce", "fireDash" },
+	provides = { "setup", "fireParry", "fireDark", "fireFierce", "fireDash" },
 }
 
 return Remote

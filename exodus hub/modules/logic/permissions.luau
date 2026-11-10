@@ -30,12 +30,12 @@ local POLICIES = {
 		},
 	},
 	remote = {
-		provide = allow("setup fireParry getParrySendTiming getParryCps fireDark fireFierce fireDash"),
+		provide = allow("setup fireParry fireDark fireFierce fireDash"),
 		consume = { gameinfo = allow("isTrainingArea fireTrainingParry getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
 	},
 	autoparry = {
 		provide = allow(
-			"setup bindCharacter fire tryRedirectReturn beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getCpsStatus getStatus"
+			"setup bindCharacter fire tryRedirectReturn beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"
 		),
 		consume = {
 			utils = allow(
@@ -44,7 +44,7 @@ local POLICIES = {
 			gameinfo = allow(
 				"getBallPosition getBallVelocity getDeflectCooldownState getDeflectGeometry getDeflectRangeParameters getProjectedDeflectRadius getAveragePing getRootPosition getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
 			),
-			remote = allow("fireParry getParrySendTiming getParryCps"),
+			remote = allow("fireParry"),
 		},
 	},
 	autospam = {
@@ -147,7 +147,6 @@ local POLICIES = {
 			uiconfig = allow("panelToggles panelComponents"),
 			gameinfo = allow("areAbilitiesEnabled observeAbilityMode getSnapshotAt isSnapshotValid createCrateNetwork spinCrate"),
 			autospam = allow("getStatus"),
-			autoparry = allow("getCpsStatus"),
 		},
 	},
 }

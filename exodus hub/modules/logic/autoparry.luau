@@ -17,9 +17,6 @@ local state = {
 	root = nil,
 	connections = {},
 	fired = false,
-	graceHandled = false,
-	localGraceActive = false,
-	localGraceUntil = 0,
 	awaySeen = false,
 	cycle = 0,
 	target = -1,
@@ -40,8 +37,6 @@ local state = {
 	pingRaw = nil,
 	pingCount = 0,
 	lastFireAt = 0,
-	lastApParryAt = nil,
-	lastApParryInterval = nil,
 	lastErrorAt = -math.huge,
 	clicks = {},
 	returns = {},
@@ -52,8 +47,6 @@ local state = {
 -- tuning
 local T = {
 	DEFAULT_WINDOW_FACTOR = 0.40,
-	FAST_EXCHANGE_INTERVAL = 0.5,
-	GRACE_COOLDOWN = 0.03,
 	PRESSURE_SAMPLE_LIMIT = 100,
 	PRESSURE_WINDOW = 3,
 	TARGET_SEQUENCE_MODULUS = 65536,
@@ -86,8 +79,7 @@ end
 
 -- lifecycle
 local function resetTracking()
-	state.fired, state.graceHandled, state.localGraceActive, state.awaySeen, state.cycle = false, false, false, false, 0
-	state.localGraceUntil = 0
+	state.fired, state.awaySeen, state.cycle = false, false, 0
 	state.target, state.targetKnown, state.lastTargeted = -1, false, false
 	state.teleported, state.teleportSequence, state.sequence = false, nil, nil
 	state.mode = nil
@@ -119,16 +111,8 @@ local function resilience()
 		source = "DeflectRange",
 	}
 end
-local function apCps()
-	local interval = state.lastApParryInterval; return finite(interval) and interval > 0 and 1 / interval or 0
-end
-local function recordApParry()
-	local now = clock(); state.lastApParryInterval = state.lastApParryAt and (now - state.lastApParryAt) or nil; state.lastApParryAt = now
-end
 local function configuredFactor()
-	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); factor = finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
-	if apCps() > 2 then factor = 1 end
-	return factor
+	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
 end
 local function minimumBallSpeed() return T.MIN_PARRY_SPEED end
 local function radius(speed, factor, baseWindow)
@@ -180,21 +164,13 @@ local function observeSnapshot(snapshot, time)
 	local mode = snapshot.mode == "training" and "training" or "match"
 	if state.mode ~= mode then
 		state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false
-		state.fired, state.graceHandled, state.localGraceActive, state.awaySeen, state.teleported, state.teleportSequence =
-			false, false, false, false, false, nil
-		state.localGraceUntil = 0
+		state.fired, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, nil
 		state.awayAt, state.awayTarget = nil, nil
 	end
 	local order = sequenceOrder(snapshot.syncSequence)
 	if order == "old" then return false end
 	if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then return false end
-	if order == "new" then
-		state.sequence = snapshot.syncSequence
-		if mode == "training" then
-			state.fired, state.graceHandled, state.localGraceActive, state.localGraceUntil = false, false, false, 0
-			state.cycle += 1
-		end
-	end
+	if order == "new" then state.sequence = snapshot.syncSequence end
 	observeTarget(snapshot.targetId, time); return true
 end
 
@@ -230,41 +206,12 @@ local function request(reason)
 		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível")) end
 		return false
 	end
-	recordApParry(); local configured = configuredFactor()
+	local configured = configuredFactor()
 	if configured > 0 then
 		local geometry = radius(speed, configured)
 		if geometry then local denominator = speed * geometry.leadTime; local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, configured) or configured; appendRecent(state.clicks, { at = firedAt, factor = used, configured = configured, speed = speed }) end
 	end
-	if state.localGraceActive then state.graceHandled = true end
 	phase("fired", reason); return true
-end
-local function requestGrace()
-	if state.graceHandled or state.fired or not state.localGraceActive or not state.player or state.target ~= state.player.UserId then return false end
-	local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote
-	local function allowed()
-		return state.generation == generation
-			and state.cycle == cycle
-			and state.alive
-			and state.bound
-			and state.player ~= nil
-			and state.target == state.player.UserId
-			and not state.teleported
-			and utils == boundUtils
-			and remote == boundRemote
-			and boundUtils.isActive()
-			and not boundUtils.isSpamActive()
-			and boundUtils.getConfigValue("AutoParry") ~= false
-	end
-	local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
-	if not ok then detail, sent = sent, false end
-	if sent ~= true or not allowed() then
-		local now = clock()
-		if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Grace deflect indisponível")) end
-		return false
-	end
-	recordApParry()
-	state.graceHandled, state.fired, state.lastFireAt = true, true, clock()
-	phase("fired", "sync_grace_parry_requested"); return true
 end
 local function tick(character, root, generation)
 	if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
@@ -275,6 +222,7 @@ local function tick(character, root, generation)
 	if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
 	if utils.isSpamActive() then phase("waiting", "spam_active"); return end
 	if state.teleported or value.teleported then phase("waiting", "teleport_lock"); return end
+	if state.fired then phase("waiting", "target_already_parried"); return end
 	if value.locked == true then
 		state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0
 		phase("waiting", "ball_locked"); return
@@ -282,20 +230,13 @@ local function tick(character, root, generation)
 	local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if not value.ball.Parent then return end
-	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; samplePing(); local fullWindow = radius(speed, 1); local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
-	local targeted = value.targetUncertain ~= true and state.player ~= nil and value.targetId == state.player.UserId; local syncGrace = value.mode ~= "training" and value.grace == true and targeted
-	if not syncGrace then
-		state.localGraceActive, state.graceHandled = false, false
-	elseif not state.localGraceActive then
-		state.localGraceActive, state.graceHandled = true, state.fired
+	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
+	if value.grace == true and value.targetUncertain ~= true and state.player and value.targetId == state.player.UserId then
+		local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
+		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
+		state.closingSpeed, state.triggerDistance = closing, 0
+		request("grace_parry_requested"); return
 	end
-	if syncGrace then
-		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, true
-		state.closingSpeed, state.triggerDistance = closing, fullWindow and fullWindow.fullRadius or 0
-		if not state.graceHandled and not state.fired and time - state.lastFireAt >= T.GRACE_COOLDOWN then requestGrace() end
-		return
-	end
-	if state.fired then phase("waiting", "target_already_parried"); return end
 	if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
 	if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
 	samplePing(); local geometry = radius(speed, configuredFactor())
@@ -316,9 +257,7 @@ function AutoParry.setup(deps)
 	end
 	detach("setup"); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote; state.player = utils.getLocalPlayer()
 	if not state.player then return false, "Players.LocalPlayer indisponível" end
-	resetTracking()
-	state.lastApParryAt, state.lastApParryInterval = nil, nil
-	phase("detached", "setup_complete"); return true
+	resetTracking(); phase("detached", "setup_complete"); return true
 end
 function AutoParry.bindCharacter(character)
 	if not utils or not gameInfo or not remote then return false, "dependências não inicializadas" end
@@ -578,9 +517,6 @@ function AutoParry.getStatus()
 		timestamp = clock(),
 	}
 end
-function AutoParry.getCpsStatus()
-	local cps = apCps(); return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
-end
 
 -- contract
 AutoParry.__contract = {
@@ -629,7 +565,6 @@ AutoParry.__contract = {
 		"getTiming",
 		"getTargetStatus",
 		"getPressure",
-		"getCpsStatus",
 		"getStatus",
 	},
 
