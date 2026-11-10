@@ -13,6 +13,8 @@ local clashStats
 local T = {
 	ACTIVATION = {
 		RETURN = 0.15,
+		EXCHANGE_MAX_INTERVAL = 2,
+		EXCHANGE_READY_TIME = 0.5,
 		REACTIVATION_COOLDOWN = 0.04,
 		RADIUS_FACTOR = 0.8,
 		HAUNTER_RANGE = 11,
@@ -68,6 +70,10 @@ end
 local function snapshotSpeed(snapshot)
 	if not snapshot then return nil end
 	local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
+end
+local function resetExchange(s)
+	s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil
+	s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 end
 local function distanceToPlayer(s, id) return id and gameInfo.getPlayerDistance(id) or nil end
 local function distanceLimit(snapshot, partner)
@@ -294,6 +300,7 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
 	if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < T.ACTIVATION.REACTIVATION_COOLDOWN) then return end
+	if not s.exchangeReadyAt or s.exchangePartner ~= partner or time < s.exchangeReadyAt or time - s.exchangeReadyAt > T.ACTIVATION.EXCHANGE_READY_TIME then return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if snapshot and snapshot.locked == true then return end
 	local distanceReason = distanceGate(s, snapshot, partner)
@@ -312,10 +319,7 @@ local function shouldActivate(s, snapshot, time)
 	if snapshot and snapshot.locked == true then return false end
 	if snapshot and snapshot.targetUncertain == true then return false end
 	if gameInfo.getBallFrozen() == true or not s.pending then return false end
-	local g = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); return g ~= nil
-		and s.target == localPlayer.UserId
-		and snapshot.targetId == localPlayer.UserId
-		and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
+	local g = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); local expectedTarget = s.pending.outgoing and s.pending.partner or localPlayer.UserId; return g ~= nil and s.target == expectedTarget and snapshot.targetId == expectedTarget and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
 end
 
 -- deactivation
@@ -329,7 +333,7 @@ local function stop(s, reason)
 		utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
 	end
 	s.reason, s.pending, s.awayAt, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil
-	s.departedAt, s.departedServerAt, s.departedTo, s.awayServerAt = nil, nil, nil, nil
+	resetExchange(s); s.awayServerAt = nil
 end
 local function stopBoth(s, reason)
 	stop(s, reason, false)
@@ -424,6 +428,24 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 	syncManualPartner(s)
 	if not target or target == s.target then return end
 	local previous, me = s.target, localPlayer.UserId
+	local completedPartner
+	if
+		previous
+		and s.exchangeFrom == target
+		and s.exchangeTo == previous
+		and (target == me or previous == me)
+		and s.exchangeAt
+		and time >= s.exchangeAt
+		and time - s.exchangeAt <= T.ACTIVATION.EXCHANGE_MAX_INTERVAL
+	then
+		completedPartner = target == me and previous or target
+	end
+	if previous and (previous == me or target == me) then
+		s.exchangeFrom, s.exchangeTo, s.exchangeAt = previous, target, time
+	else
+		s.exchangeFrom, s.exchangeTo, s.exchangeAt = nil, nil, nil
+	end
+	s.exchangePartner, s.exchangeReadyAt = completedPartner, completedPartner and time or nil
 	if
 		s.stoppedPartner
 		and previous
@@ -465,18 +487,21 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		if s.active and previous == s.partner then
 			s.awayAt, s.awayServerAt = nil, nil
 		end
-		local closePartner = previous and previous ~= me and previous or nil
-		if not s.active and closePartner and closePartner ~= s.stoppedPartner and snapshot.targetUncertain ~= true then
-			local activation = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); local limit = distanceLimit(snapshot, closePartner); local partnerDistance = distanceToPlayer(s, closePartner); local incoming = activation
-				and limit
-				and partnerDistance
-				and partnerDistance <= limit
-				and (snapshot.position - s.root.Position).Magnitude <= activation.fullRadius
-			if incoming then s.pending = { partner = closePartner, closeReturn = true } end
-		end
 		if not s.pending and not s.active and previous ~= s.stoppedPartner and previous == s.departedTo and s.departedAt and window then
 			local limit = returnWindow(window, speed, T.ACTIVATION.RETURN); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
 			if returnElapsed and returnElapsed <= limit then s.pending = { partner = previous } end
+		end
+	end
+	if not s.active and completedPartner and completedPartner ~= s.stoppedPartner and snapshot.targetUncertain ~= true then
+		local activation = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); local limit = distanceLimit(snapshot, completedPartner); local partnerDistance = distanceToPlayer(s, completedPartner)
+		if
+			activation
+			and limit
+			and partnerDistance
+			and partnerDistance <= limit
+			and (snapshot.position - s.root.Position).Magnitude <= activation.fullRadius
+		then
+			s.pending = { partner = completedPartner, closeReturn = true, outgoing = target ~= me }
 		end
 	end
 end
@@ -487,10 +512,10 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	if not utils.isActive() then stopBoth(s, "hub_inactive"); return end
 	if utils.getConfigValue("AutoSpam") ~= true then
 		if s.active then stop(s, "disabled", false) end
-		s.pending, s.departedAt, s.departedTo = nil, nil, nil
+		resetExchange(s)
 	end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now(), nil, false); return end
+	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now(), nil, false); resetExchange(s); s.target = nil; return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if not fresh and applyDeactivation(s, snapshot, time, nil, false) then blockedActivation = true end
 	sampleOwnDash(s, time)
@@ -731,7 +756,7 @@ function AutoSpam.onBallSync(data)
 	if not s or type(data) ~= "table" then return end
 	if data.Source ~= "packet" and data.Teleported ~= true then return end
 	syncManualPartner(s)
-	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now(), nil, false); return end
+	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now(), nil, false); resetExchange(s); s.target = nil; return end
 	local sequence = data.Sequence or data.TeleportSequence
 	if finite(sequence) and finite(s.sequence) then
 		local delta = (sequence - s.sequence) % T.SHARED.SEQUENCE_MODULUS
@@ -740,6 +765,7 @@ function AutoSpam.onBallSync(data)
 	if finite(sequence) then s.sequence = sequence end
 	if data.Teleported == true then
 		s.target, s.stoppedPartner = nil, nil
+		resetExchange(s)
 		s.haunterPartner, s.haunterUntil = nil, nil
 		return
 	end
@@ -750,9 +776,7 @@ function AutoSpam.onBallSync(data)
 		and (not clashStats or clashStats.frozen)
 		and not gameInfo.getClashContext()
 	then
-		s.target = userId(data.TargetPlayerID) or userId(gameInfo.getTargetId()) or s.target
-		s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
-		return
+		s.target = userId(data.TargetPlayerID) or userId(gameInfo.getTargetId()) or s.target; resetExchange(s); return
 	end
 	local time = now(); local target = userId(data.TargetPlayerID); local serverTime = tonumber(data.ServerTime)
 	if not finite(serverTime) then serverTime = nil end
