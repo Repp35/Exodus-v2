@@ -491,7 +491,9 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	sampleOwnDash(s, time)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
 	if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > T.SHARED.SNAPSHOT_MAX_AGE then return end
-	local target = userId(snapshot.targetId); observeClashStats(s, snapshot, time, fresh)
+	local target = userId(snapshot.targetId)
+	-- Clash statistics are packet-driven; no expensive partner lookup on every frame.
+	if fresh then observeClashStats(s, snapshot, time, true) end
 	if
 		not s.active
 		and not blockedActivation
@@ -641,8 +643,20 @@ function AutoSpam.bindCharacter(character)
 	track(s, runService.Heartbeat, function()
 		if current ~= s then return end
 		if not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent then connectHaunter() end
-		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local clashContext = gameInfo.getClashContext(); local time = now(); local liveSnapshot = gameInfo.getSnapshotAt(time)
-		if not gameInfo.isSnapshotValid(liveSnapshot) then
+		local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local time = now()
+		-- Never scan the world/clash context on each Heartbeat: those checks are
+		-- not part of the instantaneous deactivation path.
+		local clashContext
+		if not s.clashContextAt or time - s.clashContextAt >= 0.15 then
+			s.clashContextAt, s.cachedClashContext = time, gameInfo.getClashContext()
+		end
+		clashContext = s.cachedClashContext
+		local liveSnapshot
+		if not s.lobbyCheckAt or time - s.lobbyCheckAt >= 0.25 then
+			s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time)
+			s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot)
+		end
+		if not s.lobbySnapshotValid then
 			s.lobbySince = s.lobbySince or time
 			if time - s.lobbySince >= 1 and not s.active then
 				s.stoppedPartner, s.pending, s.dashSwitchPartner, s.pendingReset = nil, nil, nil, false
@@ -650,7 +664,8 @@ function AutoSpam.bindCharacter(character)
 		else
 			s.lobbySince = nil
 		end
-		if s.pendingReset then
+		if s.pendingReset and (not s.resetCheckAt or time - s.resetCheckAt >= 0.15) then
+			s.resetCheckAt = time
 			local safe = true; local snapshot = gameInfo.getSnapshotAt(time); local speed = snapshot and (snapshot.syncSpeed or snapshot.speed) or 16; local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true) or 8.5
 			for _, player in ipairs(players:GetPlayers()) do
 				if player ~= localPlayer and playerIsAlive(player.UserId) then
@@ -685,7 +700,9 @@ function AutoSpam.bindCharacter(character)
 			s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 			return
 		end
-		evaluate(s, time, false)
+		-- The active clash still evaluates deactivation every Heartbeat.
+		-- Inactive scans are packet-driven except for short-lived dash/pending assists.
+		if s.active or s.pending or s.dashStart or utils.isManualSpamActive() then evaluate(s, time, false) end
 		if typeof(s.lastRootPosition) == "Vector3" and (s.root.Position - s.lastRootPosition).Magnitude > T.ACTIVATION.HAUNTER_RANGE then
 			s.recentRootPosition, s.recentRootAt = s.lastRootPosition, time
 		end
