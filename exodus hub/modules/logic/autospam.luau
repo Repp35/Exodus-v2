@@ -472,8 +472,12 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 		end
 		local closePartner = previous and previous ~= me and previous or nil
 		if not s.active and closePartner and closePartner ~= s.stoppedPartner and snapshot.targetUncertain ~= true then
-			local limit = distanceLimit(snapshot, closePartner); local partnerDistance = distanceToPlayer(s, closePartner)
-			if limit and partnerDistance and partnerDistance <= limit then s.pending = { partner = closePartner, closeReturn = true } end
+			local activation = geometry(s, snapshot, T.ACTIVATION.RADIUS_FACTOR); local limit = distanceLimit(snapshot, closePartner); local partnerDistance = distanceToPlayer(s, closePartner); local incoming = activation
+				and limit
+				and partnerDistance
+				and partnerDistance <= limit
+				and (snapshot.position - s.root.Position).Magnitude <= activation.fullRadius
+			if incoming then s.pending = { partner = closePartner, closeReturn = true } end
 		end
 		if not s.pending and not s.active and previous ~= s.stoppedPartner and previous == s.departedTo and s.departedAt and window then
 			local limit = returnWindow(window, speed, T.ACTIVATION.RETURN); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
