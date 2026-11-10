@@ -294,7 +294,7 @@ local function setJumpBall(v)
 	paintJumpBall(v)
 	if showToast then showToast("Auto Jump " .. (v and "On" or "Off")) end
 end
-local MINI_W, MINI_H = 120, 64
+local MINI_W, MINI_H = 120, 102
 local function showMini(v, visBtn)
 	if UIState.desktop then v = false end
 	setConfigValue("MiniSpamVisible", v); local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30; miniGui.Visible = v == true
@@ -302,8 +302,13 @@ local function showMini(v, visBtn)
 	if visBtn and visBtn.Parent then visBtn.Text = "Manual Spam: " .. (v and "ON" or "OFF") end
 end
 setSpam = function(v, silent)
-	UIState.spamOn = v; Utils.setManualSpamActive(v)
-	if miniGui and miniGui.Parent then miniGui.Text = v and "ON" or "OFF"; twPlay(miniGui, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT) end
+	UIState.spamOn = v; Utils.setManualSpamActive(v); local spamButton = miniGui and miniGui:FindFirstChild("SpamButton")
+	if spamButton then
+		spamButton.Text = v and "ON" or "OFF"; twPlay(spamButton, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT); twPlay(spamButton, 0.08, { Size = UDim2.new(1, -22, 0, 40) }, EASE_SINE, DIR_OUT)
+		task.delay(0.08, function()
+			if spamButton.Parent then twPlay(spamButton, 0.28, { Size = UDim2.new(1, -16, 0, 44) }, EASE_OUT, DIR_OUT) end
+		end)
+	end
 	local panelBtn = configPanel and configPanel:FindFirstChild("ManualSpamButton", true)
 	if panelBtn then panelBtn.Text = "Manual Spam: " .. (v and "ON" or "OFF"); twPlay(panelBtn, 0.18, { BackgroundColor3 = v and C.green or C.btnBlue }, EASE_SINE, DIR_INOUT) end
 	if not silent and showToast then showToast("Manual Spam " .. (v and "On" or "Off")) end
@@ -1133,29 +1138,89 @@ function ExodusUI.setup(deps)
 		end
 	)
 	paintJumpBall(config.AutoJump == true); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30
-	miniGui = inst("TextButton", {
+	miniGui = inst("Frame", {
 		Name = "ExodusSpamMini",
 		Visible = not UIState.desktop and config.MiniSpamVisible == true,
 		Size = UDim2.new(0, MINI_W, 0, MINI_H),
-		Position = UDim2.new(0, MINI_OFF_X, 0, miniY),
-		BackgroundColor3 = UIState.spamOn and C.green or C.red,
+		BackgroundColor3 = C.header,
 		BorderSizePixel = 0,
-		Text = UIState.spamOn and "ON" or "OFF",
-		TextColor3 = C.text,
-		TextSize = 24,
-		Font = Enum.Font.GothamBold,
-		Active = true,
 		ZIndex = 15,
 		Parent = screenGui,
 	})
-	corner(miniGui, 14); registerFlow(stroke(miniGui, C.accent, 1.5)); local miniMoved = false
-	local miniDragging = makeDraggable(miniGui, miniGui, function()
-		miniMoved = true; setConfigValue("MiniX", miniGui.Position.X.Offset); setConfigValue("MiniY", miniGui.Position.Y.Offset)
-		task.defer(function() miniMoved = false end)
+	corner(miniGui, 14)
+	corner(
+		inst("Frame", {
+			Size = UDim2.new(1, 8, 1, 8),
+			Position = UDim2.new(0, -4, 0, -4),
+			BackgroundColor3 = C.accent,
+			BackgroundTransparency = 0.92,
+			BorderSizePixel = 0,
+			ZIndex = 14,
+			Parent = miniGui,
+		}),
+		18
+	)
+	registerFlow(stroke(miniGui, C.accent, 1.5))
+	local miniTitleBar = inst("Frame", {
+		Size = UDim2.new(1, 0, 0, 44),
+		BackgroundColor3 = Color3.fromRGB(20, 20, 46),
+		BackgroundTransparency = 0.05,
+		BorderSizePixel = 0,
+		ZIndex = 16,
+		Parent = miniGui,
+	})
+	corner(miniTitleBar, 14)
+	inst("Frame", {
+		Size = UDim2.new(1, 0, 0, 12),
+		Position = UDim2.new(0, 0, 1, -12),
+		BackgroundColor3 = Color3.fromRGB(20, 20, 46),
+		BackgroundTransparency = 0.05,
+		BorderSizePixel = 0,
+		ZIndex = 16,
+		Parent = miniTitleBar,
+	})
+	corner(
+		inst("Frame", {
+			Size = UDim2.new(0.5, 0, 0, 2),
+			Position = UDim2.new(0.25, 0, 0, 0),
+			BackgroundColor3 = C.accentPink,
+			BorderSizePixel = 0,
+			ZIndex = 17,
+			Parent = miniTitleBar,
+		}),
+		1
+	)
+	inst("TextLabel", {
+		Size = UDim2.new(1, -16, 1, 0),
+		Position = UDim2.new(0, 8, 0, 0),
+		BackgroundTransparency = 1,
+		Text = "Spam",
+		TextColor3 = C.subtext,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 17,
+		Parent = miniTitleBar,
+	})
+	local spamButton = inst("TextButton", {
+		Name = "SpamButton",
+		Size = UDim2.new(1, -16, 0, 44),
+		Position = UDim2.new(0, 8, 0, 50),
+		BackgroundColor3 = UIState.spamOn and C.green or C.red,
+		BorderSizePixel = 0,
+		Text = UIState.spamOn and "ON" or "OFF",
+		TextColor3 = Color3.new(1, 1, 1),
+		TextSize = 24,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 16,
+		Parent = miniGui,
+	})
+	corner(spamButton, 10)
+	trackConn(spamButton.Activated:Connect(function() setSpam(not UIState.spamOn) end))
+	miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY)
+	makeDraggable(miniTitleBar, miniGui, function()
+		setConfigValue("MiniX", miniGui.Position.X.Offset); setConfigValue("MiniY", miniGui.Position.Y.Offset)
 	end)
-	trackConn(miniGui.Activated:Connect(function()
-		if not miniDragging() and not miniMoved then setSpam(not UIState.spamOn) end
-	end))
 	configPanel = inst("CanvasGroup", {
 		Name = "ExodusPanel",
 		Size = UDim2.new(0, PW, 0, PH),
