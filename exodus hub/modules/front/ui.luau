@@ -579,58 +579,40 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter, sho
 	return nextCardY(yPos, CARD_H), f
 end
 local function createOffOnCard(labelText, yPos, parent, options)
-	options = options or {}; local configKey, state = options.configKey, false
+	options = options or {}; local cardHeight = math.clamp(options.height or OFF_ON_CARD_H, OFF_ON_MIN_H, OFF_ON_MAX_H); local configKey, state = options.configKey, false
 	local function readState()
 		if options.getState then return options.getState() == true end
 		if configKey then return Utils.getConfigValue(configKey) == true end
 		return state
 	end
-	state = readState(); local f = cardFrame(yPos, CARD_H, parent); local shortcutKey = UIState.desktop and options.shortcutKey
-	local label = inst("TextLabel", {
-		Size = UDim2.new(1, shortcutKey and -148 or -78, 0, CARD_H),
-		Position = UDim2.new(0, 14, 0, 0),
-		BackgroundTransparency = 1,
-		Text = labelText,
+	state = readState(); local f = cardFrame(yPos, cardHeight, parent)
+	local control = inst("TextButton", {
+		Size = UDim2.new(1, options.rightAligned and -72 or 0, 0, cardHeight),
+		BackgroundColor3 = C.card,
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		Text = offOnText(labelText, state),
 		TextColor3 = C.text,
-		TextSize = shortcutKey and 11 or 13,
-		TextScaled = shortcutKey ~= nil,
-		Font = Enum.Font.GothamSemibold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		ZIndex = 7,
-		Parent = f,
-	})
-	if shortcutKey then inst("UITextSizeConstraint", { MaxTextSize = 11 }, label) end
-	local status = inst("TextLabel", {
-		Size = UDim2.new(0, 48, 0, 30),
-		Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -15),
-		BackgroundColor3 = C.toggleOff,
-		BackgroundTransparency = 0.1,
-		Text = state and "ON" or "OFF",
-		TextColor3 = state and C.green or C.red,
 		TextSize = 13,
 		Font = Enum.Font.GothamBold,
-		ZIndex = 7,
-		Parent = f,
-	})
-	corner(status, 999)
-	local function setVisual(value)
-		state = value == true; status.Text = state and "ON" or "OFF"; status.TextColor3 = state and C.green or C.red
-	end
-	if configKey then offOnVisuals[configKey] = setVisual end
-	if shortcutKey then makeKeycap(f, shortcutKey) end
-	trackConn(inst("TextButton", {
-		Size = UDim2.new(1, 0, 0, CARD_H),
-		BackgroundTransparency = 1,
-		Text = "",
+		RichText = true,
+		TextXAlignment = Enum.TextXAlignment.Center,
 		ZIndex = 9,
 		Parent = f,
-	}).Activated:Connect(function()
+	})
+	corner(control, 10)
+	local function setVisual(value)
+		state = value == true; control.Text = offOnText(labelText, state)
+	end
+	if configKey then offOnVisuals[configKey] = setVisual end
+	if UIState.desktop and options.shortcutKey then makeKeycap(f, options.shortcutKey, options.rightAligned, cardHeight) end
+	trackConn(control.Activated:Connect(function()
 		local requested = not readState()
 		if configKey and not setConfigValue(configKey, requested) then return end
 		local result = options.onToggle and options.onToggle(requested); local nextState = type(result) == "boolean" and result or requested; setVisual(nextState)
 		if options.toastLabel and showToast then showToast(options.toastLabel .. (nextState and " On" or " Off")) end
 	end))
-	return nextCardY(yPos, CARD_H), f, setVisual
+	return nextCardY(yPos, cardHeight), f, setVisual
 end
 local function createActionShortcutCard(labelText, yPos, parent, configKey, onActivate)
 	local f = cardFrame(yPos, CARD_H, parent); cardLabel(labelText, f); local label = f:FindFirstChildOfClass("TextLabel")
