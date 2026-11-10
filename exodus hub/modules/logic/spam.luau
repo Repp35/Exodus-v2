@@ -159,7 +159,19 @@ Spam.__contract = {
 	requiresMethods = {
 		Remote = { "fireParry" },
 		GameInfo = { "getAutoSpamDelay", "getMinimumSpamInterval" },
-		Utils = { "getConfigValue", "isActive", "isManualSpamActive", "isAutoSpamActive", "observeSpam", "observeConfig", "trackGlobal", "untrackGlobal" },
+		Utils = {
+			"apiVersion",
+			"getConfigValue",
+			"isActive",
+			"isManualSpamActive",
+			"isAutoSpamActive",
+			"observeSpam",
+			"observeConfig",
+			"trackGlobal",
+			"untrackGlobal",
+			"recordError",
+			"recordTransition",
+		},
 	},
 
 	provides = { "setup", "resetState", "teardown", "getStatus" },

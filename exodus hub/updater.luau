@@ -2,9 +2,12 @@
 
 -- runtime
 
-return function(loadedRevision, request)
-	local players = game:GetService("Players"); local token = {}; _G.ExodusUpdaterToken = token
+return function(loadedRevision, request, options)
+	options = type(options) == "table" and options or {}; local players = game:GetService("Players"); local token = {}; _G.ExodusUpdaterToken = token
 	local function running() return _G.ExodusUpdaterToken == token and type(_G.Exodus) == "table" and _G.Exodus.Started == true end
+	local function currentRevision()
+		local exodus = _G.Exodus; return exodus and exodus.Revision or loadedRevision
+	end
 	local function safeToUpdate()
 		local exodus = _G.Exodus; local modules = exodus and exodus.Modules; local info = modules and modules.gameinfo; local auto = modules and modules.autospam; local player = players.LocalPlayer
 		if not player or not info or not auto then return false end
@@ -22,57 +25,72 @@ return function(loadedRevision, request)
 		return true
 	end
 	local function latestRevision()
-		local body, err = request("https://api.github.com/repos/Repp35/Exodus-v2/commits/main?exodus_cache=" .. tostring(os.time()), {
-			["Accept"] = "application/vnd.github+json",
-			["User-Agent"] = "Exodus-Hub-Updater",
-		})
+		local body, requestError, requestMeta = request(
+			"https://api.github.com/repos/Repp35/Exodus-v2/commits/main?exodus_cache=" .. tostring(os.time()),
+			{ ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Updater" }
+		)
 		if body then
-			local ok, document = pcall(game:GetService("HttpService").JSONDecode, game:GetService("HttpService"), body); local sha = ok and type(document) == "table" and document.sha
+			local ok, document = pcall(function() return game:GetService("HttpService"):JSONDecode(body) end)
+			local sha = ok and type(document) == "table" and document.sha
 			if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
 		end
-		local feed, feedError = request(
+		local feed, feedError, feedMeta = request(
 			"https://github.com/Repp35/Exodus-v2/commits/main.atom?exodus_cache=" .. tostring(os.time()),
 			{ ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Updater" }
 		)
 		local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
-		if not sha or #sha ~= 40 then return nil, feedError or err or "SHA indisponível" end
-		return sha
+		if sha and #sha == 40 then return sha end
+		return nil, feedError or requestError or "SHA mais recente indisponível", feedMeta or requestMeta
+	end
+	local function retryAt(now, metadata)
+		if metadata and metadata.rateLimited then return now + math.max(0, tonumber(metadata.retryAfter) or 5) end
+		return now + 5
 	end
 	task.spawn(function()
-		local pending, chunk, nextCheck, failures = nil, nil, 0, 0
+		local pendingRevision
+		local pendingSource
+		local nextCheck = 0
 		while running() do
-			if os.clock() >= nextCheck then
-				nextCheck = os.clock() + 1; local revision, err = latestRevision()
-				if not running() then return end
+			local now = os.clock()
+			if now >= nextCheck and not pendingRevision then
+				local revision, checkError, checkMetadata = latestRevision()
 				if revision then
-					failures = 0
-					if revision ~= loadedRevision then
-						if pending ~= revision then pending, chunk = revision, nil end
-					else
-						pending, chunk = nil, nil
-					end
+					local current = currentRevision()
+					if revision ~= current and revision ~= loadedRevision then pendingRevision = revision; nextCheck = now else nextCheck = now + 5 end
 				else
-					failures += 1; nextCheck = os.clock() + math.min(300, 15 * 2 ^ math.min(failures - 1, 5)); warn("[Exodus Updater] Falha ao verificar atualização: " .. tostring(err))
+					nextCheck = retryAt(now, checkMetadata); warn("[Exodus Updater] " .. tostring(checkError))
 				end
 			end
-			if pending and not chunk then
-				local source, err = request("https://raw.githubusercontent.com/Repp35/Exodus-v2/" .. pending .. "/exodus%20hub/loader.luau")
-				if not running() then return end
+			if pendingRevision and not pendingSource and os.clock() >= nextCheck then
+				local source, fetchError, fetchMetadata = request(
+					"https://raw.githubusercontent.com/Repp35/Exodus-v2/" .. pendingRevision .. "/exodus%20hub/loader.luau?exodus_cache=" .. tostring(os.time()),
+					{ ["User-Agent"] = "Exodus-Hub-Updater" }
+				)
 				if source then
-					local compiled, compileError = loadstring(source, "Exodus loader")
-					if compiled then chunk = compiled else warn("[Exodus Updater] " .. tostring(compileError)); pending = nil end
+					local chunk, compileError = loadstring(source, "Exodus updater loader")
+					if chunk then
+						pendingSource = chunk
+						if type(options.cacheLoader) == "function" then pcall(options.cacheLoader, pendingRevision, source) end
+					else
+						warn("[Exodus Updater] " .. tostring(compileError)); pendingRevision = nil; nextCheck = os.clock() + 5
+					end
+				elseif fetchMetadata and fetchMetadata.rateLimited then
+					nextCheck = retryAt(os.clock(), fetchMetadata); warn("[Exodus Updater] " .. tostring(fetchError))
 				else
-					warn("[Exodus Updater] Falha ao baixar loader: " .. tostring(err)); pending = nil
+					warn("[Exodus Updater] " .. tostring(fetchError)); pendingRevision = nil; nextCheck = os.clock() + 5
 				end
 			end
-			local safe, ready = pcall(safeToUpdate)
-			if chunk and running() and safe and ready then
-				print("[Exodus Updater] Atualizando o hub...")
-				local ok, err = xpcall(chunk, function(value) return debug.traceback(tostring(value), 2) end)
-				if not ok then warn("[Exodus Updater] Falha ao reiniciar: " .. tostring(err)) end
-				return
+			if pendingRevision and pendingSource and running() then
+				local safe = false; local ok, result = pcall(safeToUpdate)
+				if ok then safe = result == true end
+				if safe then
+					_G.ExodusRequestedRevision = pendingRevision
+					local executed, executionError = xpcall(pendingSource, function(err) return debug.traceback(tostring(err), 2) end)
+					if not executed then _G.ExodusRequestedRevision = nil; warn("[Exodus Updater] " .. tostring(executionError)) end
+					return
+				end
 			end
-			task.wait(pending and 0.25 or 1)
+			task.wait(pendingSource and 0.25 or math.max(0.05, math.min(5, nextCheck - os.clock())))
 		end
 	end)
 end

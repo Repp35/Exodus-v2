@@ -2,12 +2,13 @@
 
 -- dependencies
 local Remote = {}
-local gameInfo
+local gameInfo, parryObserver
+local autoParrySignature = {}
 
 -- lifecycle
 function Remote.setup(deps)
 	if type(deps) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependência inválida: GameInfo" end
-	gameInfo = deps.GameInfo; return true
+	gameInfo, parryObserver = deps.GameInfo, nil; return true
 end
 
 -- dispatch
@@ -19,23 +20,39 @@ local function send(ability, method, ...)
 	if result == false then return false, method .. " recusado" end
 	return true
 end
-function Remote.fireParry(_flag, guard)
+local function allowed(guard)
+	if type(guard) ~= "function" then return true end
+	local result = guard(); return result ~= nil and result ~= false
+end
+local function notifyParry(signature)
+	if type(parryObserver) ~= "function" then return end
+	local ok, detail = pcall(parryObserver, signature)
+	if not ok and type(warn) == "function" then warn("[Remote] Observador de parry falhou: " .. tostring(detail)) end
+end
+function Remote.getAutoParrySignature() return autoParrySignature end
+function Remote.setParryObserver(observer)
+	if observer ~= nil and type(observer) ~= "function" then return false, "observador inválido" end
+	parryObserver = observer; return true
+end
+function Remote.fireParry(_flag, guard, signature)
 	if not gameInfo then return false, "Remote não inicializado" end
 	if gameInfo.isTrainingArea() then
-		if type(guard) == "function" and not guard() then return false, "Deflect cancelado" end
-		return gameInfo.fireTrainingParry()
+		if not allowed(guard) then return false, "Deflect cancelado" end
+		local sent, detail = gameInfo.fireTrainingParry()
+		if sent == true then notifyParry(signature) end
+		return sent, detail
 	end
 	local ability = gameInfo.getDeflectAbility()
 	if not ability then return false, "Deflect indisponível" end
-	if type(guard) == "function" then
-		if not guard() then return false, "Deflect cancelado" end
-	end
-	return send(ability, "Deflect")
+	if not allowed(guard) then return false, "Deflect cancelado" end
+	local sent, detail = send(ability, "Deflect")
+	if sent == true then notifyParry(signature) end
+	return sent, detail
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), "SendEvent", eventId, cameraFrame) end
 function Remote.fireFierce(guard)
 	local ability = gameInfo and gameInfo.getFierceDeflectAbility()
-	if type(guard) == "function" and not guard() then return false, "Fierce cancelado" end
+	if not allowed(guard) then return false, "Fierce cancelado" end
 	return send(ability, "ActivateAndBlock")
 end
 function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), "Dash") end
@@ -47,7 +64,7 @@ Remote.__contract = {
 		GameInfo = { "isTrainingArea", "fireTrainingParry", "getDeflectAbility", "getDarkSealAbility", "getFierceDeflectAbility", "getDashAbility" },
 	},
 
-	provides = { "setup", "fireParry", "fireDark", "fireFierce", "fireDash" },
+	provides = { "setup", "getAutoParrySignature", "setParryObserver", "fireParry", "fireDark", "fireFierce", "fireDash" },
 }
 
 return Remote

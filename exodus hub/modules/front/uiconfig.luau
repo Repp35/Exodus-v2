@@ -13,6 +13,7 @@ UIConfig.panelToggles = {
 		kind = "toggle",
 		label = "Mini Parry UI",
 		key = "ParryBallVisible",
+		mobileOnly = true,
 	},
 	{
 		kind = "toggle",
@@ -23,6 +24,7 @@ UIConfig.panelToggles = {
 		kind = "toggle",
 		label = "Mini Clash UI",
 		key = "ClashBallVisible",
+		mobileOnly = true,
 	},
 }
 UIConfig.panelComponents = {
@@ -40,7 +42,7 @@ UIConfig.__config = {
 	schema = {
 		AutoParry = "boolean",
 		AutoParryWindowFactor = "rate",
-		AutoParryFactor04Applied = "boolean",
+		AutoParryFactor08Applied = "boolean",
 		CameraSensitivity = "rate",
 		ParryBallVisible = "boolean",
 		ParryBallX = "position",
@@ -62,6 +64,11 @@ UIConfig.__config = {
 		SpamRateMode = "rateMode",
 		Keybind = "keyCode",
 		SpamKeybind = "keyCode",
+		ParryKeybind = "keyCode",
+		ClashKeybind = "keyCode",
+		DarkKeybind = "keyCode",
+		JumpKeybind = "keyCode",
+		UpDashKeybind = "keyCode",
 		BtnX = "position",
 		BtnY = "position",
 		ClashBallX = "position",
@@ -80,8 +87,8 @@ UIConfig.__config = {
 
 	defaults = {
 		AutoParry = true,
-		AutoParryWindowFactor = 0.4,
-		AutoParryFactor04Applied = true,
+		AutoParryWindowFactor = 0.8,
+		AutoParryFactor08Applied = true,
 		CameraSensitivity = 1,
 		ParryBallVisible = false,
 		AutoSpam = true,
@@ -101,6 +108,11 @@ UIConfig.__config = {
 		SpamRateMode = "CPF",
 		Keybind = Enum.KeyCode.F9,
 		SpamKeybind = Enum.KeyCode.F,
+		ParryKeybind = Enum.KeyCode.P,
+		ClashKeybind = Enum.KeyCode.C,
+		DarkKeybind = Enum.KeyCode.D,
+		JumpKeybind = Enum.KeyCode.J,
+		UpDashKeybind = Enum.KeyCode.U,
 	},
 
 }

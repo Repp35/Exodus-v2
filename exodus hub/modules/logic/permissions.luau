@@ -29,8 +29,15 @@ local POLICIES = {
 			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace getRunService now recordError trackGlobal untrackGlobal"),
 		},
 	},
+	clashstats = {
+		provide = allow("setup teardown begin finish observe freeze get"),
+		consume = {
+			utils = allow("getLocalPlayer getPlayers createClashLog appendClashLog recordError now"),
+			gameinfo = allow("getClashContext getPlayerMotion"),
+		},
+	},
 	remote = {
-		provide = allow("setup fireParry fireDark fireFierce fireDash"),
+		provide = allow("setup getAutoParrySignature setParryObserver fireParry fireDark fireFierce fireDash"),
 		consume = { gameinfo = allow("isTrainingArea fireTrainingParry getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
 	},
 	autoparry = {
@@ -44,7 +51,7 @@ local POLICIES = {
 			gameinfo = allow(
 				"getBallPosition getBallVelocity getDeflectCooldownState getDeflectGeometry getDeflectRangeParameters getProjectedDeflectRadius getAveragePing getRootPosition getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
 			),
-			remote = allow("fireParry"),
+			remote = allow("getAutoParrySignature setParryObserver fireParry"),
 		},
 	},
 	autospam = {
@@ -53,11 +60,12 @@ local POLICIES = {
 		),
 		consume = {
 			utils = allow(
-				"apiVersion createClashLog appendClashLog getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordError recordTransition setAutoSpamActive trackCharacter untrackCharacter"
+				"apiVersion getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordTransition setAutoSpamActive trackCharacter untrackCharacter"
 			),
 			gameinfo = allow(
-				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRangeParameters getDashAbility getPlayerDeflectRange getPlayerRawRadius getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getAveragePing getSnapshotAt getTargetId isSnapshotValid"
+				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRangeParameters getDashAbility getPlayerDeflectRange getPlayerRawRadius getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getSnapshotAt getTargetId isSnapshotValid"
 			),
+			clashstats = allow("begin finish observe freeze get"),
 		},
 	},
 	spam = {
@@ -104,9 +112,7 @@ local POLICIES = {
 	camera = {
 		provide = allow("setup teardown"),
 		consume = {
-			utils = allow("getConfigValue getLocalPlayer getRunService getWorkspace isActive observeConfig trackGlobal untrackGlobal"),
-			gameinfo = allow("getPlayerMotion getClashContext"),
-			autospam = allow("getActivationContext"),
+			utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
 		},
 	},
 	autodash = {
@@ -115,7 +121,7 @@ local POLICIES = {
 			utils = allow("getPlayers getLocalPlayer getRunService getConfigValue isActive now trackCharacter untrackCharacter"),
 			gameinfo = allow("areAbilitiesEnabled getClashContext getSnapshotAt isSnapshotValid getDeflectGeometry"),
 			dash = allow("setHandler tick"),
-			movement = allow("upDash dashToward"),
+			movement = allow("upDash"),
 			autospam = allow("getActivationContext"),
 		},
 	},

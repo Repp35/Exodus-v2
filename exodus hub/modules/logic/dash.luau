@@ -161,7 +161,7 @@ end
 -- contract
 Dash.__contract = {
 	requires = { Utils = "utils", GameInfo = "gameinfo" },
-	requiresMethods = { Utils = { "getPlayers", "now", "trackGlobal", "untrackGlobal" }, GameInfo = { "isPlayerDashing" } },
+	requiresMethods = { Utils = { "apiVersion", "getPlayers", "now", "trackGlobal", "untrackGlobal" }, GameInfo = { "isPlayerDashing" } },
 	provides = { "setup", "setHandler", "tick", "resetState", "teardown", "getStatus" },
 }
 
