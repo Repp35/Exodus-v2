@@ -51,7 +51,6 @@ local state = {
 local T = {
 	DEFAULT_WINDOW_FACTOR = 0.40,
 	FAST_EXCHANGE_INTERVAL = 0.5,
-	FAST_EXCHANGE_RECENCY = 1,
 	GRACE_COOLDOWN = 0.03,
 	PRESSURE_SAMPLE_LIMIT = 100,
 	PRESSURE_WINDOW = 3,
@@ -119,19 +118,9 @@ local function resilience()
 	}
 end
 local function configuredFactor()
-	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); factor = finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
-	if remote and type(remote.getParrySendTiming) == "function" then
-		local interval, lastSentAt = remote.getParrySendTiming()
-		if
-			finite(interval)
-			and interval > 0
-			and interval < T.FAST_EXCHANGE_INTERVAL
-			and finite(lastSentAt)
-			and clock() - lastSentAt <= T.FAST_EXCHANGE_RECENCY
-		then
-			factor = 1
-		end
-	end
+	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor"))
+	factor = finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
+	if remote and remote.getParryCps() > 2 then factor = 1 end
 	return factor
 end
 local function minimumBallSpeed() return T.MIN_PARRY_SPEED end
@@ -580,7 +569,8 @@ function AutoParry.getStatus()
 	}
 end
 function AutoParry.getCpsStatus()
-	local cps = remote and remote.getParryCps() or 0; return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
+	local cps = remote and remote.getParryCps() or 0
+	return { cps = cps, boosted = cps > 2, factor = configuredFactor() }
 end
 
 -- contract
