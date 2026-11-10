@@ -237,18 +237,14 @@ local function tick(character, root, generation)
 	if not value.ball.Parent then return end
 	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
 	if value.grace == true then
-		local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
-		local graceSpeed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or 45
-		local graceRadius = math.clamp(graceSpeed * 0.40 + 6, 9, 90) * 1.4 + 10
-		local ping = math.clamp(state.legacyPing * 1.1 + 0.02, 0.02, 0.25)
+		local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0; local graceSpeed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or 45; local graceRadius = math.clamp(graceSpeed * 0.40 + 6, 9, 90) * 1.4 + 10; local ping = math.clamp(state.legacyPing * 1.1 + 0.02, 0.02, 0.25)
 		local threshold = math.max(graceRadius, 4 + ping * graceSpeed + 2)
 		state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 		state.closingSpeed, state.triggerDistance = closing, threshold
 		if distance <= threshold then request("grace_parry_requested") end
 		return
 	end
-	samplePing()
-	local geometry = radius(speed, configuredFactor())
+	samplePing(); local geometry = radius(speed, configuredFactor())
 	if not geometry then return end
 	local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); threshold += math.max(closing, 0) * state.frameAllowance
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
