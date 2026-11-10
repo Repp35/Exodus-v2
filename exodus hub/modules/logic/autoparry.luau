@@ -287,9 +287,7 @@ local function tick(character, root, generation)
 	if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
 	if not value.ball.Parent then return end
 	local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude; samplePing(); local fullWindow = radius(speed, 1); local delta = rootPosition - position; local distance = delta.Magnitude; local closing = distance > 0 and velocity:Dot(delta) / distance or 0
-	local targeted = value.targetUncertain ~= true and state.player ~= nil and value.targetId == state.player.UserId
-	-- Grace comes exclusively from the server sync. Rearm only on a false -> true edge.
-	local syncGrace = value.mode ~= "training" and value.grace == true and targeted
+	local targeted = value.targetUncertain ~= true and state.player ~= nil and value.targetId == state.player.UserId; local syncGrace = value.mode ~= "training" and value.grace == true and targeted
 	if not syncGrace then
 		state.localGraceActive, state.graceHandled = false, false
 	elseif not state.localGraceActive then
