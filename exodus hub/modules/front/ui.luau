@@ -815,18 +815,11 @@ local function restoreAfterReloadFailure(message)
 	if showToast then showToast("Reload failed") end
 	warn("[Exodus Reload] " .. tostring(message))
 end
--- Public transition used by the updater and by a new loader instance.
 local function fadeOutForReplacement()
 	if not screenGui or not screenGui.Parent or UIState.closing then return end
-	UIState.closing = true
-	safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
-	local duration = 0.3
-	if configPanel and configPanel.Parent and configPanel.Visible then
-		twPlay(configPanel, duration, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.96, PH * 0.96) }, EASE_OUT, DIR_IN)
-	end
-	if floatingButton and floatingButton.Parent then
-		twPlay(floatingButton, duration, { BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN)
-	end
+	UIState.closing = true; safeCancel(UIState.panelTween); safeCancel(UIState.btnTween); local duration = 0.3
+	if configPanel and configPanel.Parent and configPanel.Visible then twPlay(configPanel, duration, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.96, PH * 0.96) }, EASE_OUT, DIR_IN) end
+	if floatingButton and floatingButton.Parent then twPlay(floatingButton, duration, { BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN) end
 	for _, element in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall, miniGui }) do
 		if element and element.Parent then twPlay(element, duration, { Position = UDim2.new(0, OFFSCREEN_X, element.Position.Y.Scale, element.Position.Y.Offset) }, EASE_OUT, DIR_IN) end
 	end
