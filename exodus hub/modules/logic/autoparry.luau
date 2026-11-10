@@ -239,10 +239,7 @@ local function tick(character, root, generation)
 	state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
 	state.closingSpeed, state.triggerDistance = closing, threshold
 	if value.grace == true then
-		local graceSpeed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or 45
-		local graceRadius = math.clamp(graceSpeed * 0.40 + 6, 9, 90) * 1.4 + 10
-		local ping = math.clamp(state.legacyPing * 1.1 + 0.02, 0.02, 0.25)
-		local killThreshold = 4 + ping * graceSpeed + 2
+		local graceSpeed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or 45; local graceRadius = math.clamp(graceSpeed * 0.40 + 6, 9, 90) * 1.4 + 10; local ping = math.clamp(state.legacyPing * 1.1 + 0.02, 0.02, 0.25); local killThreshold = 4 + ping * graceSpeed + 2
 		if distance <= graceRadius or distance <= killThreshold then request("grace_parry_requested") end
 		return
 	end
