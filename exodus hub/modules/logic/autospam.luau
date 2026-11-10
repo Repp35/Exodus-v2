@@ -75,7 +75,7 @@ end
 local function returnTimeout(snapshot)
 	local speed = snapshotSpeed(snapshot); local minimum, maximum = gameInfo.getBallSpeedLimits()
 	if not finite(speed) or speed <= 0 or not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
-	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); return 0.1 * (1 - 0.9 * factor)
+	local factor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); return 0.1 * (1 - 0.5 * factor)
 end
 local function resetExchange(s)
 	s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil
