@@ -35,7 +35,12 @@ UIConfig.panelComponents = {
 		kind = "keybind_selector",
 	},
 	{
-		kind = "manual_spam",
+		kind = "off_on",
+		label = "Manual Spam",
+		mobileKey = "MiniSpamVisible",
+		desktopKey = "ManualSpamEnabled",
+		shortcutKey = "SpamKeybind",
+		mobileToast = "Manual Spam UI",
 	},
 }
 UIConfig.__config = {

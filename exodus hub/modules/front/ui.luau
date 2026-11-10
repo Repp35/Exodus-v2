@@ -55,6 +55,7 @@ local toastLayer
 local responsiveScale
 local flowingTweens = {}
 local shortcutLabels = {}
+local offOnVisuals = {}
 
 -- palette
 local C = {
@@ -295,13 +296,12 @@ local function setJumpBall(v)
 	if showToast then showToast("Auto Jump " .. (v and "On" or "Off")) end
 end
 local MINI_W, MINI_H = 120, 90
-local function showMini(v, visBtn)
+local function showMini(v)
 	if UIState.desktop then v = false end
-	setConfigValue("MiniSpamVisible", v); local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30; miniGui.Visible = v == true
+	local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30; miniGui.Visible = v == true
 	if v then twPlay(miniGui, 0.22, { Position = UDim2.new(0, miniX, 0, miniY) }, EASE_OUT, DIR_OUT) else miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY) end
-	if visBtn and visBtn.Parent then visBtn.Text = "Manual Spam: " .. (v and "ON" or "OFF") end
 end
-setSpam = function(v, silent)
+setSpam = function(v)
 	UIState.spamOn = v; Utils.setManualSpamActive(v); local spamButton = miniGui and miniGui:FindFirstChild("SpamButton")
 	if spamButton then
 		spamButton.Text = v and "ON" or "OFF"; twPlay(spamButton, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT); twPlay(spamButton, 0.08, { Size = UDim2.new(1, -22, 0, 44) }, EASE_SINE, DIR_OUT)
@@ -309,9 +309,6 @@ setSpam = function(v, silent)
 			if spamButton.Parent then twPlay(spamButton, 0.28, { Size = UDim2.new(1, -16, 0, 48) }, EASE_BACK, DIR_OUT) end
 		end)
 	end
-	local panelBtn = configPanel and configPanel:FindFirstChild("ManualSpamButton", true)
-	if panelBtn then panelBtn.Text = "Manual Spam: " .. (v and "ON" or "OFF"); twPlay(panelBtn, 0.18, { BackgroundColor3 = v and C.green or C.btnBlue }, EASE_SINE, DIR_INOUT) end
-	if not silent and showToast then showToast("Manual Spam " .. (v and "On" or "Off")) end
 end
 local PW, PH = 540, 380
 local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
@@ -319,8 +316,8 @@ local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 48, 64, 118
 local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
 local CARD_SCALE = 1.06
-local ACTION_CARD_MIN_H, ACTION_CARD_MAX_H = 42, 46
-local ACTION_CARD_H = math.clamp(CARD_H - 4, ACTION_CARD_MIN_H, ACTION_CARD_MAX_H)
+local OFF_ON_MIN_H, OFF_ON_MAX_H = 42, 46
+local OFF_ON_CARD_H = math.clamp(CARD_H - 4, OFF_ON_MIN_H, OFF_ON_MAX_H)
 local function nextCardY(yPos, cardHeight) return yPos + cardHeight * CARD_SCALE + CARD_GAP end
 
 -- panel
@@ -354,8 +351,8 @@ local function cleanupUI()
 		local oldOverlay = overlay:FindFirstChild("ExodusInformationOverlay")
 		if oldOverlay then oldOverlay:Destroy() end
 	end
-	screenGui = nil; floatingButton = nil; clashBall = nil; parryBall = nil; darkBall = nil; jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil; particleLayer = nil; titleBar = nil; minimizeButton = nil; reloadButton = nil; colLeft = nil; colRight = nil; killBtn = nil; toastLayer = nil; responsiveScale = nil; shortcutLabels = {}; autoClashTrack = nil; autoClashThumb = nil
-	autoParrySetVisual = nil; autoDarkSetVisual = nil; autoJumpSetVisual = nil
+	screenGui = nil; floatingButton = nil; clashBall = nil; parryBall = nil; darkBall = nil; jumpBall = nil; upDashBall = nil; miniGui = nil; configPanel = nil; particleLayer = nil; titleBar = nil; minimizeButton = nil; reloadButton = nil; colLeft = nil; colRight = nil; killBtn = nil; toastLayer = nil; responsiveScale = nil; shortcutLabels = {}; offOnVisuals = {}; autoClashTrack = nil
+	autoClashThumb = nil; autoParrySetVisual = nil; autoDarkSetVisual = nil; autoJumpSetVisual = nil
 	if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil end
 end
 
@@ -521,9 +518,9 @@ local function keyName(value)
 
 	local name = typeof(value) == "EnumItem" and value.Name or tostring(value or "—"); return names[name] or name
 end
-local function makeKeycap(parent, configKey, rightAligned)
+local function makeKeycap(parent, configKey, rightAligned, baseHeight)
 	local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 32, 28, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey; keycap.Position = UDim2.new(1, -132, 0, 10); keycap.TextSize = 9; keycap.ZIndex = 11; shortcutLabels[configKey] = keycap; local arrow = makeBtn("⌄", 0, 0, 24, 28, parent, C.btnDark); arrow.Name = "ShortcutSettings"; arrow.Position = UDim2.new(1, -96, 0, 10)
-	arrow.ZIndex = 11; local editor = makeBtn("Shortcut: " .. keyName(Utils.getConfigValue(configKey)), 10, CARD_H + 4, 0, 30, parent, C.btnBlue); editor.Size = UDim2.new(1, -20, 0, 30); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
+	arrow.ZIndex = 11; local editor = makeBtn("Shortcut: " .. keyName(Utils.getConfigValue(configKey)), 10, (baseHeight or CARD_H) + 4, 0, 30, parent, C.btnBlue); editor.Size = UDim2.new(1, -20, 0, 30); editor.Name = "ShortcutEditor"; editor.Visible = false; editor.ZIndex = 11; editor.TextSize = 12; local expanded = false
 	if rightAligned then keycap.Position = UDim2.new(1, -68, 0, 10); arrow.Position = UDim2.new(1, -32, 0, 10) end
 	local function expand()
 		expanded = not expanded; local delta = expanded and 44 or -44; editor.Visible = expanded; arrow.Text = expanded and "⌃" or "⌄"; parent.Size += UDim2.fromOffset(0, delta); local layoutDelta = delta * CARD_SCALE
@@ -578,14 +575,20 @@ local function createToggleCard(labelText, configKey, yPos, parent, onAfter, sho
 	end))
 	return nextCardY(yPos, CARD_H), f
 end
-local function createActionToggleCard(labelText, yPos, parent, onToggle, shortcutKey, managesState)
-	local f = cardFrame(yPos, ACTION_CARD_H, parent)
+local function createOffOnCard(labelText, yPos, parent, options)
+	options = options or {}; local cardHeight = math.clamp(options.height or OFF_ON_CARD_H, OFF_ON_MIN_H, OFF_ON_MAX_H); local configKey, state = options.configKey, false
+	local function readState()
+		if options.getState then return options.getState() == true end
+		if configKey then return Utils.getConfigValue(configKey) == true end
+		return state
+	end
+	state = readState(); local f = cardFrame(yPos, cardHeight, parent)
 	local control = inst("TextButton", {
-		Size = UDim2.new(1, 0, 0, ACTION_CARD_H),
-		BackgroundColor3 = C.red,
+		Size = UDim2.new(1, options.rightAligned and -72 or 0, 0, cardHeight),
+		BackgroundColor3 = state and C.green or C.red,
 		BackgroundTransparency = 0.08,
 		BorderSizePixel = 0,
-		Text = labelText .. ": OFF",
+		Text = labelText .. ": " .. (state and "ON" or "OFF"),
 		TextColor3 = C.text,
 		TextSize = 13,
 		Font = Enum.Font.GothamBold,
@@ -594,17 +597,18 @@ local function createActionToggleCard(labelText, yPos, parent, onToggle, shortcu
 		Parent = f,
 	})
 	corner(control, 10)
-	local function setVisual(v)
-		control.Text = labelText .. ": " .. (v and "ON" or "OFF"); twPlay(control, 0.22, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT)
+	local function setVisual(value)
+		state = value == true; control.Text = labelText .. ": " .. (state and "ON" or "OFF"); twPlay(control, 0.22, { BackgroundColor3 = state and C.green or C.red }, EASE_SINE, DIR_INOUT)
 	end
-	if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey) end
-	local active = false
+	if configKey then offOnVisuals[configKey] = setVisual end
+	if UIState.desktop and options.shortcutKey then makeKeycap(f, options.shortcutKey, options.rightAligned, cardHeight) end
 	trackConn(control.Activated:Connect(function()
-		local result = onToggle()
-		if managesState then active = result == nil and not active or result == true; setVisual(active) end
-		if showToast then showToast(labelText .. (managesState and (active and " On" or " Off") or " On")) end
+		local requested = not readState()
+		if configKey and not setConfigValue(configKey, requested) then return end
+		local result = options.onToggle and options.onToggle(requested); local nextState = type(result) == "boolean" and result or requested; setVisual(nextState)
+		if options.toastLabel and showToast then showToast(options.toastLabel .. (nextState and " On" or " Off")) end
 	end))
-	return setVisual
+	return nextCardY(yPos, cardHeight), f, setVisual
 end
 local function createActionShortcutCard(labelText, yPos, parent, configKey, onActivate)
 	local f = cardFrame(yPos, CARD_H, parent); cardLabel(labelText, f); local label = f:FindFirstChildOfClass("TextLabel")
@@ -770,34 +774,13 @@ local function createKeybindSelector(yPos, parent)
 		if type(Controls.onPanic) == "function" then Controls.onPanic() end
 	end)
 end
-local function createSpamCard(yPos, parent)
-	local f = cardFrame(yPos, CARD_H, parent); local key = UIState.desktop and "ManualSpamEnabled" or "MiniSpamVisible"
-	local button = inst("TextButton", {
-		Name = "ManualSpamControl",
-		Size = UDim2.new(1, UIState.desktop and -72 or 0, 0, CARD_H),
-		BackgroundTransparency = 1,
-		Text = "Manual Spam: " .. (Utils.getConfigValue(key) == true and "ON" or "OFF"),
-		TextColor3 = C.text,
-		TextSize = 13,
-		Font = Enum.Font.GothamBold,
-		ZIndex = 9,
-		Parent = f,
-	})
-	if UIState.desktop then makeKeycap(f, "SpamKeybind", true) end
-	trackConn(button.Activated:Connect(function()
-		local enabled = Utils.getConfigValue(key) ~= true
-		if UIState.desktop then
-			if not setConfigValue(key, enabled) then return end
-			if not enabled then setSpam(false, true) end
-			button.Text = "Manual Spam: " .. (enabled and "ON" or "OFF")
-			if showToast then showToast("Manual Spam " .. (enabled and "On" or "Off")) end
-		else
-			showMini(enabled, button)
-			if showToast then showToast("Manual Spam UI " .. (enabled and "On" or "Off")) end
-		end
-	end))
-	return nextCardY(yPos, CARD_H)
-end
+local offOnCallbacks = {
+	MiniSpamVisible = showMini,
+	ManualSpamEnabled = function(enabled)
+		if not enabled then setSpam(false) end
+	end,
+}
+
 local function togglePanel()
 	if not configPanel or not configPanel.Parent or not floatingButton or not floatingButton.Parent then return end
 	UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
@@ -1391,12 +1374,21 @@ function ExodusUI.setup(deps)
 	local components = {
 		rate_selector = createRateSelector,
 		keybind_selector = createKeybindSelector,
-		manual_spam = createSpamCard,
+		off_on = function(yPos, parent, definition)
+			local configKey = UIState.desktop and definition.desktopKey or definition.mobileKey
+			return createOffOnCard(definition.label, yPos, parent, {
+				configKey = configKey,
+				shortcutKey = UIState.desktop and definition.shortcutKey or nil,
+				rightAligned = UIState.desktop,
+				onToggle = offOnCallbacks[configKey],
+				toastLabel = UIState.desktop and nil or definition.mobileToast,
+			})
+		end,
 	}
 
 	for _, definition in ipairs(UIConfig.panelComponents) do
 		local createComponent = components[definition.kind]
-		if createComponent and (definition.kind ~= "keybind_selector" or UIState.desktop) then yR = createComponent(yR, colRight) end
+		if createComponent and (definition.kind ~= "keybind_selector" or UIState.desktop) then yR = createComponent(yR, colRight, definition) end
 	end
 	colRight.CanvasSize = UDim2.new(0, 0, 0, yR)
 	local settingsLeft = inst("ScrollingFrame", {
@@ -1458,17 +1450,29 @@ function ExodusUI.setup(deps)
 		ZIndex = 6,
 		Parent = pageGroups[4],
 	})
-	local darkYPos, darkCard = createToggleCard("Auto Dark", "AutoDark", 4, autosLeft, function(value)
-		paintDarkBall(value)
-		if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
-	end, UIState.desktop and "DarkKeybind" or nil)
+	local darkYPos, darkCard = createOffOnCard("Auto Dark", 4, autosLeft, {
+		configKey = "AutoDark",
+		shortcutKey = UIState.desktop and "DarkKeybind" or nil,
+		rightAligned = UIState.desktop,
+		onToggle = function(value)
+			paintDarkBall(value)
+			if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
+		end,
+		toastLabel = "Auto Dark",
+	})
 	local fierceYPos, miniDarkCard = darkYPos, nil
 	if not UIState.desktop then fierceYPos, miniDarkCard = createToggleCard("Mini Dark UI", "DarkBallVisible", fierceYPos, autosLeft, showDarkBall) end
-	local autoFierceYPos, fierceCard = createToggleCard("Auto Fierce", "AutoFierce", fierceYPos, autosLeft)
-	local jumpYPos, jumpCard = createToggleCard("Auto Jump", "AutoJump", 4, autosRight, function(value)
-		paintJumpBall(value)
-		if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
-	end, UIState.desktop and "JumpKeybind" or nil)
+	local autoFierceYPos, fierceCard = createOffOnCard("Auto Fierce", fierceYPos, autosLeft, { configKey = "AutoFierce", toastLabel = "Auto Fierce" })
+	local jumpYPos, jumpCard = createOffOnCard("Auto Jump", 4, autosRight, {
+		configKey = "AutoJump",
+		shortcutKey = UIState.desktop and "JumpKeybind" or nil,
+		rightAligned = UIState.desktop,
+		onToggle = function(value)
+			paintJumpBall(value)
+			if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
+		end,
+		toastLabel = "Auto Jump",
+	})
 	local dashYPos, miniJumpCard = jumpYPos, nil
 	if not UIState.desktop then dashYPos, miniJumpCard = createToggleCard("Mini Auto Jump", "JumpBallVisible", dashYPos, autosRight, showJumpBall) end
 	local upDashYPos, upDashCard = dashYPos, nil
@@ -1480,8 +1484,9 @@ function ExodusUI.setup(deps)
 	else
 		upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", upDashYPos, autosRight, showUpDashBall)
 	end
-	local autoDashYPos, autoUpDashCard = createToggleCard("Auto Dash (clash)", "AutoClashUpDash", upDashYPos, autosRight); local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft); local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 4, settingsRight)
-	createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight)
+	local autoDashYPos, autoUpDashCard =
+		createOffOnCard("Auto Dash (clash)", upDashYPos, autosRight, { configKey = "AutoClashUpDash", toastLabel = "Auto Dash (clash)" })
+	local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft); local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 4, settingsRight); createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight)
 	local function updateAbilityVisibility(enabled)
 		for _, card in ipairs({ darkCard, miniDarkCard, jumpCard, miniJumpCard, upDashCard, fierceCard, autoUpDashCard }) do
 			if card then card.Visible = enabled end
@@ -1493,32 +1498,38 @@ function ExodusUI.setup(deps)
 	-- anti-afk
 	local antiConnection
 	local antiGeneration = 0
-	local paintAnti
-	paintAnti = createActionToggleCard("Anti AFK", 0, utilities, function()
-		if antiConnection then antiGeneration += 1; antiConnection:Disconnect(); untrackConn(antiConnection); antiConnection = nil; paintAnti(false); return false end
-		local player = Utils.getLocalPlayer(); local ok, virtualUser = pcall(game.GetService, game, "VirtualUser")
-		if not player then Utils.recordError("AntiAFK", "Player unavailable"); return false end
-		local function pulse()
-			local inputOk, err = pcall(function()
-				if not ok or not virtualUser then error("VirtualUser unavailable") end
-				virtualUser:CaptureController(); virtualUser:ClickButton2(Vector2.new(0, 0))
-			end)
-			if not inputOk then
-				local fallback, fallbackErr = pcall(function()
-					local vim = game:GetService("VirtualInputManager"); vim:SendMouseButtonEvent(0, 0, 1, true, game, 0); vim:SendMouseButtonEvent(0, 0, 1, false, game, 0)
+	createOffOnCard("Anti AFK", 0, utilities, {
+		onToggle = function(enabled)
+			if not enabled then
+				antiGeneration += 1
+				if antiConnection then antiConnection:Disconnect(); untrackConn(antiConnection); antiConnection = nil end
+				return false
+			end
+			local player = Utils.getLocalPlayer(); local ok, virtualUser = pcall(game.GetService, game, "VirtualUser")
+			if not player then Utils.recordError("AntiAFK", "Player unavailable"); return false end
+			local function pulse()
+				local inputOk, err = pcall(function()
+					if not ok or not virtualUser then error("VirtualUser unavailable") end
+					virtualUser:CaptureController(); virtualUser:ClickButton2(Vector2.new(0, 0))
 				end)
-				if not fallback then Utils.recordError("AntiAFK", tostring(err) .. " | " .. tostring(fallbackErr)) end
+				if not inputOk then
+					local fallback, fallbackErr = pcall(function()
+						local vim = game:GetService("VirtualInputManager"); vim:SendMouseButtonEvent(0, 0, 1, true, game, 0); vim:SendMouseButtonEvent(0, 0, 1, false, game, 0)
+					end)
+					if not fallback then Utils.recordError("AntiAFK", tostring(err) .. " | " .. tostring(fallbackErr)) end
+				end
 			end
-		end
-		antiConnection = trackConn(player.Idled:Connect(pulse)); antiGeneration += 1; local generation = antiGeneration
-		task.spawn(function()
-			while generation == antiGeneration and screenGui and screenGui.Parent and Utils.isActive() do
-				task.wait(20)
-				if generation == antiGeneration and screenGui and screenGui.Parent and Utils.isActive() then pulse() end
-			end
-		end)
-		paintAnti(true); return true
-	end, nil, true)
+			antiConnection = trackConn(player.Idled:Connect(pulse)); antiGeneration += 1; local generation = antiGeneration
+			task.spawn(function()
+				while generation == antiGeneration and screenGui and screenGui.Parent and Utils.isActive() do
+					task.wait(20)
+					if generation == antiGeneration and screenGui and screenGui.Parent and Utils.isActive() then pulse() end
+				end
+			end)
+			return true
+		end,
+		toastLabel = "Anti AFK",
+	})
 	local spinActive, spinGeneration, spinButtons = nil, 0, {}; local spinModes = { { "Sword", "SwordCrate" }, { "Emote", "EmoteCrate" }, { "Explosion", "FinisherCrate" } }
 	local function paintSpin()
 		for _, mode in ipairs(spinModes) do
@@ -1527,22 +1538,28 @@ function ExodusUI.setup(deps)
 	end
 	for index, mode in ipairs(spinModes) do
 		local crate = mode[2]
-		spinButtons[crate] = createActionToggleCard(mode[1], (ACTION_CARD_H * CARD_SCALE + CARD_GAP) * index, utilities, function()
-			spinGeneration += 1
-			if spinActive == crate then spinActive = nil else spinActive = crate end
-			paintSpin()
-			if not spinActive then return end
-			local generation = spinGeneration
-			task.spawn(function()
-				local network = GameInfo.createCrateNetwork()
-				if generation ~= spinGeneration or spinActive ~= crate then return end
-				while generation == spinGeneration and spinActive == crate and screenGui and screenGui.Parent and Utils.isActive() do
-					local sent = GameInfo.spinCrate(network, crate, function() return generation == spinGeneration and spinActive == crate end)
-					if not sent then break end
-					task.wait(0.3)
-				end
-			end)
-		end)
+		local _, _, setSpinVisual = createOffOnCard(mode[1], (OFF_ON_CARD_H * CARD_SCALE + CARD_GAP) * index, utilities, {
+			getState = function() return spinActive == crate end,
+			onToggle = function(enabled)
+				spinGeneration += 1
+				if enabled then spinActive = crate elseif spinActive == crate then spinActive = nil end
+				paintSpin()
+				if not enabled then return false end
+				local generation = spinGeneration
+				task.spawn(function()
+					local network = GameInfo.createCrateNetwork()
+					if generation ~= spinGeneration or spinActive ~= crate then return end
+					while generation == spinGeneration and spinActive == crate and screenGui and screenGui.Parent and Utils.isActive() do
+						local sent = GameInfo.spinCrate(network, crate, function() return generation == spinGeneration and spinActive == crate end)
+						if not sent then break end
+						task.wait(0.3)
+					end
+				end)
+				return true
+			end,
+			toastLabel = mode[1],
+		})
+		spinButtons[crate] = setSpinVisual
 	end
 	local page = 1
 	local pageInputShield = inst("TextButton", {
@@ -1647,6 +1664,9 @@ function ExodusUI.setup(deps)
 			for key, label in pairs(shortcutLabels) do
 				if changes[key] ~= nil then label.Text = keyName(changes[key]) end
 			end
+			for key, setVisual in pairs(offOnVisuals) do
+				if changes[key] ~= nil then setVisual(changes[key] == true) end
+			end
 			if changes.AutoSpam ~= nil then UIState.clashBallOn = changes.AutoSpam == true; paintClashBall(); syncAutoSpamToggle() end
 			if changes.AutoParry ~= nil then
 				paintParryBall(changes.AutoParry == true)
@@ -1658,9 +1678,7 @@ function ExodusUI.setup(deps)
 			end
 			if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
 			if changes.ManualSpamEnabled ~= nil and UIState.desktop then
-				local control = configPanel and configPanel:FindFirstChild("ManualSpamControl", true)
-				if control then control.Text = "Manual Spam: " .. (changes.ManualSpamEnabled and "ON" or "OFF") end
-				if not changes.ManualSpamEnabled then setSpam(false, true) end
+				if not changes.ManualSpamEnabled then setSpam(false) end
 			end
 		end))
 	end
