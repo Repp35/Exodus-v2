@@ -25,7 +25,7 @@ Cada módulo carregado declara `__contract`. `provides` lista as funções expor
 
 Não existe mais tabela central `POLICIES`: os próprios contratos definem as capacidades. `Permissions.validate` registra e valida métodos, dados e dependências; `Permissions.resolve` verifica os provedores e as versões, montando visões restritas; `Permissions.wrap` entrega apenas os métodos e as cópias imutáveis dos dados declarados pelo consumidor. `Permissions.policy(nome)` continua fornecendo um resumo das permissões efetivas.
 
-Para adicionar uma dependência, declare-a em `requires` e liste exclusivamente os métodos necessários em `requiresMethods` ou os dados em `requiresData`. Para adicionar um módulo, inclua o arquivo no manifesto do loader e declare as dependências nos consumidores. O loader carrega e valida todos os módulos antes de inicializar e usa a ordem topológica das dependências; ciclos e referências a módulos inexistentes são rejeitados. O loader também monta explicitamente os vínculos de personagem para o módulo `character`.
+Para adicionar uma dependência, declare-a em `requires` e liste exclusivamente os métodos necessários em `requiresMethods` ou os dados em `requiresData`. Para adicionar um módulo, inclua o arquivo no manifesto do loader e declare as dependências nos consumidores. O loader carrega e valida todos os módulos antes de inicializar e usa a ordem topológica das dependências; ciclos e referências a módulos inexistentes são rejeitados. Se não puder obter uma revisão identificada por SHA nem um conjunto local completo, a inicialização falha em vez de executar a branch remota sem fixação. O loader também monta explicitamente os vínculos de personagem para o módulo `character`.
 
 ## Estado e compatibilidade
 
