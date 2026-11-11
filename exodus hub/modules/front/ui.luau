@@ -1,5 +1,8 @@
 -- [[ ui ]]
 
+-- module
+local ExodusUI = {}
+
 -- configuration
 local CONFIG = {
   COLORS = {
@@ -65,8 +68,7 @@ local CONFIG = {
   TITLE_SIDE_RESERVE = 80,
 }
 
--- module
-local ExodusUI = {}
+-- runtime
 local Utils
 local UIConfig
 local GameInfo

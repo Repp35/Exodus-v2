@@ -1,5 +1,8 @@
 -- [[ gameinfo ]]
 
+-- module
+local GameInfo = {}
+
 -- configuration
 local CONFIG = {
   MIN_SPEED = 16,
@@ -44,8 +47,7 @@ local CONFIG = {
   },
 }
 
--- module
-local GameInfo = {}
+-- runtime
 local utils, players, world
 local ball, searchAt, watching = nil, 0, false
 local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall

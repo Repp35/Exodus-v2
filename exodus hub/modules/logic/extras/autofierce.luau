@@ -1,5 +1,8 @@
 -- [[ autofierce ]]
 
+-- module
+local AutoFierce = {}
+
 -- configuration
 local CONFIG = {
   SIGNAL_RETRY = 0.5,
@@ -7,8 +10,7 @@ local CONFIG = {
   NOOB_WINDOW_EXTRA = 0.15,
 }
 
--- module
-local AutoFierce = {}
+-- runtime
 local utils, gameInfo, remote, autoParry
 local connections = {}
 local parriedConnection

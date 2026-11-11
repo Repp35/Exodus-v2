@@ -1,5 +1,8 @@
 -- [[ remote ]]
 
+-- module
+local Remote = {}
+
 -- configuration
 local CONFIG = {
   PARRY_METHOD = "Deflect",
@@ -8,8 +11,7 @@ local CONFIG = {
   DASH_METHOD = "Dash",
 }
 
--- module
-local Remote = {}
+-- runtime
 local gameInfo, parryObserver
 local autoParrySignature = {}
 

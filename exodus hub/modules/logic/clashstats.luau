@@ -1,5 +1,8 @@
 -- [[ clash stats ]]
 
+-- module
+local ClashStats = {}
+
 -- configuration
 local CONFIG = {
   CLASH_RETENTION_SECONDS = 1.5,
@@ -8,8 +11,7 @@ local CONFIG = {
   CPS_SMOOTHING_FACTOR = 0.2,
 }
 
--- module
-local ClashStats = {}
+-- runtime
 local utils, gameInfo, players, localPlayer
 local stats
 

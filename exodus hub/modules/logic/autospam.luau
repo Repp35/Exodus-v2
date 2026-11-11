@@ -1,5 +1,8 @@
 -- [[ auto spam ]]
 
+-- module
+local AutoSpam = {}
+
 -- configuration
 local CONFIG = {
   ACTIVATION = {
@@ -33,8 +36,7 @@ local CONFIG = {
   },
 }
 
--- module
-local AutoSpam = {}
+-- runtime
 local utils, gameInfo, clashStatsModule, players, runService, localPlayer
 local current, generation = nil, 0
 local clashStats

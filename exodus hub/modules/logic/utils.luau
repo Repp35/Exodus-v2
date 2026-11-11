@@ -1,5 +1,8 @@
 -- [[ utils ]]
 
+-- module
+local Utils = {}
+
 -- configuration
 local CONFIG = {
   API_VERSION = 1,
@@ -10,8 +13,7 @@ local CONFIG = {
   HISTORY_LIMIT = 32,
 }
 
--- module
-local Utils = {}
+-- runtime
 local players = game:GetService("Players")
 local replicated = game:GetService("ReplicatedStorage")
 local runService = game:GetService("RunService")

@@ -1,13 +1,15 @@
 -- [[ movement: dash actions ]]
 
+-- module
+local Movement = {}
+
 -- configuration
 local CONFIG = {
   UP_DIRECTION = Vector3.new(0, 1, 0),
   MIN_DIRECTION_MAGNITUDE = 0.001,
 }
 
--- module
-local Movement = {}
+-- runtime
 local utils, gameInfo, remote
 
 -- dash-actions
