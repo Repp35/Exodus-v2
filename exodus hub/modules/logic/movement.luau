@@ -9,7 +9,6 @@ local CONFIG = {
 -- helpers
 local Movement = {}
 local utils, gameInfo, remote
-
 local function performDash(direction, upward)
 	if not utils or not gameInfo or not remote or not utils.isActive() then return false, "Hub inativo" end
 	if not gameInfo.areAbilitiesEnabled() then return false, upward and "Habilidades indisponíveis nesta partida" or "Habilidades indisponíveis" end

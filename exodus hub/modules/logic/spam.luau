@@ -15,7 +15,6 @@ local function traceback(err) return debug.traceback(tostring(err), 2) end
 -- state
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
-
 local nextAllowedAt = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 
