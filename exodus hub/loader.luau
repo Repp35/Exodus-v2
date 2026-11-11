@@ -14,13 +14,14 @@ local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 
 -- configuration
 local CONFIG = {
-  REPOSITORY = "Repp35/Exodus-v2",
-  BRANCH = "main",
+  DELIVERY_BASE_URL = "https://repp35.github.io/Exodus-v2/",
+  MANIFEST_URL = "https://repp35.github.io/Exodus-v2/manifest.json",
   PROJECT_PATH = "exodus%20hub/",
+  AUTHORIZATION_PATH = "security/entitlements.luau",
   LOCAL_ROOTS = { "Exodus-v2/exodus hub", "Exodus-v2-main/exodus hub", "exodus hub", "Exodus Hub" },
   CACHE_ROOT = "Exodus Hub/Cache",
   VERSION_FILE = "Exodus Hub/current_version.txt",
-  ALLOW_LOCAL_FALLBACK = true,
+  ALLOW_LOCAL_FALLBACK = false,
   MODULES = {
     { name = "permissions", path = "modules/logic/permissions.luau" },
     { name = "config", path = "modules/front/config.luau" },
@@ -44,12 +45,12 @@ local CONFIG = {
   },
 }
 
-local REPOSITORY = CONFIG.REPOSITORY
-local BRANCH = CONFIG.BRANCH
 local PROJECT_PATH = CONFIG.PROJECT_PATH
+local AUTHORIZATION_PATH = CONFIG.AUTHORIZATION_PATH
 local LOCAL_ROOTS = CONFIG.LOCAL_ROOTS
 local CACHE_ROOT, VERSION_FILE = CONFIG.CACHE_ROOT, CONFIG.VERSION_FILE
-local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
+local BASE_URL = CONFIG.DELIVERY_BASE_URL
+local MANIFEST_URL = CONFIG.MANIFEST_URL
 local CACHE_BUSTER = tostring(os.time())
 local HttpService = game:GetService("HttpService")
 local MODULE_MANIFEST = CONFIG.MODULES
@@ -77,10 +78,13 @@ local function getRequestFunction()
 end
 local requestFunction = getRequestFunction()
 local function validateExecutor()
-  if not requestFunction and not (ALLOW_LOCAL_FALLBACK and type(isfile) == "function" and type(readfile) == "function") then return false, "executor sem request ou arquivos locais suportados" end
+  if type(requestFunction) ~= "function" then return false, "executor sem request HTTP suportado" end
   if type(loadstring) ~= "function" then return false, "executor sem loadstring" end
+  if type(game) ~= "userdata" and type(game) ~= "table" then return false, "ambiente Roblox indisponível" end
+  if type(game.GetService) ~= "function" then return false, "executor sem acesso aos serviços Roblox" end
   return true
 end
+
 local function isRetryableHttp(message)
   local statusCode = tonumber(string.match(tostring(message), "HTTP%s+(%d+)"))
   return statusCode == nil or statusCode == 408 or statusCode == 425 or statusCode == 429 or (statusCode and statusCode >= 500 and statusCode <= 599)
@@ -280,19 +284,16 @@ local function execute(name, chunk)
   return module
 end
 local function resolveLatestRevision()
-  local url = "https://api.github.com/repos/" .. REPOSITORY .. "/commits/" .. BRANCH .. "?exodus_cache=" .. tostring(os.time())
-  local body, requestError, requestMeta = request(url, { ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Loader" })
-  if body then
-    local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and document.sha
-    if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
-  end
-  local feed, feedError, feedMeta = request(
-    "https://github.com/" .. REPOSITORY .. "/commits/" .. BRANCH .. ".atom?exodus_cache=" .. CACHE_BUSTER,
-    { ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Loader" }
+  local body, requestError, requestMeta = request(
+    MANIFEST_URL .. "?exodus_cache=" .. CACHE_BUSTER,
+    { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Loader" }
   )
-  local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
-  if sha and #sha == 40 then return sha end
-  return nil, feedError or requestError or "SHA mais recente indisponível", feedMeta or requestMeta
+  if body then
+    local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
+    local sha = ok and type(document) == "table" and document.revision
+    if validRevision(sha) then return sha end
+  end
+  return nil, requestError or "manifesto de versão indisponível", requestMeta
 end
 local function buildURLs(revision)
   local root = BASE_URL .. revision .. "/" .. PROJECT_PATH; local urls = {}
@@ -322,7 +323,7 @@ local function loadModule(name, relativePath, url, sourceRoot, cacheRevision)
   end
   local source, fetchError
   if url then source, fetchError = request(url) end
-  local sourceKind = "github"
+  local sourceKind = "delivery"
   if not source then
     local fallbackURL = buildCDNURL(url)
     if fallbackURL then
@@ -340,6 +341,65 @@ local function loadModule(name, relativePath, url, sourceRoot, cacheRevision)
   end
   return nil, fetchError or "origem remota indisponível"
 end
+local function authorizationURL(revision)
+  return BASE_URL .. revision .. "/" .. AUTHORIZATION_PATH .. "?exodus_cache=" .. CACHE_BUSTER
+end
+
+local function setContains(set, value)
+  if type(set) ~= "table" then return false end
+  if set[value] == true or set[tostring(value)] == true then return true end
+  for _, item in pairs(set) do
+    if tostring(item) == tostring(value) then return true end
+  end
+  return false
+end
+
+local function waitForAuthorizationPlayer(timeout)
+  local players = game:GetService("Players")
+  if players.LocalPlayer then return players.LocalPlayer end
+  local deadline = os.clock() + timeout
+  while os.clock() < deadline do
+    if type(task) == "table" and type(task.wait) == "function" then task.wait() end
+    if players.LocalPlayer then return players.LocalPlayer end
+  end
+  return nil
+end
+
+local function authorizeRevision(revision)
+  if not validRevision(revision) then return false, "revisão de autorização inválida" end
+  local player = waitForAuthorizationPlayer(10)
+  if not player or type(player.UserId) ~= "number" then return false, "LocalPlayer/UserId indisponível" end
+
+  local source = readCacheFile(revision, AUTHORIZATION_PATH)
+  local fetchError
+  if not source then
+    source, fetchError = request(authorizationURL(revision), { ["Accept"] = "text/plain", ["User-Agent"] = "Exodus-Hub-Authorization" })
+    if source then saveCacheFile(revision, AUTHORIZATION_PATH, source) end
+  end
+  if not source then return false, "autorização indisponível: " .. tostring(fetchError) end
+
+  local chunk, compileError = compile("Exodus authorization", source)
+  if not chunk then return false, "autorização inválida: " .. tostring(compileError) end
+  local executed, entitlements = pcall(chunk)
+  if not executed or type(entitlements) ~= "table" then return false, "manifesto de autorização inválido" end
+  if entitlements.schema ~= 1 or entitlements.product ~= "Exodus-v2" or entitlements.revision ~= revision then
+    return false, "manifesto de autorização incompatível"
+  end
+  if type(entitlements.userIds) ~= "table" or next(entitlements.userIds) == nil then
+    return false, "nenhum usuário autorizado configurado"
+  end
+  if not setContains(entitlements.userIds, player.UserId) then return false, "usuário não autorizado" end
+  if type(entitlements.gameIds) == "table" and next(entitlements.gameIds) ~= nil and not setContains(entitlements.gameIds, game.GameId) then
+    return false, "experiência não autorizada"
+  end
+  if type(entitlements.placeIds) == "table" and next(entitlements.placeIds) ~= nil and not setContains(entitlements.placeIds, game.PlaceId) then
+    return false, "lugar não autorizado"
+  end
+  local expiresAt = tonumber(entitlements.expiresAt or 0) or 0
+  if expiresAt > 0 and os.time() > expiresAt then return false, "autorização expirada" end
+  return true
+end
+
 local function orderModulesByDependencies(loaded)
   local positions, state, ordered = {}, {}, {}
   for index, name in ipairs(MODULE_ORDER) do
@@ -635,6 +695,9 @@ local function startInternal()
   local version, revisionError = requestedRevision, nil
   if not version then version, revisionError = resolveLatestRevision() end
   if not version then version = readSavedRevision() end
+  if not version then return false, "Authorization", "revisão de distribuição indisponível" end
+  local authorized, authorizationError = authorizeRevision(version)
+  if not authorized then return false, "Authorization", authorizationError end
   if not requestedRevision and Exodus.Started == true and Exodus.UIReady == true and validRevision(version) and Exodus.Revision == version then return true end
   local sourceRoot = version and findCompleteCacheRoot(version) or findCompleteLocalRoot(); startupPerformed = true
   printStartup("Exodus: iniciando")
