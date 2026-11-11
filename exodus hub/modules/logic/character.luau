@@ -1,7 +1,10 @@
 -- [[ character ]]
 
 -- tuning
-local CONFIG = { BIND_TIMEOUT = 10, ROOT_POLL_INTERVAL = 0 }
+local CONFIG = {
+	BIND_TIMEOUT = 10,
+	ROOT_POLL_INTERVAL = 0,
+}
 
 -- module
 local Character = {}
