@@ -591,8 +591,7 @@ function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
   local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress; local ping = GameInfo.getAveragePing()
   budget = budget + math.clamp(ping, 0, CONFIG.CLIENT_DEFLECT_RESET_MAX_PING_MARGIN); local lastSafeDelay = predictUntil - pressedAt - CONFIG.CLIENT_DEFLECT_RESET_FRAME_MARGIN
   if lastSafeDelay < CONFIG.CLIENT_DEFLECT_RESET_MIN then return false end
-  local extra = finite(multiplier) and math.max(1, multiplier) or 1
-  budget *= extra
+  local extra = finite(multiplier) and math.max(1, multiplier) or 1; budget *= extra
   return time - pressedAt >= math.min(budget, lastSafeDelay)
 end
 function GameInfo.getSyncData() return syncData() end
