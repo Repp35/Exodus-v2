@@ -579,7 +579,7 @@ function GameInfo.getDeflectCooldownState()
   cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true
   cooldown.blocking = cooldown.active; return cooldown
 end
-function GameInfo.isClientDeflectResetLate(activatedAt, speed)
+function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
   if not finite(activatedAt) then return false end
   local ability = GameInfo.getDeflectAbility(); local time = os.clock()
   if not ability or not finite(ability.Cooldown) or time < activatedAt then localCooldownObservation = nil; return false end
@@ -597,6 +597,7 @@ function GameInfo.isClientDeflectResetLate(activatedAt, speed)
   local low, high = GameInfo.getBallSpeedLimits()
   if not finite(low) or not finite(high) or high <= low then return false end
   local progress = math.clamp((speed - low) / (high - low), 0, 1); local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress
+  if finite(multiplier) then budget *= math.max(1, multiplier) end
   return time - observation.startedAt >= budget
 end
 function GameInfo.getSyncData() return syncData() end
