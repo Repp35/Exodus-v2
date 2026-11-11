@@ -6,7 +6,7 @@ local Utils
 local UIConfig
 local GameInfo
 local AutoSpam
-local Controls: any = {}
+local Controls = {}
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
