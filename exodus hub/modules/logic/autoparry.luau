@@ -36,10 +36,8 @@ local state = {
   pingCount = 0,
   lastFireAt = 0,
   lastErrorAt = -math.huge,
-  pressureSamples = {},
-  pressureDueAt = nil,
-  pressurePrevious = nil,
-  targetSince = nil,
+  clicks = {},
+  returns = {},
   autoParryCps = 0,
   lastAutoParryClickAt = nil,
   windowFactor = 0.3,
@@ -61,9 +59,6 @@ local CONFIG = {
   MATCH_RETRY_DELAY_MAX = 0.5,
   PRESSURE_SAMPLE_LIMIT = 100,
   PRESSURE_WINDOW = 3,
-  PRESSURE_FRAME_GRACE = 1 / 60,
-  PRESSURE_LATE_TIME = 0.08,
-  PRESSURE_HIGH_LEVEL = 0.6,
   TARGET_SEQUENCE_MODULUS = 65536,
   TARGET_SEQUENCE_HALF = 32768,
   MIN_PARRY_SPEED = 16,
@@ -107,8 +102,8 @@ local function resetTracking()
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.trainingRound, state.trainingBall = nil, nil; state.nextAttemptAt = 0
-  state.lastPosition, state.lastSampleAt = nil, 0; state.pressureDueAt, state.pressurePrevious, state.targetSince = nil, nil, nil
-  table.clear(state.pressureSamples)
+  state.lastPosition, state.lastSampleAt = nil, 0; table.clear(state.clicks)
+  table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -186,21 +181,6 @@ local function appendRecent(list, item)
   list[#list + 1] = item
   if #list > CONFIG.PRESSURE_SAMPLE_LIMIT then table.remove(list, 1) end
 end
-local function clearPressureCycle()
-  state.pressureDueAt, state.pressurePrevious = nil, nil
-end
-local function observePressure(time, distance, closing, threshold)
-  if closing <= 0 then clearPressureCycle(); return end
-  if not state.pressureDueAt and distance <= threshold then
-    local due = time; local previous = state.pressurePrevious
-    if previous and time > previous.at and time - previous.at <= 0.25 and previous.gap > 0 then
-      local gap = distance - threshold; due = previous.at + (time - previous.at) * previous.gap / (previous.gap - gap)
-    end
-    state.pressureDueAt = math.max(state.targetSince or time, due)
-  end
-  state.pressurePrevious = { at = time, gap = distance - threshold }
-end
-local function pressureLevel(delay) return math.clamp((delay - CONFIG.PRESSURE_FRAME_GRACE) / CONFIG.PRESSURE_LATE_TIME, 0, 1) end
 local function trajectory(position, velocity, rootPosition, nominalSpeed, geometry)
   local delta = rootPosition - position; local distance = delta.Magnitude
   local magnitude = velocity.Magnitude; local closing = 0
@@ -225,16 +205,15 @@ local function observeTarget(target, time)
   if not state.player or not finite(target) then return end
   if target <= 0 then
     if state.targetKnown and state.target == state.player.UserId then state.awaySeen, state.awayAt, state.awayTarget = true, time, nil end
-    clearPressureCycle(); state.targetSince = nil
     state.target, state.targetKnown = -1, false; return
   end
   if target == state.target and state.targetKnown then return end
-  clearPressureCycle(); state.targetSince = time
   local me, previous = state.player.UserId, state.target; state.lastTargeted = previous == me
   if previous == me and target > 0 and target ~= me then
     state.awaySeen = true; state.awayAt = time
     state.awayTarget = target > 0 and target or nil; state.nextAttemptAt = 0
   elseif target == me and previous ~= me and state.awaySeen then
+    if state.awayAt and state.awayTarget == previous and time >= state.awayAt then appendRecent(state.returns, { at = time, interval = time - state.awayAt }) end
     state.fired, state.awaySeen = false, false; state.nextAttemptAt = 0
     state.cycle += 1; state.awayAt, state.awayTarget = nil, nil
   end
@@ -253,7 +232,6 @@ local function observeSnapshot(snapshot, time)
     state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false; state.fired, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, nil
     state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
-    clearPressureCycle(); table.clear(state.pressureSamples)
   end
   local order = sequenceOrder(snapshot.syncSequence)
   if order == "old" then return false end
@@ -278,7 +256,7 @@ local function request(reason)
     return false
   end
   local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote
-  local firedAt = now; state.fired, state.lastFireAt = true, firedAt
+  local firedAt, speed, distance = now, state.speed, state.distance; state.fired, state.lastFireAt = true, firedAt
   local function sameCycle()
     return state.generation == generation
       and state.cycle == cycle
@@ -314,13 +292,16 @@ local function request(reason)
     return false
   end
   state.nextAttemptAt = 0; recordAutoParryRequest()
-  if reason == "parry_requested" and state.pressureDueAt then
-    local clickedAt = gameInfo.getLastDeflectPressAt()
-    if not finite(clickedAt) or clickedAt < firedAt or clickedAt > clock() then clickedAt = clock() end
-    local due = state.pressureDueAt; appendRecent(state.pressureSamples, { at = clickedAt, dueAt = due, delay = math.max(0, clickedAt - due) })
+  local factor = activeWindowFactor(firedAt)
+  if factor > 0 then
+    local geometry = radius(speed, factor)
+    if geometry then
+      local denominator = speed * math.max(geometry.leadTime or geometry.effectiveWindow or 0, 0)
+      local used = denominator > 0 and math.clamp((distance - geometry.noWindowParryRadius) / denominator, 0, factor) or factor
+      appendRecent(state.clicks, { at = firedAt, factor = used, configured = factor, speed = speed })
+    end
   end
-  clearPressureCycle(); phase("fired", reason)
-  return true
+  phase("fired", reason); return true
 end
 local function trainingBallPosition(value)
   if typeof(value.ball) == "Instance" and value.ball.Parent and value.ball:IsA("BasePart") then
@@ -361,46 +342,35 @@ local function resolveVelocity(value, position, speed, time)
 end
 local function tick(character, root, generation)
   if generation ~= state.generation or not state.alive or not state.bound or not character.Parent or not root.Parent then return end
-  if not utils.isActive() or utils.getConfigValue("AutoParry") == false then clearPressureCycle(); return end
+  if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
   local time = clock(); local value = gameInfo.getSnapshotAt(time)
   if generation ~= state.generation or not state.bound or not state.alive then return end
-  if not gameInfo.isSnapshotValid(value) then
-    clearPressureCycle(); phase("waiting", "snapshot_indisponível")
-    return
-  end
-  if not observeSnapshot(value, time) then
-    clearPressureCycle(); phase("waiting", "stale_snapshot")
-    return
-  end
-  if utils.isSpamActive() then
-    clearPressureCycle(); phase("waiting", "spam_active")
-    return
-  end
+  if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
+  if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
+  if utils.isSpamActive() then phase("waiting", "spam_active"); return end
   if state.teleported or value.teleported then
-    clearPressureCycle(); state.lastPosition, state.lastSampleAt = nil, 0
-    phase("waiting", "teleport_lock"); return
+    state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "teleport_lock")
+    return
   end
   if value.mode == "training" then tickTraining(value, root, time); return end
   local cooldown = safeCooldown()
   if state.fired then phase("waiting", "target_already_parried"); return end
-  if value.locked == true or gameInfo.getBallFrozen() == true then
-    clearPressureCycle(); state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0
-    phase("waiting", "ball_locked"); return
-  end
-  local position, rootPosition = value.position, gameInfo.getRootPosition(root)
-  if not vector(position) or not vector(rootPosition) or not value.ball.Parent then clearPressureCycle(); return end
-  local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or tonumber(value.speed) or 0
-  local velocity = resolveVelocity(value, position, speed, time); state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
-  if value.targetUncertain == true then
-    clearPressureCycle(); phase("waiting", "target_uncertain")
+  if cooldown and cooldown.blocking == true then phase("waiting", "deflect_cooldown"); return end
+  if value.locked == true then
+    state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0; phase("waiting", "ball_locked")
     return
   end
+  local position, rootPosition = value.position, gameInfo.getRootPosition(root)
+  if not vector(position) or not vector(rootPosition) then return end
+  if not value.ball.Parent then return end
+  local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or tonumber(value.speed) or 0
+  local velocity = resolveVelocity(value, position, speed, time); state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
+  if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
   samplePing(); local geometry = radius(speed, activeWindowFactor(time))
-  if not geometry then clearPressureCycle(); return end
+  if not geometry then return end
   local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); state.speed, state.distance, state.approaching = speed, distance, closing > 0
-  state.closingSpeed, state.triggerDistance = closing, threshold; observePressure(time, distance, closing, threshold)
-  if cooldown and cooldown.blocking == true then phase("waiting", "deflect_cooldown"); return end
+  state.closingSpeed, state.triggerDistance = closing, threshold
   if closing > 0 and distance <= threshold then request("parry_requested") end
 end
 
@@ -492,8 +462,8 @@ function AutoParry.onBallSync(data)
     state.teleported, state.teleportSequence = true, sequence; state.lastBall = nil
     state.speed, state.distance, state.approaching = 0, 0, false; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
-    state.awayAt, state.awayTarget = nil, nil; clearPressureCycle()
-    table.clear(state.pressureSamples); phase("waiting", "teleport_lock")
+    state.awayAt, state.awayTarget = nil, nil; table.clear(state.clicks)
+    table.clear(state.returns); phase("waiting", "teleport_lock")
     return true
   end
   if state.teleported and state.teleportSequence then
@@ -581,29 +551,45 @@ function AutoParry.getRadius(mode, factor, speedOverride, baseWindow)
   result.value = mode == "tti" and tti or (mode == "speed_distance" and { speed = speed, distance = state.distance } or result.fullRadius); return result
 end
 function AutoParry.getPressure()
-  local time, count, delays, levels = clock(), 0, 0, 0
-  for i = #state.pressureSamples, 1, -1 do
-    local item = state.pressureSamples[i]
+  local time, count, factors, configured, speeds, ratios = clock(), 0, 0, 0, 0, 0
+  for i = #state.clicks, 1, -1 do
+    local item = state.clicks[i]
     if time < item.at or time - item.at > CONFIG.PRESSURE_WINDOW then
-      table.remove(state.pressureSamples, i)
+      table.remove(state.clicks, i)
     else
-      count += 1; delays += item.delay
-      levels += pressureLevel(item.delay)
+      count += 1
+      factors += item.factor
+      configured += item.configured; speeds += item.speed
+      ratios += math.clamp(item.factor / item.configured, 0, 1)
     end
   end
-  local enabled = utils and utils.isActive() and utils.getConfigValue("AutoParry") ~= false and not utils.isSpamActive()
-  local pending = enabled and state.pressureDueAt and math.max(0, time - state.pressureDueAt) or nil; local latest = state.pressureSamples[#state.pressureSamples]
-  local currentLevel = pending and pressureLevel(pending) or (latest and math.max(0, 1 - (time - latest.at)) * pressureLevel(latest.delay) or 0); local level = count > 0 and levels / count or 0
+  local returns, intervals = 0, 0
+  for i = #state.returns, 1, -1 do
+    local item = state.returns[i]
+    if time < item.at or time - item.at > CONFIG.PRESSURE_WINDOW then table.remove(state.returns, i) else returns += 1; intervals += item.interval end
+  end
+  local latest, lastReturn = state.clicks[#state.clicks], state.returns[#state.returns]
+  local currentLevel, factorDrop
+  if latest and time >= latest.at and time - latest.at <= 1 and finite(latest.configured) and latest.configured > 0 then
+    local ratio = math.clamp(latest.factor / latest.configured, 0, 1); currentLevel = 1 - ratio
+    if count >= 3 then
+      local previous, older = state.clicks[#state.clicks - 1], state.clicks[#state.clicks - 2]
+      local earlier = (math.clamp(previous.factor / previous.configured, 0, 1) + math.clamp(older.factor / older.configured, 0, 1)) / 2; factorDrop = math.max(0, earlier - ratio)
+    end
+  end
   return {
     samples = count,
-    averageDelay = count > 0 and delays / count or nil,
-    expectedClickAt = state.pressureDueAt or (latest and latest.dueAt),
-    actualClickAt = latest and latest.at or nil,
-    latestDelay = latest and latest.delay or nil,
-    pendingDelay = pending,
-    level = level,
+    cps = count / CONFIG.PRESSURE_WINDOW,
+    averageFactor = count > 0 and factors / count or nil,
+    configuredFactor = count > 0 and configured / count or nil,
+    averageSpeed = count > 0 and speeds / count or nil,
+    returnSamples = returns,
+    averageReturnTime = returns > 0 and intervals / returns or nil,
+    level = count >= 3 and returns >= 2 and math.clamp(1 - ratios / count, 0, 1) or nil,
+    currentFactor = latest and latest.factor or nil,
     currentLevel = currentLevel,
-    high = enabled == true and currentLevel >= CONFIG.PRESSURE_HIGH_LEVEL and (pending ~= nil or count >= 2 and level >= CONFIG.PRESSURE_HIGH_LEVEL),
+    factorDrop = factorDrop,
+    latestReturnTime = lastReturn and lastReturn.interval or nil,
   }
 end
 function AutoParry.getStatus()
@@ -702,8 +688,6 @@ AutoParry.__contract = {
       "getDeflectRangeParameters",
       "getProjectedDeflectRadius",
       "getAutoSpamDelay",
-      "getLastDeflectPressAt",
-      "getBallFrozen",
     },
     Utils = {
       "apiVersion",

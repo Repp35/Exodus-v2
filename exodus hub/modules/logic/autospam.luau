@@ -2,7 +2,7 @@
 
 -- module
 local AutoSpam = {}
-local utils, gameInfo, autoParry, clashStatsModule, players, runService, localPlayer
+local utils, gameInfo, clashStatsModule, players, runService, localPlayer
 local current, generation = nil, 0
 local clashStats
 
@@ -14,7 +14,6 @@ local CONFIG = {
     EXCHANGE_READY_TIME = 0.5,
     REACTIVATION_COOLDOWN = 0.04,
     RADIUS_FACTOR = 0.8,
-    PRESSURE_RADIUS_FACTOR = 0.9,
     HAUNTER_RANGE = 11,
     HAUNTER_MATCH_RADIUS = 5,
     DASH_WINDOW_FACTOR = 0.4,
@@ -101,7 +100,7 @@ local function distanceLimit(snapshot, partner)
   local ownPing = math.max(0, ownRaw - ownRange); local otherPing = math.max(0, otherRaw - otherRange)
   return baseDistance + (ownResilience + otherResilience) * speedFactor + ownPing + otherPing
 end
-local function distanceGate(s, snapshot, partner, radiusOnly)
+local function distanceGate(s, snapshot, partner)
   if not s.root or not s.root.Parent or not snapshot or typeof(snapshot.position) ~= "Vector3" then return "distance_unavailable" end
   local speed = snapshotSpeed(snapshot); local g = finite(speed) and speed > 0 and gameInfo.getDeflectGeometry(speed, "game", CONFIG.ACTIVATION.RADIUS_FACTOR, false)
   local other = partner and gameInfo.getPlayerMotion(partner); local opponentLimit = distanceLimit(snapshot, partner)
@@ -109,13 +108,7 @@ local function distanceGate(s, snapshot, partner, radiusOnly)
   local own = s.root.Position; local opponentDistance = (other - own).Magnitude
   local ballDistance = (snapshot.position - own).Magnitude
   if opponentDistance > opponentLimit then return "opponent_distance" end
-  if radiusOnly then
-    local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
-    if not finite(raw) then return "distance_unavailable" end
-    if ballDistance > raw then return "ball_distance" end
-  elseif math.max(0, ballDistance - g.noWindowParryRadius) / speed > g.effectiveWindow then
-    return "ball_distance"
-  end
+  if math.max(0, ballDistance - g.noWindowParryRadius) / speed > g.effectiveWindow then return "ball_distance" end
   return nil
 end
 local function playerIsAlive(id)
@@ -168,22 +161,16 @@ local function dashAssistPartner(s, snapshot, time)
 end
 
 -- activation
-local function underPressure()
-  local pressure = autoParry.getPressure(); return pressure and pressure.high == true
-end
 local function start(s, reason, partner, time, serverTime, snapshot)
   if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN) then return end
   local haunter = reason == "haunter" or reason == "haunter_self"
   if
     not haunter
-    and reason ~= "close_pressure"
     and (not s.exchangeReadyAt or s.exchangePartner ~= partner or time < s.exchangeReadyAt or time - s.exchangeReadyAt > CONFIG.ACTIVATION.EXCHANGE_READY_TIME)
   then
     return
   end
-  snapshot = snapshot or gameInfo.getSnapshotAt(time)
-  if reason == "close_pressure" and (not s.pending or not s.pending.startedNear or not underPressure()) then return end
-  local distanceReason = distanceGate(s, snapshot, partner, not haunter)
+  snapshot = snapshot or gameInfo.getSnapshotAt(time); local distanceReason = distanceGate(s, snapshot, partner)
   if distanceReason then return end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
@@ -193,27 +180,27 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function activationGeometry(s, snapshot, partner, time)
-  local factor = underPressure() and CONFIG.ACTIVATION.PRESSURE_RADIUS_FACTOR or CONFIG.ACTIVATION.RADIUS_FACTOR
+  local factor = CONFIG.ACTIVATION.RADIUS_FACTOR
   if dashAssistPartner(s, snapshot, time) == partner then factor *= CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER end
-  local g, speed, window = geometry(snapshot, factor); local raw = g and gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
-  if not finite(raw) then return nil end
-  g.activationRadius = raw * math.min(factor, 1); return g, speed, window
+  return geometry(snapshot, factor)
 end
-local function activationReason(s, snapshot, time)
-  if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return nil end
-  if not snapshot or snapshot.targetUncertain == true or snapshot.locked == true or gameInfo.getBallFrozen() == true or not s.pending then return nil end
-  if s.target ~= localPlayer.UserId or snapshot.targetId ~= localPlayer.UserId then return nil end
-  if typeof(snapshot.position) ~= "Vector3" then return nil end
+local function shouldActivate(s, snapshot, time)
+  if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
+  if not snapshot or snapshot.targetUncertain == true or gameInfo.getBallFrozen() == true or not s.pending then return false end
+  if s.target ~= localPlayer.UserId or snapshot.targetId ~= localPlayer.UserId then return false end
+  if typeof(snapshot.position) ~= "Vector3" then return false end
   local towardPlayer = s.root.Position - snapshot.position; local distance = towardPlayer.Magnitude
   local g = activationGeometry(s, snapshot, s.pending.partner, time)
-  if not g or distance > g.activationRadius then return nil end
-  if s.pending.startedNear and underPressure() then return "close_pressure" end
-  if s.pending.pressureOnly then return nil end
-  if s.pending.fastReturn then return "return_target" end
-  if distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return nil end
+  if not g or distance > g.fullRadius then return false end
+  if s.pending.fastReturn then return true end
+  if distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return false end
   local closingSpeed = snapshot.velocity:Dot(towardPlayer) / distance
-  if not finite(closingSpeed) or closingSpeed <= 0 then return nil end
-  return "return_target"
+  if not finite(closingSpeed) or closingSpeed <= 0 then return false end
+  if s.pending.startedNear then
+    local timeToRange = math.max(0, distance - g.noWindowParryRadius) / closingSpeed
+    if timeToRange > g.effectiveWindow then return false end
+  end
+  return true
 end
 
 -- deactivation
@@ -343,18 +330,16 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
   s.target, s.lastSwitchAt, s.lastSwitchServerAt = target, time, serverTime
   if previous == me and target ~= me then
     s.departedAt, s.departedServerAt, s.departedTo = time, serverTime, target
-  elseif target == me and previous and previous ~= s.stoppedPartner and not s.pending and not s.active then
-    if snapshot.locked == true or snapshot.targetUncertain == true then return end
-    local g, speed, window = activationGeometry(s, snapshot, previous, time)
-    if not g or not window or typeof(snapshot.position) ~= "Vector3" then return end
-    local raw = gameInfo.getPlayerRawRadius(me, speed, true); local startedNear = finite(raw) and (snapshot.position - s.root.Position).Magnitude <= raw
-    local pressureNear = startedNear and underPressure(); local directReturn = completedPartner == previous and s.departedTo == previous
-    local returnElapsed = directReturn and elapsed(s.departedAt, s.departedServerAt, time, serverTime)
-    if not returnElapsed and not pressureNear then return end
-    local fastReturn = returnElapsed and returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
-    if startedNear and not fastReturn and not pressureNear then return end
-    s.pending =
-      { partner = previous, startedNear = startedNear, fastReturn = fastReturn == true, pressureOnly = not returnElapsed or (startedNear and not fastReturn) }
+  elseif target == me and previous ~= me then
+    if not s.pending and not s.active and previous ~= s.stoppedPartner and previous == s.departedTo and s.departedAt then
+      local g, speed, window = activationGeometry(s, snapshot, previous, time)
+      if not g or not window or typeof(snapshot.position) ~= "Vector3" then return end
+      local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
+      if not returnElapsed then return end
+      local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius; local fastReturn = returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
+      if startedNear and not fastReturn then return end
+      s.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn }
+    end
   end
 end
 
@@ -381,12 +366,15 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(s, snapshot, time, true); clashStats = clashStatsModule.get() end
-  if not s.active and not blockedActivation and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= CONFIG.ACTIVATION.REACTIVATION_COOLDOWN) then
-    local reason = activationReason(s, snapshot, time)
-    if not reason then return end
+  if
+    not s.active
+    and not blockedActivation
+    and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
+    and shouldActivate(s, snapshot, time)
+  then
     local activationServerTime = serverTime
     if not fresh then activationServerTime = snapshot.serverTime end
-    start(s, reason, s.pending.partner, time, activationServerTime, snapshot)
+    start(s, "return_target", s.pending.partner, time, activationServerTime, snapshot)
   end
 end
 
@@ -409,9 +397,9 @@ local function detach(reason)
   generation += 1
 end
 function AutoSpam.setup(deps)
-  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.AutoParry then return false, "dependências ausentes" end
+  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, autoParry, clashStatsModule = deps.Utils, deps.GameInfo, deps.AutoParry, deps.ClashStats; clashStats = clashStatsModule.get()
+  utils, gameInfo, clashStatsModule = deps.Utils, deps.GameInfo, deps.ClashStats; clashStats = clashStatsModule.get()
   players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
   return true
@@ -600,7 +588,7 @@ function AutoSpam.bindCharacter(character)
 end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
-  detach("teardown"); clashStatsModule, autoParry = nil, nil
+  detach("teardown"); clashStatsModule = nil
   clashStats = nil; utils, gameInfo, players, runService, localPlayer = nil, nil, nil, nil, nil, nil
 end
 
@@ -732,7 +720,6 @@ AutoSpam.__contract = {
     Utils = "utils",
     GameInfo = "gameinfo",
     ClashStats = "clashstats",
-    AutoParry = "autoparry",
   },
   requiresMethods = {
     Utils = {
@@ -768,7 +755,6 @@ AutoSpam.__contract = {
       "getBallSpeedLimits",
       "getClashContext",
     },
-    AutoParry = { "getPressure" },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
   },
   provides = {
