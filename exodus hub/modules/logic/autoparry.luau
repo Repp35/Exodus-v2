@@ -346,7 +346,6 @@ end
 function AutoParry.resetState() detach("reset") end
 function AutoParry.detachCharacter() detach("detach") end
 function AutoParry.teardown()
-  if remote and type(remote.setParryObserver) == "function" then remote.setParryObserver(nil) end
   detach("teardown"); utils, gameInfo, remote, state.player = nil, nil, nil, nil
 end
 
