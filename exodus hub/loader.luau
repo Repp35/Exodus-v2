@@ -84,7 +84,6 @@ local function validateExecutor()
   if type(game.GetService) ~= "function" then return false, "executor sem acesso aos serviços Roblox" end
   return true
 end
-
 local function isRetryableHttp(message)
   local statusCode = tonumber(string.match(tostring(message), "HTTP%s+(%d+)"))
   return statusCode == nil or statusCode == 408 or statusCode == 425 or statusCode == 429 or (statusCode and statusCode >= 500 and statusCode <= 599)
@@ -284,13 +283,10 @@ local function execute(name, chunk)
   return module
 end
 local function resolveLatestRevision()
-  local body, requestError, requestMeta = request(
-    MANIFEST_URL .. "?exodus_cache=" .. CACHE_BUSTER,
-    { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Loader" }
-  )
+  local body, requestError, requestMeta =
+    request(MANIFEST_URL .. "?exodus_cache=" .. CACHE_BUSTER, { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Loader" })
   if body then
-    local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
-    local sha = ok and type(document) == "table" and document.revision
+    local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and document.revision
     if validRevision(sha) then return sha end
   end
   return nil, requestError or "manifesto de versão indisponível", requestMeta
@@ -341,10 +337,7 @@ local function loadModule(name, relativePath, url, sourceRoot, cacheRevision)
   end
   return nil, fetchError or "origem remota indisponível"
 end
-local function authorizationURL(revision)
-  return BASE_URL .. revision .. "/" .. AUTHORIZATION_PATH .. "?exodus_cache=" .. CACHE_BUSTER
-end
-
+local function authorizationURL(revision) return BASE_URL .. revision .. "/" .. AUTHORIZATION_PATH .. "?exodus_cache=" .. CACHE_BUSTER end
 local function setContains(set, value)
   if type(set) ~= "table" then return false end
   if set[value] == true or set[tostring(value)] == true then return true end
@@ -353,7 +346,6 @@ local function setContains(set, value)
   end
   return false
 end
-
 local function waitForAuthorizationPlayer(timeout)
   local players = game:GetService("Players")
   if players.LocalPlayer then return players.LocalPlayer end
@@ -364,12 +356,10 @@ local function waitForAuthorizationPlayer(timeout)
   end
   return nil
 end
-
 local function authorizeRevision(revision)
   if not validRevision(revision) then return false, "revisão de autorização inválida" end
   local player = waitForAuthorizationPlayer(10)
   if not player or type(player.UserId) ~= "number" then return false, "LocalPlayer/UserId indisponível" end
-
   local source = readCacheFile(revision, AUTHORIZATION_PATH)
   local fetchError
   if not source then
@@ -377,29 +367,19 @@ local function authorizeRevision(revision)
     if source then saveCacheFile(revision, AUTHORIZATION_PATH, source) end
   end
   if not source then return false, "autorização indisponível: " .. tostring(fetchError) end
-
   local chunk, compileError = compile("Exodus authorization", source)
   if not chunk then return false, "autorização inválida: " .. tostring(compileError) end
   local executed, entitlements = pcall(chunk)
   if not executed or type(entitlements) ~= "table" then return false, "manifesto de autorização inválido" end
-  if entitlements.schema ~= 1 or entitlements.product ~= "Exodus-v2" or entitlements.revision ~= revision then
-    return false, "manifesto de autorização incompatível"
-  end
-  if type(entitlements.userIds) ~= "table" or next(entitlements.userIds) == nil then
-    return false, "nenhum usuário autorizado configurado"
-  end
+  if entitlements.schema ~= 1 or entitlements.product ~= "Exodus-v2" or entitlements.revision ~= revision then return false, "manifesto de autorização incompatível" end
+  if type(entitlements.userIds) ~= "table" or next(entitlements.userIds) == nil then return false, "nenhum usuário autorizado configurado" end
   if not setContains(entitlements.userIds, player.UserId) then return false, "usuário não autorizado" end
-  if type(entitlements.gameIds) == "table" and next(entitlements.gameIds) ~= nil and not setContains(entitlements.gameIds, game.GameId) then
-    return false, "experiência não autorizada"
-  end
-  if type(entitlements.placeIds) == "table" and next(entitlements.placeIds) ~= nil and not setContains(entitlements.placeIds, game.PlaceId) then
-    return false, "lugar não autorizado"
-  end
+  if type(entitlements.gameIds) == "table" and next(entitlements.gameIds) ~= nil and not setContains(entitlements.gameIds, game.GameId) then return false, "experiência não autorizada" end
+  if type(entitlements.placeIds) == "table" and next(entitlements.placeIds) ~= nil and not setContains(entitlements.placeIds, game.PlaceId) then return false, "lugar não autorizado" end
   local expiresAt = tonumber(entitlements.expiresAt or 0) or 0
   if expiresAt > 0 and os.time() > expiresAt then return false, "autorização expirada" end
   return true
 end
-
 local function orderModulesByDependencies(loaded)
   local positions, state, ordered = {}, {}, {}
   for index, name in ipairs(MODULE_ORDER) do

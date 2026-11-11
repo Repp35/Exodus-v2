@@ -47,10 +47,8 @@ return function(loadedRevision, request, options)
 
   -- polling
   local function latestRevision()
-    local body, requestError, requestMeta = request(
-      CONFIG.MANIFEST_URL .. "?exodus_cache=" .. tostring(os.time()),
-      { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Updater" }
-    )
+    local body, requestError, requestMeta =
+      request(CONFIG.MANIFEST_URL .. "?exodus_cache=" .. tostring(os.time()), { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Updater" })
     if body then
       local ok, document = pcall(function() return game:GetService("HttpService"):JSONDecode(body) end)
       local sha = ok and type(document) == "table" and document.revision
@@ -84,12 +82,7 @@ return function(loadedRevision, request, options)
       -- update-fetch
       if pendingRevision and not pendingSource and os.clock() >= nextCheck then
         local source, fetchError, fetchMetadata = request(
-          CONFIG.DELIVERY_BASE_URL
-            .. pendingRevision
-            .. "/"
-            .. CONFIG.PROJECT_PATH
-            .. "loader.luau?exodus_cache="
-            .. tostring(os.time()),
+          CONFIG.DELIVERY_BASE_URL .. pendingRevision .. "/" .. CONFIG.PROJECT_PATH .. "loader.luau?exodus_cache=" .. tostring(os.time()),
           { ["User-Agent"] = "Exodus-Hub-Updater" }
         )
         if not running() then return end
