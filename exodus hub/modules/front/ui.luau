@@ -54,6 +54,10 @@ local CONFIG = {
 	SPAM_CARD_H = 118,
 	CARD_SCALE = 1.06,
 	DRAG_THRESHOLD_SQ = 100,
+	TITLE_TEXT_SIZE = 16,
+	AUTHOR_TEXT_SIZE = 14,
+	AUTHOR_TRANSPARENCY = 0.22,
+	TITLE_SIDE_RESERVE = 80,
 }
 
 -- services
@@ -67,6 +71,7 @@ local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local TextService = game:GetService("TextService")
 local Camera = workspace.CurrentCamera
 local _wait = task.wait
 local _spawn = task.spawn
@@ -1290,34 +1295,45 @@ function ExodusUI.setup(deps)
 	makeDraggable(titleBar, configPanel, function()
 		setConfigValue("PanelX", configPanel.Position.X.Offset); setConfigValue("PanelY", configPanel.Position.Y.Offset)
 	end)
+	local titleText = ("%s | %s"):format(Utils.name(), Utils.version())
+	local authorText = " — " .. Utils.author()
+	local titleFontSize, authorFontSize = CONFIG.TITLE_TEXT_SIZE, CONFIG.AUTHOR_TEXT_SIZE
+	local maxTitleWidth = PW - PAD * 2 - CONFIG.TITLE_SIDE_RESERVE
+	local titleMeasured = math.ceil(TextService:GetTextSize(titleText, titleFontSize, Enum.Font.GothamBold, Vector2.new(1000, TITLE_H)).X)
+	local authorMeasured = math.ceil(TextService:GetTextSize(authorText, authorFontSize, Enum.Font.Gotham, Vector2.new(1000, TITLE_H)).X)
+	local authorReserved = math.min(authorMeasured, math.floor(maxTitleWidth * 0.38))
+	local titleWidth = math.min(titleMeasured, maxTitleWidth - authorReserved)
+	local authorWidth = math.min(authorMeasured, maxTitleWidth - titleWidth)
+	local groupWidth = titleWidth + authorWidth
 	local titleGroup = inst("Frame", {
-		Size = UDim2.new(0, 280, 1, 0),
-		Position = UDim2.new(0.5, -140, 0, 0),
+		Size = UDim2.new(0, groupWidth, 1, 0),
+		Position = UDim2.new(0.5, -groupWidth / 2, 0, 0),
 		BackgroundTransparency = 1,
 		ZIndex = 7,
 		Parent = titleBar,
 	})
 	inst("TextLabel", {
-		Size = UDim2.new(1, -58, 1, 0),
-		Position = UDim2.new(0, 0, 0, 0),
+		Size = UDim2.new(0, titleWidth, 1, 0),
 		BackgroundTransparency = 1,
-		Text = ("%s - v%s"):format(Utils.name(), Utils.version()),
+		Text = titleText,
 		TextColor3 = C.text,
-		TextSize = 16,
+		TextSize = titleFontSize,
 		Font = Enum.Font.GothamBold,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		TextXAlignment = Enum.TextXAlignment.Right,
 		ZIndex = 7,
 		Parent = titleGroup,
 	})
 	inst("TextLabel", {
-		Size = UDim2.new(0, 58, 1, 0),
-		Position = UDim2.new(1, -58, 0, 0),
+		Size = UDim2.new(0, authorWidth, 1, 0),
+		Position = UDim2.new(0, titleWidth, 0, 0),
 		BackgroundTransparency = 1,
-		Text = "  " .. Utils.author(),
-		TextColor3 = C.subtext,
-		TextTransparency = 0.35,
-		TextSize = 10,
+		Text = authorText,
+		TextColor3 = C.text,
+		TextTransparency = CONFIG.AUTHOR_TRANSPARENCY,
+		TextSize = authorFontSize,
 		Font = Enum.Font.Gotham,
+		TextTruncate = Enum.TextTruncate.AtEnd,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		ZIndex = 7,
 		Parent = titleGroup,
