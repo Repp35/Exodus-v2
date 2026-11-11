@@ -12,6 +12,7 @@ local minimumSpeed, maximumSpeed, speedAt
 local errors, cooldownConnection, parriedConnection = {}, nil, nil
 local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
 local cooldown, signalAt, heldAt, missingAt, warningAt
+local localCooldownObservation
 local pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
 local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
 local targetFrame, targetFrameConnection = 0, nil
@@ -31,11 +32,8 @@ local CONFIG = {
   COOLDOWN_RETRY = 0.5,
   SPAM_MIN_INTERVAL = 0.0301,
   HELD_COOLDOWN_INTERVAL = 0.05,
-  CLIENT_DEFLECT_RESET_MIN = 0.08,
-  CLIENT_DEFLECT_RESET_FAST = 0.06,
+  CLIENT_DEFLECT_RESET_FAST = 0.09,
   CLIENT_DEFLECT_RESET_SLOW = 0.15,
-  CLIENT_DEFLECT_RESET_MAX_PING_MARGIN = 0.06,
-  CLIENT_DEFLECT_RESET_FRAME_MARGIN = 1 / 60,
   SPEED_REFRESH = 0.5,
   SAMPLE_INTERVAL = 1 / 240,
   SAMPLE_MAX_GAP = 0.5,
@@ -368,6 +366,7 @@ function GameInfo.setup(deps)
     end)
     utils.trackGlobal(targetFrameConnection)
   end
+  localCooldownObservation = nil
   cooldown = {
     known = false,
     active = false,
@@ -580,19 +579,34 @@ function GameInfo.getDeflectCooldownState()
   cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true
   cooldown.blocking = cooldown.active; return cooldown
 end
-function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
-  if not finite(activatedAt) or not finite(speed) or speed <= 0 then return false end
+function GameInfo.isClientDeflectResetLate(activatedAt, speed)
+  if not finite(activatedAt) then return false end
   local ability = GameInfo.getDeflectAbility()
-  if not ability or not finite(ability.Cooldown) or ability.Cooldown <= 0 then return false end
-  local time = os.clock(); local pressedAt, predictUntil = ability.PendingPressAt, ability.PendingPredictUntil
-  if not finite(pressedAt) or pressedAt < activatedAt or pressedAt > time then return false end
-  if not finite(predictUntil) or time >= predictUntil then return false end
-  local low, high = GameInfo.getBallSpeedLimits(); local progress = math.clamp((speed - low) / (high - low), 0, 1)
-  local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress; local ping = GameInfo.getAveragePing()
-  budget = budget + math.clamp(ping, 0, CONFIG.CLIENT_DEFLECT_RESET_MAX_PING_MARGIN); local lastSafeDelay = predictUntil - pressedAt - CONFIG.CLIENT_DEFLECT_RESET_FRAME_MARGIN
-  if lastSafeDelay < CONFIG.CLIENT_DEFLECT_RESET_MIN then return false end
-  local extra = finite(multiplier) and math.max(1, multiplier) or 1; budget *= extra
-  return time - pressedAt >= math.min(budget, lastSafeDelay)
+  local time = os.clock()
+  if not ability or not finite(ability.Cooldown) or time < activatedAt then
+    localCooldownObservation = nil
+    return false
+  end
+
+  local remaining = math.max(0, ability.Cooldown)
+  local observation = localCooldownObservation
+  if not observation or observation.activatedAt ~= activatedAt or observation.ability ~= ability or time < observation.sampledAt then
+    observation = { activatedAt = activatedAt, ability = ability, sampledAt = time }
+    localCooldownObservation = observation
+    if remaining > 0 then observation.startedAt = time end
+  elseif remaining <= 0 then
+    observation.startedAt = nil
+  elseif not observation.startedAt then
+    observation.startedAt = time
+  end
+  observation.sampledAt = time
+
+  if not observation.startedAt or not finite(speed) or speed <= 0 then return false end
+  local low, high = GameInfo.getBallSpeedLimits()
+  if not finite(low) or not finite(high) or high <= low then return false end
+  local progress = math.clamp((speed - low) / (high - low), 0, 1)
+  local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress
+  return time - observation.startedAt >= budget
 end
 function GameInfo.getSyncData() return syncData() end
 local function syncSequence(current, provider)
