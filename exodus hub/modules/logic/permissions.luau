@@ -102,9 +102,7 @@ local function wrap(consumer, source, provider)
     if type(provider[field]) ~= "table" then error("Permissions: dado ausente: " .. source .. "." .. field, 2) end
     members[field] = readonly(provider[field])
   end
-  table.freeze(members)
-
-  local view = {}
+  table.freeze(members); local view = {}
   setmetatable(view, {
     __index = function(_, field)
       local value = members[field]
