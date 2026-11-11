@@ -189,18 +189,15 @@ local function activationReason(s, snapshot, time)
   if not snapshot or snapshot.targetUncertain == true or gameInfo.getBallFrozen() == true or not s.pending then return nil end
   if s.target ~= localPlayer.UserId or snapshot.targetId ~= localPlayer.UserId then return nil end
   if typeof(snapshot.position) ~= "Vector3" then return nil end
-  local towardPlayer = s.root.Position - snapshot.position
-  local distance = towardPlayer.Magnitude
+  local towardPlayer = s.root.Position - snapshot.position; local distance = towardPlayer.Magnitude
   local g = activationGeometry(s, snapshot, s.pending.partner, time)
   if not g or distance > g.fullRadius then return nil end
   if s.pending.fastReturn then return "return_target" end
-
   if distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return nil end
   local closingSpeed = snapshot.velocity:Dot(towardPlayer) / distance
   if not finite(closingSpeed) or closingSpeed <= 0 then return nil end
   if not s.pending.startedNear then return "return_target" end
   if snapshot.locked == true then return nil end
-
   local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, snapshotSpeed(snapshot), true)
   if finite(radius) and distance <= radius then return "close_pressure" end
   return nil
@@ -336,8 +333,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
   elseif target == me and previous and previous ~= s.stoppedPartner and not s.pending and not s.active then
     local g, speed, window = activationGeometry(s, snapshot, previous, time)
     if not g or not window or typeof(snapshot.position) ~= "Vector3" then return end
-    local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
-    local directReturn = completedPartner == previous and s.departedTo == previous
+    local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius; local directReturn = completedPartner == previous and s.departedTo == previous
     local returnElapsed = directReturn and elapsed(s.departedAt, s.departedServerAt, time, serverTime)
     if not startedNear and not returnElapsed then return end
     local fastReturn = returnElapsed and returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
@@ -368,11 +364,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(s, snapshot, time, true); clashStats = clashStatsModule.get() end
-  if
-    not s.active
-    and not blockedActivation
-    and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
-  then
+  if not s.active and not blockedActivation and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= CONFIG.ACTIVATION.REACTIVATION_COOLDOWN) then
     local reason = activationReason(s, snapshot, time)
     if not reason then return end
     local activationServerTime = serverTime
