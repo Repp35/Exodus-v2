@@ -1648,7 +1648,6 @@ function ExodusUI.setup(deps)
     darkBall.Visible, upDashBall.Visible = enabled and not UIState.desktop, enabled and not UIState.desktop
   end
   updateAbilityVisibility(GameInfo.areAbilitiesEnabled()); trackConn(GameInfo.observeAbilityMode(updateAbilityVisibility))
-
   local antiConnection
   local antiGeneration = 0; local utilitiesY = 4
   utilitiesY = createOffOnCard("Anti AFK", utilitiesY, utilities, {
