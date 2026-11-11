@@ -301,8 +301,6 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
       if not g or not window or typeof(snapshot.position) ~= "Vector3" then return end
       local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
       if not returnElapsed then return end
-      -- Classify once, when the ball switches to us. A ball entering the radius
-      -- later follows the normal activation checks without the fast-return gate.
       local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
       if startedNear and returnElapsed > returnWindow(window, speed, CONFIG.ACTIVATION.RETURN) then return end
       s.pending = { partner = previous }
