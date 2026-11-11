@@ -2,6 +2,8 @@
 
 -- tuning
 local CONFIG = { BIND_TIMEOUT = 10 }
+
+-- module
 local Character = {}
 
 -- dependencies
