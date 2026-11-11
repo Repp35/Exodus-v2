@@ -403,7 +403,7 @@ def add_table_spacing(source: str) -> str:
     table_depth: int | None = None
 
     for index, line in enumerate(lines):
-        starts_table = table_depth is None and LOCAL_TABLE_RE.match(mask_literals(line))
+        starts_table = table_depth is None and depth == 0 and LOCAL_TABLE_RE.match(mask_literals(line))
         if starts_table:
             table_depth = depth
 
@@ -417,7 +417,8 @@ def add_table_spacing(source: str) -> str:
             next_index = index + 1
             while next_index < len(lines) and not lines[next_index].strip():
                 next_index += 1
-            if add_gap and (next_index >= len(lines) or not section_from_comment(lines[next_index])):
+            if (add_gap and index + 1 < len(lines) and lines[index + 1].strip()
+                    and (next_index >= len(lines) or not section_from_comment(lines[next_index]))):
                 result.append("")
 
     return finish_source(result)
@@ -470,6 +471,46 @@ def expand_inline_config_tables(source: str, indent_type: str = "Tabs", indent_w
         for field in fields:
             output.append(prefix + indentation + field.rstrip(",") + ",")
         output.append(prefix + "}")
+    return finish_source(output)
+
+
+def expand_dense_named_tables(source: str, indent_type: str, indent_width: int) -> str:
+    """Expand long, single-line named-field tables nested in an existing block."""
+    indentation = "\t" if indent_type.lower() == "tabs" else " " * indent_width
+    output: list[str] = []
+    for line in source.splitlines():
+        masked = mask_literals(line)
+        match = re.fullmatch(r"([ \t]+)[A-Za-z_][A-Za-z_0-9]*\s*=\s*\{(.*)\}([,;]?)\s*", masked)
+        if not match or len(line.expandtabs(indent_width)) <= 80:
+            output.append(line)
+            continue
+        start, end = match.span(2)
+        inside = masked[start:end]
+        stack: list[str] = []
+        cuts: list[int] = []
+        pairs = {")": "(", "]": "[", "}": "{"}
+        valid = True
+        for index, char in enumerate(inside):
+            if char in "([{":
+                stack.append(char)
+            elif char in ")]}":
+                if not stack or stack.pop() != pairs[char]:
+                    valid = False
+                    break
+            elif char == "," and not stack:
+                cuts.append(index)
+        bounds = [-1, *cuts, len(inside)]
+        fields = [line[start + a + 1:start + b].strip() for a, b in zip(bounds, bounds[1:])]
+        fields = [field for field in fields if field]
+        if not valid or stack or len(fields) < 2 or any(
+            not re.match(r"^[A-Za-z_][A-Za-z_0-9]*\s*=", field) for field in fields
+        ):
+            output.append(line)
+            continue
+        prefix = match.group(1)
+        output.append(line[:start].rstrip())
+        output.extend(prefix + indentation + field + "," for field in fields)
+        output.append(prefix + "}" + match.group(3))
     return finish_source(output)
 
 
@@ -799,7 +840,8 @@ def compact_statement_runs(
                 break
             candidate_code = mask_literals(candidate).strip()
             terminal = bool(RETURN_RE.match(candidate_code))
-            if not simple_statement(candidate, allow_terminal=terminal):                break
+            if not simple_statement(candidate, allow_terminal=terminal):
+                break
             proposed = indent + "; ".join((*run, candidate.strip()))
             if len(proposed.expandtabs(tab_width)) > max_width:
                 break
@@ -887,8 +929,8 @@ def compact_if_at(
     if len(inline_line.expandtabs(tab_width)) <= max_width:
         return end_index, [inline_line]
 
-    compact_branches[-1] += " end"
-    return end_index, compact_branches
+    # Never flatten only the branch bodies: that obscures the block structure.
+    return None
 
 
 def compact_simple_if_blocks(
@@ -1108,14 +1150,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compact-width",
         type=int,
-        default=400,
-        help="largura máxima para compactação de instruções e blocos simples (padrão: 400)",
+        default=120,
+        help="largura máxima para compactação de instruções e blocos simples (padrão: 120)",
     )
     parser.add_argument(
         "--max-statements",
         type=int,
-        default=64,
-        help="máximo de instruções simples por linha compactada",
+        default=2,
+        help="máximo de instruções simples por linha compactada (padrão: 2)",
     )
     parser.add_argument(
         "--threads",
@@ -1376,6 +1418,8 @@ def format_files(args: argparse.Namespace) -> int:
                 tab_width=tab_width,
             )
             formatted = expand_inline_config_tables(formatted, configured_indent_type, tab_width)
+            formatted = expand_dense_named_tables(formatted, configured_indent_type, tab_width)
+            formatted = add_table_spacing(formatted)
             if source_path.is_relative_to(HUB_ROOT.parent):
                 audit_module_config(formatted, source_path.relative_to(HUB_ROOT.parent))
             return formatted
