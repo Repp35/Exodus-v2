@@ -122,6 +122,7 @@ local CONFIG = {
   },
 }
 
+-- module
 local UIConfig = {}
 UIConfig.panelToggles = CONFIG.PANEL_TOGGLES
 UIConfig.panelComponents = CONFIG.PANEL_COMPONENTS

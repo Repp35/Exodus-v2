@@ -6,8 +6,10 @@ local CONFIG = {
   JUMPING_STATE = Enum.HumanoidStateType.Jumping,
 }
 
--- state
+-- module
 local AutoJump = {}
+
+-- state
 local utils
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0

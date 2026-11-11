@@ -5,8 +5,10 @@ local CONFIG = {
   REQUIRE_ABILITIES_ENABLED = true,
 }
 
--- dependencies
+-- module
 local AutoDark = {}
+
+-- dependencies
 local utils, remote, gameInfo, world
 
 -- state

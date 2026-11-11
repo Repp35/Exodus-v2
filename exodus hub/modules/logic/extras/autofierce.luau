@@ -7,8 +7,10 @@ local CONFIG = {
   NOOB_WINDOW_EXTRA = 0.15,
 }
 
--- dependencies
+-- module
 local AutoFierce = {}
+
+-- dependencies
 local utils, gameInfo, remote, autoParry
 
 -- state
@@ -22,8 +24,6 @@ local function track(connection)
   return connection
 end
 local function enabled() return utils and utils.isActive() and utils.getConfigValue("AutoFierce") == true and gameInfo.areAbilitiesEnabled() end
-
--- tracking
 local function onParried()
   graceHandled = true; parryGeneration += 1
   lastParriedAt = os.clock()
@@ -53,7 +53,7 @@ local function deflectPending(now)
   return now - pressedAt <= window + CONFIG.NOOB_WINDOW_EXTRA + 2 * ping
 end
 
--- activation
+-- runtime
 local function update()
   local now = os.clock()
   if not enabled() then graceHandled = false; return end

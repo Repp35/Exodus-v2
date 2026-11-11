@@ -6,8 +6,10 @@ local CONFIG = {
   MODULE_SEARCH_RETRY = 0.5,
 }
 
--- state
+-- module
 local Camera = {}
+
+-- state
 local utils, runService
 local cameraEpoch = 0
 local cameraInput, cameraOriginal, cameraWrapped, configConnection

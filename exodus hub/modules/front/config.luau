@@ -19,8 +19,10 @@ local CONFIG = {
   },
 }
 
--- registry
+-- module
 local Config = {}
+
+-- registry
 local Registry = {}
 local Keys = {}
 
@@ -59,7 +61,7 @@ local function copy(source)
   return result
 end
 
--- registration
+-- api
 function Config.register(name, definition)
   if type(name) ~= "string" or type(definition) ~= "table" or Registry[name] then return false end
   local schema = type(definition.schema) == "table" and definition.schema or {}; local defaults = type(definition.defaults) == "table" and definition.defaults or {}
@@ -75,8 +77,6 @@ function Config.register(name, definition)
   end
   Registry[name] = { schema = copy(schema), defaults = copy(defaults) }; return true
 end
-
--- defaults
 function Config.defaults()
   local result = {}
   for _, definition in pairs(Registry) do

@@ -14,8 +14,10 @@ local CONFIG = {
   MAX_FRAME_ALLOWANCE = 0.12,
 }
 
--- dependencies
+-- module
 local AutoParry = {}
+
+-- dependencies
 local utils, gameInfo, remote, autoParrySignature
 
 -- state
@@ -138,8 +140,6 @@ local function radius(speed, factor, baseWindow)
   if not finite(factor) then factor = activeWindowFactor(clock()) end
   factor = math.clamp(factor, 0, 1); return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
 end
-
--- telemetry
 local function samplePing()
   state.ping, state.pingRaw, state.pingCount = gameInfo.getAveragePing()
 end
@@ -272,7 +272,7 @@ local function tick(character, root, generation)
   if closing > 0 and distance <= threshold then request("parry_requested") end
 end
 
--- setup
+-- api
 function AutoParry.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" then return false, "dependências inválidas" end
   for name, methods in pairs(AutoParry.__contract.requiresMethods) do
@@ -387,8 +387,6 @@ function AutoParry.onBallSync(data)
   if state.player and (target == state.player.UserId or data.Grace == true) and state.character and state.root and not state.fired then tick(state.character, state.root, state.generation) end
   return true
 end
-
--- public-api
 function AutoParry.getTargetStatus()
   return {
     armed = not state.fired,

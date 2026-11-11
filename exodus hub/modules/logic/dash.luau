@@ -10,6 +10,7 @@ local CONFIG = {
   TICK_INTERVAL = 1 / 120,
 }
 
+-- module
 local Dash = {}
 
 -- dependencies
@@ -145,7 +146,7 @@ function Dash.teardown()
   Dash.resetState(); utils, gameInfo, handler = nil, nil, nil
 end
 
--- status
+-- api
 function Dash.getStatus()
   local count = 0
   for _ in pairs(records) do

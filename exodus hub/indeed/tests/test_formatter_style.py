@@ -2,6 +2,7 @@
 import sys
 import tempfile
 import unittest
+import re
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -9,6 +10,15 @@ import formatter
 
 
 class FormatterStyleTests(unittest.TestCase):
+    def test_module_sections_are_top_level(self):
+        for path in sorted((formatter.HUB_ROOT.parent / "modules").rglob("*.luau")):
+            with self.subTest(path=path):
+                for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                    self.assertFalse(
+                        line[:1].isspace() and re.fullmatch(r"\s+--\s+[A-Za-z][A-Za-z0-9_/-]*\s*", line),
+                        f"seção aninhada em {path}:{line_number}",
+                    )
+
     def test_nested_named_table_expands_without_splitting_values(self):
         source = ('    connectionCounts = { global = #state.globalConnections, '
                   'character = #state.characterConnections },\n')

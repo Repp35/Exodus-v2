@@ -8,6 +8,7 @@ local CONFIG = {
   CPS_SMOOTHING_FACTOR = 0.2,
 }
 
+-- module
 local ClashStats = {}
 
 -- dependencies

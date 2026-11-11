@@ -7,8 +7,10 @@ local CONFIG = {
   ERROR_RETRY_INTERVAL = 0.03,
 }
 
--- dependencies
+-- module
 local Spam = {}
+
+-- dependencies
 local utils, remote, gameInfo, spamObserver, configObserver
 local function traceback(err) return debug.traceback(tostring(err), 2) end
 
@@ -18,7 +20,7 @@ local currentMode, currentRate
 local nextAllowedAt = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 
--- config
+-- helpers
 local function readRate()
   local selected = utils.getConfigValue("SpamRateMode"); local mode = selected == "Auto" and "Auto" or (selected == "CPF" and "CPF" or "CPS")
   if mode == "Auto" then return mode, 1 end
@@ -28,7 +30,7 @@ local function readRate()
   return mode, rate
 end
 
--- lifecycle
+-- control
 local function transition(active, reason)
   local phase = active and "running" or "stopped"
   if status.phase == phase then return end
@@ -40,7 +42,7 @@ local function cancel(reason)
   transition(false, reason)
 end
 
--- dispatch
+-- runtime
 local function request(boundUtils, boundRemote, token, guard, minimum)
   if inFlight then return end
   inFlight = true; status.lastRequestAt = os.clock()
@@ -56,8 +58,6 @@ local function request(boundUtils, boundRemote, token, guard, minimum)
     if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
   end
 end
-
--- scheduler
 local function sync()
   if not utils or not remote then return end
   local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
@@ -108,7 +108,7 @@ local function sync()
   end)
 end
 
--- setup
+-- lifecycle
 function Spam.setup(deps)
   if
     type(deps) ~= "table"
@@ -151,7 +151,7 @@ function Spam.teardown()
   spamObserver, configObserver, utils, remote, gameInfo = nil, nil, nil, nil, nil
 end
 
--- status
+-- api
 function Spam.getStatus()
   return {
     schema = utils and utils.apiVersion() or 1,

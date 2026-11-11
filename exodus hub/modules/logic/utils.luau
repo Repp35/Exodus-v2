@@ -10,9 +10,10 @@ local CONFIG = {
   HISTORY_LIMIT = 32,
 }
 
+-- module
 local Utils = {}
 
--- services
+-- dependencies
 local players = game:GetService("Players")
 local replicated = game:GetService("ReplicatedStorage")
 local runService = game:GetService("RunService")
@@ -365,7 +366,7 @@ end
 function Utils.isFiniteNumber(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 function Utils.isNonNegativeFiniteNumber(value) return Utils.isFiniteNumber(value) and value >= 0 end
 
--- config
+-- api
 function Utils.normalizeSpamRate(value, fallback)
   local rate = tonumber(value)
   if not Utils.isFiniteNumber(rate) then rate = tonumber(fallback) end

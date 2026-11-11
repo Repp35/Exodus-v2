@@ -25,9 +25,13 @@ do
   local previous = rawget(_G, "ExodusBallSyncDiagnostic")
   if type(previous) == "table" and type(previous.stop) == "function" then pcall(previous.stop) end
 end
+
+-- dependencies
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
+
+-- state
 local Runtime = {
   startedAt = os.clock(),
   stopped = false,
@@ -41,7 +45,7 @@ local Runtime = {
   lastGameInfoSignature = nil,
 }
 
--- services
+-- helpers
 local function saveFile()
   if type(writefile) ~= "function" then return false, "writefile unavailable" end
   local content = table.concat(Runtime.lines, "\n")
@@ -52,8 +56,6 @@ local function saveFile()
   if ok then return true, nil end
   return false, tostring(err)
 end
-
--- runtime
 local function appendOutput(message)
   message = tostring(message); local extraBytes = #message + 1
   if Runtime.outputBytes + extraBytes <= CONFIG.MAX_OUTPUT_BYTES then
@@ -66,8 +68,6 @@ local function appendOutput(message)
   end
   return false
 end
-
--- logging
 local function log(message)
   message = tostring(message); appendOutput(message)
   print(CONFIG.TAG .. " " .. message)
@@ -84,8 +84,6 @@ local function safePath(instance)
   if ok then return path end
   return "<path unavailable>"
 end
-
--- signatures
 local function safeRequire(moduleScript)
   if not moduleScript or not moduleScript:IsA("ModuleScript") then return nil, "module_missing" end
   local ok, result = pcall(require, moduleScript)
@@ -122,14 +120,8 @@ local function appendTree(value, label, depth, visited, nodeState, output)
   }
   output = output or {}; nodeState.count += 1
   local indent = string.rep("  ", depth); local valueKind = typeof(value)
-
-  -- instance
   if valueKind == "Instance" then output[#output + 1] = ("%s%s: Instance<%s> %s"):format(indent, label, value.ClassName, safePath(value)); return output end
-
-  -- primitive
   if type(value) ~= "table" then output[#output + 1] = ("%s%s: typeof=%s type=%s value=%s"):format(indent, label, tostring(valueKind), type(value), formatValue(value)); return output end
-
-  -- cycle
   if visited[value] then output[#output + 1] = ("%s%s: table<cycle>"):format(indent, label); return output end
   if depth >= CONFIG.MAX_DEPTH then output[#output + 1] = ("%s%s: table<depth-limit>"):format(indent, label); return output end
   if nodeState.count >= CONFIG.MAX_NODES then output[#output + 1] = ("%s%s: table<node-limit>"):format(indent, label); return output end
@@ -154,7 +146,7 @@ local function recordStructure(label, value)
   log(label .. " structure written to TXT"); return text
 end
 
--- cleanup
+-- observers
 local function getSignature(value) return structure(value, "payload") end
 local function inspectRemote(remote, ...)
   local state = Runtime.remoteStates[remote]
@@ -248,7 +240,7 @@ local function pollBallReplicator(ballReplicator)
   Runtime.lastReplicatorSignature = signature; recordStructure("TS.BallReplicator.BallReplicator.syncData (changed)", syncData)
 end
 
--- teardown
+-- lifecycle
 local function disconnectAll()
   for index, connection in ipairs(Runtime.eventConnections) do
     if connection then

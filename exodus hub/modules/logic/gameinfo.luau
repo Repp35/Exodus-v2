@@ -44,6 +44,7 @@ local CONFIG = {
   },
 }
 
+-- module
 local GameInfo = {}
 
 -- dependencies
@@ -56,7 +57,7 @@ local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 local ballData, dashAnimation
 
--- runtime-state
+-- runtime
 local minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
 local errors, cooldownConnection, parriedConnection = {}, nil, nil
 local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
@@ -225,7 +226,7 @@ local function disconnect(connection)
   end
 end
 
--- synchronization
+-- lifecycle
 local function validSyncRemote(instance)
   return typeof(instance) == "Instance" and (instance:IsA("RemoteEvent") or instance:IsA("UnreliableRemoteEvent")) and instance.Parent ~= nil
 end
@@ -318,8 +319,6 @@ function GameInfo.stopMaintenance()
     targetFrameConnection:Disconnect(); targetFrameConnection = nil
   end
 end
-
--- setup
 function GameInfo.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   GameInfo.stopMaintenance(); disconnect(cooldownConnection)
@@ -628,7 +627,7 @@ function GameInfo.decodeBallPacket(value)
 end
 function GameInfo.getTargetId() return targetId(syncData(), getBall()) end
 
--- snapshots
+-- api
 local function snapshot(time)
   if inTrainingArea() then
     time = type(time) == "number" and time or utils.now(); local sample = trainingState
@@ -851,8 +850,6 @@ function GameInfo.getClashContext()
   if not ownRoot or not partnerRoot or (ownRoot.Position - partnerRoot.Position).Magnitude > 35 then return nil end
   return { partnerId = partnerId, lastParryAt = lastAt, age = age }
 end
-
--- status
 function GameInfo.getStatus()
   local now = utils.now(); local value = snapshot(now)
   return {

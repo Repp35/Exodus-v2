@@ -33,6 +33,7 @@ local CONFIG = {
   },
 }
 
+-- module
 local AutoSpam = {}
 
 -- dependencies
@@ -128,8 +129,6 @@ local function returnWindow(window, speed, base)
   local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0
   return math.max(CONFIG.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
 end
-
--- dash-assist
 local function sampleOwnDash(s, time)
   local ability = gameInfo.getDashAbility(); local dashing = ability and ability.Dashing == true
   if not dashing then s.dashStart, s.dashAt = nil, nil; return end
@@ -253,7 +252,7 @@ local function enforceTargetReturnTimeout(s, time)
   stop(s, "target_return_timeout"); return true
 end
 
--- target-tracking
+-- tracking
 local function syncManualPartner(s)
   local manual = utils.isManualSpamActive()
   if manual and not s.manualWasActive then s.manualPartner = s.active and s.partner or nil; s.manualSwitchAt, s.manualSwitchServerAt = now(), nil

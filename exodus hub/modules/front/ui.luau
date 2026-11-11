@@ -65,8 +65,10 @@ local CONFIG = {
   TITLE_SIDE_RESERVE = 80,
 }
 
--- services
+-- module
 local ExodusUI = {}
+
+-- dependencies
 local Utils
 local UIConfig
 local GameInfo
@@ -142,8 +144,6 @@ local function inst(cls, props, parent)
 end
 local function corner(obj, r) return inst("UICorner", { CornerRadius = UDim.new(0, r) }, obj) end
 local function stroke(obj, col, th) return inst("UIStroke", { Color = col, Thickness = th or 1 }, obj) end
-
--- animation
 local function attachFlow(s)
   local g = inst("UIGradient", { Rotation = 0 }, s)
   g.Color = ColorSequence.new({
@@ -158,13 +158,11 @@ local function twPlay(obj, t, props, style, dir)
   local tween = TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props); tween:Play()
   return tween
 end
-
--- safety
 local function safeCancel(t)
   if t then t:Cancel() end
 end
 
--- layout
+-- interaction
 local function viewport()
   local currentCamera = workspace.CurrentCamera or Camera; return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
 end
@@ -176,8 +174,6 @@ local function toggleSetting(key, label, after)
   if showToast then showToast(label .. (state and " On" or " Off")) end
   return state
 end
-
--- connections
 local function trackConn(c)
   if c and type(c.Disconnect) == "function" then UIState.connections[#UIState.connections + 1] = c end
   return c
@@ -207,8 +203,6 @@ local function inputBinding(input)
   return nil
 end
 local function isKey(input, binding) return input and binding and inputBinding(input) == binding end
-
--- input
 local function bindInput()
   trackConn(UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed or UIState.keyCapture or UIS:GetFocusedTextBox() or not UIState.desktop or not inputBinding(input) then return end
@@ -233,8 +227,6 @@ local function bindInput()
     end
   end))
 end
-
--- drag
 local function makeDraggable(handle, target, onDragEnd, disableOnMobile)
   local dragInput, dragOffX, dragOffY = nil, 0, 0; local state, wasDragged, startX, startY = "Idle", false, 0, 0
   local THRESH_SQ = CONFIG.DRAG_THRESHOLD_SQ
@@ -271,7 +263,7 @@ local function makeDraggable(handle, target, onDragEnd, disableOnMobile)
   return function() return state == "Dragging" end
 end
 
--- effects
+-- visuals
 local function registerFlow(obj)
   local gradient = attachFlow(obj); local tween = TweenService:Create(gradient, TweenInfo.new(12, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1), { Rotation = 360 })
   flowingTweens[#flowingTweens + 1] = tween; tween:Play()
@@ -372,16 +364,12 @@ local function offOnText(labelText, value)
   local color = value and "#22C55E" or "#EF4444"; return labelText .. ': <font color="' .. color .. '">' .. (value and "ON" or "OFF") .. "</font>"
 end
 local function nextCardY(yPos, height) return yPos + cardHeight(height) * CARD_SCALE + CARD_GAP end
-
--- panel
 local function panelPos()
   local config = Utils.getConfig(); local x, y = config.PanelX, config.PanelY
   if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
   return UDim2.new(0.5, -PW / 2, 0.5, -PH / 2)
 end
 local PARTICLE_COLORS = CONFIG.PARTICLE_COLORS
-
--- cleanup
 local function cleanupUI()
   safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
   disconnectUIConnections(); UIState.connections = {}
@@ -420,8 +408,6 @@ local function cleanupUI()
   autoJumpSetVisual = nil
   if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil; _G.ExodusUIFadeOut = nil end
 end
-
--- particles
 local function spawnParticle()
   if not particleLayer or not particleLayer.Parent then return end
   local isFar = math.random() < 0.6; local size = isFar and math.random(2, 3) or math.random(4, 6)
@@ -560,8 +546,6 @@ local function makeToggle(trackParent, initial)
   end
   return track, thumb, setVisual
 end
-
--- keybind
 local function bindKeyCapture(btn, onPicked)
   local listening = false
   trackConn(btn.Activated:Connect(function()
@@ -619,8 +603,6 @@ local function makeKeycap(parent, configKey, rightAligned, baseHeight)
   end)
   return keycap
 end
-
--- cards
 local function createToggleCard(labelText, configKey, yPos, parent, onAfter, shortcutKey)
   local f = cardFrame(yPos, CARD_H, parent)
   local label = inst("TextLabel", {
@@ -1667,7 +1649,6 @@ function ExodusUI.setup(deps)
   end
   updateAbilityVisibility(GameInfo.areAbilitiesEnabled()); trackConn(GameInfo.observeAbilityMode(updateAbilityVisibility))
 
-  -- anti-afk
   local antiConnection
   local antiGeneration = 0; local utilitiesY = 4
   utilitiesY = createOffOnCard("Anti AFK", utilitiesY, utilities, {

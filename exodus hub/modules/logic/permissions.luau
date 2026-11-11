@@ -1,6 +1,6 @@
 -- [[ permissions ]]
 
--- policies
+-- module
 local Permissions = {}
 local function allow(names)
   local items = {}
@@ -175,7 +175,7 @@ local CONFIG = {
 
 local POLICIES = CONFIG.POLICIES
 
--- validation
+-- helpers
 local function policy(name)
   local entry = POLICIES[name]
   if not entry then error("Permissions: módulo não registrado: " .. tostring(name), 2) end
@@ -214,7 +214,7 @@ local function validate(name, module)
   return true
 end
 
--- capabilities
+-- resolution
 local function readonly(value, visited)
   if type(value) ~= "table" then return value end
   visited = visited or {}
@@ -244,8 +244,6 @@ local function wrap(consumer, source, provider)
   metatable.__metatable = "locked"; table.freeze(metatable)
   return view
 end
-
--- dependency-resolution
 local function resolve(consumer, loaded)
   if type(loaded) ~= "table" or type(loaded[consumer]) ~= "table" then error("Permissions: módulo não carregado: " .. tostring(consumer), 2) end
   local contract = loaded[consumer].__contract

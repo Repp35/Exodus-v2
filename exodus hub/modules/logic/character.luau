@@ -15,8 +15,6 @@ local utils, spam, binds
 -- state
 local added, removing, currentLife
 local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
-
--- diagnostics
 local function setPhase(value, reason)
   if phase == value then return end
   local previous = phase; phase = value
@@ -145,7 +143,7 @@ function Character.teardown()
   utils, spam, binds = nil, nil, nil
 end
 
--- status
+-- api
 function Character.getStatus() return { schema = utils and utils.apiVersion() or nil, phase = phase, generation = generation } end
 
 -- contract

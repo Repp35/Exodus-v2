@@ -9,8 +9,10 @@ local CONFIG = {
   MAX_HORIZONTAL_RATIO = 0.65,
 }
 
--- dependencies
+-- module
 local AutoDash = {}
+
+-- dependencies
 local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
 local root, heartbeat
 local inFlight, handledSignals = nil, {}

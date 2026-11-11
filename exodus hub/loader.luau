@@ -32,7 +32,7 @@ local CONFIG = {
   },
 }
 
--- logging
+-- module
 local function printRawError(moduleName, message, filePath)
   local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message))
   if type(warn) == "function" then warn(output) elseif type(print) == "function" then print(output) end
@@ -266,7 +266,7 @@ local function stopPreviousRuntime()
   return clean
 end
 
--- compiler
+-- loading
 local function compile(name, source)
   if type(loadstring) ~= "function" then return nil, "loadstring indisponível" end
   local chunk, compileError = loadstring(source, name)
@@ -278,8 +278,6 @@ local function execute(name, chunk)
   if type(module) ~= "table" then error(name .. " não retornou uma tabela", 2) end
   return module
 end
-
--- urls
 local function resolveLatestRevision()
   local url = "https://api.github.com/repos/" .. REPOSITORY .. "/commits/" .. BRANCH .. "?exodus_cache=" .. tostring(os.time())
   local body, requestError, requestMeta = request(url, { ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Loader" })

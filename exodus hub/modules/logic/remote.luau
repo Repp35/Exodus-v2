@@ -8,8 +8,10 @@ local CONFIG = {
   DASH_METHOD = "Dash",
 }
 
--- dependencies
+-- module
 local Remote = {}
+
+-- dependencies
 local gameInfo, parryObserver
 local autoParrySignature = {}
 
@@ -19,7 +21,7 @@ function Remote.setup(deps)
   gameInfo, parryObserver = deps.GameInfo, nil; return true
 end
 
--- dispatch
+-- api
 local function send(ability, method, ...)
   if ability == nil then return false, method .. " não equipado ou indisponível" end
   local callback = ability[method]
