@@ -258,34 +258,25 @@ local function findSyncRemote()
   return nil
 end
 local function resetTrainingBall(despawned)
-  trainingRound += 1
-  trainingState, trainingDespawned = nil, despawned
+  trainingRound += 1; trainingState, trainingDespawned = nil, despawned
 end
 local function bindTrainingSync()
-  local remotes = child(child(storage(), "Training"), "Remotes")
-  local event = child(remotes, "Event")
+  local remotes = child(child(storage(), "Training"), "Remotes"); local event = child(remotes, "Event")
   if not validSyncRemote(event) then event = nil end
   if trainingEventRemote ~= event or (trainingEventConnection and not trainingEventConnection.Connected) then
-    disconnect(trainingEventConnection)
-    trainingEventConnection, trainingEventRemote = nil, event
+    disconnect(trainingEventConnection); trainingEventConnection, trainingEventRemote = nil, event
     resetTrainingBall(false)
   end
   if event and not trainingEventConnection then
     trainingEventConnection = event.OnClientEvent:Connect(function(kind)
-      if kind == "BallSpawn" then
-        resetTrainingBall(false)
-      elseif kind == "BallDespawn" or kind == "Kill" then
-        resetTrainingBall(true)
-      end
+      if kind == "BallSpawn" then resetTrainingBall(false) elseif kind == "BallDespawn" or kind == "Kill" then resetTrainingBall(true) end
     end)
     utils.trackGlobal(trainingEventConnection)
   end
-
   local training = child(remotes, "BallState")
   if not validSyncRemote(training) then training = nil end
   if trainingRemote ~= training or (trainingConnection and not trainingConnection.Connected) then
-    disconnect(trainingConnection)
-    trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil
+    disconnect(trainingConnection); trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil
     resetTrainingBall(trainingDespawned)
   end
   if training and not trainingConnection then
@@ -294,8 +285,7 @@ local function bindTrainingSync()
       if typeof(position) ~= "Vector3" or typeof(velocity) ~= "Vector3" or not finite(serverTime) then return end
       local receivedAt = os.clock()
       if trainingDespawned or (trainingServerTime and serverTime <= trainingServerTime) then return end
-      trainingServerTime = serverTime
-      trainingSequence = (trainingSequence + 1) % 65536
+      trainingServerTime = serverTime; trainingSequence = (trainingSequence + 1) % 65536
       trainingState = {
         position = position,
         velocity = velocity,
@@ -307,14 +297,14 @@ local function bindTrainingSync()
         sequence = trainingSequence,
         round = trainingRound,
       }
+
     end)
     utils.trackGlobal(trainingConnection)
   end
 end
 function GameInfo.bindBallSync(handler)
   if type(handler) ~= "function" then return false end
-  bindTrainingSync()
-  local candidate = findSyncRemote()
+  bindTrainingSync(); local candidate = findSyncRemote()
   if not candidate then
     if syncRemote and not validSyncRemote(syncRemote) then disconnectSync() end
     return syncConnection ~= nil and syncConnection.Connected == true
@@ -352,10 +342,8 @@ function GameInfo.startMaintenance(options)
 end
 function GameInfo.stopMaintenance()
   maintenance += 1; disconnectSync()
-  disconnect(trainingConnection)
-  disconnect(trainingEventConnection)
-  trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil
-  trainingEventConnection, trainingEventRemote = nil, nil
+  disconnect(trainingConnection); disconnect(trainingEventConnection)
+  trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil; trainingEventConnection, trainingEventRemote = nil, nil
   resetTrainingBall(false)
   if targetFrameConnection then
     if utils then utils.untrackGlobal(targetFrameConnection) end

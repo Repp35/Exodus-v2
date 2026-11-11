@@ -101,9 +101,9 @@ local function resetTracking()
   state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
-  state.trainingRound, state.trainingBall = nil, nil
-  state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
-  table.clear(state.clicks); table.clear(state.returns)
+  state.trainingRound, state.trainingBall = nil, nil; state.nextAttemptAt = 0
+  state.lastPosition, state.lastSampleAt = nil, 0; table.clear(state.clicks)
+  table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -224,13 +224,10 @@ local function observeSnapshot(snapshot, time)
   local mode = snapshot.mode == "training" and "training" or "match"
   local newTrainingBall = mode == "training" and (snapshot.trainingRound ~= state.trainingRound or snapshot.ball ~= state.trainingBall)
   if state.mode ~= mode or newTrainingBall then
-    state.cycle += 1
-    state.trainingRound, state.trainingBall = nil, nil
+    state.cycle += 1; state.trainingRound, state.trainingBall = nil, nil
     if mode == "training" then
-      state.trainingRound, state.trainingBall = snapshot.trainingRound, snapshot.ball
-      state.lastBall = nil
-      state.speed, state.distance, state.approaching = 0, 0, false
-      state.closingSpeed, state.triggerDistance = 0, 0
+      state.trainingRound, state.trainingBall = snapshot.trainingRound, snapshot.ball; state.lastBall = nil
+      state.speed, state.distance, state.approaching = 0, 0, false; state.closingSpeed, state.triggerDistance = 0, 0
     end
     state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false; state.fired, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, nil
     state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
