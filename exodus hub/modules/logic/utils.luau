@@ -399,18 +399,12 @@ function Utils.setConfig(patch)
   return true
 end
 function Utils.resetConfig()
-  if not configModule or type(configModule.defaults) ~= "function" then
-    error("Config defaults indisponíveis", 2)
-  end
-  local defaults = configModule.defaults()
-  local normalized, reason = configModule.normalizePatch(defaults)
+  if not configModule or type(configModule.defaults) ~= "function" then error("Config defaults indisponíveis", 2) end
+  local defaults = configModule.defaults(); local normalized, reason = configModule.normalizePatch(defaults)
   if type(normalized) ~= "table" then error("Config defaults inválidos: " .. tostring(reason), 2) end
-  state.config = normalized
-  notify(configObservers, snapshot(normalized))
-  notify(spamObservers)
-  refreshNamespace()
-  queueSave()
-  flushSave()
+  state.config = normalized; notify(configObservers, snapshot(normalized))
+  notify(spamObservers); refreshNamespace()
+  queueSave(); flushSave()
   return true
 end
 function Utils.loadConfig()

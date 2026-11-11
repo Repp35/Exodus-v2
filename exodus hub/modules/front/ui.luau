@@ -1500,8 +1500,7 @@ function ExodusUI.setup(deps)
     ZIndex = 9,
     Parent = titleBar,
   })
-  corner(settingsButton, 8)
-  local pageGroups = {}
+  corner(settingsButton, 8); local pageGroups = {}
   for index = 1, 5 do
     pageGroups[index] = inst("CanvasGroup", {
       Name = "Page" .. index,
@@ -1777,32 +1776,22 @@ function ExodusUI.setup(deps)
     Parent = pageGroups[5],
     ZIndex = 6,
   })
-  local notificationKey = UIState.desktop and "DesktopNotifications" or "MobileNotifications"
-  local hubY = createToggleCard("Notifications", notificationKey, 4, hubSettings)
-  local resetCard = cardFrame(hubY, CARD_H, hubSettings)
-  local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
-  resetButton.Name = "ResetSettings"
-  resetButton.Size = UDim2.new(1, -20, 0, 30)
+  local notificationKey = UIState.desktop and "DesktopNotifications" or "MobileNotifications"; local hubY = createToggleCard("Notifications", notificationKey, 4, hubSettings)
+  local resetCard = cardFrame(hubY, CARD_H, hubSettings); local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
+  resetButton.Name = "ResetSettings"; resetButton.Size = UDim2.new(1, -20, 0, 30)
   local resetPending = false
   trackConn(resetButton.Activated:Connect(function()
     if not resetPending then
-      resetPending = true
-      resetButton.Text = "Tap again to confirm"
+      resetPending = true; resetButton.Text = "Tap again to confirm"
       task.delay(3, function()
-        if resetButton.Parent and resetPending then
-          resetPending = false
-          resetButton.Text = "Reset settings"
-        end
+        if resetButton.Parent and resetPending then resetPending = false; resetButton.Text = "Reset settings" end
       end)
       return
     end
-    resetPending = false
-    local ok, result = pcall(Utils.resetConfig)
+    resetPending = false; local ok, result = pcall(Utils.resetConfig)
     if not ok or not result then
-      showToast("Reset failed", true)
-      warn("[Exodus] Reset settings: " .. tostring(result))
-      resetButton.Text = "Reset settings"
-      return
+      showToast("Reset failed", true); warn("[Exodus] Reset settings: " .. tostring(result))
+      resetButton.Text = "Reset settings"; return
     end
     task.defer(function()
       if not screenGui or not screenGui.Parent then return end
@@ -1810,8 +1799,7 @@ function ExodusUI.setup(deps)
       if rebuilt then togglePanel() else warn("[Exodus] Reset UI: " .. tostring(detail)) end
     end)
   end))
-  hubSettings.CanvasSize = UDim2.fromOffset(0, nextCardY(hubY, CARD_H))
-  local page = 1
+  hubSettings.CanvasSize = UDim2.fromOffset(0, nextCardY(hubY, CARD_H)); local page = 1
   local settingsReturnPage = 1
   local pageInputShield = inst("TextButton", {
     Name = "PageInputShield",
@@ -1909,12 +1897,7 @@ function ExodusUI.setup(deps)
     if incoming then conn = trackConn(incoming.Completed:Connect(finish)); task.delay(0.5, finish) else finish() end
   end
   trackConn(settingsButton.Activated:Connect(function()
-    if page == 5 then
-      changePage(settingsReturnPage - page)
-    else
-      settingsReturnPage = page
-      changePage(5 - page)
-    end
+    if page == 5 then changePage(settingsReturnPage - page) else settingsReturnPage = page; changePage(5 - page) end
   end))
   trackConn(previous.Activated:Connect(function() changePage(-1) end))
   trackConn(nextPage.Activated:Connect(function() changePage(1) end))
