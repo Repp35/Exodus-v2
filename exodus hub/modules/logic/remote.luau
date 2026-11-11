@@ -31,19 +31,18 @@ local function allowed(guard)
   if type(guard) ~= "function" then return true end
   local result = guard(); return result ~= nil and result ~= false
 end
+
 -- public-api
 function Remote.fireParry(_flag, guard)
   if not gameInfo then return false, "Remote não inicializado" end
   if gameInfo.isTrainingArea() then
     if not allowed(guard) then return false, "Deflect cancelado" end
-    local sent, detail = gameInfo.fireTrainingParry()
-    return sent, detail
+    local sent, detail = gameInfo.fireTrainingParry(); return sent, detail
   end
   local ability = gameInfo.getDeflectAbility()
   if not ability then return false, "Deflect indisponível" end
   if not allowed(guard) then return false, "Deflect cancelado" end
-  local sent, detail = send(ability, CONFIG.PARRY_METHOD)
-  return sent, detail
+  local sent, detail = send(ability, CONFIG.PARRY_METHOD); return sent, detail
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)

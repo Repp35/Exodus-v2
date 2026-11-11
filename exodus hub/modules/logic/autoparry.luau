@@ -216,8 +216,7 @@ local function request(reason)
       and not boundUtils.isSpamActive()
       and (reason == "manual_parry" or boundUtils.getConfigValue("AutoParry") ~= false)
   end
-  recordAutoParryRequest()
-  local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
+  recordAutoParryRequest(); local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
   if not ok then detail, sent = sent, false end
   if not sameCycle() then return false end
   if sent ~= true then
@@ -281,8 +280,8 @@ function AutoParry.setup(deps)
   detach("setup"); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote
   state.player = utils.getLocalPlayer()
   if not state.player then return false, "Players.LocalPlayer indisponível" end
-  resetTracking()
-  phase("detached", "setup_complete"); return true
+  resetTracking(); phase("detached", "setup_complete")
+  return true
 end
 function AutoParry.bindCharacter(character)
   if not utils or not gameInfo or not remote then return false, "dependências não inicializadas" end
