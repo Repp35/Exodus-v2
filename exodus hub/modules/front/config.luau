@@ -46,7 +46,7 @@ local validators = {
   rateMode = function(value) return value == "CPS" or value == "CPF" or value == "Auto" end,
 }
 
-local function validateValue(key, kind, value: any)
+local function validateValue(key, kind, value)
   local validator = validators[kind]
   if validator and validator(value) then return true end
   local message = validationErrors[kind] or "valor inválido: %s"; return false, message:find("%s", 1, true) and message:format(key) or message
