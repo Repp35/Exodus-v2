@@ -335,8 +335,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
       if not g or not window or typeof(snapshot.position) ~= "Vector3" then return end
       local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
       if not returnElapsed then return end
-      local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
-      local fastReturn = returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
+      local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius; local fastReturn = returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
       if startedNear and not fastReturn then return end
       s.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn }
     end
