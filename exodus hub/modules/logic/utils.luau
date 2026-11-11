@@ -12,15 +12,11 @@ local CONFIG = {
 
 -- module
 local Utils = {}
-
--- dependencies
 local players = game:GetService("Players")
 local replicated = game:GetService("ReplicatedStorage")
 local runService = game:GetService("RunService")
 local workspace = game:GetService("Workspace")
 local http = game:GetService("HttpService")
-
--- state
 local state = {
   active = false,
   config = {},

@@ -16,11 +16,7 @@ local CONFIG = {
 
 -- module
 local AutoParry = {}
-
--- dependencies
 local utils, gameInfo, remote, autoParrySignature
-
--- state
 local state = {
   phase = "detached",
   reason = "initial",

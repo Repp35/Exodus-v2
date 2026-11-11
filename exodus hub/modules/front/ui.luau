@@ -67,8 +67,6 @@ local CONFIG = {
 
 -- module
 local ExodusUI = {}
-
--- dependencies
 local Utils
 local UIConfig
 local GameInfo
@@ -82,8 +80,6 @@ local TextService = game:GetService("TextService")
 local Camera = workspace.CurrentCamera
 local _wait = task.wait
 local _spawn = task.spawn
-
--- state
 local UIState = {
   connections = {},
   panelOpen = false,

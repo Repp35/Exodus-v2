@@ -35,11 +35,7 @@ local CONFIG = {
 
 -- module
 local AutoSpam = {}
-
--- dependencies
 local utils, gameInfo, clashStatsModule, players, runService, localPlayer
-
--- state
 local current, generation = nil, 0
 local clashStats
 

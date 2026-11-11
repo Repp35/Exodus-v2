@@ -12,11 +12,7 @@ local CONFIG = {
 
 -- module
 local Dash = {}
-
--- dependencies
 local utils, gameInfo, players, handler
-
--- state
 local records, connections = {}, {}
 local generation, lastTick = 0, -math.huge
 

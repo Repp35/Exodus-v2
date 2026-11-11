@@ -9,11 +9,7 @@ local CONFIG = {
 
 -- module
 local AutoFierce = {}
-
--- dependencies
 local utils, gameInfo, remote, autoParry
-
--- state
 local connections = {}
 local parriedConnection
 local nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt, localUserId

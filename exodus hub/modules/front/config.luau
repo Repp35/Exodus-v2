@@ -21,8 +21,6 @@ local CONFIG = {
 
 -- module
 local Config = {}
-
--- registry
 local Registry = {}
 local Keys = {}
 
