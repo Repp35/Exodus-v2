@@ -30,6 +30,8 @@ local CONFIG = {
     MAX_DISTANCE_REFERENCE = 51,
     MIN_ACTIVE_TIME = 0.1,
     TARGET_RETURN_TIMEOUT = 0.05,
+    PARTNER_RETURN_FALLBACK = 0.1,
+    PARTNER_RETURN_MAX = 0.25,
   },
   SHARED = {
     MIN_RETURN = 1 / 25,
@@ -249,10 +251,28 @@ local function observeTargetReturn(s, target, time)
   if not s.active or not target then return end
   if target == localPlayer.UserId then s.targetAwaySince = nil else s.targetAwaySince = s.targetAwaySince or time end
 end
-local function enforceTargetReturnTimeout(s, time)
+local function enforceTargetReturnTimeout(s, snapshot, time)
   if not s.active or not s.activatedAt or not s.targetAwaySince then return false end
   if time - s.activatedAt < CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then return false end
-  if time - s.targetAwaySince < CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT then return false end
+  local timeout = CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT
+  if
+    s.partner
+    and snapshot
+    and snapshot.targetId == s.partner
+    and snapshot.targetUncertain ~= true
+    and not snapshot.teleported
+    and finite(snapshot.syncAt)
+    and time >= snapshot.syncAt
+    and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
+  then
+    local g = geometry(snapshot, 1)
+    local distance = distanceToPlayer(s.partner)
+    if g and finite(distance) and distance <= g.fullRadius then
+      local interval = clashStats and not clashStats.frozen and clashStats.partnerId == s.partner and clashStats.cycleInterval
+      timeout = finite(interval) and math.clamp(interval, timeout, CONFIG.DEACTIVATION.PARTNER_RETURN_MAX) or CONFIG.DEACTIVATION.PARTNER_RETURN_FALLBACK
+    end
+  end
+  if time - s.targetAwaySince < timeout then return false end
   stop(s, "target_return_timeout"); return true
 end
 
@@ -332,9 +352,9 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
     applyDeactivation(s, nil, time); resetExchange(s)
     s.target = nil; return
   end
-  if enforceTargetReturnTimeout(s, time) then return end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
   if not fresh and applyDeactivation(s, snapshot, time) then blockedActivation = true end
+  if enforceTargetReturnTimeout(s, snapshot, time) then return end
   sampleOwnDash(s, time)
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
