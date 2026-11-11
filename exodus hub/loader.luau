@@ -1,17 +1,5 @@
 -- [[ loader ]]
 
--- logging
-local function printRawError(moduleName, message, filePath)
-	local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message))
-	if type(warn) == "function" then warn(output) elseif type(print) == "function" then print(output) end
-end
-local function printStartup(message)
-	if type(print) == "function" then print(message) end
-end
-local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
-local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
-local Loader = {}
-
 -- tuning
 local CONFIG = {
 	REPOSITORY = "Repp35/Exodus-v2",
@@ -21,17 +9,7 @@ local CONFIG = {
 	CACHE_ROOT = "Exodus Hub/Cache",
 	VERSION_FILE = "Exodus Hub/current_version.txt",
 	ALLOW_LOCAL_FALLBACK = true,
-}
-
-local REPOSITORY = CONFIG.REPOSITORY
-local BRANCH = CONFIG.BRANCH
-local PROJECT_PATH = CONFIG.PROJECT_PATH
-local LOCAL_ROOTS = CONFIG.LOCAL_ROOTS
-local CACHE_ROOT, VERSION_FILE = CONFIG.CACHE_ROOT, CONFIG.VERSION_FILE
-local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
-local CACHE_BUSTER = tostring(os.time())
-local HttpService = game:GetService("HttpService")
-local MODULE_MANIFEST = {
+	MODULES = {
 	{ name = "permissions", path = "modules/logic/permissions.luau" },
 	{ name = "config", path = "modules/front/config.luau" },
 	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
@@ -51,7 +29,32 @@ local MODULE_MANIFEST = {
 	{ name = "spam", path = "modules/logic/spam.luau" },
 	{ name = "character", path = "modules/logic/character.luau" },
 	{ name = "ui", path = "modules/front/ui.luau" },
+},
 }
+
+-- logging
+local function printRawError(moduleName, message, filePath)
+	local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message))
+	if type(warn) == "function" then warn(output) elseif type(print) == "function" then print(output) end
+end
+local function printStartup(message)
+	if type(print) == "function" then print(message) end
+end
+local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
+local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
+local Loader = {}
+
+
+
+local REPOSITORY = CONFIG.REPOSITORY
+local BRANCH = CONFIG.BRANCH
+local PROJECT_PATH = CONFIG.PROJECT_PATH
+local LOCAL_ROOTS = CONFIG.LOCAL_ROOTS
+local CACHE_ROOT, VERSION_FILE = CONFIG.CACHE_ROOT, CONFIG.VERSION_FILE
+local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
+local CACHE_BUSTER = tostring(os.time())
+local HttpService = game:GetService("HttpService")
+local MODULE_MANIFEST = CONFIG.MODULES
 
 local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}

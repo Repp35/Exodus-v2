@@ -1,5 +1,41 @@
 -- [[ read_current_values ]]
 
+-- tuning
+local CONFIG = {
+	OUTPUT_FILE = "ExodusCurrentValues.txt",
+	SYNC_FIELDS = {
+		"Speed",
+		"MaxSpeed",
+		"Accel",
+		"TargetPlayerID",
+		"Locked",
+		"Grace",
+		"OldGrace",
+		"Teleported",
+		"TeleportPosition",
+		"RealPosition",
+		"DirectionInterp",
+		"DeflectDirectionInterp",
+	},
+	ABILITY_FIELDS = {
+		"BaseDistance",
+		"DeflectDistance",
+		"DeflectingWindow",
+		"Cooldown",
+		"LastCooldown",
+		"cd",
+	},
+	BINDABLE_NAMES = {
+		"Ball::GetCombinedSpeed",
+		"Ball::GetBaseSpeed",
+		"Ball::GetMaxSpeed",
+		"Ball::GetSpeedOverTime",
+		"Ball::GetSpeedOnDeflect",
+		"Ball::GetKillDistance",
+		"IsPlayerNoob",
+	},
+}
+
 -- services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -36,20 +72,7 @@ local ballReplicator = requirePath("TS", "BallReplicator", "BallReplicator")
 local replicator = getNested(ballReplicator, "BallReplicator")
 local syncData = replicator and replicator.syncData
 if type(syncData) == "table" then
-	for _, key in ipairs({
-		"Speed",
-		"MaxSpeed",
-		"Accel",
-		"TargetPlayerID",
-		"Locked",
-		"Grace",
-		"OldGrace",
-		"Teleported",
-		"TeleportPosition",
-		"RealPosition",
-		"DirectionInterp",
-		"DeflectDirectionInterp",
-	}) do
+	for _, key in ipairs(CONFIG.SYNC_FIELDS) do
 		safe("syncData." .. key, function() return syncData[key] end)
 	end
 else
@@ -79,14 +102,7 @@ if getAbility and type(getAbility.Invoke) == "function" then
 	end)
 end
 if ability then
-	for _, key in ipairs({
-		"BaseDistance",
-		"DeflectDistance",
-		"DeflectingWindow",
-		"Cooldown",
-		"LastCooldown",
-		"cd",
-	}) do
+	for _, key in ipairs(CONFIG.ABILITY_FIELDS) do
 		safe("Ability." .. key, function() return ability[key] end)
 	end
 	if type(ability.GetDeflectionWindow) == "function" then
@@ -94,15 +110,7 @@ if ability then
 	end
 end
 if bindableManager and type(bindableManager.GetFunction) == "function" then
-	for _, name in ipairs({
-		"Ball::GetCombinedSpeed",
-		"Ball::GetBaseSpeed",
-		"Ball::GetMaxSpeed",
-		"Ball::GetSpeedOverTime",
-		"Ball::GetSpeedOnDeflect",
-		"Ball::GetKillDistance",
-		"IsPlayerNoob",
-	}) do
+	for _, name in ipairs(CONFIG.BINDABLE_NAMES) do
 		local fn = safe("Bindable." .. name, function() return bindableManager:GetFunction(name) end)
 		if fn and type(fn.Invoke) == "function" then
 			safe("Invoke." .. name, function()
@@ -114,7 +122,7 @@ if bindableManager and type(bindableManager.GetFunction) == "function" then
 end
 print("[CurrentValues] ===== fim da leitura =====")
 output[#output + 1] = "[CurrentValues] ===== fim da leitura ====="
-local fileName = "ExodusCurrentValues.txt"
+local fileName = CONFIG.OUTPUT_FILE
 if type(writefile) == "function" then
 	local ok, errorMessage = pcall(writefile, fileName, table.concat(output, "\n") .. "\n")
 	if ok then print("[CurrentValues] TXT salvo em " .. fileName) else warn("[CurrentValues] Não foi possível salvar o TXT: " .. tostring(errorMessage)) end
