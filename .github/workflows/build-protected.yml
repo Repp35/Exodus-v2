@@ -56,6 +56,7 @@ jobs:
       - name: Generate and obfuscate protected build
         shell: bash
         env:
+          PROMETHEUS_DIR: ${{ runner.temp }}/prometheus
           REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail
