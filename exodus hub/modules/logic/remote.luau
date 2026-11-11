@@ -2,8 +2,7 @@
 
 -- module
 local Remote = {}
-local gameInfo, parryObserver
-local autoParrySignature = {}
+local gameInfo
 
 -- configuration
 local CONFIG = {
@@ -16,7 +15,7 @@ local CONFIG = {
 -- lifecycle
 function Remote.setup(deps)
   if type(deps) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependência inválida: GameInfo" end
-  gameInfo, parryObserver = deps.GameInfo, nil; return true
+  gameInfo = deps.GameInfo; return true
 end
 
 -- dispatch
@@ -32,31 +31,18 @@ local function allowed(guard)
   if type(guard) ~= "function" then return true end
   local result = guard(); return result ~= nil and result ~= false
 end
-local function notifyParry(signature)
-  if type(parryObserver) ~= "function" then return end
-  local ok, detail = pcall(parryObserver, signature)
-  if not ok and type(warn) == "function" then warn("[Remote] Observador de parry falhou: " .. tostring(detail)) end
-end
-
 -- public-api
-function Remote.getAutoParrySignature() return autoParrySignature end
-function Remote.setParryObserver(observer)
-  if observer ~= nil and type(observer) ~= "function" then return false, "observador inválido" end
-  parryObserver = observer; return true
-end
-function Remote.fireParry(_flag, guard, signature)
+function Remote.fireParry(_flag, guard)
   if not gameInfo then return false, "Remote não inicializado" end
   if gameInfo.isTrainingArea() then
     if not allowed(guard) then return false, "Deflect cancelado" end
     local sent, detail = gameInfo.fireTrainingParry()
-    if sent == true then notifyParry(signature) end
     return sent, detail
   end
   local ability = gameInfo.getDeflectAbility()
   if not ability then return false, "Deflect indisponível" end
   if not allowed(guard) then return false, "Deflect cancelado" end
   local sent, detail = send(ability, CONFIG.PARRY_METHOD)
-  if sent == true then notifyParry(signature) end
   return sent, detail
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
@@ -82,8 +68,6 @@ Remote.__contract = {
   },
   provides = {
     "setup",
-    "getAutoParrySignature",
-    "setParryObserver",
     "fireParry",
     "fireDark",
     "fireFierce",
