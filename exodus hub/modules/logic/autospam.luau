@@ -165,8 +165,7 @@ local function closeReturnCooldownGrace(speed)
   if not finite(speed) then return slow end
   local minimum, maximum = gameInfo.getBallSpeedLimits()
   if maximum <= minimum then return slow end
-  local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
-  return slow + (CONFIG.DEACTIVATION.CLOSE_RETURN_COOLDOWN_GRACE_FAST - slow) * fraction
+  local fraction = math.clamp((speed - minimum) / (maximum - minimum), 0, 1); return slow + (CONFIG.DEACTIVATION.CLOSE_RETURN_COOLDOWN_GRACE_FAST - slow) * fraction
 end
 local function start(s, reason, partner, time, serverTime, snapshot)
   if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN) then return end
@@ -181,11 +180,10 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   if distanceReason then return end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
-  s.cooldownGraceUntil = reason == "return_target" and time + closeReturnCooldownGrace(snapshotSpeed(snapshot)) or nil
-  s.activatedAt = time; local initialTarget = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
-  s.targetAwaySince = initialTarget and initialTarget ~= localPlayer.UserId and time or nil; s.diversionSince, s.diversionSyncAt = nil, nil
-  s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason; utils.setAutoSpamActive(true)
-  utils.recordTransition("AutoSpam", "idle", "active", reason)
+  s.cooldownGraceUntil = reason == "return_target" and time + closeReturnCooldownGrace(snapshotSpeed(snapshot)) or nil; s.activatedAt = time
+  local initialTarget = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil; s.targetAwaySince = initialTarget and initialTarget ~= localPlayer.UserId and time or nil
+  s.diversionSince, s.diversionSyncAt = nil, nil; s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
+  utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function shouldActivate(s, snapshot, time)
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
@@ -213,8 +211,7 @@ local function stop(s, reason)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
   s.reason, s.pending, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil; s.targetAwaySince = nil
-  s.cooldownGraceUntil = nil
-  resetExchange(s)
+  s.cooldownGraceUntil = nil; resetExchange(s)
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
