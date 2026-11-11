@@ -10,7 +10,7 @@ local clashStats
 local CONFIG = {
   ACTIVATION = {
     STARTED_NEAR_ENABLED = false,
-    RETURN = 0.15,
+    RETURN = 0.12,
     EXCHANGE_MAX_INTERVAL = 2,
     EXCHANGE_READY_TIME = 0.5,
     REACTIVATION_COOLDOWN = 0.04,
