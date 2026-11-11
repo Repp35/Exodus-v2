@@ -342,26 +342,31 @@ local function loadModule(name, relativePath, url, sourceRoot, cacheRevision)
 end
 local function orderModulesByDependencies(loaded)
   local positions, state, ordered = {}, {}, {}
-  for index, name in ipairs(MODULE_ORDER) do positions[name] = index end
+  for index, name in ipairs(MODULE_ORDER) do
+    positions[name] = index
+  end
   local function visit(name)
     if state[name] == 2 then return end
     if state[name] == 1 then error("dependência circular entre módulos: " .. name, 2) end
     if not positions[name] or type(loaded[name]) ~= "table" then error("dependência não inicializável: " .. tostring(name), 2) end
-    state[name] = 1
-    local dependencies = {}
+    state[name] = 1; local dependencies = {}
     for _, source in pairs(loaded[name].__contract.requires or {}) do
       if source ~= "permissions" then dependencies[#dependencies + 1] = source end
     end
     table.sort(dependencies, function(a, b) return (positions[a] or math.huge) < (positions[b] or math.huge) end)
-    for _, source in ipairs(dependencies) do visit(source) end
-    state[name] = 2
-    ordered[#ordered + 1] = name
+    for _, source in ipairs(dependencies) do
+      visit(source)
+    end
+    state[name] = 2; ordered[#ordered + 1] = name
   end
-  for _, name in ipairs(MODULE_ORDER) do visit(name) end
+  for _, name in ipairs(MODULE_ORDER) do
+    visit(name)
+  end
   table.clear(MODULE_ORDER)
-  for _, name in ipairs(ordered) do MODULE_ORDER[#MODULE_ORDER + 1] = name end
+  for _, name in ipairs(ordered) do
+    MODULE_ORDER[#MODULE_ORDER + 1] = name
+  end
 end
-
 local function loadModules(urls, sourceRoot, cacheRevision)
   local loaded, results = {}, {}
   local function load(name)
@@ -400,8 +405,7 @@ local function loadModules(urls, sourceRoot, cacheRevision)
       loaded[name] = register(name, module)
     end
   end
-  orderModulesByDependencies(loaded)
-  return loaded
+  orderModulesByDependencies(loaded); return loaded
 end
 
 -- setup
