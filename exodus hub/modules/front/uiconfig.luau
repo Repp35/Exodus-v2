@@ -133,6 +133,7 @@ UIConfig.__config = CONFIG.SETTINGS
 -- contract
 UIConfig.__contract = {
   provides = {},
+  data = { "panelToggles", "panelComponents" },
   requires = {},
 }
 
