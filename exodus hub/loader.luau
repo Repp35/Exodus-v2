@@ -678,7 +678,6 @@ local function startInternal()
   if not version then return false, "Authorization", "revisão de distribuição indisponível" end
   local authorized, authorizationError = authorizeRevision(version)
   if not authorized then return false, "Authorization", authorizationError end
-  if not requestedRevision and Exodus.Started == true and Exodus.UIReady == true and validRevision(version) and Exodus.Revision == version then return true end
   local sourceRoot = version and findCompleteCacheRoot(version) or findCompleteLocalRoot(); startupPerformed = true
   printStartup("Exodus: iniciando")
   if not stopPreviousRuntime() then return false, "Loader", "falha ao encerrar a sessão anterior" end

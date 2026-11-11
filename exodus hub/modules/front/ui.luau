@@ -1501,7 +1501,7 @@ function ExodusUI.setup(deps)
     Parent = titleBar,
   })
   corner(settingsButton, 8); local pageGroups = {}
-  for index = 1, 5 do
+  for index = 1, 4 do
     pageGroups[index] = inst("CanvasGroup", {
       Name = "Page" .. index,
       Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
@@ -1766,6 +1766,16 @@ function ExodusUI.setup(deps)
     spinButtons[crate] = setSpinVisual
   end
   utilities.CanvasSize = UDim2.fromOffset(0, utilitiesY + CARD_GAP); utilities.CanvasPosition = Vector2.zero
+  local hubSettingsGroup = inst("CanvasGroup", {
+    Name = "HubSettingsView",
+    Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
+    Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
+    BackgroundTransparency = 1,
+    Visible = false,
+    ClipsDescendants = true,
+    ZIndex = 6,
+    Parent = configPanel,
+  })
   local hubSettings = inst("ScrollingFrame", {
     Name = "HubSettings",
     Size = UDim2.new(1, 0, 1, 0),
@@ -1773,11 +1783,44 @@ function ExodusUI.setup(deps)
     BorderSizePixel = 0,
     ScrollBarThickness = 4,
     CanvasSize = UDim2.new(),
-    Parent = pageGroups[5],
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    ScrollingDirection = Enum.ScrollingDirection.Y,
+    Active = true,
+    Parent = hubSettingsGroup,
     ZIndex = 6,
   })
-  local notificationKey = UIState.desktop and "DesktopNotifications" or "MobileNotifications"; local hubY = createToggleCard("Notifications", notificationKey, 4, hubSettings)
-  local resetCard = cardFrame(hubY, CARD_H, hubSettings); local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
+  local settingsColumn = inst("Frame", {
+    Name = "SettingsColumn",
+    AnchorPoint = Vector2.new(0.5, 0),
+    Position = UDim2.new(0.5, 0, 0, 0),
+    Size = UDim2.fromOffset(math.min(320, PW - PAD * 2 - 16), 0),
+    AutomaticSize = Enum.AutomaticSize.Y,
+    BackgroundTransparency = 1,
+    ZIndex = 6,
+    Parent = hubSettings,
+  })
+  inst("UIPadding", {
+    PaddingTop = UDim.new(0, CARD_GAP),
+    PaddingBottom = UDim.new(0, CARD_GAP),
+    Parent = settingsColumn,
+  })
+  inst("UIListLayout", {
+    FillDirection = Enum.FillDirection.Vertical,
+    SortOrder = Enum.SortOrder.LayoutOrder,
+    HorizontalAlignment = Enum.HorizontalAlignment.Center,
+    Padding = UDim.new(0, CARD_GAP),
+    Parent = settingsColumn,
+  })
+  local notificationKey = UIState.desktop and "DesktopNotifications" or "MobileNotifications"
+  local _, notificationsCard = createToggleCard("Notifications", notificationKey, 0, settingsColumn)
+  local resetCard = cardFrame(0, CARD_H, settingsColumn)
+  for index, card in ipairs({ notificationsCard, resetCard }) do
+    card.LayoutOrder = index
+    card.Size = UDim2.new(1, -16, 0, CARD_H)
+    local scale = card:FindFirstChildOfClass("UIScale")
+    if scale then scale.Scale = 1 end
+  end
+  local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
   resetButton.Name = "ResetSettings"; resetButton.Size = UDim2.new(1, -20, 0, 30)
   local resetPending = false
   trackConn(resetButton.Activated:Connect(function()
@@ -1799,8 +1842,8 @@ function ExodusUI.setup(deps)
       if rebuilt then togglePanel() else warn("[Exodus] Reset UI: " .. tostring(detail)) end
     end)
   end))
-  hubSettings.CanvasSize = UDim2.fromOffset(0, nextCardY(hubY, CARD_H)); local page = 1
-  local settingsReturnPage = 1
+  local page = 1
+  local settingsOpen = false
   local pageInputShield = inst("TextButton", {
     Name = "PageInputShield",
     Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
@@ -1849,14 +1892,18 @@ function ExodusUI.setup(deps)
     Parent = configPanel,
   })
   corner(previous, 6); corner(nextPage, 6)
-  local pageNames = { "Main", "Settings", "Utilities", "Automatic", "Hub" }
+  local pageNames = { "Main", "Settings", "Utilities", "Automatic" }
   local function updateNavigation()
+    previous.Visible = not settingsOpen
+    nextPage.Visible = not settingsOpen
+    pageLabel.Visible = not settingsOpen
     pageLabel.Text = tostring(page) .. "/" .. tostring(#pageGroups) .. " " .. pageNames[page]; previous.TextTransparency = page == 1 and 0.7 or 0
     nextPage.TextTransparency = page == #pageGroups and 0.7 or 0; previous.AutoButtonColor = page > 1
     nextPage.AutoButtonColor = page < #pageGroups
   end
   updateNavigation()
   local function changePage(direction)
+    if settingsOpen then return end
     local target = page + direction
     if target < 1 or target > #pageGroups then return end
     page = target; UIState.pageGeneration += 1
@@ -1897,7 +1944,20 @@ function ExodusUI.setup(deps)
     if incoming then conn = trackConn(incoming.Completed:Connect(finish)); task.delay(0.5, finish) else finish() end
   end
   trackConn(settingsButton.Activated:Connect(function()
-    if page == 5 then changePage(settingsReturnPage - page) else settingsReturnPage = page; changePage(5 - page) end
+    settingsOpen = not settingsOpen
+    UIState.pageGeneration += 1
+    for _, tween in ipairs(UIState.pageTweens) do
+      safeCancel(tween)
+    end
+    UIState.pageTweens = {}
+    pageInputShield.Visible = false
+    for index, group in ipairs(pageGroups) do
+      group.Visible = not settingsOpen and index == page
+      group.GroupTransparency = index == page and 0 or 1
+      group.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
+    end
+    hubSettingsGroup.Visible = settingsOpen
+    updateNavigation()
   end))
   trackConn(previous.Activated:Connect(function() changePage(-1) end))
   trackConn(nextPage.Activated:Connect(function() changePage(1) end))
