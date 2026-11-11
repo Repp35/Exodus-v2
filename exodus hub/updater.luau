@@ -1,4 +1,13 @@
--- [[ atualização automática ]]
+-- [[ updater ]]
+
+-- tuning
+local CONFIG = {
+	REPOSITORY = "Repp35/Exodus-v2",
+	BRANCH = "main",
+	PROJECT_PATH = "exodus%20hub",
+	CHECK_INTERVAL = 5,
+	RETRY_INTERVAL = 5,
+}
 
 -- runtime
 
@@ -26,7 +35,7 @@ return function(loadedRevision, request, options)
 	end
 	local function latestRevision()
 		local body, requestError, requestMeta = request(
-			"https://api.github.com/repos/Repp35/Exodus-v2/commits/main?exodus_cache=" .. tostring(os.time()),
+			"https://api.github.com/repos/" .. CONFIG.REPOSITORY .. "/commits/" .. CONFIG.BRANCH .. "?exodus_cache=" .. tostring(os.time()),
 			{ ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Updater" }
 		)
 		if body then
@@ -35,7 +44,7 @@ return function(loadedRevision, request, options)
 			if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
 		end
 		local feed, feedError, feedMeta = request(
-			"https://github.com/Repp35/Exodus-v2/commits/main.atom?exodus_cache=" .. tostring(os.time()),
+			"https://github.com/" .. CONFIG.REPOSITORY .. "/commits/" .. CONFIG.BRANCH .. ".atom?exodus_cache=" .. tostring(os.time()),
 			{ ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Updater" }
 		)
 		local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
@@ -44,12 +53,12 @@ return function(loadedRevision, request, options)
 	end
 	local function retryAt(now, metadata)
 		if metadata and metadata.rateLimited then return now + math.max(0, tonumber(metadata.retryAfter) or 5) end
-		return now + 5
+		return now + CONFIG.RETRY_INTERVAL
 	end
 	task.spawn(function()
 		local pendingRevision
 		local pendingSource
-		local nextCheck = os.clock() + 5
+		local nextCheck = os.clock() + CONFIG.CHECK_INTERVAL
 		while running() do
 			local now = os.clock()
 			if now >= nextCheck and not pendingRevision then
@@ -57,14 +66,14 @@ return function(loadedRevision, request, options)
 				if not running() then return end
 				if revision then
 					local current = currentRevision()
-					if revision ~= current and revision ~= loadedRevision then pendingRevision = revision; nextCheck = now else nextCheck = now + 5 end
+					if revision ~= current and revision ~= loadedRevision then pendingRevision = revision; nextCheck = now else nextCheck = now + CONFIG.CHECK_INTERVAL end
 				else
 					nextCheck = retryAt(now, checkMetadata); warn("[Exodus Updater] " .. tostring(checkError))
 				end
 			end
 			if pendingRevision and not pendingSource and os.clock() >= nextCheck then
 				local source, fetchError, fetchMetadata = request(
-					"https://raw.githubusercontent.com/Repp35/Exodus-v2/" .. pendingRevision .. "/exodus%20hub/loader.luau?exodus_cache=" .. tostring(os.time()),
+					"https://raw.githubusercontent.com/" .. CONFIG.REPOSITORY .. "/" .. pendingRevision .. "/" .. CONFIG.PROJECT_PATH .. "/loader.luau?exodus_cache=" .. tostring(os.time()),
 					{ ["User-Agent"] = "Exodus-Hub-Updater" }
 				)
 				if not running() then return end
@@ -74,12 +83,12 @@ return function(loadedRevision, request, options)
 						pendingSource = chunk
 						if type(options.cacheLoader) == "function" then pcall(options.cacheLoader, pendingRevision, source) end
 					else
-						warn("[Exodus Updater] " .. tostring(compileError)); pendingRevision = nil; nextCheck = os.clock() + 5
+						warn("[Exodus Updater] " .. tostring(compileError)); pendingRevision = nil; nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
 					end
 				elseif fetchMetadata and fetchMetadata.rateLimited then
 					nextCheck = retryAt(os.clock(), fetchMetadata); warn("[Exodus Updater] " .. tostring(fetchError))
 				else
-					warn("[Exodus Updater] " .. tostring(fetchError)); pendingRevision = nil; nextCheck = os.clock() + 5
+					warn("[Exodus Updater] " .. tostring(fetchError)); pendingRevision = nil; nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
 				end
 			end
 			if pendingRevision and pendingSource and running() then

@@ -1,5 +1,13 @@
 -- [[ remote ]]
 
+-- tuning
+local CONFIG = {
+	PARRY_METHOD = "Deflect",
+	DARK_METHOD = "SendEvent",
+	FIERCE_METHOD = "ActivateAndBlock",
+	DASH_METHOD = "Dash",
+}
+
 -- dependencies
 local Remote = {}
 local gameInfo, parryObserver
@@ -45,17 +53,17 @@ function Remote.fireParry(_flag, guard, signature)
 	local ability = gameInfo.getDeflectAbility()
 	if not ability then return false, "Deflect indisponível" end
 	if not allowed(guard) then return false, "Deflect cancelado" end
-	local sent, detail = send(ability, "Deflect")
+	local sent, detail = send(ability, CONFIG.PARRY_METHOD)
 	if sent == true then notifyParry(signature) end
 	return sent, detail
 end
-function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), "SendEvent", eventId, cameraFrame) end
+function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
 	local ability = gameInfo and gameInfo.getFierceDeflectAbility()
 	if not allowed(guard) then return false, "Fierce cancelado" end
-	return send(ability, "ActivateAndBlock")
+	return send(ability, CONFIG.FIERCE_METHOD)
 end
-function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), "Dash") end
+function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), CONFIG.DASH_METHOD) end
 
 -- contract
 Remote.__contract = {

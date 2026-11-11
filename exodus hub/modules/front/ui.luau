@@ -1,5 +1,61 @@
 -- [[ ui ]]
 
+-- tuning
+local CONFIG = {
+	COLORS = {
+		bg = Color3.fromRGB(8, 8, 22),
+		header = Color3.fromRGB(14, 14, 34),
+		card = Color3.fromRGB(20, 20, 44),
+		accent = Color3.fromRGB(99, 102, 241),
+		accentPink = Color3.fromRGB(236, 72, 153),
+		autoMode = Color3.fromRGB(16, 154, 201),
+		green = Color3.fromRGB(34, 197, 94),
+		red = Color3.fromRGB(239, 68, 68),
+		redDark = Color3.fromRGB(153, 27, 27),
+		text = Color3.fromRGB(240, 240, 255),
+		subtext = Color3.fromRGB(140, 140, 200),
+		border = Color3.fromRGB(55, 55, 100),
+		btnBlue = Color3.fromRGB(45, 55, 130),
+		btnDark = Color3.fromRGB(30, 30, 65),
+		toggleOn = Color3.fromRGB(139, 92, 246),
+		toggleOff = Color3.fromRGB(45, 45, 80),
+		darkOn = Color3.fromRGB(151, 66, 221),
+		darkOff = Color3.fromRGB(52, 34, 87),
+		jumpOn = Color3.fromRGB(16, 154, 201),
+		jumpOff = Color3.fromRGB(24, 72, 105),
+		upDash = Color3.fromRGB(226, 135, 36),
+		hold = Color3.fromRGB(236, 72, 153),
+		inputBg = Color3.fromRGB(16, 16, 38),
+	},
+	GRADIENT = {
+		Color3.fromRGB(56, 189, 248),
+		Color3.fromRGB(139, 92, 246),
+		Color3.fromRGB(236, 72, 153),
+	},
+	PARTICLE_COLORS = {
+		Color3.fromRGB(85, 90, 140),
+		Color3.fromRGB(110, 95, 150),
+		Color3.fromRGB(150, 95, 130),
+		Color3.fromRGB(95, 130, 165),
+	},
+	BTN_SIZE = 56,
+	CLASH_SIZE = 64,
+	MINI_W = 120,
+	MINI_H = 90,
+	PANEL_W = 540,
+	PANEL_H = 380,
+	TITLE_H = 50,
+	PAD = 14,
+	GAP = 12,
+	CARD_GAP = 8,
+	INNER_PAD = 14,
+	CARD_H = 48,
+	RATE_CARD_H = 64,
+	SPAM_CARD_H = 118,
+	CARD_SCALE = 1.06,
+	DRAG_THRESHOLD_SQ = 100,
+}
+
 -- services
 local ExodusUI = {}
 local Utils
@@ -58,37 +114,8 @@ local shortcutLabels = {}
 local offOnVisuals = {}
 
 -- palette
-local C = {
-	bg = Color3.fromRGB(8, 8, 22),
-	header = Color3.fromRGB(14, 14, 34),
-	card = Color3.fromRGB(20, 20, 44),
-	accent = Color3.fromRGB(99, 102, 241),
-	accentPink = Color3.fromRGB(236, 72, 153),
-	autoMode = Color3.fromRGB(16, 154, 201),
-	green = Color3.fromRGB(34, 197, 94),
-	red = Color3.fromRGB(239, 68, 68),
-	redDark = Color3.fromRGB(153, 27, 27),
-	text = Color3.fromRGB(240, 240, 255),
-	subtext = Color3.fromRGB(140, 140, 200),
-	border = Color3.fromRGB(55, 55, 100),
-	btnBlue = Color3.fromRGB(45, 55, 130),
-	btnDark = Color3.fromRGB(30, 30, 65),
-	toggleOn = Color3.fromRGB(139, 92, 246),
-	toggleOff = Color3.fromRGB(45, 45, 80),
-	darkOn = Color3.fromRGB(151, 66, 221),
-	darkOff = Color3.fromRGB(52, 34, 87),
-	jumpOn = Color3.fromRGB(16, 154, 201),
-	jumpOff = Color3.fromRGB(24, 72, 105),
-	upDash = Color3.fromRGB(226, 135, 36),
-	hold = Color3.fromRGB(236, 72, 153),
-	inputBg = Color3.fromRGB(16, 16, 38),
-}
-
-local GRAD = {
-	Color3.fromRGB(56, 189, 248),
-	Color3.fromRGB(139, 92, 246),
-	Color3.fromRGB(236, 72, 153),
-}
+local C = CONFIG.COLORS
+local GRAD = CONFIG.GRADIENT
 
 local EASE_OUT, EASE_SINE = Enum.EasingStyle.Cubic, Enum.EasingStyle.Sine
 local DIR_OUT, DIR_IN, DIR_INOUT = Enum.EasingDirection.Out, Enum.EasingDirection.In, Enum.EasingDirection.InOut
@@ -198,7 +225,7 @@ end
 
 -- drag
 local function makeDraggable(handle, target, onDragEnd, disableOnMobile)
-	local dragInput, dragOffX, dragOffY = nil, 0, 0; local state, wasDragged, startX, startY = "Idle", false, 0, 0; local THRESH_SQ = 100
+	local dragInput, dragOffX, dragOffY = nil, 0, 0; local state, wasDragged, startX, startY = "Idle", false, 0, 0; local THRESH_SQ = CONFIG.DRAG_THRESHOLD_SQ
 	trackConn(handle.InputBegan:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
 		if disableOnMobile and UIS.TouchEnabled then return end
@@ -234,13 +261,13 @@ end
 local function registerFlow(obj)
 	local gradient = attachFlow(obj); local tween = TweenService:Create(gradient, TweenInfo.new(12, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1), { Rotation = 360 }); flowingTweens[#flowingTweens + 1] = tween; tween:Play()
 end
-local BTN_SIZE = 56
+local BTN_SIZE = CONFIG.BTN_SIZE
 local function btnPos()
 	local config = Utils.getConfig(); local x, y = config.BtnX, config.BtnY
 	if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
 	return UDim2.new(1, -70, 0.5, -28)
 end
-local CLASH_SIZE = 64
+local CLASH_SIZE = CONFIG.CLASH_SIZE
 local OFFSCREEN_X = -CLASH_SIZE - 40
 local autoClashTrack, autoClashThumb, autoParrySetVisual, autoDarkSetVisual, autoJumpSetVisual
 local function paintBall(ball, value, onText, offText, onColor, offColor, onSize, offSize)
@@ -295,7 +322,7 @@ local function setJumpBall(v)
 	paintJumpBall(v)
 	if showToast then showToast("Auto Jump " .. (v and "On" or "Off")) end
 end
-local MINI_W, MINI_H = 120, 90
+local MINI_W, MINI_H = CONFIG.MINI_W, CONFIG.MINI_H
 local function showMini(v)
 	if UIState.desktop then v = false end
 	local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local MINI_OFF_X = viewport().X + 30; miniGui.Visible = v == true
@@ -310,12 +337,12 @@ setSpam = function(v)
 		end)
 	end
 end
-local PW, PH = 540, 380
-local TITLE_H, PAD, GAP, CARD_GAP = 50, 14, 12, 8
-local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = 14, 48, 64, 118
+local PW, PH = CONFIG.PANEL_W, CONFIG.PANEL_H
+local TITLE_H, PAD, GAP, CARD_GAP = CONFIG.TITLE_H, CONFIG.PAD, CONFIG.GAP, CONFIG.CARD_GAP
+local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = CONFIG.INNER_PAD, CONFIG.CARD_H, CONFIG.RATE_CARD_H, CONFIG.SPAM_CARD_H
 local CONTENT_H = PH - TITLE_H - 60
 local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
-local CARD_SCALE = 1.06
+local CARD_SCALE = CONFIG.CARD_SCALE
 local CARD_MAX_H = CARD_H
 local function cardHeight(height) return math.max(0, height or CARD_MAX_H) end
 local function offOnText(labelText, value)
@@ -329,12 +356,7 @@ local function panelPos()
 	if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
 	return UDim2.new(0.5, -PW / 2, 0.5, -PH / 2)
 end
-local PARTICLE_COLORS = {
-	Color3.fromRGB(85, 90, 140),
-	Color3.fromRGB(110, 95, 150),
-	Color3.fromRGB(150, 95, 130),
-	Color3.fromRGB(95, 130, 165),
-}
+local PARTICLE_COLORS = CONFIG.PARTICLE_COLORS
 
 -- cleanup
 local function cleanupUI()

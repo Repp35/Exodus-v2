@@ -12,12 +12,21 @@ local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 local Loader = {}
 
--- metadata
-local REPOSITORY = "Repp35/Exodus-v2"
-local BRANCH = "main"
-local PROJECT_PATH = "exodus%20hub/"
-local LOCAL_ROOTS = { "Exodus-v2/exodus hub", "Exodus-v2-main/exodus hub", "exodus hub", "Exodus Hub" }
-local CACHE_ROOT, VERSION_FILE = "Exodus Hub/Cache", "Exodus Hub/current_version.txt"
+-- tuning
+local CONFIG = {
+	REPOSITORY = "Repp35/Exodus-v2",
+	BRANCH = "main",
+	PROJECT_PATH = "exodus%20hub/",
+	LOCAL_ROOTS = { "Exodus-v2/exodus hub", "Exodus-v2-main/exodus hub", "exodus hub", "Exodus Hub" },
+	CACHE_ROOT = "Exodus Hub/Cache",
+	VERSION_FILE = "Exodus Hub/current_version.txt",
+	ALLOW_LOCAL_FALLBACK = true,
+}
+local REPOSITORY = CONFIG.REPOSITORY
+local BRANCH = CONFIG.BRANCH
+local PROJECT_PATH = CONFIG.PROJECT_PATH
+local LOCAL_ROOTS = CONFIG.LOCAL_ROOTS
+local CACHE_ROOT, VERSION_FILE = CONFIG.CACHE_ROOT, CONFIG.VERSION_FILE
 local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local CACHE_BUSTER = tostring(os.time())
 local HttpService = game:GetService("HttpService")
@@ -49,7 +58,7 @@ for _, entry in ipairs(MODULE_MANIFEST) do
 	MODULE_BY_NAME[entry.name] = entry
 	if entry.name ~= "ui" and entry.name ~= "permissions" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
 end
-local ALLOW_LOCAL_FALLBACK = true
+local ALLOW_LOCAL_FALLBACK = CONFIG.ALLOW_LOCAL_FALLBACK
 
 -- http
 local function getRequestFunction()
@@ -152,7 +161,7 @@ local function cachePath(revision) return CACHE_ROOT .. "/" .. revision end
 local function ensureCacheRoot(revision)
 	if not persistentStorageAvailable() or not validRevision(revision) then return nil end
 	local ok, root = pcall(function()
-		if not ensureFolder("Exodus Hub") or not ensureFolder(CACHE_ROOT) or not ensureFolder(cachePath(revision)) then return nil end
+		if not ensureFolder(CONFIG.CACHE_ROOT:match("^([^/]+)") or CONFIG.CACHE_ROOT) or not ensureFolder(CACHE_ROOT) or not ensureFolder(cachePath(revision)) then return nil end
 		return cachePath(revision)
 	end)
 	return ok and root or nil
@@ -172,7 +181,7 @@ end
 local function saveCurrentRevision(revision)
 	if not persistentStorageAvailable() or not validRevision(revision) then return false end
 	local ok = pcall(function()
-		ensureFolder("Exodus Hub"); writefile(VERSION_FILE, revision)
+		ensureFolder(CONFIG.CACHE_ROOT:match("^([^/]+)") or CONFIG.CACHE_ROOT); writefile(VERSION_FILE, revision)
 	end)
 	return ok
 end
