@@ -5,6 +5,7 @@ on:
       - '.github/workflows/format-luau.yml'
       - 'exodus hub/**/*.luau'
       - 'exodus hub/indeed/formatter.py'
+      - 'exodus hub/indeed/tests/**'
       - 'exodus hub/indeed/stylua.toml'
   workflow_dispatch:
 permissions:
@@ -16,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: true
+      - name: Test formatter configuration audit
+        run: python3 -m unittest discover -s "exodus hub/indeed/tests" -p "test_*.py"
       - name: Format all Luau files using repository formatter
         run: |
           chmod +x "exodus hub/indeed/stylua-linux-x86_64"
