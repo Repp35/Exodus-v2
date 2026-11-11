@@ -72,6 +72,7 @@ local function snapshotSpeed(snapshot)
   local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
 end
 local function resetExchange(s)
+  s.opponentWindow = nil
   s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil; s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 end
 local function distanceToPlayer(id) return id and gameInfo.getPlayerDistance(id) or nil end
@@ -100,7 +101,7 @@ local function distanceLimit(snapshot, partner)
   local ownPing = math.max(0, ownRaw - ownRange); local otherPing = math.max(0, otherRaw - otherRange)
   return baseDistance + (ownResilience + otherResilience) * speedFactor + ownPing + otherPing
 end
-local function distanceGate(s, snapshot, partner)
+local function distanceGate(s, snapshot, partner, radiusOnly)
   if not s.root or not s.root.Parent or not snapshot or typeof(snapshot.position) ~= "Vector3" then return "distance_unavailable" end
   local speed = snapshotSpeed(snapshot); local g = finite(speed) and speed > 0 and gameInfo.getDeflectGeometry(speed, "game", CONFIG.ACTIVATION.RADIUS_FACTOR, false)
   local other = partner and gameInfo.getPlayerMotion(partner); local opponentLimit = distanceLimit(snapshot, partner)
@@ -108,7 +109,13 @@ local function distanceGate(s, snapshot, partner)
   local own = s.root.Position; local opponentDistance = (other - own).Magnitude
   local ballDistance = (snapshot.position - own).Magnitude
   if opponentDistance > opponentLimit then return "opponent_distance" end
-  if math.max(0, ballDistance - g.noWindowParryRadius) / speed > g.effectiveWindow then return "ball_distance" end
+  if radiusOnly then
+    local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
+    if not finite(raw) then return "distance_unavailable" end
+    if ballDistance > raw then return "ball_distance" end
+  elseif math.max(0, ballDistance - g.noWindowParryRadius) / speed > g.effectiveWindow then
+    return "ball_distance"
+  end
   return nil
 end
 local function playerIsAlive(id)
@@ -171,7 +178,7 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   then
     return
   end
-  snapshot = snapshot or gameInfo.getSnapshotAt(time); local distanceReason = distanceGate(s, snapshot, partner)
+  snapshot = snapshot or gameInfo.getSnapshotAt(time); local distanceReason = distanceGate(s, snapshot, partner, reason == "started_near")
   if distanceReason then return end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
@@ -185,12 +192,27 @@ local function activationGeometry(s, snapshot, partner, time)
   if dashAssistPartner(s, snapshot, time) == partner then factor *= CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER end
   return geometry(snapshot, factor)
 end
+local function observeOpponentWindow(s, snapshot, time)
+  local target = userId(snapshot.targetId)
+  if not target or target == localPlayer.UserId then return end
+  s.opponentWindow = nil
+  if snapshot.targetUncertain == true or snapshot.locked == true then return end
+  local g = geometry(snapshot, 1)
+  local position = gameInfo.getPlayerMotion(target)
+  if g and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude <= g.fullRadius then
+    s.opponentWindow = { partner = target, at = time }
+  end
+end
 local function shouldActivate(s, snapshot, time)
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
   if not snapshot or snapshot.targetUncertain == true or gameInfo.getBallFrozen() == true or not s.pending then return false end
   if s.target ~= localPlayer.UserId or snapshot.targetId ~= localPlayer.UserId then return false end
   if typeof(snapshot.position) ~= "Vector3" then return false end
   local towardPlayer = s.root.Position - snapshot.position; local distance = towardPlayer.Magnitude
+  if s.pending.nearSwitch then
+    local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, snapshotSpeed(snapshot), true)
+    return time == s.pending.switchAt and snapshot.locked ~= true and finite(raw) and distance <= raw
+  end
   local g = activationGeometry(s, snapshot, s.pending.partner, time)
   if not g or distance > g.fullRadius then return false end
   if s.pending.fastReturn then return true end
@@ -337,9 +359,16 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
       if not g or not window or typeof(snapshot.position) ~= "Vector3" then return end
       local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
       if not returnElapsed then return end
-      local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius; local fastReturn = returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
-      if startedNear and not fastReturn then return end
-      s.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn }
+      local raw = gameInfo.getPlayerRawRadius(me, speed, true)
+      local startedNear = finite(raw) and (snapshot.position - s.root.Position).Magnitude <= raw
+      local observed = s.opponentWindow
+      local nearSwitch = startedNear and snapshot.locked ~= true and snapshot.targetUncertain ~= true
+        and completedPartner == previous and observed and observed.partner == previous
+        and time >= observed.at and time - observed.at <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
+      s.opponentWindow = nil
+      local fastReturn = returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
+      if startedNear and not fastReturn and not nearSwitch then return end
+      s.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn, nearSwitch = nearSwitch == true, switchAt = time }
     end
   end
 end
@@ -366,6 +395,8 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
   sampleOwnDash(s, time)
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
+  observeOpponentWindow(s, snapshot, time)
+  if s.pending and s.pending.nearSwitch and time ~= s.pending.switchAt then s.pending = nil end
   if fresh then clashStatsModule.observe(s, snapshot, time, true); clashStats = clashStatsModule.get() end
   if
     not s.active
@@ -375,7 +406,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
   then
     local activationServerTime = serverTime
     if not fresh then activationServerTime = snapshot.serverTime end
-    start(s, "return_target", s.pending.partner, time, activationServerTime, snapshot)
+    start(s, s.pending.nearSwitch and "started_near" or "return_target", s.pending.partner, time, activationServerTime, snapshot)
   end
 end
 
