@@ -1,0 +1,135 @@
+"""Static regression checks for the Exodus internal module API."""
+
+from __future__ import annotations
+
+import re
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+LOADER = (ROOT / "loader.luau").read_text(encoding="utf-8")
+MANIFEST = re.findall(r'\{\s*name\s*=\s*"(\w+)",\s*path\s*=\s*"([^"]+)"\s*\}', LOADER)
+
+
+def table_after(text: str, field: str) -> str | None:
+    match = re.search(r"\b" + re.escape(field) + r"\s*=\s*\{", text)
+    if not match:
+        return None
+    start = match.end()
+    depth = 1
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:i]
+    raise AssertionError(f"Unclosed Lua table: {field}")
+
+
+def names(text: str | None) -> list[str]:
+    return re.findall(r'"([^"]+)"', text or "")
+
+
+def grouped_lists(text: str | None) -> dict[str, list[str]]:
+    return {
+        key: names(inner)
+        for key, inner in re.findall(r"(\w+)\s*=\s*\{([^{}]*)\}", text or "")
+    }
+
+
+def load_contracts() -> dict[str, dict]:
+    contracts = {}
+    for name, path in MANIFEST:
+        source = (ROOT / path).read_text(encoding="utf-8")
+        module_name = re.search(r"^local\s+(\w+)\s*=\s*\{\s*\}", source, re.MULTILINE)
+        if not module_name:
+            raise AssertionError(f"{name}: could not identify module table")
+        module_name = module_name.group(1)
+        match = re.search(r"\b" + module_name + r"\.__contract\s*=\s*\{", source)
+        if not match:
+            raise AssertionError(f"{name}: missing __contract")
+        block = source[match.end() - 1 :]
+        contract = table_after("contract = " + block, "contract")
+        assert contract is not None
+        required = table_after(contract, "requires")
+        uses = dict(re.findall(r'(\w+)\s*=\s*"([^"]+)"', required or ""))
+        contracts[name] = {
+            "source": source,
+            "module": module_name,
+            "provides": names(table_after(contract, "provides")),
+            "data": names(table_after(contract, "data")),
+            "requires": uses,
+            "methods": grouped_lists(table_after(contract, "requiresMethods")),
+            "fields": grouped_lists(table_after(contract, "requiresData")),
+            "binds": re.search(r"\bbindCharacter\s*=\s*true\b", contract) is not None,
+            "sync": re.search(r"\bonBallSync\s*=\s*true\b", contract) is not None,
+        }
+    return contracts
+
+
+class InternalAPIContracts(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.contracts = load_contracts()
+
+    def test_manifest_has_unique_existing_modules(self):
+        self.assertEqual(len(MANIFEST), len(self.contracts))
+        self.assertEqual(len(MANIFEST), len({name for name, _ in MANIFEST}))
+        for _, path in MANIFEST:
+            self.assertTrue((ROOT / path).is_file(), path)
+
+    def test_public_methods_and_data_are_declared(self):
+        for name, module in self.contracts.items():
+            source, prefix = module["source"], module["module"]
+            declared = set(module["provides"])
+            self.assertEqual(len(declared), len(module["provides"]), name)
+            self.assertFalse(declared.intersection(module["data"]), name)
+            for field in declared | set(module["data"]):
+                self.assertRegex(source, rf"\b{prefix}\.{field}\s*(?:=|\()", f"{name}: missing {field}")
+            for field in re.findall(rf"\bfunction\s+{prefix}\.(\w+)\s*\(", source):
+                self.assertIn(field, declared, f"{name}: undeclared {field}")
+
+    def test_dependencies_request_only_existing_exports(self):
+        for name, module in self.contracts.items():
+            required = module["requires"]
+            self.assertEqual(len(required), len(set(required.values())), name)
+            self.assertTrue(set(module["methods"]).issubset(required), name)
+            self.assertTrue(set(module["fields"]).issubset(required), name)
+            for alias, provider in required.items():
+                self.assertIn(provider, self.contracts, f"{name}: missing dependency {provider}")
+                exports = self.contracts[provider]
+                methods, fields = module["methods"].get(alias, []), module["fields"].get(alias, [])
+                self.assertEqual(len(methods), len(set(methods)), (name, alias))
+                self.assertEqual(len(fields), len(set(fields)), (name, alias))
+                self.assertTrue(set(methods).issubset(exports["provides"]), (name, alias))
+                self.assertTrue(set(fields).issubset(exports["data"]), (name, alias))
+                self.assertFalse(set(methods).intersection(fields), (name, alias))
+
+    def test_character_and_sync_hooks_are_exposed(self):
+        for name, module in self.contracts.items():
+            exports = set(module["provides"])
+            if module["binds"]:
+                self.assertTrue({"bindCharacter", "detachCharacter"}.issubset(exports), name)
+            if module["sync"]:
+                self.assertIn("onBallSync", exports, name)
+
+    def test_module_dependency_graph_is_acyclic(self):
+        visiting, visited = set(), set()
+
+        def visit(name: str):
+            if name in visited:
+                return
+            self.assertNotIn(name, visiting, f"cycle at {name}")
+            visiting.add(name)
+            for provider in self.contracts[name]["requires"].values():
+                visit(provider)
+            visiting.remove(name)
+            visited.add(name)
+
+        for name in self.contracts:
+            visit(name)
+
+
+if __name__ == "__main__":
+    unittest.main()
