@@ -110,7 +110,7 @@ local CONFIG = {
   SPAM_CARD_H = 118,
   CARD_SCALE = 1.06,
   DRAG_THRESHOLD_SQ = 100,
-  TITLE_SIDE_MARGIN = 54,
+  TITLE_SIDE_MARGIN = 90,
   TITLE_SPACING = 7,
   TITLE_TEXT_SIZE = 16,
   AUTHOR_TEXT_SIZE = 14,
@@ -492,7 +492,9 @@ local function makeBtn(text, x, y, w, h, parent, bg)
 end
 
 -- notifications
-showToast = function(message)
+showToast = function(message, important)
+  local notificationKey = UIState.desktop and "DesktopNotifications" or "MobileNotifications"
+  if not important and Utils.getConfigValue(notificationKey) ~= true then return end
   if not toastLayer or not toastLayer.Parent then return end
   UIState.toastGeneration += 1; local generation = UIState.toastGeneration
   safeCancel(UIState.toastTween)
@@ -925,7 +927,7 @@ local function restoreAfterReloadFailure(message)
     showDarkBall(config.DarkBallVisible == true); showJumpBall(config.JumpBallVisible == true)
     showUpDashBall(config.UpDashBallVisible == true); showMini(config.MiniSpamVisible == true)
   end
-  if showToast then showToast("Reload failed") end
+  if showToast then showToast("Reload failed", true) end
   warn("[Exodus Reload] " .. tostring(message))
 end
 local function fadeOutForReplacement()
@@ -1485,8 +1487,22 @@ function ExodusUI.setup(deps)
   trackConn(minimizeButton.Activated:Connect(function()
     if UIState.panelOpen then togglePanel() end
   end))
+  local settingsButton = inst("TextButton", {
+    Name = "HubSettingsButton",
+    Size = UDim2.new(0, 30, 0, 30),
+    Position = UDim2.new(1, -PAD - 66, 0.5, -15),
+    BackgroundColor3 = C.btnDark,
+    BackgroundTransparency = 0.3,
+    Text = "⚙",
+    TextColor3 = Color3.new(1, 1, 1),
+    TextSize = 18,
+    Font = Enum.Font.GothamBold,
+    ZIndex = 9,
+    Parent = titleBar,
+  })
+  corner(settingsButton, 8)
   local pageGroups = {}
-  for index = 1, 4 do
+  for index = 1, 5 do
     pageGroups[index] = inst("CanvasGroup", {
       Name = "Page" .. index,
       Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
@@ -1751,7 +1767,52 @@ function ExodusUI.setup(deps)
     spinButtons[crate] = setSpinVisual
   end
   utilities.CanvasSize = UDim2.fromOffset(0, utilitiesY + CARD_GAP); utilities.CanvasPosition = Vector2.zero
+  local hubSettings = inst("ScrollingFrame", {
+    Name = "HubSettings",
+    Size = UDim2.new(1, 0, 1, 0),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    ScrollBarThickness = 4,
+    CanvasSize = UDim2.new(),
+    Parent = pageGroups[5],
+    ZIndex = 6,
+  })
+  local notificationKey = UIState.desktop and "DesktopNotifications" or "MobileNotifications"
+  local hubY = createToggleCard("Notifications", notificationKey, 4, hubSettings)
+  local resetCard = cardFrame(hubY, CARD_H, hubSettings)
+  local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
+  resetButton.Name = "ResetSettings"
+  resetButton.Size = UDim2.new(1, -20, 0, 30)
+  local resetPending = false
+  trackConn(resetButton.Activated:Connect(function()
+    if not resetPending then
+      resetPending = true
+      resetButton.Text = "Tap again to confirm"
+      task.delay(3, function()
+        if resetButton.Parent and resetPending then
+          resetPending = false
+          resetButton.Text = "Reset settings"
+        end
+      end)
+      return
+    end
+    resetPending = false
+    local ok, result = pcall(Utils.resetConfig)
+    if not ok or not result then
+      showToast("Reset failed", true)
+      warn("[Exodus] Reset settings: " .. tostring(result))
+      resetButton.Text = "Reset settings"
+      return
+    end
+    task.defer(function()
+      if not screenGui or not screenGui.Parent then return end
+      local rebuilt, detail = ExodusUI.setup(deps)
+      if rebuilt then togglePanel() else warn("[Exodus] Reset UI: " .. tostring(detail)) end
+    end)
+  end))
+  hubSettings.CanvasSize = UDim2.fromOffset(0, nextCardY(hubY, CARD_H))
   local page = 1
+  local settingsReturnPage = 1
   local pageInputShield = inst("TextButton", {
     Name = "PageInputShield",
     Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
@@ -1800,7 +1861,7 @@ function ExodusUI.setup(deps)
     Parent = configPanel,
   })
   corner(previous, 6); corner(nextPage, 6)
-  local pageNames = { "Main", "Settings", "Utilities", "Automatic" }
+  local pageNames = { "Main", "Settings", "Utilities", "Automatic", "Hub" }
   local function updateNavigation()
     pageLabel.Text = tostring(page) .. "/" .. tostring(#pageGroups) .. " " .. pageNames[page]; previous.TextTransparency = page == 1 and 0.7 or 0
     nextPage.TextTransparency = page == #pageGroups and 0.7 or 0; previous.AutoButtonColor = page > 1
@@ -1847,6 +1908,14 @@ function ExodusUI.setup(deps)
     end
     if incoming then conn = trackConn(incoming.Completed:Connect(finish)); task.delay(0.5, finish) else finish() end
   end
+  trackConn(settingsButton.Activated:Connect(function()
+    if page == 5 then
+      changePage(settingsReturnPage - page)
+    else
+      settingsReturnPage = page
+      changePage(5 - page)
+    end
+  end))
   trackConn(previous.Activated:Connect(function() changePage(-1) end))
   trackConn(nextPage.Activated:Connect(function() changePage(1) end))
   if not UIState.desktop and config.ClashBallVisible then twPlay(clashBall, 0.34, { Position = UDim2.new(0, clashX, 0, clashY) }, EASE_OUT, DIR_OUT) end
@@ -1919,6 +1988,7 @@ ExodusUI.__contract = {
       "isActive",
       "isManualSpamActive",
       "setConfig",
+      "resetConfig",
       "setManualSpamActive",
       "normalizeSpamRate",
       "observeConfig",

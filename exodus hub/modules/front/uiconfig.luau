@@ -47,6 +47,8 @@ local CONFIG = {
   },
   SETTINGS = {
     schema = {
+      MobileNotifications = "boolean",
+      DesktopNotifications = "boolean",
       AutoParry = "boolean",
       AutoParryWindowFactor = "rate",
       AutoParryFactor08Applied = "boolean",
@@ -93,6 +95,8 @@ local CONFIG = {
       PanelY = "position",
     },
     defaults = {
+      MobileNotifications = false,
+      DesktopNotifications = true,
       AutoParry = true,
       AutoParryWindowFactor = 0.25,
       AutoParryFactor08Applied = true,
