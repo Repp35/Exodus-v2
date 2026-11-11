@@ -272,11 +272,6 @@ end
 -- public-api
 function AutoParry.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" then return false, "dependências inválidas" end
-  for name, methods in pairs(AutoParry.__contract.requiresMethods) do
-    for _, method in ipairs(methods) do
-      if type(deps[name][method]) ~= "function" then return false, "dependência ausente: " .. name .. "." .. method end
-    end
-  end
   detach("setup"); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote
   state.player = utils.getLocalPlayer()
   if not state.player then return false, "Players.LocalPlayer indisponível" end

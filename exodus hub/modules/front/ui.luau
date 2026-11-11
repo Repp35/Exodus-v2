@@ -1939,6 +1939,7 @@ ExodusUI.__contract = {
     },
     AutoSpam = { "getStatus" },
   },
+  requiresData = { UIConfig = { "panelToggles", "panelComponents" } },
   provides = { "setup" },
 }
 

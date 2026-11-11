@@ -340,6 +340,33 @@ local function loadModule(name, relativePath, url, sourceRoot, cacheRevision)
   end
   return nil, fetchError or "origem remota indisponível"
 end
+local function orderModulesByDependencies(loaded)
+  local positions, state, ordered = {}, {}, {}
+  for index, name in ipairs(MODULE_ORDER) do
+    positions[name] = index
+  end
+  local function visit(name)
+    if state[name] == 2 then return end
+    if state[name] == 1 then error("dependência circular entre módulos: " .. name, 2) end
+    if not positions[name] or type(loaded[name]) ~= "table" then error("dependência não inicializável: " .. tostring(name), 2) end
+    state[name] = 1; local dependencies = {}
+    for _, source in pairs(loaded[name].__contract.requires or {}) do
+      if source ~= "permissions" then dependencies[#dependencies + 1] = source end
+    end
+    table.sort(dependencies, function(a, b) return (positions[a] or math.huge) < (positions[b] or math.huge) end)
+    for _, source in ipairs(dependencies) do
+      visit(source)
+    end
+    state[name] = 2; ordered[#ordered + 1] = name
+  end
+  for _, name in ipairs(MODULE_ORDER) do
+    visit(name)
+  end
+  table.clear(MODULE_ORDER)
+  for _, name in ipairs(ordered) do
+    MODULE_ORDER[#MODULE_ORDER + 1] = name
+  end
+end
 local function loadModules(urls, sourceRoot, cacheRevision)
   local loaded, results = {}, {}
   local function load(name)
@@ -378,7 +405,7 @@ local function loadModules(urls, sourceRoot, cacheRevision)
       loaded[name] = register(name, module)
     end
   end
-  return loaded
+  orderModulesByDependencies(loaded); return loaded
 end
 
 -- setup
@@ -393,11 +420,8 @@ local function collectCharacterBinds(loaded)
     if name ~= "utils" and type(module) == "table" then
       local contract = contractOf(module); local hasBindFlag = contract.bindCharacter == true
       local hasBindFn = type(module.bindCharacter) == "function"; local hasDetachFn = type(module.detachCharacter) == "function"
-      if hasBindFlag and hasBindFn and hasDetachFn then
-        local api = loaded.permissions.wrap("character", name, module); binds[#binds + 1] = { name = name, bind = api.bindCharacter, detach = api.detachCharacter }
-      elseif hasBindFlag then
-        return nil, name, "contrato bindCharacter incompleto"
-      end
+      if hasBindFlag and hasBindFn and hasDetachFn then binds[#binds + 1] = { name = name, bind = module.bindCharacter, detach = module.detachCharacter }
+      elseif hasBindFlag then return nil, name, "contrato bindCharacter incompleto" end
     end
   end
   return binds
@@ -618,7 +642,7 @@ local function startInternal()
   clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
   if not playerReady then return false, "Loader", playerError end
   local unpinned = not validRevision(version) and not sourceRoot
-  if unpinned then version = BRANCH; warn("[Exodus] SHA indisponível; carregando main até a próxima verificação: " .. tostring(revisionError)) end
+  if unpinned then return false, "Loader", "revisão remota indisponível e nenhum cache/local completo: " .. tostring(revisionError) end
   local cacheRevision = validRevision(version) and version or nil
   if cacheRevision then sourceRoot = findCompleteCacheRoot(cacheRevision) end
   local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, sourceRoot, cacheRevision)
