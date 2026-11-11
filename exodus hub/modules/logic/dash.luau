@@ -1,13 +1,6 @@
 -- [[ dash ]]
 
-local Dash = {}
-
--- dependencies
-local utils, gameInfo, players, handler
-
--- state
-local records, connections = {}, {}
-local generation, lastTick = 0, -math.huge
+-- tuning
 local CONFIG = {
 	MIN_SPEED = 70,
 	MAX_MEASURED_SPEED = 400,
@@ -16,6 +9,15 @@ local CONFIG = {
 	DETECTION_GAP = 0.06,
 	TICK_INTERVAL = 1 / 120,
 }
+
+local Dash = {}
+
+-- dependencies
+local utils, gameInfo, players, handler
+
+-- state
+local records, connections = {}, {}
+local generation, lastTick = 0, -math.huge
 
 -- helpers
 local function now() return utils and utils.now() or os.clock() end

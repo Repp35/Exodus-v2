@@ -1,16 +1,6 @@
 -- [[ gameinfo ]]
 
-local GameInfo = {}
-
--- dependencies
-local utils, players, world
-
--- state
-local ball, searchAt, watching = nil, 0, false
-local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
-local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
-local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
-local ballData, dashAnimation
+-- tuning
 local CONFIG = {
 	MIN_SPEED = 16,
 	MAX_SPEED = 600,
@@ -53,6 +43,18 @@ local CONFIG = {
 		CRATE_NEW = 1.0038569313364564e77,
 	},
 }
+
+local GameInfo = {}
+
+-- dependencies
+local utils, players, world
+
+-- state
+local ball, searchAt, watching = nil, 0, false
+local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
+local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
+local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
+local ballData, dashAnimation
 
 -- runtime-state
 local minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0

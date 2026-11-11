@@ -1,12 +1,14 @@
 -- [[ movement: dash actions ]]
 
--- helpers
-local Movement = {}
-local utils, gameInfo, remote
+-- tuning
 local CONFIG = {
 	UP_DIRECTION = Vector3.new(0, 1, 0),
 	MIN_DIRECTION_MAGNITUDE = 0.001,
 }
+
+-- helpers
+local Movement = {}
+local utils, gameInfo, remote
 
 local function performDash(direction, upward)
 	if not utils or not gameInfo or not remote or not utils.isActive() then return false, "Hub inativo" end

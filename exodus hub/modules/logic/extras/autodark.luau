@@ -1,11 +1,13 @@
 -- [[ autodark ]]
 
--- dependencies
-local AutoDark = {}
-local utils, remote, gameInfo, world
+-- tuning
 local CONFIG = {
 	REQUIRE_ABILITIES_ENABLED = true,
 }
+
+-- dependencies
+local AutoDark = {}
+local utils, remote, gameInfo, world
 
 -- state
 local connection

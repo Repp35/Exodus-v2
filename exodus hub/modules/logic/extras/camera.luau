@@ -1,5 +1,6 @@
 -- [[ camera sensitivity ]]
 
+-- tuning
 local CONFIG = {
 	DEFAULT_SENSITIVITY = 1,
 	MODULE_SEARCH_RETRY = 0.5,

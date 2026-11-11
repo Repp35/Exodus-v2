@@ -1,14 +1,16 @@
 -- [[ auto jump ]]
 
+-- tuning
+local CONFIG = {
+	AIR_MATERIAL = Enum.Material.Air,
+	JUMPING_STATE = Enum.HumanoidStateType.Jumping,
+}
+
 -- state
 local AutoJump = {}
 local utils
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0
-local CONFIG = {
-	AIR_MATERIAL = Enum.Material.Air,
-	JUMPING_STATE = Enum.HumanoidStateType.Jumping,
-}
 
 -- helpers
 local function stopJump()

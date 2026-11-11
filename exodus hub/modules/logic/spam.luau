@@ -1,5 +1,12 @@
 -- [[ spam ]]
 
+-- tuning
+local CONFIG = {
+	MAX_DELAY_DEBT = 0.2,
+	POLL_INTERVAL = 0.01,
+	ERROR_RETRY_INTERVAL = 0.03,
+}
+
 -- dependencies
 local Spam = {}
 local utils, remote, gameInfo, spamObserver, configObserver
@@ -8,11 +15,6 @@ local function traceback(err) return debug.traceback(tostring(err), 2) end
 -- state
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
-local CONFIG = {
-	MAX_DELAY_DEBT = 0.2,
-	POLL_INTERVAL = 0.01,
-	ERROR_RETRY_INTERVAL = 0.03,
-}
 
 local nextAllowedAt = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }

@@ -1,13 +1,15 @@
 -- [[ autofierce ]]
 
--- dependencies
-local AutoFierce = {}
-local utils, gameInfo, remote, autoParry
+-- tuning
 local CONFIG = {
 	SIGNAL_RETRY = 0.5,
 	SYNC_MAX_AGE = 0.25,
 	NOOB_WINDOW_EXTRA = 0.15,
 }
+
+-- dependencies
+local AutoFierce = {}
+local utils, gameInfo, remote, autoParry
 
 -- state
 local connections = {}

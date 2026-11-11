@@ -1,13 +1,6 @@
 -- [[ utils ]]
 
-local Utils = {}
-
--- services
-local players = game:GetService("Players")
-local replicated = game:GetService("ReplicatedStorage")
-local runService = game:GetService("RunService")
-local workspace = game:GetService("Workspace")
-local http = game:GetService("HttpService")
+-- tuning
 local CONFIG = {
 	API_VERSION = 1,
 	VERSION = "3.0.0",
@@ -16,6 +9,15 @@ local CONFIG = {
 	FOLDER = "Exodus Hub",
 	HISTORY_LIMIT = 32,
 }
+
+local Utils = {}
+
+-- services
+local players = game:GetService("Players")
+local replicated = game:GetService("ReplicatedStorage")
+local runService = game:GetService("RunService")
+local workspace = game:GetService("Workspace")
+local http = game:GetService("HttpService")
 
 -- state
 local state = {

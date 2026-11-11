@@ -1,5 +1,8 @@
 -- [[ character ]]
 
+-- tuning
+local CONFIG = { BIND_TIMEOUT = 10 }
+
 local Character = {}
 
 -- dependencies
@@ -8,7 +11,6 @@ local utils, spam, binds
 -- state
 local added, removing, currentLife
 local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
-local CONFIG = { BIND_TIMEOUT = 10 }
 
 -- diagnostics
 local function setPhase(value, reason)

@@ -1,15 +1,17 @@
 -- [[ clash stats ]]
 
-local ClashStats = {}
-
--- dependencies
-local utils, gameInfo, players, localPlayer
+-- tuning
 local CONFIG = {
 	CLASH_RETENTION_SECONDS = 1.5,
 	PACKET_FALLBACK_SECONDS = 0.5,
 	CPS_SAMPLE_CAP = 35,
 	CPS_SMOOTHING_FACTOR = 0.2,
 }
+
+local ClashStats = {}
+
+-- dependencies
+local utils, gameInfo, players, localPlayer
 
 -- state
 local stats

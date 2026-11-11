@@ -1,11 +1,13 @@
 -- [[ auto dash ]]
 
+-- tuning
+local CONFIG = { DETECTION_RANGE = 70, FALLBACK_RANGE = 35, MAX_EVENT_AGE = 0.2, MIN_UP_SPEED = 68, MAX_HORIZONTAL_RATIO = 0.65 }
+
 -- dependencies
 local AutoDash = {}
 local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
 local root, heartbeat
 local inFlight, handledSignals = nil, {}
-local CONFIG = { DETECTION_RANGE = 70, FALLBACK_RANGE = 35, MAX_EVENT_AGE = 0.2, MIN_UP_SPEED = 68, MAX_HORIZONTAL_RATIO = 0.65 }
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end

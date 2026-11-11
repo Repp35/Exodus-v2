@@ -1,13 +1,6 @@
 -- [[ auto spam ]]
 
-local AutoSpam = {}
-
--- dependencies
-local utils, gameInfo, clashStatsModule, players, runService, localPlayer
-
--- state
-local current, generation = nil, 0
-local clashStats
+-- tuning
 local CONFIG = {
 	ACTIVATION = {
 		RETURN = 0.15,
@@ -39,6 +32,15 @@ local CONFIG = {
 		SEQUENCE_HALF = 32768,
 	},
 }
+
+local AutoSpam = {}
+
+-- dependencies
+local utils, gameInfo, clashStatsModule, players, runService, localPlayer
+
+-- state
+local current, generation = nil, 0
+local clashStats
 
 -- helpers
 local function finite(n) return type(n) == "number" and n == n and n > -math.huge and n < math.huge end
