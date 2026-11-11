@@ -1148,10 +1148,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="substitui a preferência de compactação de blocos simples",
     )
     parser.add_argument(
+        "--compact-statements", action=argparse.BooleanOptionalAction, default=True,
+        help="junta instruções e condicionais simples dentro do limite de largura (padrão: ativado)",
+    )
+    parser.add_argument(
         "--compact-width",
         type=int,
-        default=120,
-        help="largura máxima para compactação de instruções e blocos simples (padrão: 120)",
+        default=160,
+        help="largura máxima para compactação de instruções e blocos simples (padrão: 160)",
     )
     parser.add_argument(
         "--max-statements",
@@ -1404,19 +1408,20 @@ def format_files(args: argparse.Namespace) -> int:
             formatted = add_title(formatted, source_path.name, args.title)
             formatted = require_sections(formatted, source_path.name)
             formatted = add_initial_dependency_spacing(formatted)
-            formatted = compact_simple_if_blocks(
-                formatted,
-                max_width=compact_width,
-                max_statements=args.max_statements,
-                tab_width=tab_width,
-                indent_type=configured_indent_type,
-            )
-            formatted = compact_statement_runs(
-                formatted,
-                max_width=compact_width,
-                max_statements=args.max_statements,
-                tab_width=tab_width,
-            )
+            if args.compact_statements:
+                formatted = compact_simple_if_blocks(
+                    formatted,
+                    max_width=compact_width,
+                    max_statements=args.max_statements,
+                    tab_width=tab_width,
+                    indent_type=configured_indent_type,
+                )
+                formatted = compact_statement_runs(
+                    formatted,
+                    max_width=compact_width,
+                    max_statements=args.max_statements,
+                    tab_width=tab_width,
+                )
             formatted = expand_inline_config_tables(formatted, configured_indent_type, tab_width)
             formatted = expand_dense_named_tables(formatted, configured_indent_type, tab_width)
             formatted = add_table_spacing(formatted)

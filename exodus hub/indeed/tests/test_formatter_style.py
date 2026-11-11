@@ -30,6 +30,40 @@ class FormatterStyleTests(unittest.TestCase):
         self.assertEqual(formatter.compact_simple_if_blocks(source, 120, 2, 4, 'Spaces'),
                          'if ready then first = 1 else second = 2 end\n')
 
+    def test_compacts_simple_functions_and_conditions(self):
+        source = """-- [[ sample ]]
+-- state
+function Utils.getPlayers()
+    return players
+end
+function Utils.getWorkspace()
+    return workspace
+end
+function Utils.load()
+    if not ready then
+        warn("not ready")
+        return true
+    end
+    if valid then
+        first()
+        second()
+    end
+    return true
+end
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "sample.luau"
+            path.write_text(source, encoding="utf-8")
+            args = formatter.build_parser().parse_args(["--in-place", str(path)])
+            self.assertEqual(formatter.format_files(args), 0)
+            result = path.read_text(encoding="utf-8")
+            self.assertIn("function Utils.getPlayers() return players end\n", result)
+            self.assertIn("function Utils.getWorkspace() return workspace end\n", result)
+            self.assertIn('if not ready then warn("not ready"); return true end', result)
+            self.assertIn("if valid then first(); second() end", result)
+            self.assertEqual(formatter.format_files(args), 0)
+            self.assertEqual(path.read_text(encoding="utf-8"), result)
+
     def test_end_to_end_is_stable(self):
         source = '''-- [[ sample ]]
 -- state
