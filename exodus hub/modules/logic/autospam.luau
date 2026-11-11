@@ -234,12 +234,9 @@ end
 local function applyDeactivation(s, snapshot, time)
   if not s.active then return false end
   local reason = shouldDeactivate(s, snapshot, time)
-  if not reason and gameInfo.isClientDeflectResetLate(s.activatedAt, snapshot and snapshotSpeed(snapshot)) then
-    reason = "client_deflect_reset_late"
-  end
+  if not reason and gameInfo.isClientDeflectResetLate(s.activatedAt, snapshot and snapshotSpeed(snapshot)) then reason = "client_deflect_reset_late" end
   if not reason then return false end
-  stop(s, reason)
-  return true
+  stop(s, reason); return true
 end
 local function observeTargetReturn(s, target, time)
   if not s.active or not target then return end
@@ -302,8 +299,7 @@ end
 local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation, autoEnabled)
   if current ~= s or not s.root.Parent then return end
   if not utils.isActive() then
-    stop(s, "hub_inactive")
-    s.stoppedPartner, s.haunterPartner, s.haunterUntil = nil, nil, nil
+    stop(s, "hub_inactive"); s.stoppedPartner, s.haunterPartner, s.haunterUntil = nil, nil, nil
     return
   end
   if autoEnabled == nil then autoEnabled = utils.getConfigValue("AutoSpam") == true end
@@ -497,9 +493,8 @@ function AutoSpam.bindCharacter(character)
       and not s.pendingReset
       and not s.haunterPartner
     then
-      clashStatsModule.waitForNextClash()
-      s.lobbyCheckAt, s.lobbySnapshotValid = nil, false; s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
-      return
+      clashStatsModule.waitForNextClash(); s.lobbyCheckAt, s.lobbySnapshotValid = nil, false
+      s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil; return
     end
     local liveSnapshot
     if not s.lobbyCheckAt or time - s.lobbyCheckAt >= 0.25 then s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time); s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot) end
@@ -529,8 +524,8 @@ function AutoSpam.bindCharacter(character)
     end
     if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then clashStatsModule.finish("clash encerrado", clashStats.lastObserved) end
     if not autoEnabled and not upDashEnabled and not manualEnabled and not s.active and not clashContext and (not clashStats or clashStats.frozen) then
-      clashStatsModule.waitForNextClash()
-      s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil; return
+      clashStatsModule.waitForNextClash(); s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
+      return
     end
     evaluate(s, time, false, nil, nil, nil, autoEnabled)
     if typeof(s.lastRootPosition) == "Vector3" and (s.root.Position - s.lastRootPosition).Magnitude > CONFIG.ACTIVATION.HAUNTER_RANGE then
