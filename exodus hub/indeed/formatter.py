@@ -473,6 +473,47 @@ def expand_inline_config_tables(source: str, indent_type: str = "Tabs", indent_w
     return finish_source(output)
 
 
+CONFIG_DECLARATION_RE = re.compile(r"(?m)^local\s+CONFIG\s*=\s*\{")
+TUNING_HEADING_RE = re.compile(r"(?m)^--\s+tuning\s*$")
+POSSIBLE_TUNING_RE = re.compile(
+    r"^local\s+([A-Z][A-Z0-9_]{2,})\s*=\s*(.+?)\s*$"
+)
+LITERAL_TUNING_RE = re.compile(
+    r"""(?:true|false|nil|[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')"""
+)
+
+
+def audit_module_config(source: str, source_path: Path) -> list[str]:
+    """Check the local configuration structure; only warn about likely missed constants."""
+    declarations = list(CONFIG_DECLARATION_RE.finditer(source))
+    heading = TUNING_HEADING_RE.search(source)
+    if len(declarations) != 1:
+        raise FormatterError(
+            f"{source_path}: esperado exatamente um 'local CONFIG = {{...}}' "
+            f"(encontrados: {len(declarations)})."
+        )
+    if heading is None or heading.start() > declarations[0].start():
+        raise FormatterError(
+            f"{source_path}: a seção '-- tuning' deve aparecer antes da tabela CONFIG."
+        )
+
+    warnings: list[str] = []
+    for line_number, line in enumerate(source.splitlines(), start=1):
+        match = POSSIBLE_TUNING_RE.fullmatch(line)
+        if not match:
+            continue
+        key, expression = match.groups()
+        if key == "CONFIG":
+            continue
+        expression = expression.split("--", 1)[0].strip()
+        if LITERAL_TUNING_RE.fullmatch(expression):
+            warnings.append(
+                f"{source_path}:{line_number}: possível configuração fora de CONFIG: "
+                f"{key} (somente aviso; não foi movida)."
+            )
+    return warnings
+
+
 def add_final_return_spacing(source: str) -> str:
     lines = source.splitlines()
     for index in range(len(lines) - 1, -1, -1):
@@ -1290,6 +1331,9 @@ def format_files(args: argparse.Namespace) -> int:
             prepared = add_title(prepared, source_path.name, args.title)
             prepared = require_sections(prepared, source_path.name)
             prepared = add_initial_dependency_spacing(prepared)
+            if source_path.is_relative_to(HUB_ROOT.parent):
+                for warning in audit_module_config(prepared, source_path.relative_to(HUB_ROOT.parent)):
+                    print(f"Config audit: {warning}", file=sys.stderr)
             staged_path = stage_root / f"{index:05d}_{source_path.name}"
             staged_path.write_text(prepared, encoding="utf-8", newline="\n")
             staged_files.append(staged_path)
@@ -1332,6 +1376,8 @@ def format_files(args: argparse.Namespace) -> int:
                 tab_width=tab_width,
             )
             formatted = expand_inline_config_tables(formatted, configured_indent_type, tab_width)
+            if source_path.is_relative_to(HUB_ROOT.parent):
+                audit_module_config(formatted, source_path.relative_to(HUB_ROOT.parent))
             return formatted
 
         if args.check:
