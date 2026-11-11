@@ -176,6 +176,11 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason; utils.setAutoSpamActive(true)
   utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
+local function activationGeometry(s, snapshot, partner, time)
+  local factor = CONFIG.ACTIVATION.RADIUS_FACTOR
+  if dashAssistPartner(s, snapshot, time) == partner then factor *= CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER end
+  return geometry(snapshot, factor)
+end
 local function shouldActivate(s, snapshot, time)
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
   if not snapshot or snapshot.targetUncertain == true or gameInfo.getBallFrozen() == true or not s.pending then return false end
@@ -185,9 +190,7 @@ local function shouldActivate(s, snapshot, time)
   if distance <= 0 then return false end
   local closingSpeed = snapshot.velocity:Dot(towardPlayer) / distance
   if not finite(closingSpeed) or closingSpeed <= 0 then return false end
-  local factor = CONFIG.ACTIVATION.RADIUS_FACTOR
-  if dashAssistPartner(s, snapshot, time) == s.pending.partner then factor *= CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER end
-  local g = geometry(snapshot, factor)
+  local g = activationGeometry(s, snapshot, s.pending.partner, time)
   if not g or distance > g.fullRadius then return false end
   return true
 end
@@ -294,10 +297,15 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
     s.departedAt, s.departedServerAt, s.departedTo = time, serverTime, target
   elseif target == me and previous ~= me then
     if not s.pending and not s.active and previous ~= s.stoppedPartner and previous == s.departedTo and s.departedAt then
-      local _, speed, window = geometry(snapshot, 1)
-      if not window then return end
-      local limit = returnWindow(window, speed, CONFIG.ACTIVATION.RETURN); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
-      if returnElapsed and returnElapsed <= limit then s.pending = { partner = previous } end
+      local g, speed, window = activationGeometry(s, snapshot, previous, time)
+      if not g or not window or typeof(snapshot.position) ~= "Vector3" then return end
+      local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
+      if not returnElapsed then return end
+      -- Classify once, when the ball switches to us. A ball entering the radius
+      -- later follows the normal activation checks without the fast-return gate.
+      local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
+      if startedNear and returnElapsed > returnWindow(window, speed, CONFIG.ACTIVATION.RETURN) then return end
+      s.pending = { partner = previous }
     end
   end
 end
