@@ -1,5 +1,8 @@
 -- [[ auto dash ]]
 
+-- module
+local AutoDash = {}
+
 -- configuration
 local CONFIG = {
   DETECTION_RANGE = 70,
@@ -9,8 +12,7 @@ local CONFIG = {
   MAX_HORIZONTAL_RATIO = 0.65,
 }
 
--- module
-local AutoDash = {}
+-- runtime
 local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
 local root, heartbeat
 local inFlight, handledSignals = nil, {}

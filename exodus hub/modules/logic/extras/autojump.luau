@@ -1,13 +1,15 @@
 -- [[ auto jump ]]
 
+-- module
+local AutoJump = {}
+
 -- configuration
 local CONFIG = {
   AIR_MATERIAL = Enum.Material.Air,
   JUMPING_STATE = Enum.HumanoidStateType.Jumping,
 }
 
--- module
-local AutoJump = {}
+-- runtime
 local utils
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0

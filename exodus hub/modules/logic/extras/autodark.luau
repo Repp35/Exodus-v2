@@ -1,12 +1,14 @@
 -- [[ autodark ]]
 
+-- module
+local AutoDark = {}
+
 -- configuration
 local CONFIG = {
   REQUIRE_ABILITIES_ENABLED = true,
 }
 
--- module
-local AutoDark = {}
+-- runtime
 local utils, remote, gameInfo, world
 local connection
 

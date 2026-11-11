@@ -1,5 +1,8 @@
 -- [[ dash ]]
 
+-- module
+local Dash = {}
+
 -- configuration
 local CONFIG = {
   MIN_SPEED = 70,
@@ -10,8 +13,7 @@ local CONFIG = {
   TICK_INTERVAL = 1 / 120,
 }
 
--- module
-local Dash = {}
+-- runtime
 local utils, gameInfo, players, handler
 local records, connections = {}, {}
 local generation, lastTick = 0, -math.huge

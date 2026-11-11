@@ -1,5 +1,8 @@
 -- [[ config ]]
 
+-- module
+local Config = {}
+
 -- configuration
 local CONFIG = {
   RATE_MIN = 0,
@@ -19,8 +22,7 @@ local CONFIG = {
   },
 }
 
--- module
-local Config = {}
+-- runtime
 local Registry = {}
 local Keys = {}
 

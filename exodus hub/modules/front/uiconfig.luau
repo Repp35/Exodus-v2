@@ -1,5 +1,8 @@
 -- [[ uiconfig ]]
 
+-- module
+local UIConfig = {}
+
 -- configuration
 local CONFIG = {
   PANEL_TOGGLES = {
@@ -121,9 +124,6 @@ local CONFIG = {
     },
   },
 }
-
--- module
-local UIConfig = {}
 
 -- public-api
 UIConfig.panelToggles = CONFIG.PANEL_TOGGLES

@@ -1,5 +1,8 @@
 -- [[ autoparry ]]
 
+-- module
+local AutoParry = {}
+
 -- configuration
 local CONFIG = {
   DEFAULT_WINDOW_FACTOR = 0.8,
@@ -14,8 +17,7 @@ local CONFIG = {
   MAX_FRAME_ALLOWANCE = 0.12,
 }
 
--- module
-local AutoParry = {}
+-- runtime
 local utils, gameInfo, remote, autoParrySignature
 local state = {
   phase = "detached",

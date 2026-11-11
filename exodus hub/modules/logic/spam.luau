@@ -1,5 +1,8 @@
 -- [[ spam ]]
 
+-- module
+local Spam = {}
+
 -- configuration
 local CONFIG = {
   MAX_DELAY_DEBT = 0.2,
@@ -7,8 +10,7 @@ local CONFIG = {
   ERROR_RETRY_INTERVAL = 0.03,
 }
 
--- module
-local Spam = {}
+-- runtime
 local utils, remote, gameInfo, spamObserver, configObserver
 local function traceback(err) return debug.traceback(tostring(err), 2) end
 local generation, running, inFlight = 0, false, false

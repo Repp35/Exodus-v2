@@ -1,13 +1,15 @@
 -- [[ camera sensitivity ]]
 
+-- module
+local Camera = {}
+
 -- configuration
 local CONFIG = {
   DEFAULT_SENSITIVITY = 1,
   MODULE_SEARCH_RETRY = 0.5,
 }
 
--- module
-local Camera = {}
+-- runtime
 local utils, runService
 local cameraEpoch = 0
 local cameraInput, cameraOriginal, cameraWrapped, configConnection
