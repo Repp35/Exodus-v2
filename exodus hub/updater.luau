@@ -9,9 +9,6 @@ local CONFIG = {
   RETRY_INTERVAL = 5,
 }
 
-
--- runtime}
-
 -- runtime
 
 return function(loadedRevision, request, options)
