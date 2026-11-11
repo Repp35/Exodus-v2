@@ -73,7 +73,14 @@ return function(loadedRevision, request, options)
 			end
 			if pendingRevision and not pendingSource and os.clock() >= nextCheck then
 				local source, fetchError, fetchMetadata = request(
-					"https://raw.githubusercontent.com/" .. CONFIG.REPOSITORY .. "/" .. pendingRevision .. "/" .. CONFIG.PROJECT_PATH .. "/loader.luau?exodus_cache=" .. tostring(os.time()),
+					"https://raw.githubusercontent.com/"
+						.. CONFIG.REPOSITORY
+						.. "/"
+						.. pendingRevision
+						.. "/"
+						.. CONFIG.PROJECT_PATH
+						.. "/loader.luau?exodus_cache="
+						.. tostring(os.time()),
 					{ ["User-Agent"] = "Exodus-Hub-Updater" }
 				)
 				if not running() then return end

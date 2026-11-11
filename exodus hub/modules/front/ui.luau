@@ -116,7 +116,6 @@ local offOnVisuals = {}
 -- palette
 local C = CONFIG.COLORS
 local GRAD = CONFIG.GRADIENT
-
 local EASE_OUT, EASE_SINE = Enum.EasingStyle.Cubic, Enum.EasingStyle.Sine
 local DIR_OUT, DIR_IN, DIR_INOUT = Enum.EasingDirection.Out, Enum.EasingDirection.In, Enum.EasingDirection.InOut
 

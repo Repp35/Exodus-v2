@@ -22,6 +22,7 @@ local CONFIG = {
 	VERSION_FILE = "Exodus Hub/current_version.txt",
 	ALLOW_LOCAL_FALLBACK = true,
 }
+
 local REPOSITORY = CONFIG.REPOSITORY
 local BRANCH = CONFIG.BRANCH
 local PROJECT_PATH = CONFIG.PROJECT_PATH
@@ -161,7 +162,13 @@ local function cachePath(revision) return CACHE_ROOT .. "/" .. revision end
 local function ensureCacheRoot(revision)
 	if not persistentStorageAvailable() or not validRevision(revision) then return nil end
 	local ok, root = pcall(function()
-		if not ensureFolder(CONFIG.CACHE_ROOT:match("^([^/]+)") or CONFIG.CACHE_ROOT) or not ensureFolder(CACHE_ROOT) or not ensureFolder(cachePath(revision)) then return nil end
+		if
+			not ensureFolder(CONFIG.CACHE_ROOT:match("^([^/]+)") or CONFIG.CACHE_ROOT)
+			or not ensureFolder(CACHE_ROOT)
+			or not ensureFolder(cachePath(revision))
+		then
+			return nil
+		end
 		return cachePath(revision)
 	end)
 	return ok and root or nil
