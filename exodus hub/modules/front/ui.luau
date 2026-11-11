@@ -1771,6 +1771,7 @@ function ExodusUI.setup(deps)
     Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
     Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
     BackgroundTransparency = 1,
+    GroupTransparency = 1,
     Visible = false,
     ClipsDescendants = true,
     ZIndex = 6,
@@ -1897,7 +1898,7 @@ function ExodusUI.setup(deps)
   end
   updateNavigation()
   local function changePage(direction)
-    if settingsOpen then return end
+    if settingsOpen or hubSettingsGroup.Visible then return end
     local target = page + direction
     if target < 1 or target > #pageGroups then return end
     page = target; UIState.pageGeneration += 1
@@ -1938,16 +1939,57 @@ function ExodusUI.setup(deps)
     if incoming then conn = trackConn(incoming.Completed:Connect(finish)); task.delay(0.5, finish) else finish() end
   end
   trackConn(settingsButton.Activated:Connect(function()
-    settingsOpen = not settingsOpen; UIState.pageGeneration += 1
+    settingsOpen = not settingsOpen
+    UIState.pageGeneration += 1
+    local generation = UIState.pageGeneration
     for _, tween in ipairs(UIState.pageTweens) do
       safeCancel(tween)
     end
-    UIState.pageTweens = {}; pageInputShield.Visible = false
-    for index, group in ipairs(pageGroups) do
-      group.Visible = not settingsOpen and index == page; group.GroupTransparency = index == page and 0 or 1
-      group.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
+    UIState.pageTweens = {}
+    pageInputShield.Visible = true
+    local function animate(group, offset, transparency)
+      local tween = twPlay(group, 0.28, {
+        Position = UDim2.new(0, PAD + offset, 0, TITLE_H + PAD),
+        GroupTransparency = transparency,
+      }, EASE_OUT, DIR_INOUT)
+      if tween then UIState.pageTweens[#UIState.pageTweens + 1] = tween end
     end
-    hubSettingsGroup.Visible = settingsOpen; updateNavigation()
+    for index, group in ipairs(pageGroups) do
+      if not settingsOpen and index == page then
+        if not group.Visible then
+          group.Position = UDim2.new(0, PAD - 20, 0, TITLE_H + PAD)
+          group.GroupTransparency = 1
+          group.Visible = true
+        end
+        animate(group, 0, 0)
+      elseif group.Visible then
+        animate(group, -20, 1)
+      end
+    end
+    if settingsOpen then
+      if not hubSettingsGroup.Visible then
+        hubSettingsGroup.Position = UDim2.new(0, PAD + 20, 0, TITLE_H + PAD)
+        hubSettingsGroup.GroupTransparency = 1
+        hubSettingsGroup.Visible = true
+      end
+      animate(hubSettingsGroup, 0, 0)
+    else
+      animate(hubSettingsGroup, 20, 1)
+    end
+    updateNavigation()
+    task.delay(0.3, function()
+      if generation ~= UIState.pageGeneration or not pageInputShield.Parent then return end
+      for index, group in ipairs(pageGroups) do
+        group.Visible = not settingsOpen and index == page
+        group.GroupTransparency = index == page and 0 or 1
+        group.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
+      end
+      hubSettingsGroup.Visible = settingsOpen
+      hubSettingsGroup.GroupTransparency = settingsOpen and 0 or 1
+      hubSettingsGroup.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
+      UIState.pageTweens = {}
+      pageInputShield.Visible = false
+    end)
   end))
   trackConn(previous.Activated:Connect(function() changePage(-1) end))
   trackConn(nextPage.Activated:Connect(function() changePage(1) end))
