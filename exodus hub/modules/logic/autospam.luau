@@ -230,11 +230,8 @@ local function shouldDeactivate(s, snapshot, time)
   local target = userId(snapshot.targetId)
   if not target then return nil end
   if target ~= localPlayer.UserId and target ~= s.partner then
-    local position = gameInfo.getPlayerMotion(target)
-    local limit = distanceLimit(snapshot, target)
-    if limit and s.root and s.root.Parent and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > limit then
-      return "distant_target"
-    end
+    local position = gameInfo.getPlayerMotion(target); local limit = distanceLimit(snapshot, target)
+    if limit and s.root and s.root.Parent and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > limit then return "distant_target" end
   end
   local reason = distanceGate(s, snapshot, s.partner)
   if reason ~= "distance_unavailable" then return reason end
