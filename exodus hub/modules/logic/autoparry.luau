@@ -191,6 +191,10 @@ local function observeSnapshot(snapshot, time)
   if order == "old" then return false end
   if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then return false end
   if order == "new" then state.sequence = snapshot.syncSequence end
+  if mode == "training" and order == "new" and state.fired and snapshot.targetId == (state.player and state.player.UserId) then
+    state.fired = false
+    state.cycle += 1
+  end
   observeTarget(snapshot.targetId, time); return true
 end
 
