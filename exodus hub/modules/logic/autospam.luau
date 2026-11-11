@@ -245,8 +245,7 @@ local function applyDeactivation(s, snapshot, time)
   if not s.active then return false end
   local reason = shouldDeactivate(s, snapshot, time)
   if not reason and s.activatedAt and time - s.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then
-    local speed = snapshot and snapshotSpeed(snapshot)
-    local multiplier = 1
+    local speed = snapshot and snapshotSpeed(snapshot); local multiplier = 1
     if
       s.partner
       and snapshot
@@ -257,15 +256,10 @@ local function applyDeactivation(s, snapshot, time)
       and time >= snapshot.syncAt
       and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
     then
-      local g = geometry(snapshot, 1)
-      local distance = distanceToPlayer(s.partner)
-      if g and finite(distance) and distance <= g.fullRadius then
-        multiplier = CONFIG.DEACTIVATION.NEAR_PARTNER_COOLDOWN_MULTIPLIER
-      end
+      local g = geometry(snapshot, 1); local distance = distanceToPlayer(s.partner)
+      if g and finite(distance) and distance <= g.fullRadius then multiplier = CONFIG.DEACTIVATION.NEAR_PARTNER_COOLDOWN_MULTIPLIER end
     end
-    if gameInfo.isClientDeflectResetLate(s.activatedAt, speed, multiplier) then
-      reason = "client_deflect_reset_late"
-    end
+    if gameInfo.isClientDeflectResetLate(s.activatedAt, speed, multiplier) then reason = "client_deflect_reset_late" end
   end
   if not reason then return false end
   stop(s, reason); return true
