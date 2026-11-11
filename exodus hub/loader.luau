@@ -62,8 +62,7 @@ local ALLOW_LOCAL_FALLBACK = CONFIG.ALLOW_LOCAL_FALLBACK
 
 -- http
 local function getRequestFunction()
-    local environment = type(getgenv) == "function" and getgenv() or _G
-    local synApi = type(environment.syn) == "table" and environment.syn or nil
+    local environment = type(getgenv) == "function" and getgenv() or _G; local synApi = type(environment.syn) == "table" and environment.syn or nil
     local fluxusApi = type(environment.fluxus) == "table" and environment.fluxus or nil
     for _, candidate in ipairs({
         environment.request or false,
@@ -94,9 +93,7 @@ local function isRetryableHttp(message)
         or (statusCode and statusCode >= 500 and statusCode <= 599)
 end
 local function waitBeforeRetry(attempt)
-    if type(task) == "table" and type(task.wait) == "function" then
-        local delays = { 0.25, 0.75, 1.5 }; task.wait(delays[attempt] or delays[#delays])
-    end
+    if type(task) == "table" and type(task.wait) == "function" then local delays = { 0.25, 0.75, 1.5 }; task.wait(delays[attempt] or delays[#delays]) end
 end
 local function headerValue(headers, expected)
     for key, value in pairs(type(headers) == "table" and headers or {}) do
@@ -107,20 +104,18 @@ end
 local function retryAfter(headers)
     local delay = tonumber(headerValue(headers, "retry-after"))
     if delay and delay >= 0 then return delay end
-    local reset = tonumber(headerValue(headers, "x-ratelimit-reset"))
-    return reset and math.max(0, reset - os.time()) or 5
+    local reset = tonumber(headerValue(headers, "x-ratelimit-reset")); return reset and math.max(0, reset - os.time()) or 5
 end
 local function requestOnce(url, headers)
     if not requestFunction then return nil, "Nenhum serviço HTTP disponível" end
     local ok, response = pcall(requestFunction, { Url = url, Method = "GET", Headers = headers })
     if not ok then return nil, tostring(response) end
     if type(response) ~= "table" then return nil, "Resposta HTTP inválida" end
-    local statusCode = tonumber(response.StatusCode or response.status_code)
-    local responseHeaders = response.Headers or response.headers
+    local statusCode = tonumber(response.StatusCode or response.status_code); local responseHeaders = response.Headers or response.headers
     local responseBody = response.Body or response.body or response.ResponseBody
     if not statusCode or statusCode < 200 or statusCode >= 300 then
-        local remaining = tonumber(headerValue(responseHeaders, "x-ratelimit-remaining"))
-        local details = string.lower(tostring(responseBody or "")); local limited = statusCode == 429
+        local remaining = tonumber(headerValue(responseHeaders, "x-ratelimit-remaining")); local details = string.lower(tostring(responseBody or ""))
+        local limited = statusCode == 429
             or (
                 statusCode == 403
                 and (
@@ -164,9 +159,7 @@ local function findCompleteLocalRoot()
     end
     return nil
 end
-local function validRevision(value)
-    return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil
-end
+local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
 local function persistentStorageAvailable()
     return type(isfile) == "function"
         and type(readfile) == "function"
@@ -178,9 +171,7 @@ local function ensureFolder(path)
     if isfolder(path) then return true end
     local ok = pcall(makefolder, path); return ok or isfolder(path)
 end
-local function cachePath(revision)
-    return CACHE_ROOT .. "/" .. revision
-end
+local function cachePath(revision) return CACHE_ROOT .. "/" .. revision end
 local function ensureCacheRoot(revision)
     if not persistentStorageAvailable() or not validRevision(revision) then return nil end
     local ok, root = pcall(function()
@@ -205,8 +196,7 @@ local function findCompleteCacheRoot(revision)
 end
 local function readSavedRevision()
     if not persistentStorageAvailable() or not isfile(VERSION_FILE) then return nil end
-    local ok, value = pcall(readfile, VERSION_FILE)
-    value = ok and type(value) == "string" and value:match("([%x]+)") or nil
+    local ok, value = pcall(readfile, VERSION_FILE); value = ok and type(value) == "string" and value:match("([%x]+)") or nil
     return validRevision(value) and value or nil
 end
 local function saveCurrentRevision(revision)
@@ -231,8 +221,7 @@ local function saveCacheFile(revision, relativePath, source)
 end
 local function readCacheFile(revision, relativePath)
     if not persistentStorageAvailable() or not validRevision(revision) then return nil end
-    local ok, source = pcall(readfile, cachePath(revision) .. "/" .. relativePath)
-    return ok and type(source) == "string" and source ~= "" and source or nil
+    local ok, source = pcall(readfile, cachePath(revision) .. "/" .. relativePath); return ok and type(source) == "string" and source ~= "" and source or nil
 end
 
 -- registry
@@ -265,9 +254,7 @@ local function stopPreviousRuntime()
         if not ok then clean = false end
         return ok, result
     end
-    if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then
-        attempt("gameinfo", Modules.gameinfo.stopMaintenance)
-    end
+    if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then attempt("gameinfo", Modules.gameinfo.stopMaintenance) end
     for _, name in ipairs({
         "character",
         "spam",
@@ -292,9 +279,7 @@ local function stopPreviousRuntime()
         end
     end
     local stopped = false
-    if type(_G.ExodusStop) == "function" then
-        local ok, result = attempt("Utils", _G.ExodusStop); stopped = ok and result == true
-    end
+    if type(_G.ExodusStop) == "function" then local ok, result = attempt("Utils", _G.ExodusStop); stopped = ok and result == true end
     if not stopped and type(_G.ExodusUICleanup) == "function" then attempt("UI", _G.ExodusUICleanup) end
     return clean
 end
@@ -323,16 +308,14 @@ local function resolveLatestRevision()
     local body, requestError, requestMeta =
         request(url, { ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Loader" })
     if body then
-        local ok, document = pcall(HttpService.JSONDecode, HttpService, body)
-        local sha = ok and type(document) == "table" and document.sha
+        local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and document.sha
         if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
     end
     local feed, feedError, feedMeta = request(
         "https://github.com/" .. REPOSITORY .. "/commits/" .. BRANCH .. ".atom?exodus_cache=" .. CACHE_BUSTER,
         { ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Loader" }
     )
-    local entry = feed and feed:match("<entry[%s>].-</entry>")
-    local sha = entry and entry:match("Grit::Commit/([%x]+)")
+    local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
     if sha and #sha == 40 then return sha end
     return nil, feedError or requestError or "SHA mais recente indisponível", feedMeta or requestMeta
 end
@@ -390,8 +373,7 @@ end
 local function loadModules(urls, sourceRoot, cacheRevision)
     local loaded, results = {}, {}
     local function load(name)
-        local entry = MODULE_BY_NAME[name]
-        local chunk, loadError = loadModule(name, entry.path, urls[name], sourceRoot, cacheRevision)
+        local entry = MODULE_BY_NAME[name]; local chunk, loadError = loadModule(name, entry.path, urls[name], sourceRoot, cacheRevision)
         results[name] = { chunk = chunk, error = loadError }
     end
     if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
@@ -399,11 +381,10 @@ local function loadModules(urls, sourceRoot, cacheRevision)
         for _, entry in ipairs(MODULE_MANIFEST) do
             local name = entry.name
             task.spawn(function()
-                local ok, err = xpcall(function()
-                    load(name)
-                end, function(value)
-                    return debug.traceback(tostring(value), 2)
-                end)
+                local ok, err = xpcall(
+                    function() load(name) end,
+                    function(value) return debug.traceback(tostring(value), 2) end
+                )
                 if not ok then results[name] = { error = err } end
                 pending -= 1
             end)
@@ -419,12 +400,10 @@ local function loadModules(urls, sourceRoot, cacheRevision)
     end
     for _, entry in ipairs(MODULE_MANIFEST) do
         local result = results[entry.name]
-        if not result or not result.chunk then
-            error(("%s: %s"):format(entry.name, tostring(result and result.error or "carregamento incompleto")), 2)
-        end
+        if not result or not result.chunk then error(("%s: %s"):format(entry.name, tostring(result and result.error or "carregamento incompleto")), 2) end
     end
-    local permissions = execute("permissions", results.permissions.chunk)
-    permissions.validate("permissions", permissions); loaded.permissions = register("permissions", permissions)
+    local permissions = execute("permissions", results.permissions.chunk); permissions.validate("permissions", permissions)
+    loaded.permissions = register("permissions", permissions)
     for _, entry in ipairs(MODULE_MANIFEST) do
         local name = entry.name
         if name ~= "permissions" then
@@ -446,8 +425,7 @@ local function collectCharacterBinds(loaded)
         local module = loaded[name]
         if name ~= "utils" and type(module) == "table" then
             local contract = contractOf(module); local hasBindFlag = contract.bindCharacter == true
-            local hasBindFn = type(module.bindCharacter) == "function"
-            local hasDetachFn = type(module.detachCharacter) == "function"
+            local hasBindFn = type(module.bindCharacter) == "function"; local hasDetachFn = type(module.detachCharacter) == "function"
             if hasBindFlag and hasBindFn and hasDetachFn then
                 local api = loaded.permissions.wrap("character", name, module)
                 binds[#binds + 1] = { name = name, bind = api.bindCharacter, detach = api.detachCharacter }
@@ -464,15 +442,11 @@ local function initializeModules(loaded)
     for _, name in ipairs(MODULE_ORDER) do
         if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
             local module = loaded[name]
-            if type(module) ~= "table" or type(module.setup) ~= "function" then
-                error("API interna ausente: " .. name .. ".setup", 2)
-            end
+            if type(module) ~= "table" or type(module.setup) ~= "function" then error("API interna ausente: " .. name .. ".setup", 2) end
             local deps = loaded.permissions.resolve(name, loaded)
             if name == "character" then deps.characterBinds = characterBinds end
             local initialized, setupError = module.setup(deps)
-            if initialized ~= true then
-                error(("%s.setup falhou: %s"):format(name, tostring(setupError or initialized)), 2)
-            end
+            if initialized ~= true then error(("%s.setup falhou: %s"):format(name, tostring(setupError or initialized)), 2) end
         end
     end
     return true
@@ -499,9 +473,7 @@ local function bindRuntime(loaded)
         local module = loaded[name]
         if name ~= "utils" and type(module) == "table" then
             local contract = contractOf(module)
-            if contract.onBallSync == true and type(module.onBallSync) ~= "function" then
-                return nil, "contrato BallSync incompleto: " .. name
-            end
+            if contract.onBallSync == true and type(module.onBallSync) ~= "function" then return nil, "contrato BallSync incompleto: " .. name end
             if contract.onBallSync == true then
                 ballSyncSubscribers[#ballSyncSubscribers + 1] = {
                     name = name,
@@ -512,8 +484,7 @@ local function bindRuntime(loaded)
     end
     local syncPriority = { autospam = 1, autoparry = 2 }
     table.sort(ballSyncSubscribers, function(a, b)
-        local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3
-        return left == right and a.name < b.name or left < right
+        local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3; return left == right and a.name < b.name or left < right
     end)
     local syncErrors = {}
     local function notifyBallSync(decodedData)
@@ -522,14 +493,11 @@ local function bindRuntime(loaded)
             local ok, err = xpcall(function()
                 local result, detail = sub.handler(decodedData)
                 if result == false then error(tostring(detail), 0) end
-            end, function(value)
-                return debug.traceback(tostring(value), 2)
-            end)
+            end, function(value) return debug.traceback(tostring(value), 2) end)
             if not ok then
                 local time = os.clock()
                 if not syncErrors[sub.name] or time - syncErrors[sub.name] >= 1 then
-                    syncErrors[sub.name] = time
-                    local reported, reportError = pcall(utils.recordError, sub.name .. ".onBallSync", err)
+                    syncErrors[sub.name] = time; local reported, reportError = pcall(utils.recordError, sub.name .. ".onBallSync", err)
                     if not reported then printRawError(sub.name, reportError) end
                 end
             end
@@ -556,8 +524,7 @@ local function bindRuntime(loaded)
                 if type(gameInfo.decodeBallPacket) == "function" then
                     local packet = gameInfo.decodeBallPacket(value)
                     if type(packet) == "table" and type(packet.Sequence) == "number" then
-                        local sequence = packet.Sequence
-                        local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
+                        local sequence = packet.Sequence; local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
                         local forward = not lastClashPacketSequence or (sequence - lastClashPacketSequence) % 65536
                         local currentDelta = type(current) == "number" and (sequence - current) % 65536 or 0
                         if (forward == true or forward < 32768) and currentDelta < 32768 then
@@ -568,8 +535,7 @@ local function bindRuntime(loaded)
                     end
                 end
                 if buffer.len(value) >= 92 and bit32.btest(buffer.readu8(value, 0), 1) then
-                    local sequence = buffer.readu16(value, 1)
-                    local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
+                    local sequence = buffer.readu16(value, 1); local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
                     if type(current) ~= "number" or (sequence - current) % 65536 < 32768 then
                         notifyBallSync({ Teleported = true, TeleportSequence = sequence })
                     end
@@ -626,9 +592,7 @@ local function configureModules(loaded, utils, urls)
             return false, "Config", "schema duplicado ou inválido: " .. entry.name
         end
     end
-    if type(utils.setConfigModule) ~= "function" or not utils.setConfigModule(loaded.config) then
-        return false, "Utils", "schema de Config indisponível"
-    end
+    if type(utils.setConfigModule) ~= "function" or not utils.setConfigModule(loaded.config) then return false, "Utils", "schema de Config indisponível" end
     local defaults = loaded.config.defaults()
     if type(defaults) ~= "table" then return false, "Config", "defaults inválidos" end
     local configValid, configReason = loaded.config.validate(defaults)
@@ -666,16 +630,12 @@ local function reloadLatest(onFailure)
         if not revision then fail(revisionError); return end
         local source = readCacheFile(revision, "loader.luau")
         local fetchError
-        if not source then
-            source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau")
-        end
+        if not source then source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau") end
         if not source then fail(fetchError); return end
         saveCacheFile(revision, "loader.luau", source); local chunk, compileError = compile("reload loader", source)
         if not chunk then fail(compileError); return end
         _G.ExodusRequestedRevision = revision
-        local ok, executionError = xpcall(chunk, function(err)
-            return debug.traceback(tostring(err), 2)
-        end)
+        local ok, executionError = xpcall(chunk, function(err) return debug.traceback(tostring(err), 2) end)
         if not ok then
             _G.ExodusRequestedRevision = nil; fail(executionError)
             return
@@ -686,8 +646,8 @@ local function reloadLatest(onFailure)
 end
 local startupPerformed = false
 local function startInternal()
-    local requestedRevision = validRevision(_G.ExodusRequestedRevision) and _G.ExodusRequestedRevision or nil
-    _G.ExodusRequestedRevision = nil; local version, revisionError = requestedRevision, nil
+    local requestedRevision = validRevision(_G.ExodusRequestedRevision) and _G.ExodusRequestedRevision or nil; _G.ExodusRequestedRevision = nil
+    local version, revisionError = requestedRevision, nil
     if not version then version, revisionError = resolveLatestRevision() end
     if not version then version = readSavedRevision() end
     if
@@ -705,19 +665,13 @@ local function startInternal()
     clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
     if not playerReady then return false, "Loader", playerError end
     local unpinned = not validRevision(version) and not sourceRoot
-    if unpinned then
-        version = BRANCH
-        warn("[Exodus] SHA indisponível; carregando main até a próxima verificação: " .. tostring(revisionError))
-    end
+    if unpinned then version = BRANCH; warn("[Exodus] SHA indisponível; carregando main até a próxima verificação: " .. tostring(revisionError)) end
     local cacheRevision = validRevision(version) and version or nil
     if cacheRevision then sourceRoot = findCompleteCacheRoot(cacheRevision) end
-    local urls = version and buildURLs(version) or {}
-    local loaded, moduleName, loadError = loadModules(urls, sourceRoot, cacheRevision)
+    local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, sourceRoot, cacheRevision)
     if not loaded then return false, moduleName, loadError end
     activeLoaded = loaded; local utils = loaded.utils
-    if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then
-        return false, "Utils", "contrato de inicialização incompleto"
-    end
+    if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
     utils.start(); utils.setLifecyclePhase("loading")
     Exodus.Utils = utils; Exodus.State = utils.getStateSnapshot()
     local configured, configModuleName, configError = configureModules(loaded, utils, urls)
@@ -725,19 +679,13 @@ local function startInternal()
     Exodus.Config = utils.getConfigSnapshot(); Exodus.ModuleURLs = utils.getModuleURLsSnapshot()
     utils.setLifecyclePhase("initializing"); local modulesReady, failedModule, modulesError = initializeModules(loaded)
     if not modulesReady then return stopStartup(utils, failedModule, modulesError) end
-    if not utils.setDiagnosticsModules(loaded) then
-        return stopStartup(utils, "Utils", "setDiagnosticsModules rejeitou os módulos")
-    end
+    if not utils.setDiagnosticsModules(loaded) then return stopStartup(utils, "Utils", "setDiagnosticsModules rejeitou os módulos") end
     utils.setLifecyclePhase("binding"); local runtime, runtimeError = bindRuntime(loaded)
     if type(runtime) ~= "table" then return stopStartup(utils, "Runtime", runtimeError) end
     Exodus.Runtime = runtime; _G.ExodusOnBurst = loaded.autoparry.fire
     local uiReady, uiModule, uiError = loadInterface(loaded, {
-        onAutoDarkChanged = function()
-            loaded.autodark.sync()
-        end,
-        onAutoJumpChanged = function()
-            loaded.autojump.sync()
-        end,
+        onAutoDarkChanged = function() loaded.autodark.sync() end,
+        onAutoJumpChanged = function() loaded.autojump.sync() end,
         onUpDash = function()
             local ok, err = loaded.movement.upDash()
             if not ok then utils.recordError("UpDash", err or "Dash indisponível") end
@@ -745,9 +693,7 @@ local function startInternal()
         onPanic = function()
             loaded.autoparry.resetState(); loaded.autospam.stopSpam()
         end,
-        onClose = function()
-            utils.stop()
-        end,
+        onClose = function() utils.stop() end,
         onReload = reloadLatest,
     })
     if not uiReady then return stopStartup(utils, uiModule, uiError) end
@@ -777,9 +723,7 @@ local function rollbackLoaded(loaded)
     if type(loaded.gameinfo) == "table" and type(loaded.gameinfo.stopMaintenance) == "function" then
         cleanupCall("gameinfo", loaded.gameinfo.stopMaintenance)
     end
-    if type(loaded.utils) == "table" and type(loaded.utils.stop) == "function" then
-        cleanupCall("utils", loaded.utils.stop)
-    end
+    if type(loaded.utils) == "table" and type(loaded.utils.stop) == "function" then cleanupCall("utils", loaded.utils.stop) end
 end
 local startLock = false
 local startToken = {}
@@ -790,9 +734,10 @@ function Loader.start()
     startLock = true; startupPerformed = false
     _G.ExodusLoaderStartToken = startToken; Exodus.Modules = Modules
     _G.Exodus = Exodus; _G.ExodusModules = Modules
-    local ok, started, moduleName, startError = xpcall(startInternal, function(err)
-        return debug.traceback(tostring(err), 2)
-    end)
+    local ok, started, moduleName, startError = xpcall(
+        startInternal,
+        function(err) return debug.traceback(tostring(err), 2) end
+    )
     startLock = false
     if _G.ExodusLoaderStartToken == startToken then _G.ExodusLoaderStartToken = nil end
     if not ok then
@@ -813,8 +758,7 @@ local function startSafely()
     local started, moduleName, startError = Loader.start()
     if started ~= true then
         moduleName = moduleName or "Loader"; startError = startError or started
-        local entry = MODULE_BY_NAME[moduleName]
-        printRawError(moduleName, startError, entry and entry.path or "loader.luau")
+        local entry = MODULE_BY_NAME[moduleName]; printRawError(moduleName, startError, entry and entry.path or "loader.luau")
         Loader.lastError = startError
         Loader.lastErrorModule = moduleName
         Exodus.StartError = startError
@@ -831,9 +775,7 @@ if started and startupPerformed then
     task.spawn(function()
         local source = validRevision(revision) and readCacheFile(revision, "updater.luau")
         local fetchError
-        if not source then
-            source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "updater.luau")
-        end
+        if not source then source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "updater.luau") end
         if not source then warn("[Exodus Updater] " .. tostring(fetchError)); return end
         if
             _G.ExodusLoaderSessionToken ~= startToken

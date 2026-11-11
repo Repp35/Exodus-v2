@@ -72,36 +72,22 @@ local function finite(value)
     return type(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
 local EMPTY_OPTIONS = {}
-local function child(parent, name)
-    return parent and parent:FindFirstChild(name)
-end
+local function child(parent, name) return parent and parent:FindFirstChild(name) end
 local function report(name, message)
     local time = os.clock()
     if errors[name] and time - errors[name] < 2 then return end
     errors[name] = time; local detail = name .. ": " .. tostring(message)
-    if utils and type(utils.recordError) == "function" then
-        utils.recordError("GameInfo", detail)
-    else
-        warn("[GameInfo] " .. detail)
-    end
+    if utils and type(utils.recordError) == "function" then utils.recordError("GameInfo", detail) else warn("[GameInfo] " .. detail) end
 end
 local function load(module, name)
     if not module or not module:IsA("ModuleScript") then error("API externa ausente: TS." .. tostring(name), 2) end
     local result = require(module)
-    if type(result) ~= "table" then
-        error("API externa inválida: TS." .. tostring(name) .. " não retornou tabela", 2)
-    end
+    if type(result) ~= "table" then error("API externa inválida: TS." .. tostring(name) .. " não retornou tabela", 2) end
     return result
 end
-local function storage()
-    return utils and utils.getReplicatedStorage()
-end
-local function ts()
-    return child(storage(), "Shared") or child(storage(), "TS")
-end
-local function sharedLayout()
-    return child(storage(), "Shared") ~= nil
-end
+local function storage() return utils and utils.getReplicatedStorage() end
+local function ts() return child(storage(), "Shared") or child(storage(), "TS") end
+local function sharedLayout() return child(storage(), "Shared") ~= nil end
 local function inTrainingArea()
     local player = players and players.LocalPlayer; local character = player and player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -109,9 +95,7 @@ local function inTrainingArea()
     local area = child(child(child(world, "Training"), "Areas"), "Zone")
     if not area or not area:IsA("BasePart") then return false end
     local localPos = area.CFrame:PointToObjectSpace(root.Position); local half = area.Size / 2
-    if math.abs(localPos.X) > half.X or math.abs(localPos.Y) > half.Y or math.abs(localPos.Z) > half.Z then
-        return false
-    end
+    if math.abs(localPos.X) > half.X or math.abs(localPos.Y) > half.Y or math.abs(localPos.Z) > half.Z then return false end
     local module = child(child(ts(), "Core"), "GameData")
     if module ~= trainingDataModule then trainingDataModule, trainingData = module, nil end
     if module and not trainingData then
@@ -125,22 +109,17 @@ local function inTrainingArea()
     end
     return not finite(lives) or lives <= 0
 end
-function GameInfo.isTrainingArea()
-    return inTrainingArea()
-end
+function GameInfo.isTrainingArea() return inTrainingArea() end
 function GameInfo.fireTrainingParry()
     if not inTrainingArea() then return false, "fora da arena de treino" end
     local endpoint = child(child(child(storage(), "Training"), "Remotes"), "Block"); local camera = world.CurrentCamera
-    if not endpoint or not endpoint:IsA("RemoteEvent") or not camera then
-        return false, "bloqueio de treino indisponível"
-    end
+    if not endpoint or not endpoint:IsA("RemoteEvent") or not camera then return false, "bloqueio de treino indisponível" end
     endpoint:FireServer(camera.CFrame.Position, camera.CFrame.LookVector); return true
 end
 
 -- abilities
 local function getAbilities()
-    local root = ts()
-    local module = child(child(root, "Abilities"), "ClientAbilities") or child(root, "ClientAbilities")
+    local root = ts(); local module = child(child(root, "Abilities"), "ClientAbilities") or child(root, "ClientAbilities")
     if abilityScript ~= module then abilityScript, abilities = module, nil end
     if not module then return nil end
     if not abilities then
@@ -153,9 +132,7 @@ end
 local function getAbility(index, method)
     local list = getAbilities(); local ability = list and list[index]
     if ability == nil then return nil end
-    if type(ability) ~= "table" or type(ability[method]) ~= "function" then
-        error(("API externa ausente: ClientAbilities[%d].%s"):format(index, method), 2)
-    end
+    if type(ability) ~= "table" or type(ability[method]) ~= "function" then error(("API externa ausente: ClientAbilities[%d].%s"):format(index, method), 2) end
     return ability
 end
 local function getReplicator()
@@ -197,17 +174,12 @@ local function targetNumber(value)
     if type(value) == "string" then value = tonumber(value) end
     return finite(value) and value > 0 and value or nil
 end
-function GameInfo.getBallTargetAttribute()
-    return world:GetAttribute("GameBallTarget")
-end
+function GameInfo.getBallTargetAttribute() return world:GetAttribute("GameBallTarget") end
 local function targetId(data, currentBall)
     local time = os.clock(); local player = players and players.LocalPlayer
-    local primary = type(data) == "table" and targetNumber(data.TargetPlayerID) or nil
-    local attribute = targetNumber(GameInfo.getBallTargetAttribute())
-    local highlight = type(data) == "table" and targetNumber(data.HighlightTargetPlayerID) or nil
-    local character = player and player.Character
-    local visual = character and character:FindFirstChild("PlayerBallHighlight")
-    local visualTargeted = visual ~= nil and visual.Enabled == true
+    local primary = type(data) == "table" and targetNumber(data.TargetPlayerID) or nil; local attribute = targetNumber(GameInfo.getBallTargetAttribute())
+    local highlight = type(data) == "table" and targetNumber(data.HighlightTargetPlayerID) or nil; local character = player and player.Character
+    local visual = character and character:FindFirstChild("PlayerBallHighlight"); local visualTargeted = visual ~= nil and visual.Enabled == true
     local color = currentBall and currentBall.Color
     local redBall = typeof(color) == "Color3"
             and color.R >= 0.65
@@ -227,8 +199,7 @@ local function targetId(data, currentBall)
         targetEvidence.source, targetEvidence.uncertain = "target", false
         return strong
     end
-    local candidate = highlight or attribute
-    local source = highlight and "highlight" or (attribute and "attribute" or nil)
+    local candidate = highlight or attribute; local source = highlight and "highlight" or (attribute and "attribute" or nil)
     if not candidate and player and (visualTargeted or (type(data) == "table" and data.Targeted == true)) then
         candidate, source = player.UserId, visualTargeted and (redBall and "visual_color" or "visual") or "targeted"
     end
@@ -304,8 +275,7 @@ end
 local function findSyncRemote()
     local replicated = storage()
     if not replicated then return nil end
-    local remotes = replicated:FindFirstChild("Remotes")
-    local candidate = remotes and remotes:FindFirstChild("BallSyncData")
+    local remotes = replicated:FindFirstChild("Remotes"); local candidate = remotes and remotes:FindFirstChild("BallSyncData")
     if validSyncRemote(candidate) then return candidate end
     candidate = replicated:FindFirstChild("BallSyncData")
     if validSyncRemote(candidate) then return candidate end
@@ -324,9 +294,7 @@ function GameInfo.bindBallSync(handler)
         trainingRemote = training
         trainingConnection = training.OnClientEvent:Connect(
             function(position, velocity, serverTime, goal, target, speed)
-                if typeof(position) ~= "Vector3" or typeof(velocity) ~= "Vector3" or not finite(serverTime) then
-                    return
-                end
+                if typeof(position) ~= "Vector3" or typeof(velocity) ~= "Vector3" or not finite(serverTime) then return end
                 if
                     trainingState
                     and serverTime <= trainingState.serverTime
@@ -367,8 +335,7 @@ function GameInfo.bindBallSync(handler)
         snapshotConnection, snapshotRemote = nil, nil
     end
     if snapshotCandidate and not snapshotConnection then
-        snapshotConnection, snapshotRemote = snapshotCandidate.OnClientEvent:Connect(handler), snapshotCandidate
-        utils.trackGlobal(snapshotConnection)
+        snapshotConnection, snapshotRemote = snapshotCandidate.OnClientEvent:Connect(handler), snapshotCandidate; utils.trackGlobal(snapshotConnection)
     end
     return true
 end
@@ -403,13 +370,11 @@ function GameInfo.setup(deps)
     if not players or not world then return false, "dependência ausente: Players ou Workspace" end
     ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
     abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil
-    lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
-    sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil
+    lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil
     trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
     minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}
-    pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil
-    targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }; targetFrame = 0
-    local service = utils.getRunService()
+    pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
+    targetFrame = 0; local service = utils.getRunService()
     if service and service.Heartbeat then
         targetFrameConnection = service.Heartbeat:Connect(function()
             targetFrame += 1
@@ -426,21 +391,11 @@ function GameInfo.setup(deps)
     signalAt, heldAt, missingAt, warningAt = 0, 0, nil, 0; GameInfo.getDeflectCooldownState()
     return true
 end
-function GameInfo.getBall()
-    return getBall()
-end
-function GameInfo.getBallPosition(value)
-    return value.Position
-end
-function GameInfo.getBallVelocity(value)
-    return value.AssemblyLinearVelocity
-end
-function GameInfo.getRootPosition(root)
-    return root.Position
-end
-function GameInfo.getLocalPing()
-    return players.LocalPlayer and players.LocalPlayer:GetNetworkPing() or nil
-end
+function GameInfo.getBall() return getBall() end
+function GameInfo.getBallPosition(value) return value.Position end
+function GameInfo.getBallVelocity(value) return value.AssemblyLinearVelocity end
+function GameInfo.getRootPosition(root) return root.Position end
+function GameInfo.getLocalPing() return players.LocalPlayer and players.LocalPlayer:GetNetworkPing() or nil end
 function GameInfo.getAveragePing()
     local time = os.clock()
     if pingSampleAt == nil or time < pingSampleAt or time - pingSampleAt >= CONFIG.PING_SAMPLE_INTERVAL then
@@ -453,22 +408,17 @@ function GameInfo.getAveragePing()
     end
     return #pingSamples > 0 and pingSum / #pingSamples or 0, pingRaw, #pingSamples
 end
-function GameInfo.areAbilitiesEnabled()
-    return world:GetAttribute("CurGamemode") ~= 3
-end
+function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode") ~= 3 end
 function GameInfo.observeAbilityMode(callback)
-    return world:GetAttributeChangedSignal("CurGamemode"):Connect(function()
-        callback(GameInfo.areAbilitiesEnabled())
-    end)
+    return world
+        :GetAttributeChangedSignal("CurGamemode")
+        :Connect(function() callback(GameInfo.areAbilitiesEnabled()) end)
 end
 local function generatedRemote(id)
-    local root = ts()
-    local remotes = child(child(root, "Network"), "GeneratedNetworkRemotes") or child(root, "GeneratedNetworkRemotes")
+    local root = ts(); local remotes = child(child(root, "Network"), "GeneratedNetworkRemotes") or child(root, "GeneratedNetworkRemotes")
     local remote = child(remotes, "RE_" .. tostring(id)); return remote and remote:IsA("RemoteEvent") and remote or nil
 end
-function GameInfo.getHaunterEvent()
-    return generatedRemote(CONFIG.GAME_IDS.HAUNTER_REMOTE)
-end
+function GameInfo.getHaunterEvent() return generatedRemote(CONFIG.GAME_IDS.HAUNTER_REMOTE) end
 local function playerRoot(id)
     local player = type(id) == "number" and players:GetPlayerByUserId(id); local character = player and player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -481,8 +431,7 @@ function GameInfo.getPlayerMotion(id)
     return root.Position, root.AssemblyLinearVelocity, character
 end
 function GameInfo.getPlayerDistance(id)
-    local own = players.LocalPlayer
-    local ownRoot = own and own.Character and own.Character:FindFirstChild("HumanoidRootPart")
+    local own = players.LocalPlayer; local ownRoot = own and own.Character and own.Character:FindFirstChild("HumanoidRootPart")
     local otherRoot = playerRoot(id)
     if not ownRoot or not ownRoot.Parent or not otherRoot then return nil end
     return (ownRoot.Position - otherRoot.Position).Magnitude
@@ -492,9 +441,7 @@ function GameInfo.getDeflectRangeParameters()
 end
 function GameInfo.getDeflectRange()
     local player = players.LocalPlayer; local range = player and player:GetAttribute("DeflectRange") or nil
-    if sharedLayout() and player and type(GameInfo.getPlayerDeflectRange) == "function" then
-        return GameInfo.getPlayerDeflectRange(player.UserId)
-    end
+    if sharedLayout() and player and type(GameInfo.getPlayerDeflectRange) == "function" then return GameInfo.getPlayerDeflectRange(player.UserId) end
     return range
 end
 function GameInfo.getPlayerDeflectRange(id)
@@ -519,9 +466,7 @@ function GameInfo.getPlayerRawRadius(id, speed, includePing)
     if not finite(latency) or latency < 0 then latency = 0 end
     return range + (finite(speed) and math.max(0, speed) * latency or 0)
 end
-function GameInfo.getDeflectAbility()
-    return getAbility(CONFIG.GAME_IDS.DEFLECT, "Deflect")
-end
+function GameInfo.getDeflectAbility() return getAbility(CONFIG.GAME_IDS.DEFLECT, "Deflect") end
 function GameInfo.getLastDeflectPressAt()
     local ability = GameInfo.getDeflectAbility()
     if not ability then return nil end
@@ -531,22 +476,17 @@ function GameInfo.getLastDeflectPressAt()
     if type(ability.ClickInstances) == "table" then
         for _, click in ipairs(ability.ClickInstances) do
             local remaining = type(click) == "table" and click.Time
-            if finite(remaining) and remaining > 0 and remaining <= 1 then
-                latest = latest and math.max(latest, remaining) or remaining
-            end
+            if finite(remaining) and remaining > 0 and remaining <= 1 then latest = latest and math.max(latest, remaining) or remaining end
         end
     end
     return latest and (os.clock() - (1 - latest)) or 0
 end
-function GameInfo.getMinimumSpamInterval()
-    return CONFIG.SPAM_MIN_INTERVAL
-end
+function GameInfo.getMinimumSpamInterval() return CONFIG.SPAM_MIN_INTERVAL end
 function GameInfo.getAutoSpamDelay()
     local ability = GameInfo.getDeflectAbility()
     if not ability then return nil end
     local time = os.clock(); local last = ability.LastPressClock
-    local delay = finite(last) and math.max(0, CONFIG.SPAM_MIN_INTERVAL - (time - last)) or 0
-    local limit = world:GetAttribute("CPS_LIMIT")
+    local delay = finite(last) and math.max(0, CONFIG.SPAM_MIN_INTERVAL - (time - last)) or 0; local limit = world:GetAttribute("CPS_LIMIT")
     if not finite(limit) then limit = 50 end
     limit = math.floor(limit)
     if limit <= 0 then return nil end
@@ -555,48 +495,34 @@ function GameInfo.getAutoSpamDelay()
     if #clicks >= limit then
         local remaining
         for _, click in ipairs(clicks) do
-            if type(click) == "table" and finite(click.Time) then
-                remaining = remaining and math.min(remaining, click.Time) or click.Time
-            end
+            if type(click) == "table" and finite(click.Time) then remaining = remaining and math.min(remaining, click.Time) or click.Time end
         end
         if not remaining then return nil end
         delay = math.max(delay, remaining > 0 and remaining or 1 / 240)
     end
     return delay
 end
-function GameInfo.getDashAbility()
-    return getAbility(CONFIG.GAME_IDS.DASH, "Dash")
-end
+function GameInfo.getDashAbility() return getAbility(CONFIG.GAME_IDS.DASH, "Dash") end
 function GameInfo.isPlayerDashing(player)
     if not player then return false end
-    if player == players.LocalPlayer then
-        local ability = GameInfo.getDashAbility(); return ability ~= nil and ability.Dashing == true
-    end
+    if player == players.LocalPlayer then local ability = GameInfo.getDashAbility(); return ability ~= nil and ability.Dashing == true end
     local character = player.Character
     if not character or not character.Parent then return false end
     if character:GetAttribute("IsDashing") == true then return true end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+    local humanoid = character:FindFirstChildOfClass("Humanoid"); local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
     if not dashAnimation or not dashAnimation.Parent then
         local replicated = storage(); local animations = replicated and replicated:FindFirstChild("Animations")
-        local movement = animations and animations:FindFirstChild("Movement")
-        dashAnimation = movement and movement:FindFirstChild("Dash")
+        local movement = animations and animations:FindFirstChild("Movement"); dashAnimation = movement and movement:FindFirstChild("Dash")
     end
-    if not animator or not dashAnimation or not dashAnimation:IsA("Animation") or dashAnimation.AnimationId == "" then
-        return false
-    end
+    if not animator or not dashAnimation or not dashAnimation:IsA("Animation") or dashAnimation.AnimationId == "" then return false end
     for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
         local animation = track.Animation
         if track.IsPlaying and animation and animation.AnimationId == dashAnimation.AnimationId then return true end
     end
     return false
 end
-function GameInfo.getFierceDeflectAbility()
-    return getAbility(CONFIG.GAME_IDS.FIERCE, "ActivateAndBlock")
-end
-function GameInfo.getDarkSealAbility()
-    return getAbility(CONFIG.GAME_IDS.DARK, "SendEvent")
-end
+function GameInfo.getFierceDeflectAbility() return getAbility(CONFIG.GAME_IDS.FIERCE, "ActivateAndBlock") end
+function GameInfo.getDarkSealAbility() return getAbility(CONFIG.GAME_IDS.DARK, "SendEvent") end
 function GameInfo.getDeflectServerEvents()
     local first, second =
         generatedRemote(CONFIG.GAME_IDS.COOLDOWN_REMOTE), generatedRemote(CONFIG.GAME_IDS.PARRIED_REMOTE)
@@ -605,9 +531,7 @@ function GameInfo.getDeflectServerEvents()
 end
 function GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
     if abilityId ~= CONFIG.GAME_IDS.DEFLECT then return nil end
-    if eventId == CONFIG.GAME_IDS.COOLDOWN_EVENT and finite(value) then
-        return value > 0 and "started" or "reset", math.max(value, 0)
-    end
+    if eventId == CONFIG.GAME_IDS.COOLDOWN_EVENT and finite(value) then return value > 0 and "started" or "reset", math.max(value, 0) end
     if eventId == CONFIG.GAME_IDS.COOLDOWN_STOP then return "stopped", 0 end
     return nil
 end
@@ -624,9 +548,7 @@ function GameInfo.getDeflectCooldownState()
         disconnect(cooldownConnection); cooldownConnection = nil
         cooldown.rawActive, cooldown.endsAt, signalAt = false, nil, 0
     end
-    if parriedConnection and parriedConnection.Connected == false then
-        disconnect(parriedConnection); parriedConnection = nil
-    end
+    if parriedConnection and parriedConnection.Connected == false then disconnect(parriedConnection); parriedConnection = nil end
     if not cooldownConnection and time >= signalAt then
         signalAt = time + CONFIG.COOLDOWN_RETRY; local signals = GameInfo.getDeflectServerEvents()
         if signals and signals.cooldown then
@@ -634,8 +556,7 @@ function GameInfo.getDeflectCooldownState()
                 local kind, duration = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
                 if not kind then return end
                 cooldown.known, cooldown.lastEventAt = true, os.clock()
-                cooldown.rawActive = kind == "started"
-                cooldown.endsAt = cooldown.rawActive and cooldown.lastEventAt + duration or nil
+                cooldown.rawActive = kind == "started"; cooldown.endsAt = cooldown.rawActive and cooldown.lastEventAt + duration or nil
             end)
             utils.trackGlobal(cooldownConnection); missingAt = nil
         else
@@ -656,8 +577,7 @@ function GameInfo.getDeflectCooldownState()
         end
     end
     if not cooldown.rawActive and time >= heldAt then
-        heldAt = time + CONFIG.HELD_COOLDOWN_INTERVAL
-        local duration, received = GameInfo.getHeldDeflectServerCooldown()
+        heldAt = time + CONFIG.HELD_COOLDOWN_INTERVAL; local duration, received = GameInfo.getHeldDeflectServerCooldown()
         if
             duration
             and received
@@ -672,24 +592,19 @@ function GameInfo.getDeflectCooldownState()
     if cooldown.rawActive and finite(cooldown.endsAt) and time >= cooldown.endsAt then
         cooldown.rawActive, cooldown.endsAt = false, nil
     end
-    local ability = GameInfo.getDeflectAbility()
-    local localCooldown = ability and finite(ability.Cooldown) and ability.Cooldown > 0
+    local ability = GameInfo.getDeflectAbility(); local localCooldown = ability and finite(ability.Cooldown) and ability.Cooldown > 0
     if localCooldown then cooldown.known = true end
     local remaining = localCooldown and ability.Cooldown or 0
     if cooldown.rawActive and finite(cooldown.endsAt) then remaining = math.max(remaining, cooldown.endsAt - time) end
     cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true
     cooldown.blocking = cooldown.active; return cooldown
 end
-function GameInfo.getSyncData()
-    return syncData()
-end
+function GameInfo.getSyncData() return syncData() end
 local function syncSequence(current, provider)
     if packet and current == packet then return packet.Sequence end
     return provider and provider.hasState == true and provider.lastSeq or nil
 end
-function GameInfo.getSyncSequence()
-    return syncSequence(syncData(), getReplicator())
-end
+function GameInfo.getSyncSequence() return syncSequence(syncData(), getReplicator()) end
 function GameInfo.applyPacket(value)
     if type(value) ~= "table" then return false end
     local sequence = value.Sequence
@@ -773,9 +688,7 @@ function GameInfo.decodeBallPacket(value)
         Speed = decoded.speed,
     }
 end
-function GameInfo.getTargetId()
-    return targetId(syncData(), getBall())
-end
+function GameInfo.getTargetId() return targetId(syncData(), getBall()) end
 
 -- snapshots
 local function snapshot(time)
@@ -872,12 +785,8 @@ local function snapshot(time)
         syncSequence = syncSequence(sync, provider),
     }
 end
-function GameInfo.getSnapshot(_, time)
-    return snapshot(time)
-end
-function GameInfo.getSnapshotAt(time)
-    return snapshot(time)
-end
+function GameInfo.getSnapshot(_, time) return snapshot(time) end
+function GameInfo.getSnapshotAt(time) return snapshot(time) end
 function GameInfo.isSnapshotValid(value)
     return type(value) == "table"
         and typeof(value.ball) == "Instance"
@@ -932,11 +841,9 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
         if sync and finite(sync.Speed) then speed = sync.Speed end
     end
     if not finite(speed) or high <= low then return nil end
-    local window = CONFIG.WINDOW_BASE - CONFIG.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1)
-    local player = players.LocalPlayer; local inClash = false
-    if gameBall and player and type(gameBall.IsInClash) == "function" then
-        inClash = gameBall:IsInClash(player) == true
-    end
+    local window = CONFIG.WINDOW_BASE - CONFIG.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer
+    local inClash = false
+    if gameBall and player and type(gameBall.IsInClash) == "function" then inClash = gameBall:IsInClash(player) == true end
     if inClash and type(gameBall.GetClashMinWindow) == "function" then
         local minimum = gameBall:GetClashMinWindow(speed)
         if finite(minimum) then window = math.max(window, minimum) end
@@ -958,15 +865,13 @@ function GameInfo.getBallFrozen()
 end
 function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyOverride, options)
     if not finite(speed) or speed < 0 then return nil end
-    options = type(options) == "table" and options or EMPTY_OPTIONS
-    local includeResilience = options.resilience ~= false
+    options = type(options) == "table" and options or EMPTY_OPTIONS; local includeResilience = options.resilience ~= false
     local range = includeResilience and GameInfo.getDeflectRange() or CONFIG.RANGE_BASE
     if not finite(range) or range <= 0 then range = CONFIG.RANGE_BASE end
     if window == "ap" then
         local low, high = GameInfo.getBallSpeedLimits()
         if not finite(low) or not finite(high) or high <= low then return nil end
-        local fraction = math.clamp((speed - low) / (high - low), 0, 1)
-        local actual = GameInfo.getDeflectWindow(speed, includeResilience)
+        local fraction = math.clamp((speed - low) / (high - low), 0, 1); local actual = GameInfo.getDeflectWindow(speed, includeResilience)
         if not finite(actual) then return nil end
         window = math.max(
             0,
@@ -1013,8 +918,7 @@ end
 function GameInfo.isBallWithinDeflectRadius(factor)
     local snapshot = GameInfo.getSnapshotAt()
     if not GameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return false end
-    local player = players.LocalPlayer
-    local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    local player = players.LocalPlayer; local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if not root or not root.Parent then return false end
     local speed = tonumber(snapshot.syncSpeed)
     if not finite(speed) or speed <= 0 then speed = snapshot.speed end
@@ -1022,9 +926,7 @@ function GameInfo.isBallWithinDeflectRadius(factor)
     local geometry = GameInfo.getDeflectGeometry(speed, nil, factor, false)
     return geometry ~= nil and (snapshot.position - root.Position).Magnitude <= geometry.fullRadius
 end
-function GameInfo.getDarkSealEventId()
-    return CONFIG.GAME_IDS.DARK_EVENT
-end
+function GameInfo.getDarkSealEventId() return CONFIG.GAME_IDS.DARK_EVENT end
 function GameInfo.createCrateNetwork()
     local root = ts()
     if not root then error("API externa ausente: Shared ou TS", 2) end
@@ -1035,9 +937,7 @@ function GameInfo.spinCrate(network, crate, guard)
     if type(guard) == "function" and not guard() then return false end
     network:CSendEvent(owned == true and CONFIG.GAME_IDS.CRATE_OWNED or CONFIG.GAME_IDS.CRATE_NEW, crate); return true
 end
-function GameInfo.getManifestRemote()
-    return generatedRemote(CONFIG.GAME_IDS.MANIFEST_REMOTE)
-end
+function GameInfo.getManifestRemote() return generatedRemote(CONFIG.GAME_IDS.MANIFEST_REMOTE) end
 function GameInfo.getClashContext()
     local player = players.LocalPlayer
     if not player then return nil end
@@ -1048,8 +948,7 @@ function GameInfo.getClashContext()
     if not partnerId or partnerId <= 0 or partnerId == player.UserId then return nil end
     local age, currentTarget = world:GetServerTimeNow() - lastAt, GameInfo.getBallTargetAttribute()
     if age < 0 or (age > 1 and (age > 2.5 or currentTarget ~= target)) then return nil end
-    local partner = players:GetPlayerByUserId(partnerId)
-    local ownRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    local partner = players:GetPlayerByUserId(partnerId); local ownRoot = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     local partnerRoot = partner and partner.Character and partner.Character:FindFirstChild("HumanoidRootPart")
     if not ownRoot or not partnerRoot or (ownRoot.Position - partnerRoot.Position).Magnitude > 35 then return nil end
     return { partnerId = partnerId, lastParryAt = lastAt, age = age }

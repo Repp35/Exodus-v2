@@ -28,15 +28,12 @@ local function startCamera()
     task.spawn(function()
         while token == cameraEpoch and utils and utils.isActive() do
             local player = utils.getLocalPlayer(); local scripts = player and player:FindFirstChild("PlayerScripts")
-            local module = scripts and scripts:FindFirstChild("PlayerModule")
-            local camera = module and module:FindFirstChild("CameraModule")
+            local module = scripts and scripts:FindFirstChild("PlayerModule"); local camera = module and module:FindFirstChild("CameraModule")
             local input = camera and camera:FindFirstChild("CameraInput")
             if input and input:IsA("ModuleScript") then
                 local api = require(input)
                 if token ~= cameraEpoch or not utils then return end
-                if type(api) ~= "table" or type(api.getRotation) ~= "function" then
-                    error("CameraInput.getRotation indisponível")
-                end
+                if type(api) ~= "table" or type(api.getRotation) ~= "function" then error("CameraInput.getRotation indisponível") end
                 cameraInput, cameraOriginal = api, api.getRotation; local original, boundUtils = cameraOriginal, utils
                 local wrapped
                 wrapped = function(...)
@@ -63,9 +60,7 @@ function Camera.setup(deps)
     if not runService then return false, "RunService indisponível" end
     sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or CONFIG.DEFAULT_SENSITIVITY; startCamera()
     configConnection = utils.observeConfig(function(changes)
-        if changes.CameraSensitivity ~= nil then
-            sensitivity = tonumber(changes.CameraSensitivity) or CONFIG.DEFAULT_SENSITIVITY
-        end
+        if changes.CameraSensitivity ~= nil then sensitivity = tonumber(changes.CameraSensitivity) or CONFIG.DEFAULT_SENSITIVITY end
     end)
     utils.trackGlobal(configConnection); return true
 end

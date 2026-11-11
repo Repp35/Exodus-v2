@@ -195,16 +195,12 @@ local function policy(name)
     if not entry then error("Permissions: módulo não registrado: " .. tostring(name), 2) end
     return entry
 end
-local function deny(name, action)
-    error(("Permissão negada: %s -> %s"):format(name, action), 3)
-end
+local function deny(name, action) error(("Permissão negada: %s -> %s"):format(name, action), 3) end
 local function validate(name, module)
     local entry = policy(name)
     if type(module) ~= "table" then error("Permissions: retorno inválido de " .. name, 2) end
     local contract = module.__contract
-    if type(contract) ~= "table" or type(contract.provides) ~= "table" then
-        error(name .. ": __contract.provides ausente", 2)
-    end
+    if type(contract) ~= "table" or type(contract.provides) ~= "table" then error(name .. ": __contract.provides ausente", 2) end
     for key, value in pairs(module) do
         if type(value) == "function" and not entry.provide[key] then deny(name, "api.expose." .. tostring(key)) end
     end
@@ -214,29 +210,21 @@ local function validate(name, module)
     end
     local requires, requirements, versions =
         contract.requires or {}, contract.requiresMethods or {}, contract.requiresVersions or {}
-    if type(requires) ~= "table" or type(requirements) ~= "table" or type(versions) ~= "table" then
-        error(name .. ": dependências inválidas", 2)
-    end
+    if type(requires) ~= "table" or type(requirements) ~= "table" or type(versions) ~= "table" then error(name .. ": dependências inválidas", 2) end
     for dependencyName, source in pairs(requires) do
-        if type(dependencyName) ~= "string" or type(source) ~= "string" then
-            error(name .. ": dependência inválida", 2)
-        end
+        if type(dependencyName) ~= "string" or type(source) ~= "string" then error(name .. ": dependência inválida", 2) end
         if not entry.consume[source] then deny(name, "api.consume." .. source) end
     end
     for dependencyName, methods in pairs(requirements) do
         local source = requires[dependencyName]
-        if not source or type(methods) ~= "table" then
-            error(name .. ": dependência inválida: " .. tostring(dependencyName), 2)
-        end
+        if not source or type(methods) ~= "table" then error(name .. ": dependência inválida: " .. tostring(dependencyName), 2) end
         for _, method in ipairs(methods) do
             if type(method) ~= "string" then error(name .. ": nome de método inválido", 2) end
             if not entry.consume[source][method] then deny(name, "api.consume." .. source .. "." .. method) end
         end
     end
     for dependencyName, minimum in pairs(versions) do
-        if not requires[dependencyName] or type(minimum) ~= "number" then
-            error(name .. ": versão de dependência inválida: " .. tostring(dependencyName), 2)
-        end
+        if not requires[dependencyName] or type(minimum) ~= "number" then error(name .. ": versão de dependência inválida: " .. tostring(dependencyName), 2) end
     end
     return true
 end
@@ -257,20 +245,14 @@ local function wrap(consumer, source, provider)
     if not allowed then deny(consumer, "api.consume." .. source) end
     local exposed = policy(source); local view = {}
     for method in pairs(allowed) do
-        if not exposed.provide[method] and not (exposed.data and exposed.data[method]) then
-            deny(source, "api.expose." .. method)
-        end
+        if not exposed.provide[method] and not (exposed.data and exposed.data[method]) then deny(source, "api.expose." .. method) end
         local value = provider[method]
         if value == nil then error(("Permissions: API ausente: %s.%s"):format(source, method), 2) end
         view[method] = exposed.data and exposed.data[method] and readonly(value) or value
     end
     local metatable = {
-        __index = function(_, method)
-            deny(consumer, "api.consume." .. source .. "." .. tostring(method))
-        end,
-        __newindex = function(_, method)
-            deny(consumer, "api.write." .. source .. "." .. tostring(method))
-        end,
+        __index = function(_, method) deny(consumer, "api.consume." .. source .. "." .. tostring(method)) end,
+        __newindex = function(_, method) deny(consumer, "api.write." .. source .. "." .. tostring(method)) end,
     }
 
     setmetatable(view, metatable); table.freeze(view)
@@ -280,9 +262,7 @@ end
 
 -- dependency-resolution
 local function resolve(consumer, loaded)
-    if type(loaded) ~= "table" or type(loaded[consumer]) ~= "table" then
-        error("Permissions: módulo não carregado: " .. tostring(consumer), 2)
-    end
+    if type(loaded) ~= "table" or type(loaded[consumer]) ~= "table" then error("Permissions: módulo não carregado: " .. tostring(consumer), 2) end
     local contract = loaded[consumer].__contract
     if type(contract) ~= "table" then error(consumer .. ": contrato ausente", 2) end
     local requires, methods, versions =
@@ -293,16 +273,12 @@ local function resolve(consumer, loaded)
     local dependencies = {}
     for dependencyName, source in pairs(requires) do
         local provider = loaded[source]
-        if type(provider) ~= "table" then
-            error(("API interna ausente: dependência %s (%s)"):format(tostring(dependencyName), tostring(source)), 2)
-        end
+        if type(provider) ~= "table" then error(("API interna ausente: dependência %s (%s)"):format(tostring(dependencyName), tostring(source)), 2) end
         dependencies[dependencyName] = wrap(consumer, source, provider)
     end
     for dependencyName, required in pairs(methods) do
         local dependency = dependencies[dependencyName]
-        if type(dependency) ~= "table" or type(required) ~= "table" then
-            error(consumer .. ": dependência inválida: " .. tostring(dependencyName), 2)
-        end
+        if type(dependency) ~= "table" or type(required) ~= "table" then error(consumer .. ": dependência inválida: " .. tostring(dependencyName), 2) end
         for _, method in ipairs(required) do
             if type(method) ~= "string" or type(rawget(dependency, method)) ~= "function" then
                 error(

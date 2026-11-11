@@ -49,9 +49,7 @@ return function(loadedRevision, request, options)
             { ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Updater" }
         )
         if body then
-            local ok, document = pcall(function()
-                return game:GetService("HttpService"):JSONDecode(body)
-            end)
+            local ok, document = pcall(function() return game:GetService("HttpService"):JSONDecode(body) end)
             local sha = ok and type(document) == "table" and document.sha
             if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
         end
@@ -64,8 +62,7 @@ return function(loadedRevision, request, options)
                 .. tostring(os.time()),
             { ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Updater" }
         )
-        local entry = feed and feed:match("<entry[%s>].-</entry>")
-        local sha = entry and entry:match("Grit::Commit/([%x]+)")
+        local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
         if sha and #sha == 40 then return sha end
         return nil, feedError or requestError or "SHA mais recente indisponível", feedMeta or requestMeta
     end
@@ -110,9 +107,7 @@ return function(loadedRevision, request, options)
                     local chunk, compileError = loadstring(source, "Exodus updater loader")
                     if chunk then
                         pendingSource = chunk
-                        if type(options.cacheLoader) == "function" then
-                            pcall(options.cacheLoader, pendingRevision, source)
-                        end
+                        if type(options.cacheLoader) == "function" then pcall(options.cacheLoader, pendingRevision, source) end
                     else
                         warn("[Exodus Updater] " .. tostring(compileError)); pendingRevision = nil
                         nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
@@ -135,12 +130,11 @@ return function(loadedRevision, request, options)
                     end
                     if not running() then return end
                     _G.ExodusRequestedRevision = pendingRevision
-                    local executed, executionError = xpcall(pendingSource, function(err)
-                        return debug.traceback(tostring(err), 2)
-                    end)
-                    if not executed then
-                        _G.ExodusRequestedRevision = nil; warn("[Exodus Updater] " .. tostring(executionError))
-                    end
+                    local executed, executionError = xpcall(
+                        pendingSource,
+                        function(err) return debug.traceback(tostring(err), 2) end
+                    )
+                    if not executed then _G.ExodusRequestedRevision = nil; warn("[Exodus Updater] " .. tostring(executionError)) end
                     return
                 end
             end

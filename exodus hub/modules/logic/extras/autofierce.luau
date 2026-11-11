@@ -102,9 +102,8 @@ function AutoFierce.setup(deps)
         return false, "dependências ausentes: Utils, GameInfo ou Remote"
     end
     AutoFierce.teardown(); utils, gameInfo, remote, autoParry = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry
-    nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt = 0, false, 0, 0, 0
-    local player = utils.getLocalPlayer(); localUserId = player and player.UserId
-    local runService = utils.getRunService()
+    nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt = 0, false, 0, 0, 0; local player = utils.getLocalPlayer()
+    localUserId = player and player.UserId; local runService = utils.getRunService()
     if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
     track(utils.observeConfig(function()
         if not enabled() then graceHandled = false end

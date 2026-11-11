@@ -47,9 +47,7 @@ end
 
 -- lifecycle
 function ClashStats.setup(deps)
-    if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then
-        return false, "dependências ausentes"
-    end
+    if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências ausentes" end
     ClashStats.teardown(); utils, gameInfo = deps.Utils, deps.GameInfo
     players, localPlayer = utils.getPlayers(), utils.getLocalPlayer()
     if not players or not localPlayer then return false, "serviços indisponíveis" end
@@ -63,8 +61,8 @@ end
 function ClashStats.finish(reason, time)
     if not stats or stats.frozen then return end
     stats.frozen, stats.waitingForClash = true, false
-    stats.duration = math.max(0, time - stats.startedAt)
-    stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0; stats.endReason = reason
+    stats.duration = math.max(0, time - stats.startedAt); stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0
+    stats.endReason = reason
     if reason ~= "jogador morreu" and reason ~= "oponente morreu" then return end
     local opponent = players:GetPlayerByUserId(stats.partnerId)
     local ok, result = pcall(function()
@@ -154,8 +152,7 @@ function ClashStats.observe(session, snapshot, time, fresh)
             if stats.cycleArmed then
                 stats.totalSwitches += 1
                 if stats.lastCycleAt and time > stats.lastCycleAt then
-                    stats.cycleInterval = time - stats.lastCycleAt
-                    local sample = math.min(CONFIG.CPS_SAMPLE_CAP, 1 / stats.cycleInterval)
+                    stats.cycleInterval = time - stats.lastCycleAt; local sample = math.min(CONFIG.CPS_SAMPLE_CAP, 1 / stats.cycleInterval)
                     stats.currentCps = stats.currentCps
                             and (stats.currentCps + CONFIG.CPS_SMOOTHING_FACTOR * (sample - stats.currentCps))
                         or sample
@@ -196,9 +193,7 @@ function ClashStats.freeze(playerId, session)
     end
     ClashStats.finish(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", time)
 end
-function ClashStats.get()
-    return stats
-end
+function ClashStats.get() return stats end
 
 -- contract
 ClashStats.__contract = {

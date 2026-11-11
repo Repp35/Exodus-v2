@@ -20,9 +20,7 @@ local records, connections = {}, {}
 local generation, lastTick = 0, -math.huge
 
 -- helpers
-local function now()
-    return utils and utils.now() or os.clock()
-end
+local function now() return utils and utils.now() or os.clock() end
 local function rootOf(player)
     local character = player.Character; return character and character:FindFirstChild("HumanoidRootPart")
 end
@@ -65,13 +63,11 @@ local function observe(player, record, time, suppliedRoot)
         record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
         return
     end
-    local position, velocity = root.Position, root.AssemblyLinearVelocity
-    local previous, previousAt = record.position, record.positionAt; local delta = previousAt and time - previousAt
+    local position, velocity = root.Position, root.AssemblyLinearVelocity; local previous, previousAt = record.position, record.positionAt
+    local delta = previousAt and time - previousAt
     if previous and delta and delta > 0 and delta <= CONFIG.MAX_SAMPLE_GAP then
         local measured = (position - previous) / delta
-        if measured.Magnitude > velocity.Magnitude and measured.Magnitude < CONFIG.MAX_MEASURED_SPEED then
-            velocity = measured
-        end
+        if measured.Magnitude > velocity.Magnitude and measured.Magnitude < CONFIG.MAX_MEASURED_SPEED then velocity = measured end
     end
     local signal = gameInfo.isPlayerDashing(player)
     if signal and not record.signalActive then record.signalAt = time end
@@ -97,9 +93,7 @@ local function addPlayer(player)
     utils.trackGlobal(record.characterConnection)
 end
 function Dash.setup(deps)
-    if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then
-        return false, "dependências ausentes: Utils ou GameInfo"
-    end
+    if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências ausentes: Utils ou GameInfo" end
     Dash.teardown(); utils, gameInfo, players = deps.Utils, deps.GameInfo, deps.Utils.getPlayers()
     if not players then return false, "Players indisponível" end
     local token = generation
@@ -125,9 +119,7 @@ function Dash.tick(time, excludeLocal, center, radius)
     lastTick = time
     if type(center) == "number" then
         local player = players:GetPlayerByUserId(center); local record = player and records[player]
-        if record and player.Parent and (not excludeLocal or player ~= players.LocalPlayer) then
-            observe(player, record, time)
-        end
+        if record and player.Parent and (not excludeLocal or player ~= players.LocalPlayer) then observe(player, record, time) end
         return
     end
     local limit = typeof(center) == "Vector3" and type(radius) == "number" and radius > 0 and radius * radius or nil

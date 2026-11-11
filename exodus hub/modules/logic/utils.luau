@@ -53,9 +53,7 @@ local function copy(value, depth)
     end
     return result
 end
-local function snapshot(value)
-    return type(value) == "table" and copy(value) or {}
-end
+local function snapshot(value) return type(value) == "table" and copy(value) or {} end
 local function append(list, value)
     list[#list + 1] = value
     if #list > CONFIG.HISTORY_LIMIT then table.remove(list, 1) end
@@ -84,12 +82,8 @@ local function notify(list, value)
         if observer.Connected then observer.callback(value) end
     end
 end
-function Utils.observeSpam(observer)
-    return connectObserver(spamObservers, observer)
-end
-function Utils.observeConfig(observer)
-    return connectObserver(configObservers, observer)
-end
+function Utils.observeSpam(observer) return connectObserver(spamObservers, observer) end
+function Utils.observeConfig(observer) return connectObserver(configObservers, observer) end
 local function track(list, connection)
     if not connection or type(connection.Disconnect) ~= "function" then error("Conexão inválida", 2) end
     if not table.find(list, connection) then list[#list + 1] = connection end
@@ -205,27 +199,21 @@ function Utils.ensureDataFolder()
     return true, CONFIG.FOLDER
 end
 function Utils.createClashLog(partnerId, startedDate)
-    if type(writefile) ~= "function" or type(isfile) ~= "function" then
-        error("APIs externas ausentes: writefile/isfile", 2)
-    end
+    if type(writefile) ~= "function" or type(isfile) ~= "function" then error("APIs externas ausentes: writefile/isfile", 2) end
     local _, folder = Utils.ensureDataFolder(); local directory = folder .. "/Clashes"
     if not isfolder(directory) then makefolder(directory) end
-    local stamp = os.date("!%Y%m%d_%H%M%S")
-    local prefix = directory .. "/clash_" .. stamp .. "_" .. tostring(partnerId)
+    local stamp = os.date("!%Y%m%d_%H%M%S"); local prefix = directory .. "/clash_" .. stamp .. "_" .. tostring(partnerId)
     local index, path = 1, prefix .. ".txt"
     while isfile(path) do
         index += 1; path = prefix .. "_" .. index .. ".txt"
     end
-    local header = "EXODUS - CLASH\nData (UTC): " .. (startedDate or os.date("!%Y-%m-%d %H:%M:%S")) .. "\n"
-    writefile(path, header)
+    local header = "EXODUS - CLASH\nData (UTC): " .. (startedDate or os.date("!%Y-%m-%d %H:%M:%S")) .. "\n"; writefile(path, header)
     local content
     if type(appendfile) ~= "function" then content = header end
     return { path = path, content = content }
 end
 function Utils.appendClashLog(log, value)
-    if type(log) ~= "table" or type(log.path) ~= "string" or type(value) ~= "string" then
-        error("Dados inválidos para o registro de clash", 2)
-    end
+    if type(log) ~= "table" or type(log.path) ~= "string" or type(value) ~= "string" then error("Dados inválidos para o registro de clash", 2) end
     if type(appendfile) == "function" and log.content == nil then
         appendfile(log.path, value)
     else
@@ -263,17 +251,13 @@ local function decodeKeyCode(value)
     end
     if type(value) ~= "table" or type(value.keyCode) ~= "string" then return value end
     local name = value.keyCode
-    local ok, keyCode = pcall(function()
-        return Enum.KeyCode[name]
-    end)
+    local ok, keyCode = pcall(function() return Enum.KeyCode[name] end)
     if ok and keyCode then return keyCode end
     warn("Config ignorada: KeyCode inválido " .. tostring(name)); return nil
 end
 local function migrateConfig(data)
     local migrated = data.AutoClash ~= nil or data.AutoClashActivationMs ~= nil or data.AutoClashDeactivationMs ~= nil
-    if data.AutoSpam == nil and type(data.AutoClash) == "boolean" then
-        data.AutoSpam, migrated = data.AutoClash, true
-    end
+    if data.AutoSpam == nil and type(data.AutoClash) == "boolean" then data.AutoSpam, migrated = data.AutoClash, true end
     if data.AutoParryFactor08Applied ~= true then
         data.AutoParryWindowFactor, data.AutoParryFactor08Applied, migrated = 0.8, true, true
     end
@@ -352,30 +336,14 @@ function Utils.stop()
     state.lifecycle.phase = "stopped"; recordTransition("Utils", previous, "stopped", "stop")
     refreshNamespace(); return true
 end
-function Utils.isActive()
-    return state.active
-end
-function Utils.getStateSnapshot()
-    return stateSnapshot()
-end
-function Utils.getConfig()
-    return snapshot(state.config)
-end
-function Utils.getConfigValue(key)
-    return state.config[key]
-end
-function Utils.getConfigSnapshot()
-    return snapshot(state.config)
-end
-function Utils.getModuleURLsSnapshot()
-    return snapshot(state.urls)
-end
-function Utils.getLifecycle()
-    return lifecycleSnapshot()
-end
-function Utils.getDiagnostics()
-    return diagnosticsSnapshot()
-end
+function Utils.isActive() return state.active end
+function Utils.getStateSnapshot() return stateSnapshot() end
+function Utils.getConfig() return snapshot(state.config) end
+function Utils.getConfigValue(key) return state.config[key] end
+function Utils.getConfigSnapshot() return snapshot(state.config) end
+function Utils.getModuleURLsSnapshot() return snapshot(state.urls) end
+function Utils.getLifecycle() return lifecycleSnapshot() end
+function Utils.getDiagnostics() return diagnosticsSnapshot() end
 function Utils.setDiagnosticsModules(value)
     if type(value) ~= "table" then error("Módulos de diagnóstico inválidos", 2) end
     modules = table.clone(value); refreshNamespace()
@@ -384,42 +352,27 @@ end
 function Utils.setLifecyclePhase(value)
     if type(value) ~= "string" or value == "" then return false end
     local previous = state.lifecycle.phase
-    if previous ~= value then
-        state.lifecycle.phase = value; recordTransition("Lifecycle", previous, value, "phase_change")
-    end
+    if previous ~= value then state.lifecycle.phase = value; recordTransition("Lifecycle", previous, value, "phase_change") end
     return true
 end
-function Utils.recordTransition(source, fromState, toState, reason)
-    recordTransition(source, fromState, toState, reason)
-end
+function Utils.recordTransition(source, fromState, toState, reason) recordTransition(source, fromState, toState, reason) end
 function Utils.recordError(source, message)
-    local item = { source = tostring(source or "Unknown"), message = tostring(message or ""), at = os.clock() }
-    state.diagnostics.lastError = item; append(state.diagnostics.errors, item)
-    warn(("[%s] %s"):format(item.source, item.message)); refreshNamespace()
-    return true
+    local item = { source = tostring(source or "Unknown"), message = tostring(message or ""), at = os.clock() }; state.diagnostics.lastError = item
+    append(state.diagnostics.errors, item); warn(("[%s] %s"):format(item.source, item.message))
+    refreshNamespace(); return true
 end
-function Utils.isManualSpamActive()
-    return state.manualSpam
-end
-function Utils.isAutoSpamActive()
-    return state.autoSpam
-end
-function Utils.isSpamActive()
-    return state.manualSpam or state.autoSpam
-end
+function Utils.isManualSpamActive() return state.manualSpam end
+function Utils.isAutoSpamActive() return state.autoSpam end
+function Utils.isSpamActive() return state.manualSpam or state.autoSpam end
 local function setSpam(key, value, source, reason)
     value = value == true
     if state[key] == value then return false end
     local previous = state[key]; state[key] = value
-    notify(spamObservers)
-    recordTransition(source, previous and "active" or "inactive", value and "active" or "inactive", reason); return true
+    notify(spamObservers); recordTransition(source, previous and "active" or "inactive", value and "active" or "inactive", reason)
+    return true
 end
-function Utils.setManualSpamActive(value)
-    return setSpam("manualSpam", value, "Spam", "manual_toggle")
-end
-function Utils.setAutoSpamActive(value)
-    return setSpam("autoSpam", value, "AutoSpam", "automatic_toggle")
-end
+function Utils.setManualSpamActive(value) return setSpam("manualSpam", value, "Spam", "manual_toggle") end
+function Utils.setAutoSpamActive(value) return setSpam("autoSpam", value, "AutoSpam", "automatic_toggle") end
 function Utils.stopAllSpam()
     local changed = state.manualSpam or state.autoSpam
     state.manualSpam, state.autoSpam = false, false
@@ -429,9 +382,7 @@ end
 function Utils.isFiniteNumber(value)
     return type(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
-function Utils.isNonNegativeFiniteNumber(value)
-    return Utils.isFiniteNumber(value) and value >= 0
-end
+function Utils.isNonNegativeFiniteNumber(value) return Utils.isFiniteNumber(value) and value >= 0 end
 
 -- config
 function Utils.normalizeSpamRate(value, fallback)
@@ -465,12 +416,8 @@ function Utils.loadConfig()
     local checked, exists = pcall(isfile, path)
     if not checked then warn("Não foi possível verificar a configuração: " .. tostring(exists)); return true end
     if exists then
-        local loaded, data = pcall(function()
-            return http:JSONDecode(readfile(path))
-        end)
-        if not loaded or type(data) ~= "table" then
-            warn("Configuração salva inválida ou inacessível; usando padrões"); return true
-        end
+        local loaded, data = pcall(function() return http:JSONDecode(readfile(path)) end)
+        if not loaded or type(data) ~= "table" then warn("Configuração salva inválida ou inacessível; usando padrões"); return true end
         local patch
         patch, migrated = migrateConfig(data); Utils.setConfig(patch)
     end
@@ -489,51 +436,21 @@ function Utils.setModuleURLs(urls)
     setValues(state.urls, urls); refreshNamespace()
     return true
 end
-function Utils.trackGlobal(connection)
-    return track(state.globalConnections, connection)
-end
-function Utils.untrackGlobal(connection)
-    return untrack(state.globalConnections, connection)
-end
-function Utils.trackCharacter(connection)
-    return track(state.characterConnections, connection)
-end
-function Utils.untrackCharacter(connection)
-    return untrack(state.characterConnections, connection)
-end
-function Utils.disconnectCharacterConnections()
-    disconnectAll(state.characterConnections)
-end
-function Utils.getPlayers()
-    return players
-end
-function Utils.getReplicatedStorage()
-    return replicated
-end
-function Utils.getRunService()
-    return runService
-end
-function Utils.getWorkspace()
-    return workspace
-end
-function Utils.getLocalPlayer()
-    return players.LocalPlayer
-end
-function Utils.now()
-    return os.clock()
-end
-function Utils.name()
-    return CONFIG.NAME
-end
-function Utils.version()
-    return CONFIG.VERSION
-end
-function Utils.apiVersion()
-    return CONFIG.API_VERSION
-end
-function Utils.author()
-    return CONFIG.AUTHOR
-end
+function Utils.trackGlobal(connection) return track(state.globalConnections, connection) end
+function Utils.untrackGlobal(connection) return untrack(state.globalConnections, connection) end
+function Utils.trackCharacter(connection) return track(state.characterConnections, connection) end
+function Utils.untrackCharacter(connection) return untrack(state.characterConnections, connection) end
+function Utils.disconnectCharacterConnections() disconnectAll(state.characterConnections) end
+function Utils.getPlayers() return players end
+function Utils.getReplicatedStorage() return replicated end
+function Utils.getRunService() return runService end
+function Utils.getWorkspace() return workspace end
+function Utils.getLocalPlayer() return players.LocalPlayer end
+function Utils.now() return os.clock() end
+function Utils.name() return CONFIG.NAME end
+function Utils.version() return CONFIG.VERSION end
+function Utils.apiVersion() return CONFIG.API_VERSION end
+function Utils.author() return CONFIG.AUTHOR end
 _G.ExodusStop = Utils.stop
 
 -- contract

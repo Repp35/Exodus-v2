@@ -39,9 +39,7 @@ local function relevantOpponent(event, localRoot)
         return false
     end
     local time = utils.now()
-    if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > 0.5) then
-        return false
-    end
+    if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > 0.5) then return false end
     local speed = tonumber(snapshot.syncSpeed)
     if not finite(speed) or speed <= 0 then speed = snapshot.speed end
     if not finite(speed) or speed <= 0 then return false end
@@ -86,8 +84,7 @@ local function onDash(event)
     local localHumanoid = localRoot.Parent:FindFirstChildOfClass("Humanoid")
     if not humanoid or humanoid.Health <= 0 or not localHumanoid or localHumanoid.Health <= 0 then return end
     if (event.position - localRoot.Position).Magnitude > CONFIG.DETECTION_RANGE then return end
-    local velocity = event.velocity
-    local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
+    local velocity = event.velocity; local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
     if velocity.Y < CONFIG.MIN_UP_SPEED or horizontalSpeed > velocity.Y * CONFIG.MAX_HORIZONTAL_RATIO then return end
     if not relevantOpponent(event, localRoot) then return end
     local token = {}; inFlight = token
@@ -111,8 +108,7 @@ function AutoDash.setup(deps)
     then
         return false, "dependências ausentes"
     end
-    AutoDash.teardown()
-    utils, gameInfo, dash, movement, autoSpam = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement, deps.AutoSpam
+    AutoDash.teardown(); utils, gameInfo, dash, movement, autoSpam = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement, deps.AutoSpam
     players, localPlayer, runService = utils.getPlayers(), utils.getLocalPlayer(), utils.getRunService()
     if not players or not localPlayer or not runService then return false, "serviços indisponíveis" end
     dash.setHandler(onDash); return true

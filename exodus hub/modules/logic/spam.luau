@@ -10,9 +10,7 @@ local CONFIG = {
 -- dependencies
 local Spam = {}
 local utils, remote, gameInfo, spamObserver, configObserver
-local function traceback(err)
-    return debug.traceback(tostring(err), 2)
-end
+local function traceback(err) return debug.traceback(tostring(err), 2) end
 
 -- state
 local generation, running, inFlight = 0, false, false
@@ -22,8 +20,7 @@ local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErro
 
 -- config
 local function readRate()
-    local selected = utils.getConfigValue("SpamRateMode")
-    local mode = selected == "Auto" and "Auto" or (selected == "CPF" and "CPF" or "CPS")
+    local selected = utils.getConfigValue("SpamRateMode"); local mode = selected == "Auto" and "Auto" or (selected == "CPF" and "CPF" or "CPS")
     if mode == "Auto" then return mode, 1 end
     local rate = tonumber(utils.getConfigValue(mode)) or 0
     if rate ~= rate or rate <= 0 or rate == math.huge then return mode, 0 end
@@ -36,9 +33,7 @@ local function transition(active, reason)
     local phase = active and "running" or "stopped"
     if status.phase == phase then return end
     local previous = status.phase; status.phase = phase
-    if utils and type(utils.recordTransition) == "function" then
-        utils.recordTransition("Spam", previous, phase, reason)
-    end
+    if utils and type(utils.recordTransition) == "function" then utils.recordTransition("Spam", previous, phase, reason) end
 end
 local function cancel(reason)
     generation += 1; running, currentMode, currentRate = false, nil, nil
@@ -65,8 +60,7 @@ end
 -- scheduler
 local function sync()
     if not utils or not remote then return end
-    local mode, rate = readRate()
-    local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
+    local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
     if not enabled then
         if running then cancel("spam_disabled") end
         return
@@ -114,8 +108,7 @@ local function sync()
         if not ok then
             status.lastError = tostring(err); local time = os.clock()
             if time - status.lastErrorAt >= 1 then
-                status.lastErrorAt = time
-                local reported, reportError = pcall(boundUtils.recordError, "Spam", status.lastError)
+                status.lastErrorAt = time; local reported, reportError = pcall(boundUtils.recordError, "Spam", status.lastError)
                 if not reported then warn("[Spam] " .. tostring(reportError)) end
             end
             local retryToken = generation

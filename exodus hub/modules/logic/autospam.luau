@@ -43,16 +43,12 @@ local current, generation = nil, 0
 local clashStats
 
 -- helpers
-local function finite(n)
-    return type(n) == "number" and n == n and n > -math.huge and n < math.huge
-end
+local function finite(n) return type(n) == "number" and n == n and n > -math.huge and n < math.huge end
 local function userId(value)
     if type(value) == "string" then value = tonumber(value) end
     return finite(value) and value > 0 and value % 1 == 0 and value or nil
 end
-local function now()
-    return utils.now()
-end
+local function now() return utils.now() end
 local function elapsed(localStart, serverStart, localNow, serverNow)
     if finite(serverStart) and finite(serverNow) then
         if serverNow < serverStart then return nil end
@@ -79,18 +75,13 @@ local function resetExchange(s)
     s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil
     s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 end
-local function distanceToPlayer(id)
-    return id and gameInfo.getPlayerDistance(id) or nil
-end
+local function distanceToPlayer(id) return id and gameInfo.getPlayerDistance(id) or nil end
 local function distanceLimit(snapshot, partner)
     local speed = snapshotSpeed(snapshot)
     if not finite(speed) or speed <= 0 then return nil end
-    local minimum, maximum = gameInfo.getBallSpeedLimits()
-    local baseRange, maximumResilience = gameInfo.getDeflectRangeParameters()
-    local ownRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId)
-    local otherRange = partner and gameInfo.getPlayerDeflectRange(partner)
-    local ownRaw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
-    local otherRaw = partner and gameInfo.getPlayerRawRadius(partner, speed, true)
+    local minimum, maximum = gameInfo.getBallSpeedLimits(); local baseRange, maximumResilience = gameInfo.getDeflectRangeParameters()
+    local ownRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId); local otherRange = partner and gameInfo.getPlayerDeflectRange(partner)
+    local ownRaw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true); local otherRaw = partner and gameInfo.getPlayerRawRadius(partner, speed, true)
     if
         not finite(minimum)
         or not finite(maximum)
@@ -105,18 +96,14 @@ local function distanceLimit(snapshot, partner)
         return nil
     end
     local speedFactor = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
-    local baseAtMaxSpeed = CONFIG.DEACTIVATION.MAX_DISTANCE_REFERENCE - maximumResilience * 2
-    local baseDistance = CONFIG.DEACTIVATION.MIN_DISTANCE
+    local baseAtMaxSpeed = CONFIG.DEACTIVATION.MAX_DISTANCE_REFERENCE - maximumResilience * 2; local baseDistance = CONFIG.DEACTIVATION.MIN_DISTANCE
         + (baseAtMaxSpeed - CONFIG.DEACTIVATION.MIN_DISTANCE) * speedFactor
     local ownResilience = math.clamp(ownRange - baseRange, 0, maximumResilience)
-    local otherResilience = math.clamp(otherRange - baseRange, 0, maximumResilience)
-    local ownPing = math.max(0, ownRaw - ownRange); local otherPing = math.max(0, otherRaw - otherRange)
-    return baseDistance + (ownResilience + otherResilience) * speedFactor + ownPing + otherPing
+    local otherResilience = math.clamp(otherRange - baseRange, 0, maximumResilience); local ownPing = math.max(0, ownRaw - ownRange)
+    local otherPing = math.max(0, otherRaw - otherRange); return baseDistance + (ownResilience + otherResilience) * speedFactor + ownPing + otherPing
 end
 local function distanceGate(s, snapshot, partner)
-    if not s.root or not s.root.Parent or not snapshot or typeof(snapshot.position) ~= "Vector3" then
-        return "distance_unavailable"
-    end
+    if not s.root or not s.root.Parent or not snapshot or typeof(snapshot.position) ~= "Vector3" then return "distance_unavailable" end
     local speed = snapshotSpeed(snapshot); local g = finite(speed)
         and speed > 0
         and gameInfo.getDeflectGeometry(speed, "game", CONFIG.ACTIVATION.RADIUS_FACTOR, false)
@@ -130,8 +117,7 @@ local function distanceGate(s, snapshot, partner)
 end
 local function playerIsAlive(id)
     local player = id and players:GetPlayerByUserId(id); local character = player and player.Character
-    local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid")
-    return humanoid ~= nil and humanoid.Health > 0
+    local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid"); return humanoid ~= nil and humanoid.Health > 0
 end
 
 -- geometry
@@ -143,8 +129,7 @@ local function geometry(snapshot, factor)
     return g, speed, g.deflectWindow
 end
 local function returnWindow(window, speed, base)
-    local minimum, maximum = gameInfo.getBallSpeedLimits()
-    local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0
+    local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0
     return math.max(CONFIG.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
 end
 
@@ -178,9 +163,7 @@ local function dashAssistPartner(s, snapshot, time)
     local minimum = measuredSpeed >= CONFIG.ACTIVATION.DASH_FAST_SPEED and CONFIG.ACTIVATION.DASH_FAST_APPROACH
         or CONFIG.ACTIVATION.DASH_MIN_APPROACH
     if movement.Magnitude < minimum or startDistance - (opponent - own).Magnitude < minimum then return nil end
-    if movement:Dot(toward) / (movement.Magnitude * startDistance) < CONFIG.ACTIVATION.DASH_ALIGNMENT then
-        return nil
-    end
+    if movement:Dot(toward) / (movement.Magnitude * startDistance) < CONFIG.ACTIVATION.DASH_ALIGNMENT then return nil end
     if
         snapshot.targetId == localPlayer.UserId
         and typeof(snapshot.position) == "Vector3"
@@ -202,9 +185,7 @@ end
 
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
-    if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN) then
-        return
-    end
+    if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN) then return end
     local haunter = reason == "haunter" or reason == "haunter_self"
     if
         not haunter
@@ -219,13 +200,10 @@ local function start(s, reason, partner, time, serverTime, snapshot)
     end
     snapshot = snapshot or gameInfo.getSnapshotAt(time); local distanceReason = distanceGate(s, snapshot, partner)
     if distanceReason then return end
-    if clashStats and clashStats.frozen then
-        clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get()
-    end
+    if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
     s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil
     s.dashSwitchPartner, s.dashSwitchAt = nil, nil
-    s.activatedAt = time
-    local initialTarget = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
+    s.activatedAt = time; local initialTarget = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
     s.targetAwaySince = initialTarget and initialTarget ~= localPlayer.UserId and time or nil
     s.diversionSince, s.diversionSyncAt = nil, nil
     s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
@@ -238,11 +216,8 @@ local function shouldActivate(s, snapshot, time)
     local expectedTarget = s.pending.outgoing and s.pending.partner or localPlayer.UserId
     if not snapshot or s.target ~= expectedTarget or snapshot.targetId ~= expectedTarget then return false end
     local factor = CONFIG.ACTIVATION.RADIUS_FACTOR
-    if dashAssistPartner(s, snapshot, time) == s.pending.partner then
-        factor *= CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER
-    end
-    local g = geometry(snapshot, factor)
-    return g ~= nil and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
+    if dashAssistPartner(s, snapshot, time) == s.pending.partner then factor *= CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER end
+    local g = geometry(snapshot, factor); return g ~= nil and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
 end
 
 -- deactivation
@@ -368,17 +343,11 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
     end
     if not s.active and s.pending and target ~= me then s.pending = nil end
     if utils.isManualSpamActive() and not s.manualPartner then
-        if previous == me and target ~= me then
-            s.manualPartner = target
-        elseif previous and previous ~= me and target == me then
-            s.manualPartner = previous
-        end
+        if previous == me and target ~= me then s.manualPartner = target elseif previous and previous ~= me and target == me then s.manualPartner = previous end
     end
     local g, speed, window
     local partner = s.active and s.partner or s.manualPartner
-    if snapshot and (not s.active or (partner and target ~= me and target ~= partner)) then
-        g, speed, window = geometry(snapshot, 1)
-    end
+    if snapshot and (not s.active or (partner and target ~= me and target ~= partner)) then g, speed, window = geometry(snapshot, 1) end
     if utils.isManualSpamActive() and target ~= me and target ~= partner and partner and g then
         local distance = distanceToPlayer(target)
         if distance and distance > g.fullRadius then utils.setManualSpamActive(false) end
@@ -411,8 +380,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
         and completedPartner ~= s.stoppedPartner
         and snapshot.targetUncertain ~= true
     then
-        local activation = geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR)
-        local limit = distanceLimit(snapshot, completedPartner)
+        local activation = geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR); local limit = distanceLimit(snapshot, completedPartner)
         local partnerDistance = distanceToPlayer(completedPartner)
         if activation and limit and partnerDistance and partnerDistance <= limit then
             s.pending = { partner = completedPartner, closeReturn = true, outgoing = target ~= me }
@@ -438,13 +406,10 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
     if not fresh and applyDeactivation(s, snapshot, time) then blockedActivation = true end
     sampleOwnDash(s, time)
     if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
-    if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then
-        return
-    end
+    if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
     if fresh then clashStatsModule.observe(s, snapshot, time, true); clashStats = clashStatsModule.get() end
     if fresh and utils.isManualSpamActive() then
-        local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime)
-        local _, _, window = geometry(snapshot, 1)
+        local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(snapshot, 1)
         if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
     end
     if
@@ -477,11 +442,7 @@ local function detach(reason)
     if s then
         if clashStats and not clashStats.frozen then
             local humanoid = s.character and s.character:FindFirstChildOfClass("Humanoid")
-            if humanoid and humanoid.Health <= 0 then
-                clashStatsModule.freeze(localPlayer.UserId, s)
-            else
-                clashStatsModule.finish(reason, now())
-            end
+            if humanoid and humanoid.Health <= 0 then clashStatsModule.freeze(localPlayer.UserId, s) else clashStatsModule.finish(reason, now()) end
         end
         stop(s, reason); current = nil
         disconnect(s)
@@ -489,9 +450,7 @@ local function detach(reason)
     generation += 1
 end
 function AutoSpam.setup(deps)
-    if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats then
-        return false, "dependências ausentes"
-    end
+    if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats then return false, "dependências ausentes" end
     if current then detach("setup") end
     utils, gameInfo, clashStatsModule = deps.Utils, deps.GameInfo, deps.ClashStats; clashStats = clashStatsModule.get()
     players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
@@ -583,9 +542,7 @@ function AutoSpam.bindCharacter(character)
                 if typeof(position) == "Vector3" and playerIsAlive(player.UserId) then
                     local distance =
                         math.min((position - from.Position).Magnitude, (position - destination.Position).Magnitude)
-                    if distance <= CONFIG.ACTIVATION.HAUNTER_MATCH_RADIUS and (not best or distance < best) then
-                        caster, best = player, distance
-                    end
+                    if distance <= CONFIG.ACTIVATION.HAUNTER_MATCH_RADIUS and (not best or distance < best) then caster, best = player, distance end
                 end
             end
             if not caster or caster == localPlayer then return end
@@ -626,9 +583,7 @@ function AutoSpam.bindCharacter(character)
     local function watchPlayer(player)
         if playerWatches[player] then return end
         local entry = { character = {} }; playerWatches[player] = entry
-        entry.added = track(s, player.CharacterAdded, function(character)
-            watchCharacter(player, character, entry)
-        end)
+        entry.added = track(s, player.CharacterAdded, function(character) watchCharacter(player, character, entry) end)
         if player.Character then watchCharacter(player, player.Character, entry) end
     end
     local function removePlayer(player)
@@ -652,13 +607,11 @@ function AutoSpam.bindCharacter(character)
         then
             nextHaunterCheck = time + 0.25; connectHaunter()
         end
-        local autoEnabled = utils.getConfigValue("AutoSpam") == true
-        local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
+        local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
         local clashContext = gameInfo.getClashContext(); clashStats = clashStatsModule.get()
         local liveSnapshot
         if not s.lobbyCheckAt or time - s.lobbyCheckAt >= 0.25 then
-            s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time)
-            s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot)
+            s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time); s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot)
         end
         if not s.lobbySnapshotValid then
             s.lobbySince = s.lobbySince or time
@@ -670,21 +623,16 @@ function AutoSpam.bindCharacter(character)
         end
         if s.pendingReset and (not s.resetCheckAt or time - s.resetCheckAt >= 0.15) then
             s.resetCheckAt = time; local safe = true
-            local snapshot = gameInfo.getSnapshotAt(time)
-            local speed = snapshot and (snapshot.syncSpeed or snapshot.speed) or 16
+            local snapshot = gameInfo.getSnapshotAt(time); local speed = snapshot and (snapshot.syncSpeed or snapshot.speed) or 16
             local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
                 or gameInfo.getDeflectRangeParameters()
             for _, player in ipairs(players:GetPlayers()) do
                 if player ~= localPlayer and playerIsAlive(player.UserId) then
                     local position = gameInfo.getPlayerMotion(player.UserId)
-                    if typeof(position) ~= "Vector3" or (position - s.root.Position).Magnitude <= radius then
-                        safe = false; break
-                    end
+                    if typeof(position) ~= "Vector3" or (position - s.root.Position).Magnitude <= radius then safe = false; break end
                 end
             end
-            if snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetId == localPlayer.UserId then
-                safe = false
-            end
+            if snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetId == localPlayer.UserId then safe = false end
             if safe then
                 s.pendingReset = false
                 s.stoppedPartner, s.pending, s.dashSwitchPartner = nil, nil, nil
@@ -733,9 +681,7 @@ function AutoSpam.bindCharacter(character)
     end)
     return true
 end
-function AutoSpam.detachCharacter()
-    detach("detach")
-end
+function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
     detach("teardown"); clashStatsModule = nil
     clashStats = nil; utils, gameInfo, players, runService, localPlayer = nil, nil, nil, nil, nil, nil
@@ -796,19 +742,14 @@ function AutoSpam.onBallSync(data)
 end
 
 -- api
-function AutoSpam.isActive()
-    return current ~= nil and current.active
-end
+function AutoSpam.isActive() return current ~= nil and current.active end
 function AutoSpam.stopSpam()
     if current then stop(current, "stop_spam") end
 end
-function AutoSpam.getPullEvent()
-    return nil
-end
+function AutoSpam.getPullEvent() return nil end
 function AutoSpam.getDashData()
     local s = current; local ability = gameInfo and gameInfo.getDashAbility()
-    local speed = ability and tonumber(ability.DashSpeed) or 120
-    local duration = ability and tonumber(ability.DashTime) or 0.2
+    local speed = ability and tonumber(ability.DashSpeed) or 120; local duration = ability and tonumber(ability.DashTime) or 0.2
     return {
         dashing = ability ~= nil and ability.Dashing == true,
         speed = speed,
@@ -829,8 +770,7 @@ function AutoSpam.getTargetSwitch()
     }
 end
 function AutoSpam.getActivationContext()
-    local s = current
-    return { active = s ~= nil and s.active, reason = s and s.reason or "detached", partner = s and s.partner or -1 }
+    local s = current; return { active = s ~= nil and s.active, reason = s and s.reason or "detached", partner = s and s.partner or -1 }
 end
 function AutoSpam.getStatus()
     local s = current

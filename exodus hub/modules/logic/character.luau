@@ -26,9 +26,7 @@ end
 -- lifecycle
 local function detach(entry)
     local ok, err = pcall(entry.detach)
-    if not ok and utils then
-        utils.recordError("Character", ("%s: falha ao desvincular: %s"):format(entry.name or "bind", tostring(err)))
-    end
+    if not ok and utils then utils.recordError("Character", ("%s: falha ao desvincular: %s"):format(entry.name or "bind", tostring(err))) end
 end
 local function clearLife()
     local life = currentLife; currentLife = nil
@@ -104,9 +102,7 @@ local function setupCharacter(character)
     local function watchHumanoid(humanoid)
         if currentLife ~= life or life.humanoids[humanoid] then return end
         life.humanoids[humanoid] = true
-        utils.trackCharacter(humanoid.Died:Connect(function()
-            deactivate(life, "character_died")
-        end))
+        utils.trackCharacter(humanoid.Died:Connect(function() deactivate(life, "character_died") end))
         if humanoid.Health <= 0 then deactivate(life, "character_died") end
     end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -140,9 +136,7 @@ function Character.setup(deps)
         if owner == setupEpoch then setupCharacter(character) end
     end)
     removing = player.CharacterRemoving:Connect(function(character)
-        if owner == setupEpoch and currentLife and currentLife.character == character then
-            deactivate(currentLife, "character_removing")
-        end
+        if owner == setupEpoch and currentLife and currentLife.character == character then deactivate(currentLife, "character_removing") end
     end)
     utils.trackGlobal(added); utils.trackGlobal(removing)
     if player.Character then setupCharacter(player.Character) end

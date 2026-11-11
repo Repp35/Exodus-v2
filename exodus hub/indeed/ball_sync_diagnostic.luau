@@ -74,17 +74,13 @@ local function log(message)
 end
 local function getChild(parent, name)
     if not parent then return nil end
-    local ok, child = pcall(function()
-        return parent:FindFirstChild(name)
-    end)
+    local ok, child = pcall(function() return parent:FindFirstChild(name) end)
     if not ok then return nil end
     return child
 end
 local function safePath(instance)
     if typeof(instance) ~= "Instance" then return "nil" end
-    local ok, path = pcall(function()
-        return instance:GetFullName()
-    end)
+    local ok, path = pcall(function() return instance:GetFullName() end)
     if ok then return path end
     return "<path unavailable>"
 end
@@ -116,9 +112,7 @@ local function sortedKeys(value)
     for key in pairs(value) do
         keys[#keys + 1] = key
     end
-    table.sort(keys, function(a, b)
-        return tostring(a) < tostring(b)
-    end)
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
     return keys
 end
 local function appendTree(value, label, depth, visited, nodeState, output)
@@ -130,10 +124,7 @@ local function appendTree(value, label, depth, visited, nodeState, output)
     local indent = string.rep("  ", depth); local valueKind = typeof(value)
 
     -- instance
-    if valueKind == "Instance" then
-        output[#output + 1] = ("%s%s: Instance<%s> %s"):format(indent, label, value.ClassName, safePath(value))
-        return output
-    end
+    if valueKind == "Instance" then output[#output + 1] = ("%s%s: Instance<%s> %s"):format(indent, label, value.ClassName, safePath(value)); return output end
 
     -- primitive
     if type(value) ~= "table" then
@@ -149,21 +140,13 @@ local function appendTree(value, label, depth, visited, nodeState, output)
 
     -- cycle
     if visited[value] then output[#output + 1] = ("%s%s: table<cycle>"):format(indent, label); return output end
-    if depth >= CONFIG.MAX_DEPTH then
-        output[#output + 1] = ("%s%s: table<depth-limit>"):format(indent, label); return output
-    end
-    if nodeState.count >= CONFIG.MAX_NODES then
-        output[#output + 1] = ("%s%s: table<node-limit>"):format(indent, label); return output
-    end
+    if depth >= CONFIG.MAX_DEPTH then output[#output + 1] = ("%s%s: table<depth-limit>"):format(indent, label); return output end
+    if nodeState.count >= CONFIG.MAX_NODES then output[#output + 1] = ("%s%s: table<node-limit>"):format(indent, label); return output end
     visited[value] = true; local keys = sortedKeys(value)
     output[#output + 1] = ("%s%s: table (%d keys)"):format(indent, label, #keys)
     for _, key in ipairs(keys) do
-        if nodeState.count >= CONFIG.MAX_NODES then
-            output[#output + 1] = indent .. "  ... node limit reached"; break
-        end
-        local ok, item = pcall(function()
-            return value[key]
-        end)
+        if nodeState.count >= CONFIG.MAX_NODES then output[#output + 1] = indent .. "  ... node limit reached"; break end
+        local ok, item = pcall(function() return value[key] end)
         local keyLabel = "[" .. tostring(key) .. "]"
         if not ok then
             output[#output + 1] = indent .. "  " .. keyLabel .. ": <read failed>"
@@ -185,9 +168,7 @@ local function recordStructure(label, value)
 end
 
 -- cleanup
-local function getSignature(value)
-    return structure(value, "payload")
-end
+local function getSignature(value) return structure(value, "payload") end
 local function inspectRemote(remote, ...)
     local state = Runtime.remoteStates[remote]
     if not state then return end
@@ -212,9 +193,7 @@ local function connectRemote(remote)
 
     Runtime.remoteStates[remote] = state; log(("SYNC REMOTE: %s (%s)"):format(state.path, remote.ClassName))
     local ok, connection = pcall(function()
-        return remote.OnClientEvent:Connect(function(...)
-            inspectRemote(remote, ...)
-        end)
+        return remote.OnClientEvent:Connect(function(...) inspectRemote(remote, ...) end)
     end)
     if not ok or not connection then
         log(("could not observe %s: %s"):format(state.path, tostring(connection))); Runtime.remoteStates[remote] = nil
@@ -234,9 +213,7 @@ end
 -- discovery
 local function scanReplicatedStorage()
     local descendants = {}
-    local ok = pcall(function()
-        descendants = ReplicatedStorage:GetDescendants()
-    end)
+    local ok = pcall(function() descendants = ReplicatedStorage:GetDescendants() end)
     if not ok then log("failed to enumerate ReplicatedStorage"); return 0, 0 end
     local remoteCount = 0; local moduleCount = 0
     for _, instance in ipairs(descendants) do
@@ -268,9 +245,9 @@ local function inspectBallReplicator(moduleScript)
     local replicator, err = safeRequire(moduleScript)
     if not replicator then log("TS.BallReplicator unavailable: " .. tostring(err)); return nil end
     local provider = replicator.BallReplicator
-    local syncData = type(provider) == "table" and provider.syncData or nil
-    Runtime.lastReplicatorSignature = getSignature(syncData); log("TS.BallReplicator module=" .. safePath(moduleScript))
-    recordStructure("TS.BallReplicator.BallReplicator.syncData", syncData); return replicator
+    local syncData = type(provider) == "table" and provider.syncData or nil; Runtime.lastReplicatorSignature = getSignature(syncData)
+    log("TS.BallReplicator module=" .. safePath(moduleScript)); recordStructure("TS.BallReplicator.BallReplicator.syncData", syncData)
+    return replicator
 end
 
 -- polling
@@ -292,17 +269,14 @@ local function pollBallReplicator(ballReplicator)
     local provider = ballReplicator.BallReplicator
     local syncData = type(provider) == "table" and provider.syncData or nil; local signature = getSignature(syncData)
     if signature == Runtime.lastReplicatorSignature then return end
-    Runtime.lastReplicatorSignature = signature
-    recordStructure("TS.BallReplicator.BallReplicator.syncData (changed)", syncData)
+    Runtime.lastReplicatorSignature = signature; recordStructure("TS.BallReplicator.BallReplicator.syncData (changed)", syncData)
 end
 
 -- teardown
 local function disconnectAll()
     for index, connection in ipairs(Runtime.eventConnections) do
         if connection then
-            pcall(function()
-                connection:Disconnect()
-            end)
+            pcall(function() connection:Disconnect() end)
         end
         Runtime.eventConnections[index] = nil
     end
@@ -316,11 +290,7 @@ local function stop(reason)
     end
     disconnectAll(); log("observation ended: " .. tostring(reason or "manual"))
     local ok, err = saveFile()
-    if ok then
-        print(CONFIG.TAG .. " saved " .. CONFIG.LOG_PATH)
-    else
-        warn(CONFIG.TAG .. " could not save TXT: " .. tostring(err))
-    end
+    if ok then print(CONFIG.TAG .. " saved " .. CONFIG.LOG_PATH) else warn(CONFIG.TAG .. " could not save TXT: " .. tostring(err)) end
 end
 local API = {
     stop = stop,

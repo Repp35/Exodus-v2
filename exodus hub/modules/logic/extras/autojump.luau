@@ -25,9 +25,7 @@ local function jumpStep(player)
     if character ~= jumpCharacter then jumpCharacter, jumpHumanoid = character, nil end
     if not character or not character.Parent then return end
     local humanoid = jumpHumanoid
-    if not humanoid or humanoid.Parent ~= character then
-        humanoid = character:FindFirstChildOfClass("Humanoid"); jumpHumanoid = humanoid
-    end
+    if not humanoid or humanoid.Parent ~= character then humanoid = character:FindFirstChildOfClass("Humanoid"); jumpHumanoid = humanoid end
     if not humanoid or humanoid.Health <= 0 or humanoid.FloorMaterial == CONFIG.AIR_MATERIAL then return end
     if humanoid:GetState() ~= CONFIG.JUMPING_STATE then humanoid:ChangeState(CONFIG.JUMPING_STATE) end
 end
@@ -37,9 +35,7 @@ function AutoJump.sync()
     stopJump()
     if not utils or not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then return true end
     local player, runService = utils.getLocalPlayer(), utils.getRunService()
-    if not player or not runService or not runService.Heartbeat then
-        return false, "Jogador ou Heartbeat indisponível"
-    end
+    if not player or not runService or not runService.Heartbeat then return false, "Jogador ou Heartbeat indisponível" end
     local token = epoch
     jumpConnection = runService.Heartbeat:Connect(function()
         if token ~= epoch then return end

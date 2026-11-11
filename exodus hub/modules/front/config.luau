@@ -39,15 +39,9 @@ local function validKeyCode(value)
 end
 local validationErrors = CONFIG.ERRORS
 local validators = {
-    boolean = function(value)
-        return type(value) == "boolean"
-    end,
-    rate = function(value)
-        return isFiniteNumber(value) and value >= CONFIG.RATE_MIN
-    end,
-    delay = function(value)
-        return isFiniteNumber(value) and value >= CONFIG.DELAY_MIN and value <= CONFIG.DELAY_MAX
-    end,
+    boolean = function(value) return type(value) == "boolean" end,
+    rate = function(value) return isFiniteNumber(value) and value >= CONFIG.RATE_MIN end,
+    delay = function(value) return isFiniteNumber(value) and value >= CONFIG.DELAY_MIN and value <= CONFIG.DELAY_MAX end,
     delayMs = function(value)
         return isFiniteNumber(value) and value >= CONFIG.DELAY_MIN and value <= CONFIG.DELAY_MS_MAX
     end,
@@ -55,16 +49,13 @@ local validators = {
         return isFiniteNumber(value) and value >= CONFIG.POSITION_MIN and value <= CONFIG.POSITION_MAX
     end,
     keyCode = validKeyCode,
-    rateMode = function(value)
-        return value == "CPS" or value == "CPF" or value == "Auto"
-    end,
+    rateMode = function(value) return value == "CPS" or value == "CPF" or value == "Auto" end,
 }
 
 local function validateValue(key, kind, value: any)
     local validator = validators[kind]
     if validator and validator(value) then return true end
-    local message = validationErrors[kind] or "valor inválido: %s"
-    return false, message:find("%s", 1, true) and message:format(key) or message
+    local message = validationErrors[kind] or "valor inválido: %s"; return false, message:find("%s", 1, true) and message:format(key) or message
 end
 local function copy(source)
     local result = {}

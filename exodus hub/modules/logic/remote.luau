@@ -37,9 +37,7 @@ local function notifyParry(signature)
     local ok, detail = pcall(parryObserver, signature)
     if not ok and type(warn) == "function" then warn("[Remote] Observador de parry falhou: " .. tostring(detail)) end
 end
-function Remote.getAutoParrySignature()
-    return autoParrySignature
-end
+function Remote.getAutoParrySignature() return autoParrySignature end
 function Remote.setParryObserver(observer)
     if observer ~= nil and type(observer) ~= "function" then return false, "observador inválido" end
     parryObserver = observer; return true
@@ -67,9 +65,7 @@ function Remote.fireFierce(guard)
     if not allowed(guard) then return false, "Fierce cancelado" end
     return send(ability, CONFIG.FIERCE_METHOD)
 end
-function Remote.fireDash()
-    return send(gameInfo and gameInfo.getDashAbility(), CONFIG.DASH_METHOD)
-end
+function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), CONFIG.DASH_METHOD) end
 
 -- contract
 Remote.__contract = {

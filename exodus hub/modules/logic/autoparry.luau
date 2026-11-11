@@ -65,19 +65,13 @@ local state = {
 local function finite(value)
     return type(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
-local function vector(value)
-    return typeof(value) == "Vector3"
-end
-local function clock()
-    return os.clock()
-end
+local function vector(value) return typeof(value) == "Vector3" end
+local function clock() return os.clock() end
 local function phase(value, reason)
     if state.phase == value and state.reason == reason then return end
     local previous = state.phase
     state.phase, state.reason = value, reason
-    if previous ~= value and utils and type(utils.recordTransition) == "function" then
-        utils.recordTransition("AutoParry", previous, value, reason)
-    end
+    if previous ~= value and utils and type(utils.recordTransition) == "function" then utils.recordTransition("AutoParry", previous, value, reason) end
 end
 local function track(connection)
     state.connections[#state.connections + 1] = connection; utils.trackCharacter(connection)
@@ -134,8 +128,7 @@ end
 local function factorForCps(cps)
     local base = configuredFactor()
     if not finite(cps) or cps <= CONFIG.CPS_BOOST_START then return base end
-    local span = CONFIG.CPS_BOOST_FULL - CONFIG.CPS_BOOST_START
-    local progress = span > 0 and math.clamp((cps - CONFIG.CPS_BOOST_START) / span, 0, 1) or 1
+    local span = CONFIG.CPS_BOOST_FULL - CONFIG.CPS_BOOST_START; local progress = span > 0 and math.clamp((cps - CONFIG.CPS_BOOST_START) / span, 0, 1) or 1
     return base + (1 - base) * progress
 end
 local function activeWindowFactor(at)
@@ -151,14 +144,11 @@ local function recordAutoParryRemote(signature)
     state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0
     state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(factorForCps(state.autoParryCps), 0, 1)
 end
-local function minimumBallSpeed()
-    return CONFIG.MIN_PARRY_SPEED
-end
+local function minimumBallSpeed() return CONFIG.MIN_PARRY_SPEED end
 local function radius(speed, factor, baseWindow)
     speed = finite(speed) and math.max(speed, 0) or 0; factor = tonumber(factor)
     if not finite(factor) then factor = activeWindowFactor(clock()) end
-    factor = math.clamp(factor, 0, 1)
-    return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
+    factor = math.clamp(factor, 0, 1); return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
 end
 
 -- telemetry
@@ -177,15 +167,12 @@ local function trajectory(position, velocity, rootPosition, nominalSpeed, geomet
         if finite(nominalSpeed) and nominalSpeed > 0 then closing = math.min(closing, nominalSpeed * 1.1) end
     end
     if not finite(closing) then closing = 0 end
-    local threshold = gameInfo.getProjectedDeflectRadius(geometry, closing) or geometry.noWindowParryRadius
-    return distance, closing, threshold
+    local threshold = gameInfo.getProjectedDeflectRadius(geometry, closing) or geometry.noWindowParryRadius; return distance, closing, threshold
 end
 
 -- target-sync
 local function sequenceOrder(incoming)
-    if not finite(incoming) or incoming < 0 or incoming >= CONFIG.TARGET_SEQUENCE_MODULUS or incoming % 1 ~= 0 then
-        return nil
-    end
+    if not finite(incoming) or incoming < 0 or incoming >= CONFIG.TARGET_SEQUENCE_MODULUS or incoming % 1 ~= 0 then return nil end
     if state.sequence == nil then return "new" end
     local delta = (incoming - state.sequence) % CONFIG.TARGET_SEQUENCE_MODULUS
     if delta == 0 then return "same" end
@@ -219,9 +206,7 @@ local function observeSnapshot(snapshot, time)
     end
     local order = sequenceOrder(snapshot.syncSequence)
     if order == "old" then return false end
-    if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then
-        return false
-    end
+    if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then return false end
     if order == "new" then state.sequence = snapshot.syncSequence end
     observeTarget(snapshot.targetId, time); return true
 end
@@ -263,9 +248,7 @@ local function request(reason)
     if sent ~= true then
         state.fired = false; phase("waiting", "parry_attempt_failed")
         local now = clock()
-        if now - state.lastErrorAt >= 1 then
-            state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível"))
-        end
+        if now - state.lastErrorAt >= 1 then state.lastErrorAt = now; boundUtils.recordError("AutoParry", tostring(detail or "Deflect indisponível")) end
         return false
     end
     local factor = activeWindowFactor(firedAt)
@@ -305,8 +288,7 @@ local function tick(character, root, generation)
     local position, velocity, rootPosition = value.position, value.velocity, gameInfo.getRootPosition(root)
     if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
     if not value.ball.Parent then return end
-    local syncSpeed = tonumber(value.syncSpeed)
-    local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
+    local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
     if
         value.grace == true
         and value.targetUncertain ~= true
@@ -323,8 +305,7 @@ local function tick(character, root, generation)
     if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
     samplePing(); local geometry = radius(speed, activeWindowFactor(time))
     if not geometry then return end
-    local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry)
-    threshold += math.max(closing, 0) * state.frameAllowance
+    local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); threshold += math.max(closing, 0) * state.frameAllowance
     state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
     state.closingSpeed, state.triggerDistance = closing, threshold
     if closing > 0 and distance <= threshold then request("parry_requested") end
@@ -342,9 +323,7 @@ function AutoParry.setup(deps)
     end
     for name, methods in pairs(AutoParry.__contract.requiresMethods) do
         for _, method in ipairs(methods) do
-            if type(deps[name][method]) ~= "function" then
-                return false, "dependência ausente: " .. name .. "." .. method
-            end
+            if type(deps[name][method]) ~= "function" then return false, "dependência ausente: " .. name .. "." .. method end
         end
     end
     if remote and type(remote.setParryObserver) == "function" then remote.setParryObserver(nil) end
@@ -354,31 +333,23 @@ function AutoParry.setup(deps)
     autoParrySignature = remote.getAutoParrySignature()
     if type(autoParrySignature) ~= "table" then return false, "assinatura do AutoParry indisponível" end
     resetTracking(); local observed, detail = remote.setParryObserver(recordAutoParryRemote)
-    if observed ~= true then
-        autoParrySignature = nil; return false, tostring(detail or "observador do AutoParry indisponível")
-    end
+    if observed ~= true then autoParrySignature = nil; return false, tostring(detail or "observador do AutoParry indisponível") end
     phase("detached", "setup_complete"); return true
 end
 function AutoParry.bindCharacter(character)
     if not utils or not gameInfo or not remote then return false, "dependências não inicializadas" end
     detach("rebind_start")
     if not character or not character.Parent then return false, "personagem indisponível" end
-    local generation = state.generation
-    local root = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 10)
-    if generation ~= state.generation or not root or not root.Parent or not root:IsA("BasePart") then
-        return false, "HumanoidRootPart indisponível"
-    end
-    local service, player = utils.getRunService(), utils.getLocalPlayer()
-    local signal = service and (service.PostSimulation or service.Heartbeat)
+    local generation = state.generation; local root = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 10)
+    if generation ~= state.generation or not root or not root.Parent or not root:IsA("BasePart") then return false, "HumanoidRootPart indisponível" end
+    local service, player = utils.getRunService(), utils.getLocalPlayer(); local signal = service and (service.PostSimulation or service.Heartbeat)
     if not signal or not player then return false, "RunService ou jogador indisponível" end
     state.root, state.character, state.player, state.alive, state.bound = root, character, player, true, true
     resetTracking(); phase("waiting", "character_bound")
     gameInfo.getDeflectCooldownState()
     track(signal:Connect(function(deltaTime)
         if generation ~= state.generation then return end
-        if finite(deltaTime) and deltaTime >= 0 then
-            state.frameAllowance = math.clamp(deltaTime - CONFIG.FRAME_BASE, 0, CONFIG.MAX_FRAME_ALLOWANCE)
-        end
+        if finite(deltaTime) and deltaTime >= 0 then state.frameAllowance = math.clamp(deltaTime - CONFIG.FRAME_BASE, 0, CONFIG.MAX_FRAME_ALLOWANCE) end
         tick(character, root, generation)
     end))
     track(character.AncestryChanged:Connect(function(_, parent)
@@ -390,13 +361,11 @@ function AutoParry.beginFierce()
     if not state.alive or not state.bound then return nil end
     local target = gameInfo.getTargetId()
     if finite(target) then observeTarget(target, clock()) end
-    local token = { generation = state.generation, cycle = state.cycle, previouslyFired = state.fired }
-    state.fired = true; return token
+    local token = { generation = state.generation, cycle = state.cycle, previouslyFired = state.fired }; state.fired = true
+    return token
 end
 function AutoParry.cancelFierce(token)
-    if token and state.generation == token.generation and state.cycle == token.cycle and not token.previouslyFired then
-        state.fired = false
-    end
+    if token and state.generation == token.generation and state.cycle == token.cycle and not token.previouslyFired then state.fired = false end
 end
 function AutoParry.fire()
     if not state.alive or not state.bound or state.fired or state.teleported then return false end
@@ -426,12 +395,8 @@ function AutoParry.tryRedirectReturn(value, redirectAt)
     if state.fired then return false end
     return request("redirect_return")
 end
-function AutoParry.resetState()
-    detach("reset")
-end
-function AutoParry.detachCharacter()
-    detach("detach")
-end
+function AutoParry.resetState() detach("reset") end
+function AutoParry.detachCharacter() detach("detach") end
 function AutoParry.teardown()
     if remote and type(remote.setParryObserver) == "function" then remote.setParryObserver(nil) end
     detach("teardown")
@@ -444,9 +409,7 @@ function AutoParry.onBallSync(data)
     local currentSnapshot = gameInfo.getSnapshotAt(clock())
     if currentSnapshot and currentSnapshot.mode == "training" then return true end
     local sequence = data.Sequence or data.TeleportSequence
-    if sequence == nil and gameInfo.getSyncSequence and data == gameInfo.getSyncData() then
-        sequence = gameInfo.getSyncSequence()
-    end
+    if sequence == nil and gameInfo.getSyncSequence and data == gameInfo.getSyncData() then sequence = gameInfo.getSyncSequence() end
     local order = sequenceOrder(sequence)
     if order == "old" then return true end
     if order == "same" and (data.Teleported ~= true or state.teleported) then return true end
@@ -465,8 +428,7 @@ function AutoParry.onBallSync(data)
         if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
     end
     state.teleported, state.teleportSequence = false, nil
-    local rawTarget = tonumber(data.TargetPlayerID)
-    local target = finite(rawTarget) and rawTarget > 0 and rawTarget or gameInfo.getTargetId()
+    local rawTarget = tonumber(data.TargetPlayerID); local target = finite(rawTarget) and rawTarget > 0 and rawTarget or gameInfo.getTargetId()
     if order == nil and state.sequence ~= nil and state.targetKnown and target ~= state.target then return true end
     if not finite(target) then return true end
     observeTarget(target, clock())
@@ -500,8 +462,7 @@ function AutoParry.getTargetStatus()
 end
 local function rootPosition()
     if state.root and state.root.Parent then return gameInfo.getRootPosition(state.root) end
-    local character = state.player and state.player.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local character = state.player and state.player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
     return root and root.Parent and gameInfo.getRootPosition(root) or nil
 end
 function AutoParry.getTiming(value, time, root, factor, baseWindow)
@@ -547,8 +508,7 @@ function AutoParry.getRadius(mode, factor, speedOverride, baseWindow)
     if mode ~= "tti" and mode ~= "speed_distance" then mode = "geometry" end
     local speed = tonumber(speedOverride)
     if not finite(speed) or speed < 0 then speed = state.speed end
-    local result = radius(speed, factor, baseWindow)
-    local tti = speed > 0 and math.max(state.distance - result.fullRadius, 0) / speed or math.huge
+    local result = radius(speed, factor, baseWindow); local tti = speed > 0 and math.max(state.distance - result.fullRadius, 0) / speed or math.huge
     result.mode, result.speed, result.distance, result.tti, result.resilience =
         mode, speed, state.distance, tti, resilience()
     result.value = mode == "tti" and tti
@@ -571,11 +531,7 @@ function AutoParry.getPressure()
     local returns, intervals = 0, 0
     for i = #state.returns, 1, -1 do
         local item = state.returns[i]
-        if time < item.at or time - item.at > CONFIG.PRESSURE_WINDOW then
-            table.remove(state.returns, i)
-        else
-            returns += 1; intervals += item.interval
-        end
+        if time < item.at or time - item.at > CONFIG.PRESSURE_WINDOW then table.remove(state.returns, i) else returns += 1; intervals += item.interval end
     end
     local latest, lastReturn = state.clicks[#state.clicks], state.returns[#state.returns]
     local currentLevel, factorDrop
