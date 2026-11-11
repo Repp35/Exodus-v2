@@ -593,8 +593,15 @@ function AutoSpam.bindCharacter(character)
     local time = now()
     if (not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent) and time >= nextHaunterCheck then nextHaunterCheck = time + 0.25; connectHaunter() end
     local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
-    local manualEnabled = utils.isManualSpamActive(); local clashContext = gameInfo.getClashContext()
-    clashStats = clashStatsModule.get()
+    local manualEnabled = utils.isManualSpamActive(); clashStats = clashStatsModule.get()
+    local needsContext = autoEnabled
+      or upDashEnabled
+      or manualEnabled
+      or s.active
+      or s.pendingReset
+      or s.haunterPartner
+      or (clashStats and not clashStats.frozen)
+    local clashContext = needsContext and gameInfo.getClashContext() or nil
     if
       not autoEnabled
       and not upDashEnabled
@@ -743,7 +750,16 @@ end
 
 -- status
 function AutoSpam.getStatus()
-  local s = current
+  local s = current; local clash = clashStats
+  local currentCps, duration
+  if clash then
+    currentCps = clash.currentCps
+    if finite(currentCps) and not clash.frozen then
+      local interval = finite(clash.cycleInterval) and clash.cycleInterval or (finite(clash.lastCycleAt) and now() - clash.lastCycleAt or nil)
+      if finite(interval) and interval > 0 then currentCps = math.min(currentCps, 1 / interval) end
+    end
+    duration = finite(clash.duration) and clash.duration or (finite(clash.startedAt) and math.max(0, now() - clash.startedAt) or 0)
+  end
   return {
     schema = utils and utils.apiVersion() or 1,
     phase = s and (s.active and "active" or "idle") or "detached",
@@ -752,28 +768,25 @@ function AutoSpam.getStatus()
     lastStopReason = s and s.lastStopReason or nil,
     lastStopAt = s and s.lastStopAt or nil,
     clashPartnerId = s and s.partner or -1,
-    clashStats = clashStats and {
-      partnerId = clashStats.partnerId,
-      distance = clashStats.distance,
-      cps = clashStats.cps,
-      currentCps = clashStats.currentCps and (clashStats.frozen and clashStats.currentCps or math.min(
-        clashStats.currentCps,
-        1 / math.max(clashStats.cycleInterval, now() - clashStats.lastCycleAt)
-      )) or nil,
-      startSample = clashStats.startSample and table.clone(clashStats.startSample) or nil,
-      endSample = clashStats.endSample and table.clone(clashStats.endSample) or nil,
-      endReason = clashStats.endReason,
-      speed = clashStats.speed,
-      frozen = clashStats.frozen,
-      duration = clashStats.duration or math.max(0, now() - clashStats.startedAt),
-      travelTarget = clashStats.travelTarget,
-      travelStartedAt = not clashStats.frozen and clashStats.travelStartedAt or nil,
-      lastTravelTime = clashStats.lastTravelTime,
-      lastTravelTarget = clashStats.lastTravelTarget,
-      fatalTravelTime = clashStats.fatalTravelTime,
-      penultimateTravelTime = clashStats.penultimateTravelTime,
-      penultimateTarget = clashStats.penultimateTarget,
-      deceasedId = clashStats.deceasedId,
+    clashStats = clash and {
+      partnerId = clash.partnerId,
+      distance = clash.distance,
+      cps = clash.cps,
+      currentCps = currentCps,
+      startSample = clash.startSample and table.clone(clash.startSample) or nil,
+      endSample = clash.endSample and table.clone(clash.endSample) or nil,
+      endReason = clash.endReason,
+      speed = clash.speed,
+      frozen = clash.frozen,
+      duration = duration,
+      travelTarget = clash.travelTarget,
+      travelStartedAt = not clash.frozen and clash.travelStartedAt or nil,
+      lastTravelTime = clash.lastTravelTime,
+      lastTravelTarget = clash.lastTravelTarget,
+      fatalTravelTime = clash.fatalTravelTime,
+      penultimateTravelTime = clash.penultimateTravelTime,
+      penultimateTarget = clash.penultimateTarget,
+      deceasedId = clash.deceasedId,
     } or nil,
   }
 end

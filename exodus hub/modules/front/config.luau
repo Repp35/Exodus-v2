@@ -11,6 +11,7 @@ local CONFIG = {
   DELAY_MIN = 0,
   DELAY_MAX = 5,
   DELAY_MS_MAX = 400,
+  WINDOW_FACTOR_MAX = 0.35,
   POSITION_MIN = -10000,
   POSITION_MAX = 10000,
   ERRORS = {
@@ -18,6 +19,7 @@ local CONFIG = {
     rate = "taxa inválida: %s",
     delay = "atraso inválido: %s",
     delayMs = "tempo inválido: %s",
+    windowFactor = "fator de janela inválido: %s",
     position = "posição inválida: %s",
     keyCode = "keybind inválido: %s",
     rateMode = "SpamRateMode inválido",
@@ -41,6 +43,7 @@ local validators = {
   rate = function(value) return isFiniteNumber(value) and value >= CONFIG.RATE_MIN end,
   delay = function(value) return isFiniteNumber(value) and value >= CONFIG.DELAY_MIN and value <= CONFIG.DELAY_MAX end,
   delayMs = function(value) return isFiniteNumber(value) and value >= CONFIG.DELAY_MIN and value <= CONFIG.DELAY_MS_MAX end,
+  windowFactor = function(value) return isFiniteNumber(value) and value >= 0 and value <= CONFIG.WINDOW_FACTOR_MAX end,
   position = function(value) return isFiniteNumber(value) and value >= CONFIG.POSITION_MIN and value <= CONFIG.POSITION_MAX end,
   keyCode = validKeyCode,
   rateMode = function(value) return value == "CPS" or value == "CPF" or value == "Auto" end,

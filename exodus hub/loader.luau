@@ -286,8 +286,10 @@ local function resolveLatestRevision()
   local body, requestError, requestMeta =
     request(MANIFEST_URL .. "?exodus_cache=" .. CACHE_BUSTER, { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Loader" })
   if body then
-    local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and document.revision
+    local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local valid = ok and type(document) == "table" and document.schema == 1 and document.product == "Exodus-v2"
+    local sha = valid and document.revision or nil
     if validRevision(sha) then return sha end
+    if ok and type(document) == "table" and not valid then requestError = "manifesto de versão incompatível" end
   end
   return nil, requestError or "manifesto de versão indisponível", requestMeta
 end
@@ -377,7 +379,7 @@ local function authorizeRevision(revision)
   if type(entitlements.gameIds) == "table" and next(entitlements.gameIds) ~= nil and not setContains(entitlements.gameIds, game.GameId) then return false, "experiência não autorizada" end
   if type(entitlements.placeIds) == "table" and next(entitlements.placeIds) ~= nil and not setContains(entitlements.placeIds, game.PlaceId) then return false, "lugar não autorizado" end
   local expiresAt = tonumber(entitlements.expiresAt or 0) or 0
-  if expiresAt > 0 and os.time() > expiresAt then return false, "autorização expirada" end
+  if expiresAt > 0 and os.time() >= expiresAt then return false, "autorização expirada" end
   return true
 end
 local function orderModulesByDependencies(loaded)
@@ -489,6 +491,8 @@ local function bindRuntime(loaded)
   if
     type(gameInfo) ~= "table"
     or type(gameInfo.applySync) ~= "function"
+    or type(gameInfo.applyPacket) ~= "function"
+    or type(gameInfo.decodeBallPacket) ~= "function"
     or type(gameInfo.installBallWatcher) ~= "function"
     or type(gameInfo.getSyncData) ~= "function"
     or type(remote) ~= "table"
@@ -544,24 +548,16 @@ local function bindRuntime(loaded)
       if type(refreshed) == "table" then notifyBallSync(refreshed) end
     end)
   end
-  local lastClashPacketSequence
   local function onBallSync(...)
     local argCount = select("#", ...)
     local data
     for index = 1, argCount do
       local value = select(index, ...)
       if typeof(value) == "buffer" then
-        if type(gameInfo.decodeBallPacket) == "function" then
-          local packet = gameInfo.decodeBallPacket(value)
-          if type(packet) == "table" and type(packet.Sequence) == "number" then
-            local sequence = packet.Sequence; local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
-            local forward = not lastClashPacketSequence or (sequence - lastClashPacketSequence) % 65536; local currentDelta = type(current) == "number" and (sequence - current) % 65536 or 0
-            if (forward == true or forward < 32768) and currentDelta < 32768 then
-              lastClashPacketSequence = sequence; packet.Source = "packet"
-              if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
-              if not packet.Teleported then notifyBallSync(packet) end
-            end
-          end
+        local decoded, packet = pcall(gameInfo.decodeBallPacket, value)
+        if decoded and type(packet) == "table" and type(packet.Sequence) == "number" then
+          packet.Source = "packet"; local appliedOk, applied = pcall(gameInfo.applyPacket, packet)
+          if appliedOk and applied == true and not packet.Teleported then notifyBallSync(packet) end
         end
         if buffer.len(value) >= 92 and bit32.btest(buffer.readu8(value, 0), 1) then
           local sequence = buffer.readu16(value, 1); local current = gameInfo.getSyncSequence and gameInfo.getSyncSequence()
@@ -781,7 +777,8 @@ end
 local started = startSafely()
 Exodus.Started = started == true
 if started and startupPerformed then
-  local revision = Exodus.Revision or readSavedRevision() or BRANCH
+  local revision = Exodus.Revision or readSavedRevision()
+  if not validRevision(revision) then warn("[Exodus Updater] revisão ativa indisponível; atualização automática desativada"); return end
   task.spawn(function()
     local source = validRevision(revision) and readCacheFile(revision, "updater.luau")
     local fetchError

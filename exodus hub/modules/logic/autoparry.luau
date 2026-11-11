@@ -528,7 +528,7 @@ function AutoParry.getTargetStatus()
     approaching = state.approaching,
     targetId = state.target,
     targetKnown = state.targetKnown,
-    cooldown = gameInfo and gameInfo.getDeflectCooldownState() or nil,
+    cooldown = gameInfo and safeCooldown() or nil,
   }
 end
 local function rootPosition()
@@ -582,7 +582,9 @@ function AutoParry.getRadius(mode, factor, speedOverride, baseWindow)
   if mode ~= "tti" and mode ~= "speed_distance" then mode = "geometry" end
   local speed = tonumber(speedOverride)
   if not finite(speed) or speed < 0 then speed = state.speed end
-  local result = radius(speed, factor, baseWindow); local tti = speed > 0 and math.max(state.distance - result.fullRadius, 0) / speed or math.huge
+  local result = radius(speed, factor, baseWindow)
+  if not result then return nil end
+  local tti = speed > 0 and math.max(state.distance - result.fullRadius, 0) / speed or math.huge
   result.mode, result.speed, result.distance, result.tti, result.resilience = mode, speed, state.distance, tti, resilience()
   result.value = mode == "tti" and tti or (mode == "speed_distance" and { speed = speed, distance = state.distance } or result.fullRadius); return result
 end
@@ -613,6 +615,26 @@ function AutoParry.getPressure()
 end
 function AutoParry.getStatus()
   local geometry = AutoParry.getRadius("geometry", utils and activeWindowFactor(clock()) or CONFIG.DEFAULT_WINDOW_FACTOR); local target = AutoParry.getTargetStatus()
+  if not geometry then
+    geometry = {
+      fullRadius = 0,
+      pureRadius = 0,
+      noWindowParryRadius = 0,
+      resilienceBonus = 0,
+      pingRadius = 0,
+      deflectWindow = 0,
+      effectiveWindow = 0,
+      leadTime = 0,
+      windowFactor = state.windowFactor,
+      triggerPadding = 0,
+      tti = math.huge,
+      speed = state.speed,
+      distance = state.distance,
+      mode = "geometry",
+      resilience = resilience(),
+    }
+
+  end
   return {
     schema = utils and utils.apiVersion() or nil,
     api = {

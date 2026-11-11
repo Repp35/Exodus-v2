@@ -56,10 +56,11 @@ end
 
 -- recording
 function ClashStats.finish(reason, time)
-  if not stats or stats.frozen then return end
+  if not stats or stats.frozen then return false end
+  time = finite(time) and time or utils.now(); reason = tostring(reason or "clash encerrado")
   stats.frozen, stats.waitingForClash = true, false; stats.duration = math.max(0, time - stats.startedAt)
   stats.cps = stats.duration > 0 and stats.totalSwitches / stats.duration or 0; stats.endReason = reason
-  if reason ~= "jogador morreu" and reason ~= "oponente morreu" then return end
+  if reason ~= "jogador morreu" and reason ~= "oponente morreu" then return true end
   local opponent = players:GetPlayerByUserId(stats.partnerId)
   local ok, result = pcall(function()
     local log = utils.createClashLog(stats.partnerId, stats.startedDate)
@@ -86,17 +87,23 @@ function ClashStats.finish(reason, time)
     )
   end)
   if not ok then utils.recordError("ClashLog", tostring(result)) end
+  return ok
 end
 function ClashStats.begin(partner, time)
+  partner = userId(partner)
+  if not partner then return false end
+  time = finite(time) and time or utils.now()
   if stats and not stats.frozen then ClashStats.finish("novo clash", stats.lastObserved) end
   stats = stats or {}; table.clear(stats)
   stats.partnerId, stats.cps, stats.lastObserved = partner, 0, time; stats.startedAt, stats.startedDate = time, os.date("!%Y-%m-%d %H:%M:%S")
-  stats.totalSwitches, stats.frozen = 0, false
+  stats.totalSwitches, stats.frozen = 0, false; return true
 end
 
 -- observation
 function ClashStats.observe(session, snapshot, time, fresh)
-  local partner = session.active and session.partner
+  if type(session) ~= "table" or type(snapshot) ~= "table" then return false end
+  if typeof(session.root) ~= "Instance" or not session.root:IsA("BasePart") or not session.root.Parent then return false end
+  time = finite(time) and time or utils.now(); local partner = session.active and session.partner
   if not partner then local context = gameInfo.getClashContext(); partner = context and context.partnerId end
   local target = userId(snapshot.targetId)
   if
@@ -114,9 +121,9 @@ function ClashStats.observe(session, snapshot, time, fresh)
   end
   if stats and stats.frozen then
     if not stats.waitingForClash then return end
-    ClashStats.begin(partner, time)
+    if not ClashStats.begin(partner, time) then return false end
   elseif not stats or stats.partnerId ~= partner or time - stats.lastObserved > CONFIG.CLASH_RETENTION_SECONDS then
-    ClashStats.begin(partner, time)
+    if not ClashStats.begin(partner, time) then return false end
   end
   local observeTarget = fresh or not stats.lastPacketAt or time - stats.lastPacketAt > CONFIG.PACKET_FALLBACK_SECONDS
   if fresh then stats.lastPacketAt = time end
@@ -159,10 +166,11 @@ function ClashStats.observe(session, snapshot, time, fresh)
   sample.time, sample.distance, sample.speed, sample.cps = math.max(0, time - stats.startedAt), distance, stats.speed, stats.cps
   sample.own, sample.opponent, sample.ball = own, other, snapshot.position
   if not stats.startSample then stats.startSample = table.clone(sample) end
-  stats.endSample = sample
+  stats.endSample = sample; return true
 end
 function ClashStats.freeze(playerId, session)
-  if not stats or stats.frozen or (playerId ~= localPlayer.UserId and playerId ~= stats.partnerId) then return end
+  playerId = userId(playerId)
+  if not stats or stats.frozen or not playerId or (playerId ~= localPlayer.UserId and playerId ~= stats.partnerId) then return false end
   local time = utils.now()
   if stats.travelTarget == playerId and stats.travelStartedAt then
     stats.fatalTravelTime = math.max(0, time - stats.travelStartedAt); stats.penultimateTravelTime, stats.penultimateTarget = stats.lastTravelTime, stats.lastTravelTarget
@@ -172,10 +180,11 @@ function ClashStats.freeze(playerId, session)
     local other = gameInfo.getPlayerMotion(stats.partnerId); sample.own, sample.opponent = session.root.Position, other
     if typeof(other) == "Vector3" then sample.distance = (other - sample.own).Magnitude end
   end
-  ClashStats.finish(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", time)
+  ClashStats.finish(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", time); return true
 end
 function ClashStats.waitForNextClash()
-  if stats and stats.frozen then stats.waitingForClash = true end
+  if stats and stats.frozen then stats.waitingForClash = true; return true end
+  return false
 end
 function ClashStats.get() return stats end
 

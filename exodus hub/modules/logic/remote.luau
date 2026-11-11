@@ -23,13 +23,14 @@ local function send(ability, method, ...)
   if ability == nil then return false, method .. " não equipado ou indisponível" end
   local callback = ability[method]
   if type(callback) ~= "function" then error("API externa ausente: habilidade." .. method, 2) end
-  local result = callback(ability, ...)
+  local ok, result = pcall(callback, ability, ...)
+  if not ok then return false, tostring(result) end
   if result == false then return false, method .. " recusado" end
   return true
 end
 local function allowed(guard)
   if type(guard) ~= "function" then return true end
-  local result = guard(); return result ~= nil and result ~= false
+  local ok, result = pcall(guard); return ok and result ~= nil and result ~= false
 end
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function fireDeflect(ability)
@@ -52,13 +53,20 @@ function Remote.fireParry(_flag, guard)
   if not allowed(guard) then return false, "Deflect cancelado" end
   local sent, detail = fireDeflect(ability); return sent, detail
 end
-function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
+function Remote.fireDark(eventId, cameraFrame)
+  if not gameInfo then return false, "Remote não inicializado" end
+  return send(gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame)
+end
 function Remote.fireFierce(guard)
+  if not gameInfo then return false, "Remote não inicializado" end
   local ability = gameInfo and gameInfo.getFierceDeflectAbility()
   if not allowed(guard) then return false, "Fierce cancelado" end
   return send(ability, CONFIG.FIERCE_METHOD)
 end
-function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), CONFIG.DASH_METHOD) end
+function Remote.fireDash()
+  if not gameInfo then return false, "Remote não inicializado" end
+  return send(gameInfo.getDashAbility(), CONFIG.DASH_METHOD)
+end
 
 -- contract
 Remote.__contract = {

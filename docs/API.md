@@ -33,7 +33,7 @@ Os nomes de funções existentes foram mantidos. Os módulos carregados continua
 
 `utils.getConfig()` e `utils.getConfigSnapshot()` retornam cópias da configuração; os snapshots de tabelas usam cópia com detecção de ciclos, sem expor referências internas profundas. `utils.setConfig` ignora patches sem alteração, evitando notificações e gravações redundantes. `utils.getConfigValue(chave)` busca um valor. Para alterar configurações, use `utils.setConfig(patch)` e as regras de `config`, em vez de modificar cópias. `utils.observeConfig` e `utils.observeSpam` retornam conexões que devem ser desconectadas durante a limpeza.
 
-`gameinfo.getSnapshotAt(tempo)` retorna uma leitura de estado da bola; os consumidores devem usar `gameinfo.isSnapshotValid` antes de depender dela. O loader envia eventos de sincronização aos módulos que declaram `onBallSync`. `character` organiza as vinculações dos módulos que declaram `bindCharacter`.
+`gameinfo.getSnapshotAt(tempo)` retorna uma leitura de estado da bola; `gameinfo.getSnapshot(tempo)` é o alias compatível e aceita tanto chamada com ponto quanto com dois argumentos. Os consumidores devem usar `gameinfo.isSnapshotValid` antes de depender da leitura. O loader envia eventos de sincronização aos módulos que declaram `onBallSync`; a aceitação e a ordem dos pacotes ficam em `gameinfo.applyPacket`. `character` organiza as vinculações dos módulos que declaram `bindCharacter`.
 
 ## Raios e conexão com o jogo
 
@@ -49,7 +49,11 @@ Os identificadores de habilidades, eventos e caixas ficam em `GAME_IDS`, em `gam
 
 Cada módulo contabiliza suas próprias solicitações de clique, independentemente do resultado do remote. O AutoParry registra o instante de cada solicitação que faz, sem token nem observador no `remote`; solicitações do Spam não entram nessa medição. O CPS do AutoParry é o inverso do intervalo entre as duas últimas solicitações.
 
-O fator da janela começa em 0,8. Até 2 CPS ele permanece em 0,8; entre 2 e 2,5 CPS o fator sobe progressivamente até 1; a partir de 2,5 CPS fica em 1. Um intervalo acima de 0,5 segundo elimina o bônus no próximo clique. `autoparry.getStatus()` expõe `cps`, `windowFactor` e os limites em `cpsGate`.
+O fator da janela é configurado em `AutoParryWindowFactor`, com padrão `0,3` e limite `0,35`. Ele não aumenta com CPS; o AutoParry registra apenas as solicitações aceitas que ele próprio fez. `autoparry.getStatus()` expõe `cps`, `windowFactor` e os limites em `cpsGate`.
+
+## Desempenho e atualização
+
+Os loops de reação continuam orientados por `Heartbeat`/`PostSimulation`, mas chamadas repetidas de UI, sincronização e recursos opcionais são limitadas ao intervalo útil. A inicialização baixa os módulos em paralelo; a atualização automática só aplica uma revisão quando o manifesto tem produto, schema e SHA válidos e quando o jogo está fora de uma janela ativa de clash.
 
 ## Verificação de contratos
 

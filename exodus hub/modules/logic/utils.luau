@@ -76,7 +76,10 @@ end
 local function notify(list, value)
   if #list == 0 then return end
   for _, observer in ipairs(table.clone(list)) do
-    if observer.Connected then observer.callback(value) end
+    if observer.Connected then
+      local ok, err = pcall(observer.callback, value)
+      if not ok then warn("Falha em observador: " .. tostring(err)) end
+    end
   end
 end
 function Utils.observeSpam(observer) return connectObserver(spamObservers, observer) end
@@ -158,12 +161,17 @@ end
 -- environment
 local function refreshNamespace()
   if refreshing then return end
-  refreshing = true; local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
-  namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author =
-    CONFIG.NAME, "Exodus", CONFIG.VERSION, CONFIG.API_VERSION, CONFIG.AUTHOR
-  namespace.State, namespace.Config, namespace.ModuleURLs, namespace.Diagnostics =
-    stateSnapshot(), snapshot(state.config), snapshot(state.urls), diagnosticsSnapshot()
-  _G.Exodus = namespace; refreshing = false
+  refreshing = true
+  local ok, err = pcall(function()
+    local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
+    namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author =
+      CONFIG.NAME, "Exodus", CONFIG.VERSION, CONFIG.API_VERSION, CONFIG.AUTHOR
+    namespace.State, namespace.Config, namespace.ModuleURLs, namespace.Diagnostics =
+      stateSnapshot(), snapshot(state.config), snapshot(state.urls), diagnosticsSnapshot()
+    _G.Exodus = namespace
+  end)
+  refreshing = false
+  if not ok then warn("Falha ao atualizar namespace: " .. tostring(err)) end
 end
 
 -- diagnostics
@@ -296,7 +304,10 @@ function Utils.start()
   refreshNamespace(); return stateSnapshot()
 end
 function Utils.stop()
-  local previous = state.lifecycle.phase; state.active, state.manualSpam, state.autoSpam = false, false, false
+  local previous = state.lifecycle.phase; local manual, auto = state.manualSpam, state.autoSpam
+  state.active, state.manualSpam, state.autoSpam = false, false, false
+  if manual then recordTransition("Spam", "active", "inactive", "hub_stop") end
+  if auto then recordTransition("AutoSpam", "active", "inactive", "hub_stop") end
   local notified, notifyError = pcall(notify, spamObservers)
   if not notified then warn("Falha ao avisar observadores: " .. tostring(notifyError)) end
   local saved, saveError = pcall(flushSave)
@@ -362,8 +373,12 @@ end
 function Utils.setManualSpamActive(value) return setSpam("manualSpam", value, "Spam", "manual_toggle") end
 function Utils.setAutoSpamActive(value) return setSpam("autoSpam", value, "AutoSpam", "automatic_toggle") end
 function Utils.stopAllSpam()
-  local changed = state.manualSpam or state.autoSpam; state.manualSpam, state.autoSpam = false, false
-  if changed then notify(spamObservers) end
+  local manual, auto = state.manualSpam, state.autoSpam; state.manualSpam, state.autoSpam = false, false
+  if manual or auto then
+    if manual then recordTransition("Spam", "active", "inactive", "stop_all") end
+    if auto then recordTransition("AutoSpam", "active", "inactive", "stop_all") end
+    notify(spamObservers)
+  end
   return true
 end
 function Utils.isFiniteNumber(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
@@ -439,7 +454,9 @@ function Utils.trackGlobal(connection) return track(state.globalConnections, con
 function Utils.untrackGlobal(connection) return untrack(state.globalConnections, connection) end
 function Utils.trackCharacter(connection) return track(state.characterConnections, connection) end
 function Utils.untrackCharacter(connection) return untrack(state.characterConnections, connection) end
-function Utils.disconnectCharacterConnections() disconnectAll(state.characterConnections) end
+function Utils.disconnectCharacterConnections()
+  disconnectAll(state.characterConnections); return true
+end
 function Utils.getPlayers() return players end
 function Utils.getReplicatedStorage() return replicated end
 function Utils.getRunService() return runService end

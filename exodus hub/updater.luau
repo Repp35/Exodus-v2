@@ -24,6 +24,11 @@ return function(loadedRevision, request, options)
   local function currentRevision()
     local exodus = _G.Exodus; return exodus and exodus.Revision or loadedRevision
   end
+  local function sameUserId(left, right)
+    if typeof(left) == "Instance" and left:IsA("Player") then left = left.UserId end
+    if typeof(right) == "Instance" and right:IsA("Player") then right = right.UserId end
+    local first, second = tonumber(left), tonumber(right); return first ~= nil and second ~= nil and first == second
+  end
 
   -- safety
   local function safeToUpdate()
@@ -40,7 +45,7 @@ return function(loadedRevision, request, options)
       return false
     end
     local target = info.getTargetId()
-    if target == player.UserId or info.getBallTargetAttribute() == player.UserId then return false end
+    if sameUserId(target, player.UserId) or sameUserId(info.getBallTargetAttribute(), player.UserId) then return false end
     if auto.isActive() or info.getClashContext() then return false end
     return true
   end
@@ -51,8 +56,9 @@ return function(loadedRevision, request, options)
       request(CONFIG.MANIFEST_URL .. "?exodus_cache=" .. tostring(os.time()), { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Updater" })
     if body then
       local ok, document = pcall(function() return game:GetService("HttpService"):JSONDecode(body) end)
-      local sha = ok and type(document) == "table" and document.revision
+      local valid = ok and type(document) == "table" and document.schema == 1 and document.product == "Exodus-v2"; local sha = valid and document.revision or nil
       if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
+      if ok and type(document) == "table" and not valid then return nil, "manifesto de versão incompatível" end
     end
     return nil, requestError or "manifesto de versão indisponível", requestMeta
   end

@@ -9,7 +9,7 @@ local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
 -- configuration
 local CONFIG = {
   BIND_TIMEOUT = 10,
-  ROOT_POLL_INTERVAL = 0,
+  ROOT_POLL_INTERVAL = 1 / 60,
 }
 
 -- state-tracking

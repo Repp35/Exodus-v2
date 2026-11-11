@@ -4,8 +4,11 @@
 local AutoFierce = {}
 local utils, gameInfo, remote, autoParry
 local connections = {}
-local parriedConnection
+local parriedConnection, parriedRemote
 local nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt, localUserId
+
+-- helpers
+local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 
 -- configuration
 local CONFIG = {
@@ -27,9 +30,16 @@ local function onParried()
   lastParriedAt = os.clock()
 end
 local function connectSignals(now)
-  if now < nextSignalAt or parriedConnection then return end
+  if now < nextSignalAt then return end
   nextSignalAt = now + CONFIG.SIGNAL_RETRY; local signals = gameInfo.getDeflectServerEvents()
-  if signals and signals.parried then parriedConnection = track(signals.parried:Connect(onParried)) end
+  local event = signals and signals.parried
+  if parriedConnection and (not parriedConnection.Connected or parriedRemote ~= event) then
+    if utils then utils.untrackGlobal(parriedConnection) end
+    parriedConnection:Disconnect(); local index = table.find(connections, parriedConnection)
+    if index then table.remove(connections, index) end
+    parriedConnection, parriedRemote = nil, nil
+  end
+  if event and not parriedConnection then parriedRemote = event; parriedConnection = track(event:Connect(onParried)) end
 end
 local function graceDanger(now)
   local snapshot = gameInfo.getSnapshotAt(now)
@@ -55,7 +65,7 @@ end
 local function update()
   local now = os.clock()
   if not enabled() then graceHandled = false; return end
-  if not parriedConnection then connectSignals(now) end
+  connectSignals(now)
   if not parriedConnection then return end
   local danger, grace = graceDanger(now)
   if grace == nil then return end
@@ -72,7 +82,7 @@ local function update()
       token = autoParry.beginFierce(); return true
     end)
   end)
-  if ok and sent == true then lastFiercePressAt = pressedAt end
+  if ok and sent == true then local fiercePressedAt = gameInfo.getLastDeflectPressAt(); lastFiercePressAt = finite(fiercePressedAt) and fiercePressedAt or pressedAt end
   if not ok or sent ~= true then
     autoParry.cancelFierce(token)
     if parryGeneration == generation then graceHandled = false end
@@ -105,7 +115,9 @@ function AutoFierce.teardown()
     if utils then utils.untrackGlobal(connection) end
     connection:Disconnect()
   end
-  connections = {}; parriedConnection, nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt, localUserId = nil, nil, nil, nil, nil, nil, nil
+  connections = {}
+  parriedConnection, parriedRemote, nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt, localUserId =
+    nil, nil, nil, nil, nil, nil, nil, nil
   utils, gameInfo, remote, autoParry = nil, nil, nil, nil
 end
 

@@ -1,6 +1,6 @@
-# Distribuição protegida
+# Distribuição versionada
 
-O código de desenvolvimento continua no repositório privado. O GitHub Actions copia os arquivos, gera uma versão ofuscada com o Prometheus e publica somente essa saída no GitHub Pages.
+O workflow de GitHub Pages publica cada build em uma pasta identificada pelo SHA do commit e expõe um `manifest.json` com `schema`, produto e revisão. O loader valida esses campos antes de aceitar a atualização.
 
 ## Configuração
 
@@ -21,14 +21,14 @@ Opcionalmente, crie estas variáveis do repositório:
 
 ## Loader
 
-Depois que o Pages estiver ativo, o uso permanece:
+Depois que o Pages estiver ativo:
 
 ```lua
 loadstring(game:HttpGet("https://repp35.github.io/Exodus-v2/loader.luau"))()
 ```
 
-O loader valida o executor, baixa o manifesto da revisão, verifica se o UserId está na lista de bloqueio e só então carrega os módulos daquela revisão. A lista de bloqueio é embutida junto da saída ofuscada de cada build.
+O loader baixa o manifesto, valida a revisão, verifica a autorização do usuário e carrega os módulos daquela revisão. A autorização e qualquer bloqueio são aplicados no cliente.
 
 ## Limite real
 
-Sem um servidor de autorização, essa proteção é uma barreira no cliente: alguém com acesso ao código entregue ainda pode tentar modificar o loader ou analisar o payload. Ela impede o uso normal por IDs bloqueados e reduz a exposição do fonte, mas não cria proteção impossível de contornar.
+Esta distribuição é versionada, não um mecanismo de sigilo. O workflow atual publica os arquivos Luau como estão; sem assinatura ou autorização fora do cliente, alguém com acesso ao código entregue ainda pode analisar ou modificar o loader. A lista de bloqueio reduz o uso normal por IDs bloqueados, mas não é uma proteção impossível de contornar.

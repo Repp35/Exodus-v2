@@ -118,16 +118,13 @@ local CONFIG = {
   TITLE_TEXT_SIZE = 16,
   AUTHOR_TEXT_SIZE = 14,
   AUTHOR_TRANSPARENCY = 0.22,
-  TITLE_TEXT_SIZE = 16,
-  AUTHOR_TEXT_SIZE = 14,
-  AUTHOR_TRANSPARENCY = 0.22,
   TITLE_SIDE_RESERVE = 80,
 }
 
 -- palette
 local C = CONFIG.COLORS
 local GRAD = CONFIG.GRADIENT
-local EASE_OUT, EASE_SINE = Enum.EasingStyle.Cubic, Enum.EasingStyle.Sine
+local EASE_OUT, EASE_SINE, EASE_BACK = Enum.EasingStyle.Cubic, Enum.EasingStyle.Sine, Enum.EasingStyle.Back
 local DIR_OUT, DIR_IN, DIR_INOUT = Enum.EasingDirection.Out, Enum.EasingDirection.In, Enum.EasingDirection.InOut
 
 -- helpers
@@ -1096,7 +1093,7 @@ function ExodusUI.setup(deps)
   corner(travelLabel, 8); local nextTravelUpdate = 0
   local telemetryAt, telemetryStatus, telemetrySnapshot = -math.huge, nil, nil
   local function getTelemetry(time)
-    if time < telemetryAt or time - telemetryAt >= 1 / 240 then telemetryAt, telemetryStatus, telemetrySnapshot = time, AutoSpam.getStatus(), GameInfo.getSnapshotAt(time) end
+    if time < telemetryAt or time - telemetryAt >= 0.05 then telemetryAt, telemetryStatus, telemetrySnapshot = time, AutoSpam.getStatus(), GameInfo.getSnapshotAt(time) end
     return telemetryStatus, telemetrySnapshot
   end
   trackConn(RunService.Heartbeat:Connect(function()

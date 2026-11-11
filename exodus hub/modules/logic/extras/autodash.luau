@@ -3,7 +3,7 @@
 -- module
 local AutoDash = {}
 local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
-local root, heartbeat
+local root, heartbeat, configConnection
 local inFlight, handledSignals = nil, {}
 
 -- configuration
@@ -86,20 +86,15 @@ local function onDash(event)
   if not ok then warn("[AutoDash] " .. tostring(result)) end
 end
 
--- setup
-function AutoDash.setup(deps)
-  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.Dash or not deps.Movement or not deps.AutoSpam then return false, "dependências ausentes" end
-  AutoDash.teardown(); utils, gameInfo, dash, movement, autoSpam = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement, deps.AutoSpam
-  players, localPlayer, runService = utils.getPlayers(), utils.getLocalPlayer(), utils.getRunService()
-  if not players or not localPlayer or not runService then return false, "serviços indisponíveis" end
-  dash.setHandler(onDash); return true
+-- synchronization
+local function stopHeartbeat()
+  if not heartbeat then return end
+  if utils then utils.untrackCharacter(heartbeat) end
+  heartbeat:Disconnect(); heartbeat = nil
 end
-
--- character-binding
-function AutoDash.bindCharacter(character)
-  AutoDash.detachCharacter(); local newRoot = character and character:FindFirstChild("HumanoidRootPart")
-  if not newRoot or not newRoot:IsA("BasePart") then return false, "HumanoidRootPart indisponível" end
-  root = newRoot
+local function syncHeartbeat()
+  stopHeartbeat()
+  if not root or not root.Parent or not utils or utils.getConfigValue("AutoClashUpDash") ~= true or not runService or not runService.Heartbeat then return true end
   heartbeat = runService.Heartbeat:Connect(function()
     if not root or not root.Parent then return end
     if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then return end
@@ -107,15 +102,34 @@ function AutoDash.bindCharacter(character)
   end)
   utils.trackCharacter(heartbeat); return true
 end
+
+-- setup
+function AutoDash.setup(deps)
+  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.Dash or not deps.Movement or not deps.AutoSpam then return false, "dependências ausentes" end
+  AutoDash.teardown(); utils, gameInfo, dash, movement, autoSpam = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement, deps.AutoSpam
+  players, localPlayer, runService = utils.getPlayers(), utils.getLocalPlayer(), utils.getRunService()
+  if not players or not localPlayer or not runService then return false, "serviços indisponíveis" end
+  dash.setHandler(onDash)
+  configConnection = utils.observeConfig(function(changes)
+    if changes.AutoClashUpDash ~= nil then syncHeartbeat() end
+  end)
+  utils.trackGlobal(configConnection); return true
+end
+
+-- character-binding
+function AutoDash.bindCharacter(character)
+  AutoDash.detachCharacter(); local newRoot = character and character:FindFirstChild("HumanoidRootPart")
+  if not newRoot or not newRoot:IsA("BasePart") then return false, "HumanoidRootPart indisponível" end
+  root = newRoot; return syncHeartbeat()
+end
 function AutoDash.detachCharacter()
   root, inFlight = nil, nil; table.clear(handledSignals)
-  if heartbeat then
-    utils.untrackCharacter(heartbeat); heartbeat:Disconnect()
-    heartbeat = nil
-  end
+  stopHeartbeat()
 end
 function AutoDash.teardown()
   AutoDash.detachCharacter()
+  if utils and configConnection then utils.untrackGlobal(configConnection); configConnection:Disconnect() end
+  configConnection = nil
   if dash then dash.setHandler(nil) end
   utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService = nil, nil, nil, nil, nil, nil, nil, nil
 end
@@ -136,6 +150,7 @@ AutoDash.__contract = {
       "getRunService",
       "getConfigValue",
       "isActive",
+      "observeConfig",
       "now",
       "trackCharacter",
       "untrackCharacter",
