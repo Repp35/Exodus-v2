@@ -94,7 +94,7 @@ local CONFIG = {
     },
     defaults = {
       AutoParry = true,
-      AutoParryWindowFactor = 0.8,
+      AutoParryWindowFactor = 0.25,
       AutoParryFactor08Applied = true,
       CameraSensitivity = 1,
       ParryBallVisible = false,
