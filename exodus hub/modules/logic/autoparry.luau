@@ -264,13 +264,8 @@ local function tick(character, root, generation)
   local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); threshold += math.max(closing, 0) * state.frameAllowance
   if value.mode == "training" and state.fired then
     if closing < -CONFIG.MIN_PARRY_SPEED * 0.25 then state.trainingAwaySeen = true end
-    if state.trainingAwaySeen and closing > CONFIG.MIN_PARRY_SPEED * 0.25 and distance > threshold then
-      state.fired, state.trainingAwaySeen = false, false
-      state.cycle += 1
-    else
-      phase("waiting", "training_awaiting_return")
-      return
-    end
+    if state.trainingAwaySeen and closing > CONFIG.MIN_PARRY_SPEED * 0.25 and distance > threshold then state.fired, state.trainingAwaySeen = false, false; state.cycle += 1
+    else phase("waiting", "training_awaiting_return"); return end
   end
   state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0; state.closingSpeed, state.triggerDistance = closing, threshold
   if closing > 0 and distance <= threshold then request("parry_requested") end
