@@ -1,7 +1,7 @@
 -- [[ character ]]
 
 -- tuning
-local CONFIG = { BIND_TIMEOUT = 10 }
+local CONFIG = { BIND_TIMEOUT = 10, ROOT_POLL_INTERVAL = 0 }
 
 -- module
 local Character = {}
@@ -46,7 +46,7 @@ local function bindLife(life)
 	if not valid(life) then return end
 	setPhase("binding", "character_bind_start"); local root = life.character:FindFirstChild("HumanoidRootPart"); local deadline = os.clock() + CONFIG.BIND_TIMEOUT
 	while valid(life) and (not root or not root:IsA("BasePart") or not root.Parent) and os.clock() < deadline do
-		task.wait(); root = life.character:FindFirstChild("HumanoidRootPart")
+		task.wait(CONFIG.ROOT_POLL_INTERVAL); root = life.character:FindFirstChild("HumanoidRootPart")
 	end
 	if not valid(life) then return end
 	if not root or not root:IsA("BasePart") or not root.Parent then deactivate(life, "root_unavailable"); setPhase("invalid", "root_unavailable"); return end
