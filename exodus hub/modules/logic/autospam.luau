@@ -257,8 +257,7 @@ local function applyDeactivation(s, snapshot, time)
       and time >= snapshot.syncAt
       and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
     then
-      local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
-      local distance = distanceToPlayer(s.partner)
+      local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true); local distance = distanceToPlayer(s.partner)
       if finite(radius) and finite(distance) and distance <= radius then multiplier = CONFIG.DEACTIVATION.NEAR_PARTNER_COOLDOWN_MULTIPLIER end
     end
     local resetLate = gameInfo.isClientDeflectResetLate(s.activatedAt, speed, multiplier)
@@ -285,8 +284,7 @@ local function enforceTargetReturnTimeout(s, snapshot, time)
     and time >= snapshot.syncAt
     and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
   then
-    local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, snapshotSpeed(snapshot), true)
-    local distance = distanceToPlayer(s.partner)
+    local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, snapshotSpeed(snapshot), true); local distance = distanceToPlayer(s.partner)
     if finite(radius) and finite(distance) and distance <= radius then
       local interval = clashStats and not clashStats.frozen and clashStats.partnerId == s.partner and clashStats.cycleInterval
       timeout = finite(interval) and math.clamp(interval, timeout, CONFIG.DEACTIVATION.PARTNER_RETURN_MAX) or CONFIG.DEACTIVATION.PARTNER_RETURN_FALLBACK
