@@ -64,8 +64,11 @@ jobs:
           mkdir -p build-source/security "site/${REVISION}"
 
           cp -R "exodus hub" build-source/
+          # This standalone diagnostic is not loaded by the hub and uses Luau type annotations
+          # that the pinned Prometheus parser does not support.
+          rm -rf "build-source/exodus hub/indeed"
 
-          python3 - <<'PY'
+          python3 - <<'PY
           import os
           from pathlib import Path
 
