@@ -149,9 +149,17 @@ local function attachFlow(s)
   })
   return g
 end
-local function twPlay(obj, t, props, style, dir)
+local function twPlay(obj, t, props, style, dir, completed)
   if not obj or obj.Parent == nil then return nil end
-  local tween = TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props); tween:Play()
+  local tween = TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props)
+  if type(completed) == "function" then
+    local connection
+    connection = tween.Completed:Connect(function(playbackState)
+      if connection then connection:Disconnect(); connection = nil end
+      completed(playbackState)
+    end)
+  end
+  tween:Play()
   return tween
 end
 local function safeCancel(t)
@@ -159,6 +167,21 @@ local function safeCancel(t)
 end
 local function setTextIfChanged(label, text)
   if label.Text ~= text then label.Text = text end
+end
+local function createTweenGroup()
+  local pending = 0
+  local function play(obj, duration, props, style, direction)
+    pending += 1
+    local tween = twPlay(obj, duration, props, style, direction, function()
+      pending -= 1
+    end)
+    if not tween then pending -= 1 end
+    return tween
+  end
+  local function waitForCompletion()
+    while pending > 0 do RunService.Heartbeat:Wait() end
+  end
+  return play, waitForCompletion
 end
 
 -- layout
@@ -934,26 +957,27 @@ end
 local function fadeOutForReplacement()
   if not screenGui or not screenGui.Parent or UIState.closing then return end
   UIState.closing = true; safeCancel(UIState.panelTween)
-  safeCancel(UIState.btnTween); local duration = 0.3
-  if configPanel and configPanel.Parent and configPanel.Visible then twPlay(configPanel, duration, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.96, PH * 0.96) }, EASE_OUT, DIR_IN) end
-  if floatingButton and floatingButton.Parent then twPlay(floatingButton, duration, { BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN) end
+  safeCancel(UIState.btnTween); local duration = 0.3; local playTween, waitForCompletion = createTweenGroup()
+  if configPanel and configPanel.Parent and configPanel.Visible then playTween(configPanel, duration, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.96, PH * 0.96) }, EASE_OUT, DIR_IN) end
+  if floatingButton and floatingButton.Parent then playTween(floatingButton, duration, { BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN) end
   for _, element in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall, miniGui }) do
-    if element and element.Parent then twPlay(element, duration, { Position = UDim2.new(0, OFFSCREEN_X, element.Position.Y.Scale, element.Position.Y.Offset) }, EASE_OUT, DIR_IN) end
+    if element and element.Parent then playTween(element, duration, { Position = UDim2.new(0, OFFSCREEN_X, element.Position.Y.Scale, element.Position.Y.Offset) }, EASE_OUT, DIR_IN) end
   end
-  task.wait(duration + 0.04)
+  waitForCompletion()
 end
 local function animateClose(action)
   if UIState.closing then return end
   UIState.closing = true; safeCancel(UIState.panelTween)
-  safeCancel(UIState.btnTween)
-  if configPanel and configPanel.Parent then UIState.panelTween = twPlay(configPanel, 0.28, { Size = UDim2.new(0, PW * 0.96, 0, PH * 0.96), GroupTransparency = 1 }, EASE_OUT, DIR_IN) end
+  safeCancel(UIState.btnTween); local playTween, waitForCompletion = createTweenGroup()
+  if configPanel and configPanel.Parent then UIState.panelTween = playTween(configPanel, 0.28, { Size = UDim2.new(0, PW * 0.96, 0, PH * 0.96), GroupTransparency = 1 }, EASE_OUT, DIR_IN) end
   if floatingButton and floatingButton.Parent then
-    UIState.btnTween = twPlay(floatingButton, 0.22, { Size = UDim2.new(0, 42, 0, 42), BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN)
+    UIState.btnTween = playTween(floatingButton, 0.22, { Size = UDim2.new(0, 42, 0, 42), BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN)
   end
   for _, ball in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall, miniGui }) do
-    if ball and ball.Parent then twPlay(ball, 0.2, { Position = UDim2.new(0, OFFSCREEN_X, ball.Position.Y.Scale, ball.Position.Y.Offset) }, EASE_OUT, DIR_IN) end
+    if ball and ball.Parent then playTween(ball, 0.2, { Position = UDim2.new(0, OFFSCREEN_X, ball.Position.Y.Scale, ball.Position.Y.Offset) }, EASE_OUT, DIR_IN) end
   end
-  task.delay(0.32, function()
+  _spawn(function()
+    waitForCompletion()
     if not UIState.closing then return end
     if action == "reload" and type(Controls.onReload) == "function" then Controls.onReload(restoreAfterReloadFailure)
     elseif type(Controls.onClose) == "function" then Controls.onClose()

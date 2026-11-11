@@ -44,6 +44,14 @@ class RuntimeRegressionTests(unittest.TestCase):
         self.assertIn("windowFactor = function", config)
         self.assertIn('AutoParryWindowFactor = "windowFactor"', ui_config)
 
+    def test_ui_waits_for_close_tweens_before_stopping(self):
+        ui = read("modules/front/ui.luau")
+        close = ui[ui.index("local function animateClose"):ui.index("-- setup")]
+        self.assertIn("createTweenGroup()", close)
+        self.assertIn("waitForCompletion()", close)
+        self.assertNotIn("task.delay(0.32", close)
+        self.assertIn("tween.Completed:Connect", ui)
+
 
 if __name__ == "__main__":
     unittest.main()
