@@ -1811,18 +1811,15 @@ function ExodusUI.setup(deps)
     Padding = UDim.new(0, CARD_GAP),
     Parent = settingsColumn,
   })
-  local notificationKey = UIState.desktop and "DesktopNotifications" or "MobileNotifications"
-  local _, notificationsCard = createToggleCard("Notifications", notificationKey, 0, settingsColumn)
+  local notificationKey = UIState.desktop and "DesktopNotifications" or "MobileNotifications"; local _, notificationsCard = createToggleCard("Notifications", notificationKey, 0, settingsColumn)
   local resetCard = cardFrame(0, CARD_H, settingsColumn)
   for index, card in ipairs({ notificationsCard, resetCard }) do
-    card.LayoutOrder = index
-    card.Size = UDim2.new(1, -16, 0, CARD_H)
+    card.LayoutOrder = index; card.Size = UDim2.new(1, -16, 0, CARD_H)
     local scale = card:FindFirstChildOfClass("UIScale")
     if scale then scale.Scale = 1 end
   end
-  local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
-  resetButton.Name = "ResetSettings"; resetButton.Size = UDim2.new(1, -20, 0, 30)
-  local resetPending = false
+  local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark); resetButton.Name = "ResetSettings"
+  resetButton.Size = UDim2.new(1, -20, 0, 30); local resetPending = false
   trackConn(resetButton.Activated:Connect(function()
     if not resetPending then
       resetPending = true; resetButton.Text = "Tap again to confirm"
@@ -1842,8 +1839,7 @@ function ExodusUI.setup(deps)
       if rebuilt then togglePanel() else warn("[Exodus] Reset UI: " .. tostring(detail)) end
     end)
   end))
-  local page = 1
-  local settingsOpen = false
+  local page = 1; local settingsOpen = false
   local pageInputShield = inst("TextButton", {
     Name = "PageInputShield",
     Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
@@ -1894,12 +1890,10 @@ function ExodusUI.setup(deps)
   corner(previous, 6); corner(nextPage, 6)
   local pageNames = { "Main", "Settings", "Utilities", "Automatic" }
   local function updateNavigation()
-    previous.Visible = not settingsOpen
-    nextPage.Visible = not settingsOpen
-    pageLabel.Visible = not settingsOpen
-    pageLabel.Text = tostring(page) .. "/" .. tostring(#pageGroups) .. " " .. pageNames[page]; previous.TextTransparency = page == 1 and 0.7 or 0
-    nextPage.TextTransparency = page == #pageGroups and 0.7 or 0; previous.AutoButtonColor = page > 1
-    nextPage.AutoButtonColor = page < #pageGroups
+    previous.Visible = not settingsOpen; nextPage.Visible = not settingsOpen
+    pageLabel.Visible = not settingsOpen; pageLabel.Text = tostring(page) .. "/" .. tostring(#pageGroups) .. " " .. pageNames[page]
+    previous.TextTransparency = page == 1 and 0.7 or 0; nextPage.TextTransparency = page == #pageGroups and 0.7 or 0
+    previous.AutoButtonColor = page > 1; nextPage.AutoButtonColor = page < #pageGroups
   end
   updateNavigation()
   local function changePage(direction)
@@ -1944,20 +1938,16 @@ function ExodusUI.setup(deps)
     if incoming then conn = trackConn(incoming.Completed:Connect(finish)); task.delay(0.5, finish) else finish() end
   end
   trackConn(settingsButton.Activated:Connect(function()
-    settingsOpen = not settingsOpen
-    UIState.pageGeneration += 1
+    settingsOpen = not settingsOpen; UIState.pageGeneration += 1
     for _, tween in ipairs(UIState.pageTweens) do
       safeCancel(tween)
     end
-    UIState.pageTweens = {}
-    pageInputShield.Visible = false
+    UIState.pageTweens = {}; pageInputShield.Visible = false
     for index, group in ipairs(pageGroups) do
-      group.Visible = not settingsOpen and index == page
-      group.GroupTransparency = index == page and 0 or 1
+      group.Visible = not settingsOpen and index == page; group.GroupTransparency = index == page and 0 or 1
       group.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
     end
-    hubSettingsGroup.Visible = settingsOpen
-    updateNavigation()
+    hubSettingsGroup.Visible = settingsOpen; updateNavigation()
   end))
   trackConn(previous.Activated:Connect(function() changePage(-1) end))
   trackConn(nextPage.Activated:Connect(function() changePage(1) end))
