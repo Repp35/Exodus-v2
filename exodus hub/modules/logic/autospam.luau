@@ -238,8 +238,7 @@ local function partnerWithinRadius(s, snapshot)
   if not s.partner or not s.root or not s.root.Parent then return false end
   local speed = snapshotSpeed(snapshot)
   if not finite(speed) or speed <= 0 then return false end
-  local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
-  local position = gameInfo.getPlayerMotion(s.partner)
+  local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true); local position = gameInfo.getPlayerMotion(s.partner)
   return finite(radius) and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude <= radius
 end
 local function distantTarget(s, snapshot, time)
@@ -248,15 +247,13 @@ local function distantTarget(s, snapshot, time)
   if not age or age < 0 or age > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return false end
   local target = userId(snapshot.targetId)
   if not target or target == localPlayer.UserId or target == s.partner then return false end
-  local position = gameInfo.getPlayerMotion(target)
-  local limit = distanceLimit(snapshot, target)
+  local position = gameInfo.getPlayerMotion(target); local limit = distanceLimit(snapshot, target)
   return limit ~= nil and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > limit
 end
 local function stop(s, reason, snapshot, time)
   if current ~= s then return false end
   if s.active and CONFIG.DEACTIVATION.PROTECTED_GATES[reason] then
-    time = time or now()
-    snapshot = snapshot or gameInfo.getSnapshotAt(time)
+    time = time or now(); snapshot = snapshot or gameInfo.getSnapshotAt(time)
     if partnerWithinRadius(s, snapshot) then
       if distantTarget(s, snapshot, time) then reason = "distant_target" else return false end
     end
@@ -268,8 +265,7 @@ local function stop(s, reason, snapshot, time)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
   s.reason, s.pending, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil; s.targetAwaySince = nil
-  resetExchange(s)
-  return true
+  resetExchange(s); return true
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
