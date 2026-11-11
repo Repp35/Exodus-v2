@@ -394,7 +394,7 @@ local function collectCharacterBinds(loaded)
       local contract = contractOf(module); local hasBindFlag = contract.bindCharacter == true
       local hasBindFn = type(module.bindCharacter) == "function"; local hasDetachFn = type(module.detachCharacter) == "function"
       if hasBindFlag and hasBindFn and hasDetachFn then
-        local api = loaded.permissions.wrap("character", name, module); binds[#binds + 1] = { name = name, bind = api.bindCharacter, detach = api.detachCharacter }
+        binds[#binds + 1] = { name = name, bind = module.bindCharacter, detach = module.detachCharacter }
       elseif hasBindFlag then
         return nil, name, "contrato bindCharacter incompleto"
       end
