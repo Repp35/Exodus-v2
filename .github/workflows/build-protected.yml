@@ -26,7 +26,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     env:
-      EXODUS_AUTHORIZED_USER_IDS: ${{ secrets.EXODUS_AUTHORIZED_USER_IDS }}
+      EXODUS_BLOCKED_USER_IDS: ${{ secrets.EXODUS_BLOCKED_USER_IDS }}
       EXODUS_ALLOWED_GAME_IDS: ${{ vars.EXODUS_ALLOWED_GAME_IDS }}
       EXODUS_ALLOWED_PLACE_IDS: ${{ vars.EXODUS_ALLOWED_PLACE_IDS }}
       EXODUS_EXPIRES_AT: ${{ vars.EXODUS_EXPIRES_AT }}
@@ -37,15 +37,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-
-      - name: Require authorization configuration
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "${EXODUS_AUTHORIZED_USER_IDS:-}" ]]; then
-            echo "::error::Configure the EXODUS_AUTHORIZED_USER_IDS repository secret before publishing."
-            exit 1
-          fi
 
       - name: Install Lua runtime
         shell: bash
@@ -76,10 +67,8 @@ jobs:
           import os
           from pathlib import Path
 
-          def parse_ids(name, required=False):
+          def parse_ids(name):
               raw = os.environ.get(name, "")
-              if required and not raw.strip():
-                  raise SystemExit(f"{name} is required")
               values = []
               for item in raw.split(","):
                   item = item.strip()
@@ -90,7 +79,7 @@ jobs:
                   values.append(int(item))
               return sorted(set(values))
 
-          user_ids = parse_ids("EXODUS_AUTHORIZED_USER_IDS", required=True)
+          blocked_user_ids = parse_ids("EXODUS_BLOCKED_USER_IDS")
           game_ids = parse_ids("EXODUS_ALLOWED_GAME_IDS")
           place_ids = parse_ids("EXODUS_ALLOWED_PLACE_IDS")
           expires_at = os.environ.get("EXODUS_EXPIRES_AT", "").strip() or "0"
@@ -105,7 +94,7 @@ jobs:
               f'  revision = "{os.environ["REVISION"]}",',
           ]
           for field, values in (
-              ("userIds", user_ids),
+              ("blockedUserIds", blocked_user_ids),
               ("gameIds", game_ids),
               ("placeIds", place_ids),
           ):
