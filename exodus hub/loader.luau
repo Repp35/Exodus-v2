@@ -393,11 +393,8 @@ local function collectCharacterBinds(loaded)
     if name ~= "utils" and type(module) == "table" then
       local contract = contractOf(module); local hasBindFlag = contract.bindCharacter == true
       local hasBindFn = type(module.bindCharacter) == "function"; local hasDetachFn = type(module.detachCharacter) == "function"
-      if hasBindFlag and hasBindFn and hasDetachFn then
-        binds[#binds + 1] = { name = name, bind = module.bindCharacter, detach = module.detachCharacter }
-      elseif hasBindFlag then
-        return nil, name, "contrato bindCharacter incompleto"
-      end
+      if hasBindFlag and hasBindFn and hasDetachFn then binds[#binds + 1] = { name = name, bind = module.bindCharacter, detach = module.detachCharacter }
+      elseif hasBindFlag then return nil, name, "contrato bindCharacter incompleto" end
     end
   end
   return binds

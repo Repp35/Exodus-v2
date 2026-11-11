@@ -12,10 +12,7 @@ local CONFIG = {
 local registry = {}
 
 -- validation
-local function deny(name, action)
-  error(("Permissão negada: %s -> %s"):format(name, action), 3)
-end
-
+local function deny(name, action) error(("Permissão negada: %s -> %s"):format(name, action), 3) end
 local function namedSet(owner, field, items)
   if type(items) ~= "table" then error(owner .. ": " .. field .. " inválido", 3) end
   local result, count = {}, 0
@@ -23,19 +20,16 @@ local function namedSet(owner, field, items)
     if type(index) ~= "number" or index < 1 or index % 1 ~= 0 or type(name) ~= "string" or name == "" or result[name] then
       error(owner .. ": " .. field .. " contém entrada inválida ou duplicada", 3)
     end
-    result[name] = true
-    count += 1
+    result[name] = true; count += 1
   end
   if count ~= #items then error(owner .. ": " .. field .. " deve ser uma lista contínua", 3) end
   return result
 end
-
 local function validate(name, module)
   if type(name) ~= "string" or type(module) ~= "table" then error("Permissions: módulo inválido", 2) end
   local contract = module.__contract
   if type(contract) ~= "table" then error(name .. ": contrato ausente", 2) end
-  local provides = namedSet(name, "provides", contract.provides)
-  local data = namedSet(name, "data", contract.data or {})
+  local provides = namedSet(name, "provides", contract.provides); local data = namedSet(name, "data", contract.data or {})
   for field in pairs(data) do
     if provides[field] or type(module[field]) ~= "table" then error(name .. ": dado público inválido: " .. field, 2) end
   end
@@ -43,61 +37,52 @@ local function validate(name, module)
     if type(module[field]) ~= "function" then error(name .. ": API declarada ausente: " .. field, 2) end
   end
   for field, value in pairs(module) do
-    if type(value) == "function" and not provides[field] then
-      error(name .. ": função não declarada no contrato: " .. tostring(field), 2)
-    end
-    if type(value) == "table" and not CONFIG.RESERVED[field] and not data[field] then
-      error(name .. ": tabela pública não declarada: " .. tostring(field), 2)
-    end
+    if type(value) == "function" and not provides[field] then error(name .. ": função não declarada no contrato: " .. tostring(field), 2) end
+    if type(value) == "table" and not CONFIG.RESERVED[field] and not data[field] then error(name .. ": tabela pública não declarada: " .. tostring(field), 2) end
   end
-  if contract.bindCharacter == true and (not provides.bindCharacter or not provides.detachCharacter) then
-    error(name .. ": contrato bindCharacter incompleto", 2)
-  end
+  if contract.bindCharacter == true and (not provides.bindCharacter or not provides.detachCharacter) then error(name .. ": contrato bindCharacter incompleto", 2) end
   if contract.onBallSync == true and not provides.onBallSync then error(name .. ": contrato onBallSync incompleto", 2) end
-  local requires = contract.requires or {}
-  local methods = contract.requiresMethods or {}
-  local fields = contract.requiresData or {}
-  local versions = contract.requiresVersions or {}
-  if type(requires) ~= "table" or type(methods) ~= "table" or type(fields) ~= "table" or type(versions) ~= "table" then
-    error(name .. ": dependências inválidas", 2)
-  end
+  local requires = contract.requires or {}; local methods = contract.requiresMethods or {}
+  local fields = contract.requiresData or {}; local versions = contract.requiresVersions or {}
+  if type(requires) ~= "table" or type(methods) ~= "table" or type(fields) ~= "table" or type(versions) ~= "table" then error(name .. ": dependências inválidas", 2) end
   local uses, sources = {}, {}
   for alias, source in pairs(requires) do
     if type(alias) ~= "string" or type(source) ~= "string" or alias == "" or source == "" or sources[source] or source == name then
       error(name .. ": dependência inválida ou duplicada: " .. tostring(alias), 2)
     end
     sources[source] = true
-    uses[alias] = { source = source, methods = namedSet(name, alias .. ".requiresMethods", methods[alias] or {}), data = namedSet(name, alias .. ".requiresData", fields[alias] or {}) }
+    uses[alias] = {
+      source = source,
+      methods = namedSet(name, alias .. ".requiresMethods", methods[alias] or {}),
+      data = namedSet(name, alias .. ".requiresData", fields[alias] or {}),
+    }
     for field in pairs(uses[alias].methods) do
       if uses[alias].data[field] then error(name .. ": método e dado duplicados: " .. field, 2) end
     end
   end
-  for alias in pairs(methods) do if not uses[alias] then error(name .. ": requiresMethods sem dependência: " .. tostring(alias), 2) end end
-  for alias in pairs(fields) do if not uses[alias] then error(name .. ": requiresData sem dependência: " .. tostring(alias), 2) end end
+  for alias in pairs(methods) do
+    if not uses[alias] then error(name .. ": requiresMethods sem dependência: " .. tostring(alias), 2) end
+  end
+  for alias in pairs(fields) do
+    if not uses[alias] then error(name .. ": requiresData sem dependência: " .. tostring(alias), 2) end
+  end
   for alias, minimum in pairs(versions) do
-    if not uses[alias] or type(minimum) ~= "number" or minimum < 0 or minimum ~= minimum then
-      error(name .. ": versão de dependência inválida: " .. tostring(alias), 2)
-    end
+    if not uses[alias] or type(minimum) ~= "number" or minimum < 0 or minimum ~= minimum then error(name .. ": versão de dependência inválida: " .. tostring(alias), 2) end
     uses[alias].minimum = minimum
   end
-  if contract.version ~= nil and (type(contract.version) ~= "number" or contract.version < 0 or contract.version ~= contract.version) then
-    error(name .. ": versão do contrato inválida", 2)
-  end
-  registry[name] = { module = module, provides = provides, data = data, uses = uses, version = contract.version }
-  return true
+  if contract.version ~= nil and (type(contract.version) ~= "number" or contract.version < 0 or contract.version ~= contract.version) then error(name .. ": versão do contrato inválida", 2) end
+  registry[name] = { module = module, provides = provides, data = data, uses = uses, version = contract.version }; return true
 end
-
--- read-only views
 local function readonly(value, visited)
   if type(value) ~= "table" then return value end
   visited = visited or {}
   if visited[value] then return visited[value] end
-  local copy = {}
-  visited[value] = copy
-  for key, item in pairs(value) do copy[readonly(key, visited)] = readonly(item, visited) end
+  local copy = {}; visited[value] = copy
+  for key, item in pairs(value) do
+    copy[readonly(key, visited)] = readonly(item, visited)
+  end
   return table.freeze(copy)
 end
-
 local function wrap(consumer, source, provider)
   local entry, exposed = registry[consumer], registry[source]
   if not entry or not exposed or exposed.module ~= provider then error("Permissions: módulo não validado: " .. tostring(source), 2) end
@@ -132,9 +117,7 @@ local function resolve(consumer, loaded)
   local dependencies = {}
   for alias, use in pairs(entry.uses) do
     local provider, source = loaded[use.source], registry[use.source]
-    if not source or source.module ~= provider then
-      error(("API interna ausente: dependência %s (%s)"):format(alias, use.source), 2)
-    end
+    if not source or source.module ~= provider then error(("API interna ausente: dependência %s (%s)"):format(alias, use.source), 2) end
     if use.minimum and (type(source.version) ~= "number" or source.version < use.minimum) then
       error(("API incompatível: %s requer versão %s; encontrada %s"):format(alias, tostring(use.minimum), tostring(source.version)), 2)
     end
@@ -148,14 +131,19 @@ local function policy(name)
   local entry = registry[name]
   if not entry then error("Permissions: módulo não registrado: " .. tostring(name), 2) end
   local result = { provides = {}, consumes = {} }
-  for method in pairs(entry.provides) do result.provides[#result.provides + 1] = method end
+  for method in pairs(entry.provides) do
+    result.provides[#result.provides + 1] = method
+  end
   table.sort(result.provides)
   for _, use in pairs(entry.uses) do
     local members = {}
-    for method in pairs(use.methods) do members[#members + 1] = method end
-    for field in pairs(use.data) do members[#members + 1] = field end
-    table.sort(members)
-    result.consumes[use.source] = members
+    for method in pairs(use.methods) do
+      members[#members + 1] = method
+    end
+    for field in pairs(use.data) do
+      members[#members + 1] = field
+    end
+    table.sort(members); result.consumes[use.source] = members
   end
   return result
 end
