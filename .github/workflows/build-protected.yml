@@ -68,7 +68,7 @@ jobs:
           # that the pinned Prometheus parser does not support.
           rm -rf "build-source/exodus hub/indeed"
 
-          python3 - <<'PY
+          python3 - <<'PY'
           import os
           from pathlib import Path
 
