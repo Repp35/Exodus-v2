@@ -23,7 +23,7 @@ Este documento descreve as interfaces atuais do hub. O registro de referência d
 
 Cada módulo carregado declara `__contract`. O campo `provides` lista funções obrigatórias, `requires` mapeia nomes usados no `setup` para módulos do registro e `requiresMethods` lista métodos obrigatórios das dependências. `requiresVersions`, quando usado, informa versões mínimas dos contratos. `bindCharacter` e `onBallSync` sinalizam ao loader as integrações correspondentes.
 
-As funções e dados permitidos para cada módulo continuam definidos por `POLICIES`. `Permissions.validate` verifica o módulo e seu contrato; `Permissions.resolve` monta as dependências e verifica métodos e versões; `Permissions.wrap` produz uma visão somente de leitura com as permissões do consumidor. `Permissions.policy(nome)` retorna um resumo das permissões.
+As funções e dados permitidos para cada módulo continuam definidos por `POLICIES`. `Permissions.validate` verifica o módulo e seu contrato, incluindo correspondência exata entre métodos exportados e métodos autorizados na política; `Permissions.resolve` monta as dependências e verifica métodos e versões; `Permissions.wrap` produz uma visão somente de leitura com as permissões do consumidor. `Permissions.policy(nome)` retorna um resumo das permissões.
 
 Para adicionar uma dependência, registre o acesso em `POLICIES` e declare-a em `requires` e, quando aplicável, em `requiresMethods`. Para adicionar um módulo, inclua-o no manifesto do loader, na política e nos contratos de seus consumidores. O loader carrega os módulos antes de executar os `setup` na ordem do manifesto; considere essa ordem quando o `setup` chamar imediatamente outro módulo.
 
@@ -47,6 +47,6 @@ Os identificadores de habilidades, eventos e caixas ficam em `GAME_IDS`, em `gam
 
 ## CPS do AutoParry
 
-`remote.fireParry` aceita um token privado fornecido somente ao `autoparry`. O AutoParry envia esse token e o módulo `remote` notifica apenas envios aceitos com a mesma assinatura; chamadas do Spam não possuem o token e não entram nessa medição. O CPS do AutoParry é o inverso do intervalo entre os dois últimos envios assinados.
+Cada módulo contabiliza suas próprias solicitações de clique, independentemente do resultado do remote. O AutoParry registra o instante de cada solicitação que faz, sem token nem observador no `remote`; solicitações do Spam não entram nessa medição. O CPS do AutoParry é o inverso do intervalo entre as duas últimas solicitações.
 
 O fator da janela começa em 0,8. Até 2 CPS ele permanece em 0,8; entre 2 e 2,5 CPS o fator sobe progressivamente até 1; a partir de 2,5 CPS fica em 1. Um intervalo acima de 0,5 segundo elimina o bônus no próximo clique. `autoparry.getStatus()` expõe `cps`, `windowFactor` e os limites em `cpsGate`.
