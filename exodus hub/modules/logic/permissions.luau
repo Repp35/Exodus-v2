@@ -13,153 +13,153 @@ end
 -- tuning
 local CONFIG = {
 	POLICIES = {
-	permissions = { provide = allow("validate wrap resolve policy"), consume = {} },
-	config = { provide = allow("register defaults validatePatch normalizePatch validate getRegistry"), consume = {} },
-	uiconfig = { provide = allow(""), consume = {}, data = allow("panelToggles panelComponents") },
-	utils = {
-		provide = allow(
-			"observeSpam observeConfig ensureDataFolder createClashLog appendClashLog start stop isActive getStateSnapshot getConfig getConfigValue getConfigSnapshot getModuleURLsSnapshot getLifecycle getDiagnostics setDiagnosticsModules setLifecyclePhase recordTransition recordError isManualSpamActive isAutoSpamActive isSpamActive setManualSpamActive setAutoSpamActive stopAllSpam isFiniteNumber isNonNegativeFiniteNumber normalizeSpamRate setConfig loadConfig setConfigModule setModuleURLs trackGlobal untrackGlobal trackCharacter untrackCharacter disconnectCharacterConnections getPlayers getReplicatedStorage getRunService getWorkspace getLocalPlayer now name version apiVersion author"
-		),
-		consume = {},
-	},
-	gameinfo = {
-		provide = allow(
-			"bindBallSync startMaintenance stopMaintenance setup isTrainingArea fireTrainingParry getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getPlayerMotion getHaunterEvent getLocalPing getAveragePing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectRangeParameters getPlayerDeflectRange getPlayerRawRadius getDeflectGeometry getProjectedDeflectRadius isBallWithinDeflectRadius getBallFrozen getDeflectAbility getLastDeflectPressAt getAutoSpamDelay getMinimumSpamInterval getDashAbility isPlayerDashing getFierceDeflectAbility getDarkSealAbility getDarkSealEventId createCrateNetwork spinCrate getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getBallTargetAttribute getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
-		),
-		consume = {
-			utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace getRunService now recordError trackGlobal untrackGlobal"),
-		},
-	},
-	clashstats = {
-		provide = allow("setup teardown begin finish observe freeze get"),
-		consume = {
-			utils = allow("getLocalPlayer getPlayers createClashLog appendClashLog recordError now"),
-			gameinfo = allow("getClashContext getPlayerMotion"),
-		},
-	},
-	remote = {
-		provide = allow("setup getAutoParrySignature setParryObserver fireParry fireDark fireFierce fireDash"),
-		consume = { gameinfo = allow("isTrainingArea fireTrainingParry getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
-	},
-	autoparry = {
-		provide = allow(
-			"setup bindCharacter fire tryRedirectReturn beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"
-		),
-		consume = {
-			utils = allow(
-				"apiVersion getConfigValue getLocalPlayer getRunService isActive isSpamActive recordError recordTransition trackCharacter untrackCharacter"
+		permissions = { provide = allow("validate wrap resolve policy"), consume = {} },
+		config = { provide = allow("register defaults validatePatch normalizePatch validate getRegistry"), consume = {} },
+		uiconfig = { provide = allow(""), consume = {}, data = allow("panelToggles panelComponents") },
+		utils = {
+			provide = allow(
+				"observeSpam observeConfig ensureDataFolder createClashLog appendClashLog start stop isActive getStateSnapshot getConfig getConfigValue getConfigSnapshot getModuleURLsSnapshot getLifecycle getDiagnostics setDiagnosticsModules setLifecyclePhase recordTransition recordError isManualSpamActive isAutoSpamActive isSpamActive setManualSpamActive setAutoSpamActive stopAllSpam isFiniteNumber isNonNegativeFiniteNumber normalizeSpamRate setConfig loadConfig setConfigModule setModuleURLs trackGlobal untrackGlobal trackCharacter untrackCharacter disconnectCharacterConnections getPlayers getReplicatedStorage getRunService getWorkspace getLocalPlayer now name version apiVersion author"
 			),
-			gameinfo = allow(
-				"getBallPosition getBallVelocity getDeflectCooldownState getDeflectGeometry getDeflectRangeParameters getProjectedDeflectRadius getAveragePing getRootPosition getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
+			consume = {},
+		},
+		gameinfo = {
+			provide = allow(
+				"bindBallSync startMaintenance stopMaintenance setup isTrainingArea fireTrainingParry getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getPlayerMotion getHaunterEvent getLocalPing getAveragePing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectRangeParameters getPlayerDeflectRange getPlayerRawRadius getDeflectGeometry getProjectedDeflectRadius isBallWithinDeflectRadius getBallFrozen getDeflectAbility getLastDeflectPressAt getAutoSpamDelay getMinimumSpamInterval getDashAbility isPlayerDashing getFierceDeflectAbility getDarkSealAbility getDarkSealEventId createCrateNetwork spinCrate getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getBallTargetAttribute getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
 			),
-			remote = allow("getAutoParrySignature setParryObserver fireParry"),
+			consume = {
+				utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace getRunService now recordError trackGlobal untrackGlobal"),
+			},
 		},
-	},
-	autospam = {
-		provide = allow(
-			"setup bindCharacter detachCharacter teardown onBallSync isActive getPullEvent stopSpam getTargetSwitch getActivationContext getDashData getStatus"
-		),
-		consume = {
-			utils = allow(
-				"apiVersion getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordTransition setAutoSpamActive trackCharacter untrackCharacter"
+		clashstats = {
+			provide = allow("setup teardown begin finish observe freeze get"),
+			consume = {
+				utils = allow("getLocalPlayer getPlayers createClashLog appendClashLog recordError now"),
+				gameinfo = allow("getClashContext getPlayerMotion"),
+			},
+		},
+		remote = {
+			provide = allow("setup getAutoParrySignature setParryObserver fireParry fireDark fireFierce fireDash"),
+			consume = { gameinfo = allow("isTrainingArea fireTrainingParry getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility") },
+		},
+		autoparry = {
+			provide = allow(
+				"setup bindCharacter fire tryRedirectReturn beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"
 			),
-			gameinfo = allow(
-				"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRangeParameters getDashAbility getPlayerDeflectRange getPlayerRawRadius getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getSnapshotAt getTargetId isSnapshotValid"
+			consume = {
+				utils = allow(
+					"apiVersion getConfigValue getLocalPlayer getRunService isActive isSpamActive recordError recordTransition trackCharacter untrackCharacter"
+				),
+				gameinfo = allow(
+					"getBallPosition getBallVelocity getDeflectCooldownState getDeflectGeometry getDeflectRangeParameters getProjectedDeflectRadius getAveragePing getRootPosition getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
+				),
+				remote = allow("getAutoParrySignature setParryObserver fireParry"),
+			},
+		},
+		autospam = {
+			provide = allow(
+				"setup bindCharacter detachCharacter teardown onBallSync isActive getPullEvent stopSpam getTargetSwitch getActivationContext getDashData getStatus"
 			),
-			clashstats = allow("begin finish observe freeze get"),
+			consume = {
+				utils = allow(
+					"apiVersion getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordTransition setAutoSpamActive trackCharacter untrackCharacter"
+				),
+				gameinfo = allow(
+					"areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRangeParameters getDashAbility getPlayerDeflectRange getPlayerRawRadius getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getSnapshotAt getTargetId isSnapshotValid"
+				),
+				clashstats = allow("begin finish observe freeze get"),
+			},
+		},
+		spam = {
+			provide = allow("setup resetState teardown getStatus"),
+			consume = {
+				utils = allow(
+					"apiVersion getConfigValue isActive isAutoSpamActive isManualSpamActive observeConfig observeSpam recordError recordTransition trackGlobal untrackGlobal"
+				),
+				remote = allow("fireParry"),
+				gameinfo = allow("getAutoSpamDelay getMinimumSpamInterval"),
+			},
+		},
+		autodark = {
+			provide = allow("sync setup teardown"),
+			consume = {
+				utils = allow("getConfigValue getRunService getWorkspace trackGlobal untrackGlobal"),
+				remote = allow("fireDark"),
+				gameinfo = allow("areAbilitiesEnabled getDarkSealEventId"),
+			},
+		},
+		autofierce = {
+			provide = allow("setup teardown"),
+			consume = {
+				utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
+				gameinfo = allow(
+					"areAbilitiesEnabled getDeflectServerEvents getLastDeflectPressAt getDeflectWindow getLocalPing getSnapshotAt isSnapshotValid getBallFrozen"
+				),
+				autoparry = allow("beginFierce cancelFierce"),
+				remote = allow("fireFierce"),
+			},
+		},
+		movement = {
+			provide = allow("upDash dashToward setup teardown"),
+			consume = {
+				utils = allow("isActive"),
+				gameinfo = allow("getDashAbility areAbilitiesEnabled"),
+				remote = allow("fireDash"),
+			},
+		},
+		autojump = {
+			provide = allow("setup sync teardown"),
+			consume = { utils = allow("getConfigValue getLocalPlayer getRunService isActive trackGlobal untrackGlobal") },
+		},
+		camera = {
+			provide = allow("setup teardown"),
+			consume = {
+				utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
+			},
+		},
+		autodash = {
+			provide = allow("setup bindCharacter detachCharacter teardown"),
+			consume = {
+				utils = allow("getPlayers getLocalPlayer getRunService getConfigValue isActive now trackCharacter untrackCharacter"),
+				gameinfo = allow("areAbilitiesEnabled getClashContext getSnapshotAt isSnapshotValid getDeflectGeometry"),
+				dash = allow("setHandler tick"),
+				movement = allow("upDash"),
+				autospam = allow("getActivationContext"),
+			},
+		},
+		dash = {
+			provide = allow("setup setHandler tick resetState teardown getStatus"),
+			consume = {
+				utils = allow("apiVersion getPlayers now trackGlobal untrackGlobal"),
+				gameinfo = allow("isPlayerDashing"),
+			},
+		},
+		character = {
+			provide = allow("setup teardown getStatus"),
+			consume = {
+				utils = allow(
+					"apiVersion disconnectCharacterConnections getLocalPlayer isActive recordError recordTransition setAutoSpamActive setManualSpamActive trackCharacter trackGlobal untrackGlobal"
+				),
+				spam = allow("resetState"),
+				autoparry = allow("bindCharacter detachCharacter"),
+				autospam = allow("bindCharacter detachCharacter"),
+				autodash = allow("bindCharacter detachCharacter"),
+			},
+		},
+		ui = {
+			provide = allow("setup"),
+			consume = {
+				utils = allow(
+					"apiVersion getConfig getConfigValue getLocalPlayer isActive isManualSpamActive name normalizeSpamRate observeConfig observeSpam recordError setConfig setManualSpamActive stop version author"
+				),
+				uiconfig = allow("panelToggles panelComponents"),
+				gameinfo = allow("areAbilitiesEnabled observeAbilityMode getSnapshotAt isSnapshotValid createCrateNetwork spinCrate"),
+				autospam = allow("getStatus"),
+			},
 		},
 	},
-	spam = {
-		provide = allow("setup resetState teardown getStatus"),
-		consume = {
-			utils = allow(
-				"apiVersion getConfigValue isActive isAutoSpamActive isManualSpamActive observeConfig observeSpam recordError recordTransition trackGlobal untrackGlobal"
-			),
-			remote = allow("fireParry"),
-			gameinfo = allow("getAutoSpamDelay getMinimumSpamInterval"),
-		},
-	},
-	autodark = {
-		provide = allow("sync setup teardown"),
-		consume = {
-			utils = allow("getConfigValue getRunService getWorkspace trackGlobal untrackGlobal"),
-			remote = allow("fireDark"),
-			gameinfo = allow("areAbilitiesEnabled getDarkSealEventId"),
-		},
-	},
-	autofierce = {
-		provide = allow("setup teardown"),
-		consume = {
-			utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
-			gameinfo = allow(
-				"areAbilitiesEnabled getDeflectServerEvents getLastDeflectPressAt getDeflectWindow getLocalPing getSnapshotAt isSnapshotValid getBallFrozen"
-			),
-			autoparry = allow("beginFierce cancelFierce"),
-			remote = allow("fireFierce"),
-		},
-	},
-	movement = {
-		provide = allow("upDash dashToward setup teardown"),
-		consume = {
-			utils = allow("isActive"),
-			gameinfo = allow("getDashAbility areAbilitiesEnabled"),
-			remote = allow("fireDash"),
-		},
-	},
-	autojump = {
-		provide = allow("setup sync teardown"),
-		consume = { utils = allow("getConfigValue getLocalPlayer getRunService isActive trackGlobal untrackGlobal") },
-	},
-	camera = {
-		provide = allow("setup teardown"),
-		consume = {
-			utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
-		},
-	},
-	autodash = {
-		provide = allow("setup bindCharacter detachCharacter teardown"),
-		consume = {
-			utils = allow("getPlayers getLocalPlayer getRunService getConfigValue isActive now trackCharacter untrackCharacter"),
-			gameinfo = allow("areAbilitiesEnabled getClashContext getSnapshotAt isSnapshotValid getDeflectGeometry"),
-			dash = allow("setHandler tick"),
-			movement = allow("upDash"),
-			autospam = allow("getActivationContext"),
-		},
-	},
-	dash = {
-		provide = allow("setup setHandler tick resetState teardown getStatus"),
-		consume = {
-			utils = allow("apiVersion getPlayers now trackGlobal untrackGlobal"),
-			gameinfo = allow("isPlayerDashing"),
-		},
-	},
-	character = {
-		provide = allow("setup teardown getStatus"),
-		consume = {
-			utils = allow(
-				"apiVersion disconnectCharacterConnections getLocalPlayer isActive recordError recordTransition setAutoSpamActive setManualSpamActive trackCharacter trackGlobal untrackGlobal"
-			),
-			spam = allow("resetState"),
-			autoparry = allow("bindCharacter detachCharacter"),
-			autospam = allow("bindCharacter detachCharacter"),
-			autodash = allow("bindCharacter detachCharacter"),
-		},
-	},
-	ui = {
-		provide = allow("setup"),
-		consume = {
-			utils = allow(
-				"apiVersion getConfig getConfigValue getLocalPlayer isActive isManualSpamActive name normalizeSpamRate observeConfig observeSpam recordError setConfig setManualSpamActive stop version author"
-			),
-			uiconfig = allow("panelToggles panelComponents"),
-			gameinfo = allow("areAbilitiesEnabled observeAbilityMode getSnapshotAt isSnapshotValid createCrateNetwork spinCrate"),
-			autospam = allow("getStatus"),
-		},
-	},
-},
 }
-local POLICIES = CONFIG.POLICIES
 
+local POLICIES = CONFIG.POLICIES
 
 -- validation
 local function policy(name)

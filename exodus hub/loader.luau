@@ -10,26 +10,26 @@ local CONFIG = {
 	VERSION_FILE = "Exodus Hub/current_version.txt",
 	ALLOW_LOCAL_FALLBACK = true,
 	MODULES = {
-	{ name = "permissions", path = "modules/logic/permissions.luau" },
-	{ name = "config", path = "modules/front/config.luau" },
-	{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
-	{ name = "utils", path = "modules/logic/utils.luau" },
-	{ name = "gameinfo", path = "modules/logic/gameinfo.luau" },
-	{ name = "clashstats", path = "modules/logic/clashstats.luau" },
-	{ name = "autodark", path = "modules/logic/extras/autodark.luau" },
-	{ name = "movement", path = "modules/logic/movement.luau" },
-	{ name = "autojump", path = "modules/logic/extras/autojump.luau" },
-	{ name = "camera", path = "modules/logic/extras/camera.luau" },
-	{ name = "remote", path = "modules/logic/remote.luau" },
-	{ name = "autofierce", path = "modules/logic/extras/autofierce.luau" },
-	{ name = "autoparry", path = "modules/logic/autoparry.luau" },
-	{ name = "dash", path = "modules/logic/dash.luau" },
-	{ name = "autospam", path = "modules/logic/autospam.luau" },
-	{ name = "autodash", path = "modules/logic/extras/autodash.luau" },
-	{ name = "spam", path = "modules/logic/spam.luau" },
-	{ name = "character", path = "modules/logic/character.luau" },
-	{ name = "ui", path = "modules/front/ui.luau" },
-},
+		{ name = "permissions", path = "modules/logic/permissions.luau" },
+		{ name = "config", path = "modules/front/config.luau" },
+		{ name = "uiconfig", path = "modules/front/uiconfig.luau" },
+		{ name = "utils", path = "modules/logic/utils.luau" },
+		{ name = "gameinfo", path = "modules/logic/gameinfo.luau" },
+		{ name = "clashstats", path = "modules/logic/clashstats.luau" },
+		{ name = "autodark", path = "modules/logic/extras/autodark.luau" },
+		{ name = "movement", path = "modules/logic/movement.luau" },
+		{ name = "autojump", path = "modules/logic/extras/autojump.luau" },
+		{ name = "camera", path = "modules/logic/extras/camera.luau" },
+		{ name = "remote", path = "modules/logic/remote.luau" },
+		{ name = "autofierce", path = "modules/logic/extras/autofierce.luau" },
+		{ name = "autoparry", path = "modules/logic/autoparry.luau" },
+		{ name = "dash", path = "modules/logic/dash.luau" },
+		{ name = "autospam", path = "modules/logic/autospam.luau" },
+		{ name = "autodash", path = "modules/logic/extras/autodash.luau" },
+		{ name = "spam", path = "modules/logic/spam.luau" },
+		{ name = "character", path = "modules/logic/character.luau" },
+		{ name = "ui", path = "modules/front/ui.luau" },
+	},
 }
 
 -- logging
@@ -43,9 +43,6 @@ end
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 local Loader = {}
-
-
-
 local REPOSITORY = CONFIG.REPOSITORY
 local BRANCH = CONFIG.BRANCH
 local PROJECT_PATH = CONFIG.PROJECT_PATH
@@ -55,7 +52,6 @@ local BASE_URL = "https://raw.githubusercontent.com/" .. REPOSITORY .. "/"
 local CACHE_BUSTER = tostring(os.time())
 local HttpService = game:GetService("HttpService")
 local MODULE_MANIFEST = CONFIG.MODULES
-
 local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
 for _, entry in ipairs(MODULE_MANIFEST) do

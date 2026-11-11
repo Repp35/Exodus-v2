@@ -9,14 +9,14 @@ local CONFIG = {
 	POSITION_MIN = -10000,
 	POSITION_MAX = 10000,
 	ERRORS = {
-	boolean = "flag inválida: %s",
-	rate = "taxa inválida: %s",
-	delay = "atraso inválido: %s",
-	delayMs = "tempo inválido: %s",
-	position = "posição inválida: %s",
-	keyCode = "keybind inválido: %s",
-	rateMode = "SpamRateMode inválido",
-},
+		boolean = "flag inválida: %s",
+		rate = "taxa inválida: %s",
+		delay = "atraso inválido: %s",
+		delayMs = "tempo inválido: %s",
+		position = "posição inválida: %s",
+		keyCode = "keybind inválido: %s",
+		rateMode = "SpamRateMode inválido",
+	},
 }
 
 -- registry
@@ -45,8 +45,6 @@ local validators = {
 	keyCode = validKeyCode,
 	rateMode = function(value) return value == "CPS" or value == "CPF" or value == "Auto" end,
 }
-
-
 
 local function validateValue(key, kind, value: any)
 	local validator = validators[kind]
