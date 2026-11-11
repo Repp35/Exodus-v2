@@ -462,7 +462,7 @@ def expand_inline_config_tables(source: str, indent_type: str = "Tabs", indent_w
         last = inside[start:].strip()
         if last:
             fields.append(last)
-        if not fields or any(not re.match(r"^[A-Za-z_][A-Za-z_0-9]*\s*=", field) for field in fields):
+        if len(fields) < 2 or any(not re.match(r"^[A-Za-z_][A-Za-z_0-9]*\s*=", field) for field in fields):
             output.append(line)
             continue
         prefix = match.group(1)
