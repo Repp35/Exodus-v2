@@ -1312,6 +1312,7 @@ function ExodusUI.setup(deps)
 	})
 	inst("UIListLayout", {
 		FillDirection = Enum.FillDirection.Horizontal,
+		SortOrder = Enum.SortOrder.LayoutOrder,
 		HorizontalAlignment = Enum.HorizontalAlignment.Center,
 		VerticalAlignment = Enum.VerticalAlignment.Center,
 		Padding = UDim.new(0, CONFIG.TITLE_SPACING),
@@ -1319,6 +1320,7 @@ function ExodusUI.setup(deps)
 	})
 	inst("TextLabel", {
 		Size = UDim2.new(0, 0, 1, 0),
+		LayoutOrder = 1,
 		AutomaticSize = Enum.AutomaticSize.X,
 		BackgroundTransparency = 1,
 		Text = ("%s | v%s"):format(Utils.name(), Utils.version()),
@@ -1331,6 +1333,7 @@ function ExodusUI.setup(deps)
 	})
 	inst("TextLabel", {
 		Size = UDim2.new(0, 0, 1, 0),
+		LayoutOrder = 2,
 		AutomaticSize = Enum.AutomaticSize.X,
 		BackgroundTransparency = 1,
 		Text = "— " .. Utils.author(),
