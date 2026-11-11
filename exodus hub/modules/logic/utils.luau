@@ -44,9 +44,10 @@ local function copy(value, visited)
   if type(value) ~= "table" then return value end
   visited = visited or {}
   if visited[value] then return visited[value] end
-  local result = {}
-  visited[value] = result
-  for key, item in pairs(value) do result[copy(key, visited)] = copy(item, visited) end
+  local result = {}; visited[value] = result
+  for key, item in pairs(value) do
+    result[copy(key, visited)] = copy(item, visited)
+  end
   return result
 end
 local function snapshot(value) return type(value) == "table" and copy(value) or {} end
