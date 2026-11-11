@@ -72,8 +72,8 @@ local function snapshotSpeed(snapshot)
   local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
 end
 local function resetExchange(s)
-  s.opponentWindow = nil
-  s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil; s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
+  s.opponentWindow = nil; s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil
+  s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 end
 local function distanceToPlayer(id) return id and gameInfo.getPlayerDistance(id) or nil end
 local function distanceLimit(snapshot, partner)
@@ -197,11 +197,8 @@ local function observeOpponentWindow(s, snapshot, time)
   if not target or target == localPlayer.UserId then return end
   s.opponentWindow = nil
   if snapshot.targetUncertain == true or snapshot.locked == true then return end
-  local g = geometry(snapshot, 1)
-  local position = gameInfo.getPlayerMotion(target)
-  if g and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude <= g.fullRadius then
-    s.opponentWindow = { partner = target, at = time }
-  end
+  local g = geometry(snapshot, 1); local position = gameInfo.getPlayerMotion(target)
+  if g and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude <= g.fullRadius then s.opponentWindow = { partner = target, at = time } end
 end
 local function shouldActivate(s, snapshot, time)
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
@@ -210,8 +207,7 @@ local function shouldActivate(s, snapshot, time)
   if typeof(snapshot.position) ~= "Vector3" then return false end
   local towardPlayer = s.root.Position - snapshot.position; local distance = towardPlayer.Magnitude
   if s.pending.nearSwitch then
-    local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, snapshotSpeed(snapshot), true)
-    return time == s.pending.switchAt and snapshot.locked ~= true and finite(raw) and distance <= raw
+    local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, snapshotSpeed(snapshot), true); return time == s.pending.switchAt and snapshot.locked ~= true and finite(raw) and distance <= raw
   end
   local g = activationGeometry(s, snapshot, s.pending.partner, time)
   if not g or distance > g.fullRadius then return false end
@@ -359,14 +355,16 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
       if not g or not window or typeof(snapshot.position) ~= "Vector3" then return end
       local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
       if not returnElapsed then return end
-      local raw = gameInfo.getPlayerRawRadius(me, speed, true)
-      local startedNear = finite(raw) and (snapshot.position - s.root.Position).Magnitude <= raw
-      local observed = s.opponentWindow
-      local nearSwitch = startedNear and snapshot.locked ~= true and snapshot.targetUncertain ~= true
-        and completedPartner == previous and observed and observed.partner == previous
-        and time >= observed.at and time - observed.at <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
-      s.opponentWindow = nil
-      local fastReturn = returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
+      local raw = gameInfo.getPlayerRawRadius(me, speed, true); local startedNear = finite(raw) and (snapshot.position - s.root.Position).Magnitude <= raw
+      local observed = s.opponentWindow; local nearSwitch = startedNear
+        and snapshot.locked ~= true
+        and snapshot.targetUncertain ~= true
+        and completedPartner == previous
+        and observed
+        and observed.partner == previous
+        and time >= observed.at
+        and time - observed.at <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
+      s.opponentWindow = nil; local fastReturn = returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
       if startedNear and not fastReturn and not nearSwitch then return end
       s.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn, nearSwitch = nearSwitch == true, switchAt = time }
     end
