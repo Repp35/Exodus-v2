@@ -3,9 +3,9 @@
 -- tuning
 local CONFIG = {
 	API_VERSION = 1,
-	VERSION = "3.0.0",
+	VERSION = "3.1.5",
 	NAME = "Exodus Hub",
-	AUTHOR = "delta",
+	AUTHOR = "deltapolinha_2915",
 	FOLDER = "Exodus Hub",
 	HISTORY_LIMIT = 32,
 }
