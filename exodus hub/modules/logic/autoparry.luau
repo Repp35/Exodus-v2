@@ -43,6 +43,7 @@ local state = {
   windowFactor = 0.8,
   awayAt = nil,
   awayTarget = nil,
+  trainingAwaySeen = false,
 }
 
 -- configuration
@@ -86,7 +87,7 @@ local function resetTracking()
   state.teleported, state.teleportSequence, state.sequence = false, nil, nil; state.mode = nil
   state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
-  state.awayAt, state.awayTarget = nil, nil; table.clear(state.clicks)
+  state.awayAt, state.awayTarget, state.trainingAwaySeen = nil, nil, false; table.clear(state.clicks)
   table.clear(state.returns)
 end
 local function detach(reason)
@@ -191,7 +192,6 @@ local function observeSnapshot(snapshot, time)
   if order == "old" then return false end
   if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then return false end
   if order == "new" then state.sequence = snapshot.syncSequence end
-  if mode == "training" and order == "new" and state.fired and snapshot.targetId == (state.player and state.player.UserId) then state.fired = false; state.cycle += 1 end
   observeTarget(snapshot.targetId, time); return true
 end
 
@@ -200,7 +200,7 @@ local function request(reason)
   local redirectReturn = reason == "redirect_return"
   if state.fired or not state.player or (not redirectReturn and (not state.targetKnown or state.target ~= state.player.UserId)) then return false end
   local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote
-  local firedAt, speed, distance = clock(), state.speed, state.distance; state.fired, state.lastFireAt = true, firedAt
+  local firedAt, speed, distance = clock(), state.speed, state.distance; state.fired, state.lastFireAt, state.trainingAwaySeen = true, firedAt, false
   local function sameCycle()
     return state.generation == generation
       and state.cycle == cycle
@@ -248,7 +248,7 @@ local function tick(character, root, generation)
   if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
   if utils.isSpamActive() then phase("waiting", "spam_active"); return end
   if state.teleported or value.teleported then phase("waiting", "teleport_lock"); return end
-  if state.fired then phase("waiting", "target_already_parried"); return end
+  if state.fired and value.mode ~= "training" then phase("waiting", "target_already_parried"); return end
   if value.locked == true then
     state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0; phase("waiting", "ball_locked")
     return
@@ -262,6 +262,16 @@ local function tick(character, root, generation)
   samplePing(); local geometry = radius(speed, activeWindowFactor(time))
   if not geometry then return end
   local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); threshold += math.max(closing, 0) * state.frameAllowance
+  if value.mode == "training" and state.fired then
+    if closing < -CONFIG.MIN_PARRY_SPEED * 0.25 then state.trainingAwaySeen = true end
+    if state.trainingAwaySeen and closing > CONFIG.MIN_PARRY_SPEED * 0.25 and distance > threshold then
+      state.fired, state.trainingAwaySeen = false, false
+      state.cycle += 1
+    else
+      phase("waiting", "training_awaiting_return")
+      return
+    end
+  end
   state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0; state.closingSpeed, state.triggerDistance = closing, threshold
   if closing > 0 and distance <= threshold then request("parry_requested") end
 end
