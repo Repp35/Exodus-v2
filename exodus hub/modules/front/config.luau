@@ -1,5 +1,24 @@
 -- [[ config ]]
 
+-- tuning
+local CONFIG = {
+	RATE_MIN = 0,
+	DELAY_MIN = 0,
+	DELAY_MAX = 5,
+	DELAY_MS_MAX = 400,
+	POSITION_MIN = -10000,
+	POSITION_MAX = 10000,
+	ERRORS = {
+	boolean = "flag inválida: %s",
+	rate = "taxa inválida: %s",
+	delay = "atraso inválido: %s",
+	delayMs = "tempo inválido: %s",
+	position = "posição inválida: %s",
+	keyCode = "keybind inválido: %s",
+	rateMode = "SpamRateMode inválido",
+},
+}
+
 -- registry
 local Config = {}
 local Registry = {}
@@ -16,25 +35,18 @@ local function validKeyCode(value)
 			or value == Enum.UserInputType.MouseButton3
 		)
 end
+local validationErrors = CONFIG.ERRORS
 local validators = {
 	boolean = function(value) return type(value) == "boolean" end,
-	rate = function(value) return isFiniteNumber(value) and value >= 0 end,
-	delay = function(value) return isFiniteNumber(value) and value >= 0 and value <= 5 end,
-	delayMs = function(value) return isFiniteNumber(value) and value >= 0 and value <= 400 end,
-	position = function(value) return isFiniteNumber(value) and value >= -10000 and value <= 10000 end,
+	rate = function(value) return isFiniteNumber(value) and value >= CONFIG.RATE_MIN end,
+	delay = function(value) return isFiniteNumber(value) and value >= CONFIG.DELAY_MIN and value <= CONFIG.DELAY_MAX end,
+	delayMs = function(value) return isFiniteNumber(value) and value >= CONFIG.DELAY_MIN and value <= CONFIG.DELAY_MS_MAX end,
+	position = function(value) return isFiniteNumber(value) and value >= CONFIG.POSITION_MIN and value <= CONFIG.POSITION_MAX end,
 	keyCode = validKeyCode,
 	rateMode = function(value) return value == "CPS" or value == "CPF" or value == "Auto" end,
 }
 
-local validationErrors = {
-	boolean = "flag inválida: %s",
-	rate = "taxa inválida: %s",
-	delay = "atraso inválido: %s",
-	delayMs = "tempo inválido: %s",
-	position = "posição inválida: %s",
-	keyCode = "keybind inválido: %s",
-	rateMode = "SpamRateMode inválido",
-}
+
 
 local function validateValue(key, kind, value: any)
 	local validator = validators[kind]

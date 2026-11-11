@@ -10,8 +10,9 @@ local function allow(names)
 	return items
 end
 
--- policy-table
-local POLICIES = {
+-- tuning
+local CONFIG = {
+	POLICIES = {
 	permissions = { provide = allow("validate wrap resolve policy"), consume = {} },
 	config = { provide = allow("register defaults validatePatch normalizePatch validate getRegistry"), consume = {} },
 	uiconfig = { provide = allow(""), consume = {}, data = allow("panelToggles panelComponents") },
@@ -155,7 +156,10 @@ local POLICIES = {
 			autospam = allow("getStatus"),
 		},
 	},
+},
 }
+local POLICIES = CONFIG.POLICIES
+
 
 -- validation
 local function policy(name)

@@ -423,6 +423,56 @@ def add_table_spacing(source: str) -> str:
     return finish_source(result)
 
 
+def expand_inline_config_tables(source: str, indent_type: str = "Tabs", indent_width: int = 4) -> str:
+    """Keep top-level CONFIG fields on separate lines after StyLua."""
+    indentation = "\t" if indent_type.lower() == "tabs" else " " * indent_width
+    pattern = re.compile(r"^(\s*)local\s+CONFIG\s*=\s*\{(.*)\}\s*$")
+    output: list[str] = []
+    for line in source.splitlines():
+        match = pattern.fullmatch(line)
+        if not match or not match.group(2).strip():
+            output.append(line)
+            continue
+        inside = match.group(2)
+        fields: list[str] = []
+        start = 0
+        stack: list[str] = []
+        quote: str | None = None
+        escaped = False
+        for index, char in enumerate(inside):
+            if quote:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    quote = None
+            elif char in ('"', "'"):
+                quote = char
+            elif char in "([{":
+                stack.append(char)
+            elif char in ")]}":
+                if stack:
+                    stack.pop()
+            elif char == "," and not stack:
+                field = inside[start:index].strip()
+                if field:
+                    fields.append(field)
+                start = index + 1
+        last = inside[start:].strip()
+        if last:
+            fields.append(last)
+        if not fields or any(not re.match(r"^[A-Za-z_][A-Za-z_0-9]*\s*=", field) for field in fields):
+            output.append(line)
+            continue
+        prefix = match.group(1)
+        output.append(prefix + "local CONFIG = {")
+        for field in fields:
+            output.append(prefix + indentation + field.rstrip(",") + ",")
+        output.append(prefix + "}")
+    return finish_source(output)
+
+
 def add_final_return_spacing(source: str) -> str:
     lines = source.splitlines()
     for index in range(len(lines) - 1, -1, -1):
@@ -1281,6 +1331,7 @@ def format_files(args: argparse.Namespace) -> int:
                 max_statements=args.max_statements,
                 tab_width=tab_width,
             )
+            formatted = expand_inline_config_tables(formatted, configured_indent_type, tab_width)
             return formatted
 
         if args.check:

@@ -1,9 +1,8 @@
 -- [[ uiconfig ]]
 
-local UIConfig = {}
-
--- config
-UIConfig.panelToggles = {
+-- tuning
+local CONFIG = {
+	PANEL_TOGGLES = {
 	{
 		kind = "toggle",
 		label = "Auto Parry",
@@ -26,8 +25,8 @@ UIConfig.panelToggles = {
 		key = "ClashBallVisible",
 		mobileOnly = true,
 	},
-}
-UIConfig.panelComponents = {
+},
+	PANEL_COMPONENTS = {
 	{
 		kind = "rate_selector",
 	},
@@ -42,8 +41,8 @@ UIConfig.panelComponents = {
 		shortcutKey = "SpamKeybind",
 		mobileToast = "Manual Spam UI",
 	},
-}
-UIConfig.__config = {
+},
+	SETTINGS = {
 	schema = {
 		AutoParry = "boolean",
 		AutoParryWindowFactor = "rate",
@@ -122,7 +121,14 @@ UIConfig.__config = {
 		UpDashKeybind = Enum.KeyCode.U,
 	},
 
+},
 }
+
+local UIConfig = {}
+UIConfig.panelToggles = CONFIG.PANEL_TOGGLES
+UIConfig.panelComponents = CONFIG.PANEL_COMPONENTS
+UIConfig.__config = CONFIG.SETTINGS
+
 
 -- contract
 UIConfig.__contract = {
