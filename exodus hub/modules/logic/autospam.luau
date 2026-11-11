@@ -32,6 +32,7 @@ local CONFIG = {
     TARGET_RETURN_TIMEOUT = 0.05,
     PARTNER_RETURN_FALLBACK = 0.1,
     PARTNER_RETURN_MAX = 0.25,
+    NEAR_PARTNER_COOLDOWN_MULTIPLIER = 3,
   },
   SHARED = {
     MIN_RETURN = 1 / 25,
@@ -243,13 +244,28 @@ end
 local function applyDeactivation(s, snapshot, time)
   if not s.active then return false end
   local reason = shouldDeactivate(s, snapshot, time)
-  if
-    not reason
-    and s.activatedAt
-    and time - s.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME
-    and gameInfo.isClientDeflectResetLate(s.activatedAt, snapshot and snapshotSpeed(snapshot))
-  then
-    reason = "client_deflect_reset_late"
+  if not reason and s.activatedAt and time - s.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then
+    local speed = snapshot and snapshotSpeed(snapshot)
+    local multiplier = 1
+    if
+      s.partner
+      and snapshot
+      and gameInfo.isSnapshotValid(snapshot)
+      and snapshot.targetUncertain ~= true
+      and not snapshot.teleported
+      and finite(snapshot.syncAt)
+      and time >= snapshot.syncAt
+      and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
+    then
+      local g = geometry(snapshot, 1)
+      local distance = distanceToPlayer(s.partner)
+      if g and finite(distance) and distance <= g.fullRadius then
+        multiplier = CONFIG.DEACTIVATION.NEAR_PARTNER_COOLDOWN_MULTIPLIER
+      end
+    end
+    if gameInfo.isClientDeflectResetLate(s.activatedAt, speed, multiplier) then
+      reason = "client_deflect_reset_late"
+    end
   end
   if not reason then return false end
   stop(s, reason); return true

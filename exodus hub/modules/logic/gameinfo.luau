@@ -580,7 +580,7 @@ function GameInfo.getDeflectCooldownState()
   cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true
   cooldown.blocking = cooldown.active; return cooldown
 end
-function GameInfo.isClientDeflectResetLate(activatedAt, speed)
+function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
   if not finite(activatedAt) or not finite(speed) or speed <= 0 then return false end
   local ability = GameInfo.getDeflectAbility()
   if not ability or not finite(ability.Cooldown) or ability.Cooldown <= 0 then return false end
@@ -591,6 +591,11 @@ function GameInfo.isClientDeflectResetLate(activatedAt, speed)
   local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress; local ping = GameInfo.getAveragePing()
   budget = budget + math.clamp(ping, 0, CONFIG.CLIENT_DEFLECT_RESET_MAX_PING_MARGIN); local lastSafeDelay = predictUntil - pressedAt - CONFIG.CLIENT_DEFLECT_RESET_FRAME_MARGIN
   if lastSafeDelay < CONFIG.CLIENT_DEFLECT_RESET_MIN then return false end
+  local extra = finite(multiplier) and math.max(1, multiplier) or 1
+  if extra > 1 then
+    budget *= extra
+    if lastSafeDelay < budget then return false end
+  end
   return time - pressedAt >= math.min(budget, lastSafeDelay)
 end
 function GameInfo.getSyncData() return syncData() end
