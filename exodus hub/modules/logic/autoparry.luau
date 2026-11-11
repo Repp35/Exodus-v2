@@ -40,7 +40,7 @@ local state = {
   returns = {},
   autoParryCps = 0,
   lastAutoParryClickAt = nil,
-  windowFactor = 0.25,
+  windowFactor = 0.3,
   awayAt = nil,
   awayTarget = nil,
   trainingRound = nil,
@@ -54,7 +54,7 @@ local state = {
 
 -- configuration
 local CONFIG = {
-  DEFAULT_WINDOW_FACTOR = 0.25,
+  DEFAULT_WINDOW_FACTOR = 0.3,
   MAX_WINDOW_FACTOR = 0.35,
   MATCH_RETRY_DELAY_MAX = 0.5,
   PRESSURE_SAMPLE_LIMIT = 100,

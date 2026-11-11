@@ -733,7 +733,7 @@ local function createParryTimingCard(yPos, parent)
     ZIndex = 7,
     Parent = f,
   })
-  local config = Utils.getConfig(); local initial = tonumber(config.AutoParryWindowFactor) or 0.25
+  local config = Utils.getConfig(); local initial = tonumber(config.AutoParryWindowFactor) or 0.3
   local input = inst("TextBox", {
     Size = UDim2.new(0, 62, 0, 30),
     Position = UDim2.new(1, -74, 0.5, -15),
@@ -750,7 +750,7 @@ local function createParryTimingCard(yPos, parent)
   corner(input, 8); stroke(input, C.border, 1)
   trackConn(input.FocusLost:Connect(function()
     local value = tonumber(input.Text)
-    if not value or value ~= value or value == math.huge or value == -math.huge then value = (tonumber(Utils.getConfig().AutoParryWindowFactor) or 0.25) * 100 end
+    if not value or value ~= value or value == math.huge or value == -math.huge then value = (tonumber(Utils.getConfig().AutoParryWindowFactor) or 0.3) * 100 end
     value = math.clamp(value, 0, 35); setConfigValue("AutoParryWindowFactor", value / 100)
     input.Text = tostring(value)
   end))
