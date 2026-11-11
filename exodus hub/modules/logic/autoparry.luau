@@ -43,6 +43,8 @@ local state = {
   windowFactor = 0.25,
   awayAt = nil,
   awayTarget = nil,
+  trainingRound = nil,
+  trainingBall = nil,
   trainingLastValidAt = 0,
   trainingLastServerTime = nil,
   nextAttemptAt = 0,
@@ -99,6 +101,7 @@ local function resetTracking()
   state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
+  state.trainingRound, state.trainingBall = nil, nil
   state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
   table.clear(state.clicks); table.clear(state.returns)
 end
@@ -219,7 +222,16 @@ end
 local function observeSnapshot(snapshot, time)
   if snapshot.targetUncertain == true then return false end
   local mode = snapshot.mode == "training" and "training" or "match"
-  if state.mode ~= mode then
+  local newTrainingBall = mode == "training" and (snapshot.trainingRound ~= state.trainingRound or snapshot.ball ~= state.trainingBall)
+  if state.mode ~= mode or newTrainingBall then
+    state.cycle += 1
+    state.trainingRound, state.trainingBall = nil, nil
+    if mode == "training" then
+      state.trainingRound, state.trainingBall = snapshot.trainingRound, snapshot.ball
+      state.lastBall = nil
+      state.speed, state.distance, state.approaching = 0, 0, false
+      state.closingSpeed, state.triggerDistance = 0, 0
+    end
     state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false; state.fired, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, nil
     state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
@@ -442,8 +454,7 @@ end
 -- ball-sync
 function AutoParry.onBallSync(data)
   if type(data) ~= "table" or not state.alive or not state.bound then return end
-  local currentSnapshot = gameInfo.getSnapshotAt(clock())
-  if currentSnapshot and currentSnapshot.mode == "training" then return true end
+  if gameInfo.isTrainingArea() then return true end
   local sequence = data.Sequence or data.TeleportSequence
   if sequence == nil and gameInfo.getSyncSequence and data == gameInfo.getSyncData() then sequence = gameInfo.getSyncSequence() end
   local order = sequenceOrder(sequence)
@@ -664,6 +675,7 @@ AutoParry.__contract = {
   requiresMethods = {
     Remote = { "fireParry" },
     GameInfo = {
+      "isTrainingArea",
       "getSnapshotAt",
       "isSnapshotValid",
       "getSyncData",

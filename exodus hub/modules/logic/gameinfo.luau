@@ -16,6 +16,8 @@ local pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, ni
 local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
 local targetFrame, targetFrameConnection = 0, nil
 local trainingConnection, trainingRemote, trainingState, trainingSequence = nil, nil, nil, 0
+local trainingEventConnection, trainingEventRemote
+local trainingRound, trainingDespawned, trainingServerTime = 0, false, nil
 local trainingDataModule, trainingData
 
 -- configuration
@@ -255,17 +257,44 @@ local function findSyncRemote()
   if validSyncRemote(candidate) then return candidate end
   return nil
 end
-function GameInfo.bindBallSync(handler)
-  if type(handler) ~= "function" then return false end
-  local training = child(child(child(storage(), "Training"), "Remotes"), "BallState")
+local function resetTrainingBall(despawned)
+  trainingRound += 1
+  trainingState, trainingDespawned = nil, despawned
+end
+local function bindTrainingSync()
+  local remotes = child(child(storage(), "Training"), "Remotes")
+  local event = child(remotes, "Event")
+  if not validSyncRemote(event) then event = nil end
+  if trainingEventRemote ~= event or (trainingEventConnection and not trainingEventConnection.Connected) then
+    disconnect(trainingEventConnection)
+    trainingEventConnection, trainingEventRemote = nil, event
+    resetTrainingBall(false)
+  end
+  if event and not trainingEventConnection then
+    trainingEventConnection = event.OnClientEvent:Connect(function(kind)
+      if kind == "BallSpawn" then
+        resetTrainingBall(false)
+      elseif kind == "BallDespawn" or kind == "Kill" then
+        resetTrainingBall(true)
+      end
+    end)
+    utils.trackGlobal(trainingEventConnection)
+  end
+
+  local training = child(remotes, "BallState")
   if not validSyncRemote(training) then training = nil end
-  if trainingRemote ~= training or (trainingConnection and not trainingConnection.Connected) then disconnect(trainingConnection); trainingConnection, trainingRemote, trainingState = nil, nil, nil end
+  if trainingRemote ~= training or (trainingConnection and not trainingConnection.Connected) then
+    disconnect(trainingConnection)
+    trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil
+    resetTrainingBall(trainingDespawned)
+  end
   if training and not trainingConnection then
     trainingRemote = training
     trainingConnection = training.OnClientEvent:Connect(function(position, velocity, serverTime, goal, target, speed)
       if typeof(position) ~= "Vector3" or typeof(velocity) ~= "Vector3" or not finite(serverTime) then return end
       local receivedAt = os.clock()
-      if trainingState and serverTime <= trainingState.serverTime and receivedAt - trainingState.receivedAt <= 0.6 then return end
+      if trainingDespawned or (trainingServerTime and serverTime <= trainingServerTime) then return end
+      trainingServerTime = serverTime
       trainingSequence = (trainingSequence + 1) % 65536
       trainingState = {
         position = position,
@@ -276,11 +305,15 @@ function GameInfo.bindBallSync(handler)
         speed = speed,
         receivedAt = receivedAt,
         sequence = trainingSequence,
+        round = trainingRound,
       }
-
     end)
     utils.trackGlobal(trainingConnection)
   end
+end
+function GameInfo.bindBallSync(handler)
+  if type(handler) ~= "function" then return false end
+  bindTrainingSync()
   local candidate = findSyncRemote()
   if not candidate then
     if syncRemote and not validSyncRemote(syncRemote) then disconnectSync() end
@@ -319,7 +352,11 @@ function GameInfo.startMaintenance(options)
 end
 function GameInfo.stopMaintenance()
   maintenance += 1; disconnectSync()
-  disconnect(trainingConnection); trainingConnection, trainingRemote, trainingState = nil, nil, nil
+  disconnect(trainingConnection)
+  disconnect(trainingEventConnection)
+  trainingConnection, trainingRemote, trainingServerTime = nil, nil, nil
+  trainingEventConnection, trainingEventRemote = nil, nil
+  resetTrainingBall(false)
   if targetFrameConnection then
     if utils then utils.untrackGlobal(targetFrameConnection) end
     targetFrameConnection:Disconnect(); targetFrameConnection = nil
@@ -681,6 +718,7 @@ local function snapshot(time)
       syncAt = sample.receivedAt,
       serverTime = sample.serverTime,
       syncSequence = sample.sequence,
+      trainingRound = sample.round,
     }
   end
   local currentBall = getBall()
