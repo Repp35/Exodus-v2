@@ -40,14 +40,13 @@ local CONFIG = {
 }
 
 -- helpers
-local function copy(value, depth)
+local function copy(value, visited)
   if type(value) ~= "table" then return value end
-  depth = depth or 0
-  if depth > 8 then return value end
+  visited = visited or {}
+  if visited[value] then return visited[value] end
   local result = {}
-  for key, item in pairs(value) do
-    result[copy(key, depth + 1)] = copy(item, depth + 1)
-  end
+  visited[value] = result
+  for key, item in pairs(value) do result[copy(key, visited)] = copy(item, visited) end
   return result
 end
 local function snapshot(value) return type(value) == "table" and copy(value) or {} end
@@ -383,8 +382,13 @@ function Utils.setConfig(patch)
   else
     normalized = snapshot(patch)
   end
-  setValues(state.config, normalized); notify(configObservers, normalized)
-  if normalized.SpamRateMode ~= nil or normalized.CPS ~= nil or normalized.CPF ~= nil then notify(spamObservers) end
+  local changes = {}
+  for key, value in pairs(normalized) do
+    if state.config[key] ~= value then state.config[key], changes[key] = value, value end
+  end
+  if next(changes) == nil then return true end
+  notify(configObservers, changes)
+  if changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil then notify(spamObservers) end
   refreshNamespace(); queueSave()
   return true
 end
