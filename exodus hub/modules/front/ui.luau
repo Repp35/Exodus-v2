@@ -159,8 +159,7 @@ local function twPlay(obj, t, props, style, dir, completed)
       completed(playbackState)
     end)
   end
-  tween:Play()
-  return tween
+  tween:Play(); return tween
 end
 local function safeCancel(t)
   if t then t:Cancel() end
@@ -179,7 +178,9 @@ local function createTweenGroup()
     return tween
   end
   local function waitForCompletion()
-    while pending > 0 do RunService.Heartbeat:Wait() end
+    while pending > 0 do
+      RunService.Heartbeat:Wait()
+    end
   end
   return play, waitForCompletion
 end
@@ -957,7 +958,8 @@ end
 local function fadeOutForReplacement()
   if not screenGui or not screenGui.Parent or UIState.closing then return end
   UIState.closing = true; safeCancel(UIState.panelTween)
-  safeCancel(UIState.btnTween); local duration = 0.3; local playTween, waitForCompletion = createTweenGroup()
+  safeCancel(UIState.btnTween); local duration = 0.3
+  local playTween, waitForCompletion = createTweenGroup()
   if configPanel and configPanel.Parent and configPanel.Visible then playTween(configPanel, duration, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.96, PH * 0.96) }, EASE_OUT, DIR_IN) end
   if floatingButton and floatingButton.Parent then playTween(floatingButton, duration, { BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN) end
   for _, element in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall, miniGui }) do
