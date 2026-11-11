@@ -3,311 +3,168 @@
 -- module
 local Permissions = {}
 
--- policy-builder
-local function allow(names)
-  local items = {}
-  for name in string.gmatch(names or "", "%S+") do
-    items[name] = true
-  end
-  return items
-end
-
 -- configuration
 local CONFIG = {
-  POLICIES = {
-    permissions = {
-      provide = allow("validate wrap resolve policy"),
-      consume = {},
-    },
-    config = {
-      provide = allow("register defaults validatePatch normalizePatch validate getRegistry"),
-      consume = {},
-    },
-    uiconfig = {
-      provide = allow(""),
-      consume = {},
-      data = allow("panelToggles panelComponents"),
-    },
-    utils = {
-      provide = allow(
-        "observeSpam observeConfig ensureDataFolder createClashLog appendClashLog start stop isActive getStateSnapshot getConfig getConfigValue getConfigSnapshot getModuleURLsSnapshot getLifecycle getDiagnostics setDiagnosticsModules setLifecyclePhase recordTransition recordError isManualSpamActive isAutoSpamActive isSpamActive setManualSpamActive setAutoSpamActive stopAllSpam isFiniteNumber isNonNegativeFiniteNumber normalizeSpamRate setConfig loadConfig setConfigModule setModuleURLs trackGlobal untrackGlobal trackCharacter untrackCharacter disconnectCharacterConnections getPlayers getReplicatedStorage getRunService getWorkspace getLocalPlayer now name version apiVersion author"
-      ),
-      consume = {},
-    },
-    gameinfo = {
-      provide = allow(
-        "bindBallSync startMaintenance stopMaintenance setup isTrainingArea fireTrainingParry getBall getBallPosition getBallVelocity getRootPosition getPlayerDistance getPlayerMotion getHaunterEvent getLocalPing getAveragePing areAbilitiesEnabled observeAbilityMode getDeflectRange getDeflectRangeParameters getPlayerDeflectRange getPlayerRawRadius getDeflectGeometry getProjectedDeflectRadius isBallWithinDeflectRadius getBallFrozen getDeflectAbility getLastDeflectPressAt getAutoSpamDelay getMinimumSpamInterval getDashAbility isPlayerDashing getFierceDeflectAbility getDarkSealAbility getDarkSealEventId createCrateNetwork spinCrate getDeflectServerEvents decodeDeflectServerEvent getHeldDeflectServerCooldown getDeflectCooldownState getSyncData getSyncSequence applyPacket decodeBallPacket getTargetId getBallTargetAttribute getSnapshot getSnapshotAt isSnapshotValid applySync installBallWatcher getBallSpeedLimits getDeflectWindow getManifestRemote getClashContext getStatus"
-      ),
-      consume = {
-        utils = allow("apiVersion getPlayers getReplicatedStorage getWorkspace getRunService now recordError trackGlobal untrackGlobal"),
-      },
-    },
-    clashstats = {
-      provide = allow("setup teardown begin finish observe freeze get"),
-      consume = {
-        utils = allow("getLocalPlayer getPlayers createClashLog appendClashLog recordError now"),
-        gameinfo = allow("getClashContext getPlayerMotion"),
-      },
-    },
-    remote = {
-      provide = allow("setup fireParry fireDark fireFierce fireDash"),
-      consume = {
-        gameinfo = allow("isTrainingArea fireTrainingParry getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility"),
-      },
-    },
-    autoparry = {
-      provide = allow(
-        "setup bindCharacter fire tryRedirectReturn beginFierce cancelFierce resetState detachCharacter teardown onBallSync getTargetStatus getTiming getRadius getPressure getStatus"
-      ),
-      consume = {
-        utils = allow(
-          "apiVersion getConfigValue getLocalPlayer getRunService isActive isSpamActive recordError recordTransition trackCharacter untrackCharacter"
-        ),
-        gameinfo = allow(
-          "getBallPosition getBallVelocity getDeflectCooldownState getDeflectGeometry getDeflectRangeParameters getProjectedDeflectRadius getAveragePing getRootPosition getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
-        ),
-        remote = allow("fireParry"),
-      },
-    },
-    autospam = {
-      provide = allow(
-        "setup bindCharacter detachCharacter teardown onBallSync isActive getPullEvent stopSpam getTargetSwitch getActivationContext getDashData getStatus"
-      ),
-      consume = {
-        utils = allow(
-          "apiVersion getConfigValue getLocalPlayer getPlayers getRunService isActive isManualSpamActive setManualSpamActive now recordTransition setAutoSpamActive trackCharacter untrackCharacter"
-        ),
-        gameinfo = allow(
-          "areAbilitiesEnabled getBallSpeedLimits getBallFrozen getDeflectGeometry getDeflectRangeParameters getDashAbility getPlayerDeflectRange getPlayerRawRadius getPlayerDistance getPlayerMotion getHaunterEvent getClashContext getSnapshotAt getTargetId isSnapshotValid"
-        ),
-        clashstats = allow("begin finish observe freeze get"),
-      },
-    },
-    spam = {
-      provide = allow("setup resetState teardown getStatus"),
-      consume = {
-        utils = allow(
-          "apiVersion getConfigValue isActive isAutoSpamActive isManualSpamActive observeConfig observeSpam recordError recordTransition trackGlobal untrackGlobal"
-        ),
-        remote = allow("fireParry"),
-        gameinfo = allow("getAutoSpamDelay getMinimumSpamInterval"),
-      },
-    },
-    autodark = {
-      provide = allow("sync setup teardown"),
-      consume = {
-        utils = allow("getConfigValue getRunService getWorkspace trackGlobal untrackGlobal"),
-        remote = allow("fireDark"),
-        gameinfo = allow("areAbilitiesEnabled getDarkSealEventId"),
-      },
-    },
-    autofierce = {
-      provide = allow("setup teardown"),
-      consume = {
-        utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
-        gameinfo = allow(
-          "areAbilitiesEnabled getDeflectServerEvents getLastDeflectPressAt getDeflectWindow getLocalPing getSnapshotAt isSnapshotValid getBallFrozen"
-        ),
-        autoparry = allow("beginFierce cancelFierce"),
-        remote = allow("fireFierce"),
-      },
-    },
-    movement = {
-      provide = allow("upDash dashToward setup teardown"),
-      consume = {
-        utils = allow("isActive"),
-        gameinfo = allow("getDashAbility areAbilitiesEnabled"),
-        remote = allow("fireDash"),
-      },
-    },
-    autojump = {
-      provide = allow("setup sync teardown"),
-      consume = {
-        utils = allow("getConfigValue getLocalPlayer getRunService isActive trackGlobal untrackGlobal"),
-      },
-    },
-    camera = {
-      provide = allow("setup teardown"),
-      consume = {
-        utils = allow("getConfigValue getLocalPlayer getRunService isActive observeConfig trackGlobal untrackGlobal"),
-      },
-    },
-    autodash = {
-      provide = allow("setup bindCharacter detachCharacter teardown"),
-      consume = {
-        utils = allow("getPlayers getLocalPlayer getRunService getConfigValue isActive now trackCharacter untrackCharacter"),
-        gameinfo = allow("areAbilitiesEnabled getClashContext getSnapshotAt isSnapshotValid getDeflectGeometry"),
-        dash = allow("setHandler tick"),
-        movement = allow("upDash"),
-        autospam = allow("getActivationContext"),
-      },
-    },
-    dash = {
-      provide = allow("setup setHandler tick resetState teardown getStatus"),
-      consume = {
-        utils = allow("apiVersion getPlayers now trackGlobal untrackGlobal"),
-        gameinfo = allow("isPlayerDashing"),
-      },
-    },
-    character = {
-      provide = allow("setup teardown getStatus"),
-      consume = {
-        utils = allow(
-          "apiVersion disconnectCharacterConnections getLocalPlayer isActive recordError recordTransition setAutoSpamActive setManualSpamActive trackCharacter trackGlobal untrackGlobal"
-        ),
-        spam = allow("resetState"),
-        autoparry = allow("bindCharacter detachCharacter"),
-        autospam = allow("bindCharacter detachCharacter"),
-        autodash = allow("bindCharacter detachCharacter"),
-      },
-    },
-    ui = {
-      provide = allow("setup"),
-      consume = {
-        utils = allow(
-          "apiVersion getConfig getConfigValue getLocalPlayer isActive isManualSpamActive name normalizeSpamRate observeConfig observeSpam recordError setConfig setManualSpamActive stop version author"
-        ),
-        uiconfig = allow("panelToggles panelComponents"),
-        gameinfo = allow("areAbilitiesEnabled observeAbilityMode getSnapshotAt isSnapshotValid createCrateNetwork spinCrate"),
-        autospam = allow("getStatus"),
-      },
-    },
-  },
+  RESERVED = { __contract = true, __config = true },
 }
 
-local POLICIES = CONFIG.POLICIES
+-- registry
+local registry = {}
 
 -- validation
-local function policy(name)
-  local entry = POLICIES[name]
-  if not entry then error("Permissions: módulo não registrado: " .. tostring(name), 2) end
-  return entry
+local function deny(name, action)
+  error(("Permissão negada: %s -> %s"):format(name, action), 3)
 end
-local function deny(name, action) error(("Permissão negada: %s -> %s"):format(name, action), 3) end
+
+local function namedSet(owner, field, items)
+  if type(items) ~= "table" then error(owner .. ": " .. field .. " inválido", 3) end
+  local result, count = {}, 0
+  for index, name in pairs(items) do
+    if type(index) ~= "number" or index < 1 or index % 1 ~= 0 or type(name) ~= "string" or name == "" or result[name] then
+      error(owner .. ": " .. field .. " contém entrada inválida ou duplicada", 3)
+    end
+    result[name] = true
+    count += 1
+  end
+  if count ~= #items then error(owner .. ": " .. field .. " deve ser uma lista contínua", 3) end
+  return result
+end
+
 local function validate(name, module)
-  local entry = policy(name)
-  if type(module) ~= "table" then error("Permissions: retorno inválido de " .. name, 2) end
+  if type(name) ~= "string" or type(module) ~= "table" then error("Permissions: módulo inválido", 2) end
   local contract = module.__contract
-  if type(contract) ~= "table" or type(contract.provides) ~= "table" then error(name .. ": __contract.provides ausente", 2) end
-  for key, value in pairs(module) do
-    if type(value) == "function" and not entry.provide[key] then deny(name, "api.expose." .. tostring(key)) end
+  if type(contract) ~= "table" then error(name .. ": contrato ausente", 2) end
+  local provides = namedSet(name, "provides", contract.provides)
+  local data = namedSet(name, "data", contract.data or {})
+  for field in pairs(data) do
+    if provides[field] or type(module[field]) ~= "table" then error(name .. ": dado público inválido: " .. field, 2) end
   end
-  local declared = {}
-  for _, method in ipairs(contract.provides) do
-    if type(method) ~= "string" or declared[method] then error(name .. ": método declarado inválido ou duplicado: " .. tostring(method), 2) end
-    declared[method] = true
-    if not entry.provide[method] then deny(name, "api.expose." .. tostring(method)) end
-    if type(module[method]) ~= "function" then error(name .. ": API declarada ausente: " .. method, 2) end
+  for field in pairs(provides) do
+    if type(module[field]) ~= "function" then error(name .. ": API declarada ausente: " .. field, 2) end
   end
-  for method in pairs(entry.provide) do
-    if not declared[method] then error(name .. ": política expõe método não declarado: " .. method, 2) end
-  end
-  for key, value in pairs(module) do
-    if type(value) == "function" and not declared[key] then error(name .. ": função não declarada no contrato: " .. tostring(key), 2) end
-  end
-  local requires, requirements, versions = contract.requires or {}, contract.requiresMethods or {}, contract.requiresVersions or {}
-  if type(requires) ~= "table" or type(requirements) ~= "table" or type(versions) ~= "table" then error(name .. ": dependências inválidas", 2) end
-  for dependencyName, source in pairs(requires) do
-    if type(dependencyName) ~= "string" or type(source) ~= "string" then error(name .. ": dependência inválida", 2) end
-    if not entry.consume[source] then deny(name, "api.consume." .. source) end
-  end
-  for dependencyName, methods in pairs(requirements) do
-    local source = requires[dependencyName]
-    if not source or type(methods) ~= "table" then error(name .. ": dependência inválida: " .. tostring(dependencyName), 2) end
-    for _, method in ipairs(methods) do
-      if type(method) ~= "string" then error(name .. ": nome de método inválido", 2) end
-      if not entry.consume[source][method] then deny(name, "api.consume." .. source .. "." .. method) end
+  for field, value in pairs(module) do
+    if type(value) == "function" and not provides[field] then
+      error(name .. ": função não declarada no contrato: " .. tostring(field), 2)
+    end
+    if type(value) == "table" and not CONFIG.RESERVED[field] and not data[field] then
+      error(name .. ": tabela pública não declarada: " .. tostring(field), 2)
     end
   end
-  for dependencyName, minimum in pairs(versions) do
-    if not requires[dependencyName] or type(minimum) ~= "number" then error(name .. ": versão de dependência inválida: " .. tostring(dependencyName), 2) end
+  if contract.bindCharacter == true and (not provides.bindCharacter or not provides.detachCharacter) then
+    error(name .. ": contrato bindCharacter incompleto", 2)
   end
+  if contract.onBallSync == true and not provides.onBallSync then error(name .. ": contrato onBallSync incompleto", 2) end
+  local requires = contract.requires or {}
+  local methods = contract.requiresMethods or {}
+  local fields = contract.requiresData or {}
+  local versions = contract.requiresVersions or {}
+  if type(requires) ~= "table" or type(methods) ~= "table" or type(fields) ~= "table" or type(versions) ~= "table" then
+    error(name .. ": dependências inválidas", 2)
+  end
+  local uses, sources = {}, {}
+  for alias, source in pairs(requires) do
+    if type(alias) ~= "string" or type(source) ~= "string" or alias == "" or source == "" or sources[source] or source == name then
+      error(name .. ": dependência inválida ou duplicada: " .. tostring(alias), 2)
+    end
+    sources[source] = true
+    uses[alias] = { source = source, methods = namedSet(name, alias .. ".requiresMethods", methods[alias] or {}), data = namedSet(name, alias .. ".requiresData", fields[alias] or {}) }
+    for field in pairs(uses[alias].methods) do
+      if uses[alias].data[field] then error(name .. ": método e dado duplicados: " .. field, 2) end
+    end
+  end
+  for alias in pairs(methods) do if not uses[alias] then error(name .. ": requiresMethods sem dependência: " .. tostring(alias), 2) end end
+  for alias in pairs(fields) do if not uses[alias] then error(name .. ": requiresData sem dependência: " .. tostring(alias), 2) end end
+  for alias, minimum in pairs(versions) do
+    if not uses[alias] or type(minimum) ~= "number" or minimum < 0 or minimum ~= minimum then
+      error(name .. ": versão de dependência inválida: " .. tostring(alias), 2)
+    end
+    uses[alias].minimum = minimum
+  end
+  if contract.version ~= nil and (type(contract.version) ~= "number" or contract.version < 0 or contract.version ~= contract.version) then
+    error(name .. ": versão do contrato inválida", 2)
+  end
+  registry[name] = { module = module, provides = provides, data = data, uses = uses, version = contract.version }
   return true
 end
 
--- access-views
+-- read-only views
 local function readonly(value, visited)
   if type(value) ~= "table" then return value end
   visited = visited or {}
   if visited[value] then return visited[value] end
-  local copied = {}; visited[value] = copied
-  for key, item in pairs(value) do
-    copied[key] = readonly(item, visited)
-  end
-  return table.freeze(copied)
+  local copy = {}
+  visited[value] = copy
+  for key, item in pairs(value) do copy[readonly(key, visited)] = readonly(item, visited) end
+  return table.freeze(copy)
 end
-local function wrap(consumer, source, provider)
-  local entry = policy(consumer); local allowed = entry.consume[source]
-  if not allowed then deny(consumer, "api.consume." .. source) end
-  local exposed = policy(source); local view = {}
-  for method in pairs(allowed) do
-    if not exposed.provide[method] and not (exposed.data and exposed.data[method]) then deny(source, "api.expose." .. method) end
-    local value = provider[method]
-    if value == nil then error(("Permissions: API ausente: %s.%s"):format(source, method), 2) end
-    view[method] = exposed.data and exposed.data[method] and readonly(value) or value
-  end
-  local metatable = {
-    __index = function(_, method) deny(consumer, "api.consume." .. source .. "." .. tostring(method)) end,
-    __newindex = function(_, method) deny(consumer, "api.write." .. source .. "." .. tostring(method)) end,
-  }
 
-  setmetatable(view, metatable); table.freeze(view)
-  metatable.__metatable = "locked"; table.freeze(metatable)
-  return view
+local function wrap(consumer, source, provider)
+  local entry, exposed = registry[consumer], registry[source]
+  if not entry or not exposed or exposed.module ~= provider then error("Permissions: módulo não validado: " .. tostring(source), 2) end
+  local use
+  for _, dependency in pairs(entry.uses) do
+    if dependency.source == source then use = dependency; break end
+  end
+  if not use then deny(consumer, "api.consume." .. source) end
+  local view = {}
+  for method in pairs(use.methods) do
+    if not exposed.provides[method] then deny(consumer, "api.consume." .. source .. "." .. method) end
+    view[method] = provider[method]
+    if type(view[method]) ~= "function" then error("Permissions: API ausente: " .. source .. "." .. method, 2) end
+  end
+  for field in pairs(use.data) do
+    if not exposed.data[field] then deny(consumer, "api.consume." .. source .. "." .. field) end
+    if type(provider[field]) ~= "table" then error("Permissions: dado ausente: " .. source .. "." .. field, 2) end
+    view[field] = readonly(provider[field])
+  end
+  setmetatable(view, {
+    __index = function(_, field) deny(consumer, "api.consume." .. source .. "." .. tostring(field)) end,
+    __newindex = function(_, field) deny(consumer, "api.write." .. source .. "." .. tostring(field)) end,
+    __metatable = "locked",
+  })
+  return table.freeze(view)
 end
 
 -- resolution
 local function resolve(consumer, loaded)
-  if type(loaded) ~= "table" or type(loaded[consumer]) ~= "table" then error("Permissions: módulo não carregado: " .. tostring(consumer), 2) end
-  local contract = loaded[consumer].__contract
-  if type(contract) ~= "table" then error(consumer .. ": contrato ausente", 2) end
-  local requires, methods, versions = contract.requires or {}, contract.requiresMethods or {}, contract.requiresVersions or {}
-  if type(requires) ~= "table" then error(consumer .. ": requires inválido", 2) end
-  if type(methods) ~= "table" then error(consumer .. ": requiresMethods inválido", 2) end
-  if type(versions) ~= "table" then error(consumer .. ": requiresVersions inválido", 2) end
+  local entry = registry[consumer]
+  if type(loaded) ~= "table" or not entry or entry.module ~= loaded[consumer] then error("Permissions: módulo não validado: " .. tostring(consumer), 2) end
   local dependencies = {}
-  for dependencyName, source in pairs(requires) do
-    local provider = loaded[source]
-    if type(provider) ~= "table" then error(("API interna ausente: dependência %s (%s)"):format(tostring(dependencyName), tostring(source)), 2) end
-    dependencies[dependencyName] = wrap(consumer, source, provider)
-  end
-  for dependencyName, required in pairs(methods) do
-    local dependency = dependencies[dependencyName]
-    if type(dependency) ~= "table" or type(required) ~= "table" then error(consumer .. ": dependência inválida: " .. tostring(dependencyName), 2) end
-    for _, method in ipairs(required) do
-      if type(method) ~= "string" or type(rawget(dependency, method)) ~= "function" then
-        error(("API interna ausente: %s.%s (exigida por %s)"):format(tostring(dependencyName), tostring(method), consumer), 2)
-      end
+  for alias, use in pairs(entry.uses) do
+    local provider, source = loaded[use.source], registry[use.source]
+    if not source or source.module ~= provider then
+      error(("API interna ausente: dependência %s (%s)"):format(alias, use.source), 2)
     end
-  end
-  for dependencyName, minimum in pairs(versions) do
-    local source = requires[dependencyName]; local provider = source and loaded[source]
-    local providerContract = type(provider) == "table" and provider.__contract; local version = type(providerContract) == "table" and providerContract.version or nil
-    if type(minimum) ~= "number" or type(version) ~= "number" or version < minimum then
-      error(("API incompatível: %s requer versão %s; encontrada %s"):format(tostring(dependencyName), tostring(minimum), tostring(version)), 2)
+    if use.minimum and (type(source.version) ~= "number" or source.version < use.minimum) then
+      error(("API incompatível: %s requer versão %s; encontrada %s"):format(alias, tostring(use.minimum), tostring(source.version)), 2)
     end
+    dependencies[alias] = wrap(consumer, use.source, provider)
   end
   return dependencies
+end
+
+-- introspection
+local function policy(name)
+  local entry = registry[name]
+  if not entry then error("Permissions: módulo não registrado: " .. tostring(name), 2) end
+  local result = { provides = {}, consumes = {} }
+  for method in pairs(entry.provides) do result.provides[#result.provides + 1] = method end
+  table.sort(result.provides)
+  for _, use in pairs(entry.uses) do
+    local members = {}
+    for method in pairs(use.methods) do members[#members + 1] = method end
+    for field in pairs(use.data) do members[#members + 1] = field end
+    table.sort(members)
+    result.consumes[use.source] = members
+  end
+  return result
 end
 
 -- public-api
 Permissions.validate = validate
 Permissions.wrap = wrap
 Permissions.resolve = resolve
-Permissions.policy = function(name)
-  local entry = policy(name); local result = { provides = {}, consumes = {} }
-  for method in pairs(entry.provide) do
-    result.provides[#result.provides + 1] = method
-  end
-  for source, methods in pairs(entry.consume) do
-    local copy = {}
-    for method in pairs(methods) do
-      copy[#copy + 1] = method
-    end
-    table.sort(copy); result.consumes[source] = copy
-  end
-  table.sort(result.provides); return result
-end
+Permissions.policy = policy
 
 -- contract
 Permissions.__contract = {
