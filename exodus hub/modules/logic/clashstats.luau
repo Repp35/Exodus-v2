@@ -174,6 +174,9 @@ function ClashStats.freeze(playerId, session)
   end
   ClashStats.finish(playerId == localPlayer.UserId and "jogador morreu" or "oponente morreu", time)
 end
+function ClashStats.waitForNextClash()
+  if stats and stats.frozen then stats.waitingForClash = true end
+end
 function ClashStats.get() return stats end
 
 -- contract
@@ -183,7 +186,7 @@ ClashStats.__contract = {
     Utils = { "getLocalPlayer", "getPlayers", "createClashLog", "appendClashLog", "recordError", "now" },
     GameInfo = { "getClashContext", "getPlayerMotion" },
   },
-  provides = { "setup", "teardown", "begin", "finish", "observe", "freeze", "get" },
+  provides = { "setup", "teardown", "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
 }
 
 return ClashStats

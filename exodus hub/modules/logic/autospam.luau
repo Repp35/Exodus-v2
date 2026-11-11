@@ -128,8 +128,7 @@ end
 
 -- dash-assist
 local function sampleOwnDash(s, time)
-  local ability = gameInfo.getDashAbility(); local dashing = ability and ability.Dashing == true
-  if not dashing then s.dashStart, s.dashAt = nil, nil; return end
+  if not gameInfo.isPlayerDashing(localPlayer) then s.dashStart, s.dashAt = nil, nil; return end
   if not s.dashStart then s.dashStart, s.dashAt = s.root.Position, time end
   if time - s.dashAt > 0.85 then s.dashStart, s.dashAt = s.root.Position, time end
 end
@@ -190,8 +189,7 @@ local function shouldActivate(s, snapshot, time)
   if dashAssistPartner(s, snapshot, time) == s.pending.partner then factor *= CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER end
   local g = geometry(snapshot, factor)
   if not g or distance > g.fullRadius then return false end
-  local timeToRange = math.max(0, distance - g.noWindowParryRadius) / closingSpeed; local cooldown = gameInfo.getDeflectCooldownState()
-  local blockedUntilArrival = cooldown and finite(cooldown.remaining) and cooldown.remaining > timeToRange; return s.pending.fastReturn == true or blockedUntilArrival == true
+  return true
 end
 
 -- deactivation
@@ -205,10 +203,6 @@ local function stop(s, reason)
   end
   s.reason, s.pending, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil; s.targetAwaySince = nil
   resetExchange(s)
-end
-local function stopBoth(s, reason)
-  stop(s, reason); s.stoppedPartner, s.manualPartner, s.manualWasActive = nil, nil, false
-  s.haunterPartner, s.haunterUntil = nil, nil; utils.setManualSpamActive(false)
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
@@ -240,10 +234,9 @@ end
 local function applyDeactivation(s, snapshot, time)
   if not s.active then return false end
   local reason = shouldDeactivate(s, snapshot, time)
+  if not reason and gameInfo.isClientDeflectResetLate(s.activatedAt, snapshot and snapshotSpeed(snapshot)) then reason = "client_deflect_reset_late" end
   if not reason then return false end
-  stop(s, reason)
-  if reason == "distant_target" then utils.setManualSpamActive(false) end
-  return true
+  stop(s, reason); return true
 end
 local function observeTargetReturn(s, target, time)
   if not s.active or not target then return end
@@ -257,14 +250,7 @@ local function enforceTargetReturnTimeout(s, time)
 end
 
 -- target-tracking
-local function syncManualPartner(s)
-  local manual = utils.isManualSpamActive()
-  if manual and not s.manualWasActive then s.manualPartner = s.active and s.partner or nil; s.manualSwitchAt, s.manualSwitchServerAt = now(), nil
-  elseif not manual then s.manualPartner, s.manualSwitchAt, s.manualSwitchServerAt = nil, nil, nil end
-  s.manualWasActive = manual
-end
 local function inspectTarget(s, target, time, snapshot, serverTime)
-  syncManualPartner(s)
   if not target or target == s.target then return end
   local previous, me = s.target, localPlayer.UserId
   local completedPartner
@@ -294,26 +280,17 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
   if previous and previous ~= target and (previous == me or target == me) and s.dashStart then s.dashSwitchPartner, s.dashSwitchAt = previous == me and target or previous, time
   elseif previous and previous ~= target then s.dashSwitchPartner, s.dashSwitchAt = nil, nil end
   if not s.active and s.pending and target ~= me then s.pending = nil end
-  if utils.isManualSpamActive() and not s.manualPartner then
-    if previous == me and target ~= me then s.manualPartner = target elseif previous and previous ~= me and target == me then s.manualPartner = previous end
-  end
-  local g, speed, window
-  local partner = s.active and s.partner or s.manualPartner
-  if snapshot and (not s.active or (partner and target ~= me and target ~= partner)) then g, speed, window = geometry(snapshot, 1) end
-  if utils.isManualSpamActive() and target ~= me and target ~= partner and partner and g then
-    local distance = distanceToPlayer(target)
-    if distance and distance > g.fullRadius then utils.setManualSpamActive(false) end
-  end
   local switchElapsed = elapsed(s.lastSwitchAt, s.lastSwitchServerAt, time, serverTime)
   if switchElapsed then s.intervalMs = switchElapsed * 1000 end
   s.target, s.lastSwitchAt, s.lastSwitchServerAt = target, time, serverTime
-  if utils.isManualSpamActive() then s.manualSwitchAt, s.manualSwitchServerAt = time, serverTime end
   if previous == me and target ~= me then
     s.departedAt, s.departedServerAt, s.departedTo = time, serverTime, target
   elseif target == me and previous ~= me then
-    if not s.pending and not s.active and previous ~= s.stoppedPartner and previous == s.departedTo and s.departedAt and window then
+    if not s.pending and not s.active and previous ~= s.stoppedPartner and previous == s.departedTo and s.departedAt then
+      local _, speed, window = geometry(snapshot, 1)
+      if not window then return end
       local limit = returnWindow(window, speed, CONFIG.ACTIVATION.RETURN); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
-      if returnElapsed then s.pending = { partner = previous, fastReturn = returnElapsed <= limit } end
+      if returnElapsed and returnElapsed <= limit then s.pending = { partner = previous } end
     end
   end
 end
@@ -321,13 +298,15 @@ end
 -- evaluation
 local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation, autoEnabled)
   if current ~= s or not s.root.Parent then return end
-  if not utils.isActive() then stopBoth(s, "hub_inactive"); return end
+  if not utils.isActive() then
+    stop(s, "hub_inactive"); s.stoppedPartner, s.haunterPartner, s.haunterUntil = nil, nil, nil
+    return
+  end
   if autoEnabled == nil then autoEnabled = utils.getConfigValue("AutoSpam") == true end
   if not autoEnabled then
     if s.active then stop(s, "disabled") end
     resetExchange(s)
   end
-  syncManualPartner(s)
   if gameInfo.getBallFrozen() == true then
     applyDeactivation(s, nil, time); resetExchange(s)
     s.target = nil; return
@@ -339,10 +318,6 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(s, snapshot, time, true); clashStats = clashStatsModule.get() end
-  if fresh and utils.isManualSpamActive() then
-    local switchElapsed = elapsed(s.manualSwitchAt, s.manualSwitchServerAt, time, serverTime); local _, _, window = geometry(snapshot, 1)
-    if window and switchElapsed and switchElapsed > window then utils.setManualSpamActive(false) end
-  end
   if
     not s.active
     and not blockedActivation
@@ -518,9 +493,8 @@ function AutoSpam.bindCharacter(character)
       and not s.pendingReset
       and not s.haunterPartner
     then
-      if clashStats then clashStats.waitingForClash = true end
-      s.lobbyCheckAt, s.lobbySnapshotValid = nil, false; s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
-      return
+      clashStatsModule.waitForNextClash(); s.lobbyCheckAt, s.lobbySnapshotValid = nil, false
+      s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil; return
     end
     local liveSnapshot
     if not s.lobbyCheckAt or time - s.lobbyCheckAt >= 0.25 then s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time); s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot) end
@@ -550,8 +524,8 @@ function AutoSpam.bindCharacter(character)
     end
     if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then clashStatsModule.finish("clash encerrado", clashStats.lastObserved) end
     if not autoEnabled and not upDashEnabled and not manualEnabled and not s.active and not clashContext and (not clashStats or clashStats.frozen) then
-      if clashStats and clashStats.frozen then clashStats.waitingForClash = true end
-      s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil; return
+      clashStatsModule.waitForNextClash(); s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
+      return
     end
     evaluate(s, time, false, nil, nil, nil, autoEnabled)
     if typeof(s.lastRootPosition) == "Vector3" and (s.root.Position - s.lastRootPosition).Magnitude > CONFIG.ACTIVATION.HAUNTER_RANGE then
@@ -575,7 +549,6 @@ function AutoSpam.onBallSync(data)
   local s = current
   if not s or type(data) ~= "table" then return end
   if data.Source ~= "packet" and data.Teleported ~= true then return end
-  syncManualPartner(s)
   if gameInfo.getBallFrozen() == true then
     applyDeactivation(s, nil, now(), false); resetExchange(s)
     s.target = nil; return
@@ -629,10 +602,12 @@ function AutoSpam.stopSpam()
 end
 function AutoSpam.getPullEvent() return nil end
 function AutoSpam.getDashData()
-  local s = current; local ability = gameInfo and gameInfo.getDashAbility()
-  local speed = ability and tonumber(ability.DashSpeed) or 120; local duration = ability and tonumber(ability.DashTime) or 0.2
+  local s = current
+  local dashing, speed, duration
+  if gameInfo then dashing, speed, duration = gameInfo.getLocalDashState() end
+  speed, duration = speed or 120, duration or 0.2
   return {
-    dashing = ability ~= nil and ability.Dashing == true,
+    dashing = dashing == true,
     speed = speed,
     duration = duration,
     idealTravel = speed * duration,
@@ -707,7 +682,6 @@ AutoSpam.__contract = {
       "isActive",
       "getConfigValue",
       "isManualSpamActive",
-      "setManualSpamActive",
       "setAutoSpamActive",
       "trackCharacter",
       "untrackCharacter",
@@ -723,7 +697,9 @@ AutoSpam.__contract = {
       "getHaunterEvent",
       "getDeflectGeometry",
       "getDeflectRangeParameters",
-      "getDashAbility",
+      "isPlayerDashing",
+      "getLocalDashState",
+      "isClientDeflectResetLate",
       "getPlayerDeflectRange",
       "getPlayerRawRadius",
       "getBallFrozen",
@@ -731,7 +707,7 @@ AutoSpam.__contract = {
       "getBallSpeedLimits",
       "getClashContext",
     },
-    ClashStats = { "begin", "finish", "observe", "freeze", "get" },
+    ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
   },
   provides = {
     "setup",
