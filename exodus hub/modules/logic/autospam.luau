@@ -2,6 +2,9 @@
 
 -- module
 local AutoSpam = {}
+local utils, gameInfo, clashStatsModule, players, runService, localPlayer
+local current, generation = nil, 0
+local clashStats
 
 -- configuration
 local CONFIG = {
@@ -35,11 +38,6 @@ local CONFIG = {
     SEQUENCE_HALF = 32768,
   },
 }
-
--- runtime
-local utils, gameInfo, clashStatsModule, players, runService, localPlayer
-local current, generation = nil, 0
-local clashStats
 
 -- helpers
 local function finite(n) return type(n) == "number" and n == n and n > -math.huge and n < math.huge end

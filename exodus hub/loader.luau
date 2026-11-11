@@ -2,6 +2,15 @@
 
 -- module
 local Loader = {}
+local function printRawError(moduleName, message, filePath)
+  local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message))
+  if type(warn) == "function" then warn(output) elseif type(print) == "function" then print(output) end
+end
+local function printStartup(message)
+  if type(print) == "function" then print(message) end
+end
+local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
+local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 
 -- configuration
 local CONFIG = {
@@ -35,16 +44,6 @@ local CONFIG = {
   },
 }
 
--- runtime
-local function printRawError(moduleName, message, filePath)
-  local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message))
-  if type(warn) == "function" then warn(output) elseif type(print) == "function" then print(output) end
-end
-local function printStartup(message)
-  if type(print) == "function" then print(message) end
-end
-local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
-local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 local REPOSITORY = CONFIG.REPOSITORY
 local BRANCH = CONFIG.BRANCH
 local PROJECT_PATH = CONFIG.PROJECT_PATH

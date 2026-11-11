@@ -2,6 +2,10 @@
 
 -- module
 local AutoFierce = {}
+local utils, gameInfo, remote, autoParry
+local connections = {}
+local parriedConnection
+local nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt, localUserId
 
 -- configuration
 local CONFIG = {
@@ -9,12 +13,6 @@ local CONFIG = {
   SYNC_MAX_AGE = 0.25,
   NOOB_WINDOW_EXTRA = 0.15,
 }
-
--- runtime
-local utils, gameInfo, remote, autoParry
-local connections = {}
-local parriedConnection
-local nextSignalAt, graceHandled, parryGeneration, lastParriedAt, lastFiercePressAt, localUserId
 
 -- helpers
 local function track(connection)

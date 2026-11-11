@@ -2,6 +2,21 @@
 
 -- module
 local GameInfo = {}
+local utils, players, world
+local ball, searchAt, watching = nil, 0, false
+local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
+local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
+local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
+local ballData, dashAnimation
+local minimumSpeed, maximumSpeed, speedAt
+local errors, cooldownConnection, parriedConnection = {}, nil, nil
+local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
+local cooldown, signalAt, heldAt, missingAt, warningAt
+local pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil
+local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
+local targetFrame, targetFrameConnection = 0, nil
+local trainingConnection, trainingRemote, trainingState, trainingSequence = nil, nil, nil, 0
+local trainingDataModule, trainingData
 
 -- configuration
 local CONFIG = {
@@ -47,22 +62,7 @@ local CONFIG = {
   },
 }
 
--- runtime
-local utils, players, world
-local ball, searchAt, watching = nil, 0, false
-local abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall
-local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
-local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
-local ballData, dashAnimation
-local minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
-local errors, cooldownConnection, parriedConnection = {}, nil, nil
-local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
-local cooldown, signalAt, heldAt, missingAt, warningAt
-local pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil
-local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
-local targetFrame, targetFrameConnection = 0, nil
-local trainingConnection, trainingRemote, trainingState, trainingSequence = nil, nil, nil, 0
-local trainingDataModule, trainingData
+minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end

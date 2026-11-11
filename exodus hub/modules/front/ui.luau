@@ -2,6 +2,59 @@
 
 -- module
 local ExodusUI = {}
+local Utils
+local UIConfig
+local GameInfo
+local AutoSpam
+local Controls: any = {}
+local UIS = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local TextService = game:GetService("TextService")
+local Camera = workspace.CurrentCamera
+local _wait = task.wait
+local _spawn = task.spawn
+local UIState = {
+  connections = {},
+  panelOpen = false,
+  spamOn = false,
+  clashBallOn = false,
+  btnIsDragging = function() return false end,
+  panelTween = nil,
+  btnTween = nil,
+  pageGeneration = 0,
+  pageTweens = {},
+  desktop = false,
+  closing = false,
+  toastGeneration = 0,
+  toastTween = nil,
+  keyCapture = false,
+}
+
+local setSpam
+local showToast
+local screenGui
+local floatingButton
+local clashBall
+local parryBall
+local darkBall
+local jumpBall
+local upDashBall
+local miniGui
+local configPanel
+local particleLayer
+local titleBar
+local minimizeButton
+local reloadButton
+local colLeft
+local colRight
+local killBtn
+local toastLayer
+local responsiveScale
+local flowingTweens = {}
+local shortcutLabels = {}
+local offOnVisuals = {}
 
 -- configuration
 local CONFIG = {
@@ -67,61 +120,6 @@ local CONFIG = {
   AUTHOR_TRANSPARENCY = 0.22,
   TITLE_SIDE_RESERVE = 80,
 }
-
--- runtime
-local Utils
-local UIConfig
-local GameInfo
-local AutoSpam
-local Controls: any = {}
-local UIS = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local Players = game:GetService("Players")
-local TextService = game:GetService("TextService")
-local Camera = workspace.CurrentCamera
-local _wait = task.wait
-local _spawn = task.spawn
-local UIState = {
-  connections = {},
-  panelOpen = false,
-  spamOn = false,
-  clashBallOn = false,
-  btnIsDragging = function() return false end,
-  panelTween = nil,
-  btnTween = nil,
-  pageGeneration = 0,
-  pageTweens = {},
-  desktop = false,
-  closing = false,
-  toastGeneration = 0,
-  toastTween = nil,
-  keyCapture = false,
-}
-
-local setSpam
-local showToast
-local screenGui
-local floatingButton
-local clashBall
-local parryBall
-local darkBall
-local jumpBall
-local upDashBall
-local miniGui
-local configPanel
-local particleLayer
-local titleBar
-local minimizeButton
-local reloadButton
-local colLeft
-local colRight
-local killBtn
-local toastLayer
-local responsiveScale
-local flowingTweens = {}
-local shortcutLabels = {}
-local offOnVisuals = {}
 
 -- palette
 local C = CONFIG.COLORS

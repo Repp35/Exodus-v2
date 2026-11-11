@@ -2,15 +2,13 @@
 
 -- module
 local AutoDark = {}
+local utils, remote, gameInfo, world
+local connection
 
 -- configuration
 local CONFIG = {
   REQUIRE_ABILITIES_ENABLED = true,
 }
-
--- runtime
-local utils, remote, gameInfo, world
-local connection
 
 -- connections
 local function disconnect()

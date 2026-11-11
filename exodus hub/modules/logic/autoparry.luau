@@ -2,22 +2,6 @@
 
 -- module
 local AutoParry = {}
-
--- configuration
-local CONFIG = {
-  DEFAULT_WINDOW_FACTOR = 0.8,
-  CPS_BOOST_START = 2,
-  CPS_BOOST_FULL = 2.5,
-  PRESSURE_SAMPLE_LIMIT = 100,
-  PRESSURE_WINDOW = 3,
-  TARGET_SEQUENCE_MODULUS = 65536,
-  TARGET_SEQUENCE_HALF = 32768,
-  MIN_PARRY_SPEED = 16,
-  FRAME_BASE = 1 / 60,
-  MAX_FRAME_ALLOWANCE = 0.12,
-}
-
--- runtime
 local utils, gameInfo, remote, autoParrySignature
 local state = {
   phase = "detached",
@@ -59,6 +43,20 @@ local state = {
   windowFactor = 0.8,
   awayAt = nil,
   awayTarget = nil,
+}
+
+-- configuration
+local CONFIG = {
+  DEFAULT_WINDOW_FACTOR = 0.8,
+  CPS_BOOST_START = 2,
+  CPS_BOOST_FULL = 2.5,
+  PRESSURE_SAMPLE_LIMIT = 100,
+  PRESSURE_WINDOW = 3,
+  TARGET_SEQUENCE_MODULUS = 65536,
+  TARGET_SEQUENCE_HALF = 32768,
+  MIN_PARRY_SPEED = 16,
+  FRAME_BASE = 1 / 60,
+  MAX_FRAME_ALLOWANCE = 0.12,
 }
 
 -- helpers

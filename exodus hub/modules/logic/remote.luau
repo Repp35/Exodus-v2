@@ -2,6 +2,8 @@
 
 -- module
 local Remote = {}
+local gameInfo, parryObserver
+local autoParrySignature = {}
 
 -- configuration
 local CONFIG = {
@@ -10,10 +12,6 @@ local CONFIG = {
   FIERCE_METHOD = "ActivateAndBlock",
   DASH_METHOD = "Dash",
 }
-
--- runtime
-local gameInfo, parryObserver
-local autoParrySignature = {}
 
 -- lifecycle
 function Remote.setup(deps)

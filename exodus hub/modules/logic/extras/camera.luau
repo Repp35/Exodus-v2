@@ -2,18 +2,16 @@
 
 -- module
 local Camera = {}
+local utils, runService
+local cameraEpoch = 0
+local cameraInput, cameraOriginal, cameraWrapped, configConnection
+local sensitivity = 1
 
 -- configuration
 local CONFIG = {
   DEFAULT_SENSITIVITY = 1,
   MODULE_SEARCH_RETRY = 0.5,
 }
-
--- runtime
-local utils, runService
-local cameraEpoch = 0
-local cameraInput, cameraOriginal, cameraWrapped, configConnection
-local sensitivity = 1
 
 -- camera-hook
 local function stopCamera()

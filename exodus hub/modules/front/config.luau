@@ -2,6 +2,8 @@
 
 -- module
 local Config = {}
+local Registry = {}
+local Keys = {}
 
 -- configuration
 local CONFIG = {
@@ -21,10 +23,6 @@ local CONFIG = {
     rateMode = "SpamRateMode inválido",
   },
 }
-
--- runtime
-local Registry = {}
-local Keys = {}
 
 -- validation
 local function isFiniteNumber(value) return type(value) == "number" and value == value and value < math.huge and value > -math.huge end
