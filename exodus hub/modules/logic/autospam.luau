@@ -163,9 +163,9 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
   if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN) then return end
-  local haunter = reason == "haunter" or reason == "haunter_self"
+  local needsExchange = reason ~= "haunter" and reason ~= "haunter_self" and reason ~= "close_pressure"
   if
-    not haunter
+    needsExchange
     and (not s.exchangeReadyAt or s.exchangePartner ~= partner or time < s.exchangeReadyAt or time - s.exchangeReadyAt > CONFIG.ACTIVATION.EXCHANGE_READY_TIME)
   then
     return
@@ -184,23 +184,26 @@ local function activationGeometry(s, snapshot, partner, time)
   if dashAssistPartner(s, snapshot, time) == partner then factor *= CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER end
   return geometry(snapshot, factor)
 end
-local function shouldActivate(s, snapshot, time)
-  if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
-  if not snapshot or snapshot.targetUncertain == true or gameInfo.getBallFrozen() == true or not s.pending then return false end
-  if s.target ~= localPlayer.UserId or snapshot.targetId ~= localPlayer.UserId then return false end
-  if typeof(snapshot.position) ~= "Vector3" then return false end
-  local towardPlayer = s.root.Position - snapshot.position; local distance = towardPlayer.Magnitude
+local function activationReason(s, snapshot, time)
+  if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return nil end
+  if not snapshot or snapshot.targetUncertain == true or gameInfo.getBallFrozen() == true or not s.pending then return nil end
+  if s.target ~= localPlayer.UserId or snapshot.targetId ~= localPlayer.UserId then return nil end
+  if typeof(snapshot.position) ~= "Vector3" then return nil end
+  local towardPlayer = s.root.Position - snapshot.position
+  local distance = towardPlayer.Magnitude
   local g = activationGeometry(s, snapshot, s.pending.partner, time)
-  if not g or distance > g.fullRadius then return false end
-  if s.pending.fastReturn then return true end
-  if distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return false end
+  if not g or distance > g.fullRadius then return nil end
+  if s.pending.fastReturn then return "return_target" end
+
+  if distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return nil end
   local closingSpeed = snapshot.velocity:Dot(towardPlayer) / distance
-  if not finite(closingSpeed) or closingSpeed <= 0 then return false end
-  if s.pending.startedNear then
-    local timeToRange = math.max(0, distance - g.noWindowParryRadius) / closingSpeed
-    if timeToRange > g.effectiveWindow then return false end
-  end
-  return true
+  if not finite(closingSpeed) or closingSpeed <= 0 then return nil end
+  if not s.pending.startedNear then return "return_target" end
+  if snapshot.locked == true then return nil end
+
+  local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, snapshotSpeed(snapshot), true)
+  if finite(radius) and distance <= radius then return "close_pressure" end
+  return nil
 end
 
 -- deactivation
@@ -330,16 +333,15 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
   s.target, s.lastSwitchAt, s.lastSwitchServerAt = target, time, serverTime
   if previous == me and target ~= me then
     s.departedAt, s.departedServerAt, s.departedTo = time, serverTime, target
-  elseif target == me and previous ~= me then
-    if not s.pending and not s.active and previous ~= s.stoppedPartner and previous == s.departedTo and s.departedAt then
-      local g, speed, window = activationGeometry(s, snapshot, previous, time)
-      if not g or not window or typeof(snapshot.position) ~= "Vector3" then return end
-      local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
-      if not returnElapsed then return end
-      local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius; local fastReturn = returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
-      if startedNear and not fastReturn then return end
-      s.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn }
-    end
+  elseif target == me and previous and previous ~= s.stoppedPartner and not s.pending and not s.active then
+    local g, speed, window = activationGeometry(s, snapshot, previous, time)
+    if not g or not window or typeof(snapshot.position) ~= "Vector3" then return end
+    local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
+    local directReturn = completedPartner == previous and s.departedTo == previous
+    local returnElapsed = directReturn and elapsed(s.departedAt, s.departedServerAt, time, serverTime)
+    if not startedNear and not returnElapsed then return end
+    local fastReturn = returnElapsed and returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
+    s.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn == true }
   end
 end
 
@@ -370,11 +372,12 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
     not s.active
     and not blockedActivation
     and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
-    and shouldActivate(s, snapshot, time)
   then
+    local reason = activationReason(s, snapshot, time)
+    if not reason then return end
     local activationServerTime = serverTime
     if not fresh then activationServerTime = snapshot.serverTime end
-    start(s, "return_target", s.pending.partner, time, activationServerTime, snapshot)
+    start(s, reason, s.pending.partner, time, activationServerTime, snapshot)
   end
 end
 
