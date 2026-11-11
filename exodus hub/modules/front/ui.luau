@@ -1295,16 +1295,9 @@ function ExodusUI.setup(deps)
 	makeDraggable(titleBar, configPanel, function()
 		setConfigValue("PanelX", configPanel.Position.X.Offset); setConfigValue("PanelY", configPanel.Position.Y.Offset)
 	end)
-	local titleText = ("%s | %s"):format(Utils.name(), Utils.version())
-	local authorText = " — " .. Utils.author()
-	local titleFontSize, authorFontSize = CONFIG.TITLE_TEXT_SIZE, CONFIG.AUTHOR_TEXT_SIZE
-	local maxTitleWidth = PW - PAD * 2 - CONFIG.TITLE_SIDE_RESERVE
-	local titleMeasured = math.ceil(TextService:GetTextSize(titleText, titleFontSize, Enum.Font.GothamBold, Vector2.new(1000, TITLE_H)).X)
-	local authorMeasured = math.ceil(TextService:GetTextSize(authorText, authorFontSize, Enum.Font.Gotham, Vector2.new(1000, TITLE_H)).X)
-	local authorReserved = math.min(authorMeasured, math.floor(maxTitleWidth * 0.38))
-	local titleWidth = math.min(titleMeasured, maxTitleWidth - authorReserved)
-	local authorWidth = math.min(authorMeasured, maxTitleWidth - titleWidth)
-	local groupWidth = titleWidth + authorWidth
+	local titleText = ("%s | %s"):format(Utils.name(), Utils.version()); local authorText = " — " .. Utils.author(); local titleFontSize, authorFontSize = CONFIG.TITLE_TEXT_SIZE, CONFIG.AUTHOR_TEXT_SIZE; local maxTitleWidth = PW - PAD * 2 - CONFIG.TITLE_SIDE_RESERVE
+	local titleMeasured = math.ceil(TextService:GetTextSize(titleText, titleFontSize, Enum.Font.GothamBold, Vector2.new(1000, TITLE_H)).X); local authorMeasured = math.ceil(TextService:GetTextSize(authorText, authorFontSize, Enum.Font.Gotham, Vector2.new(1000, TITLE_H)).X); local authorReserved = math.min(authorMeasured, math.floor(maxTitleWidth * 0.38))
+	local titleWidth = math.min(titleMeasured, maxTitleWidth - authorReserved); local authorWidth = math.min(authorMeasured, maxTitleWidth - titleWidth); local groupWidth = titleWidth + authorWidth
 	local titleGroup = inst("Frame", {
 		Size = UDim2.new(0, groupWidth, 1, 0),
 		Position = UDim2.new(0.5, -groupWidth / 2, 0, 0),
