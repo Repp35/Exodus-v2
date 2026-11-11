@@ -10,8 +10,6 @@ local CONFIG = {
 
 -- module
 local Remote = {}
-
--- dependencies
 local gameInfo, parryObserver
 local autoParrySignature = {}
 

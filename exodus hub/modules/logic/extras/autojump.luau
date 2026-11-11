@@ -8,8 +8,6 @@ local CONFIG = {
 
 -- module
 local AutoJump = {}
-
--- state
 local utils
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0

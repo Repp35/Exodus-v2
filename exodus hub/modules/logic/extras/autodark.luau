@@ -7,11 +7,7 @@ local CONFIG = {
 
 -- module
 local AutoDark = {}
-
--- dependencies
 local utils, remote, gameInfo, world
-
--- state
 local connection
 
 -- connections

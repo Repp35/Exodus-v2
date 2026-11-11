@@ -26,12 +26,10 @@ do
   if type(previous) == "table" and type(previous.stop) == "function" then pcall(previous.stop) end
 end
 
--- dependencies
+-- runtime
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
-
--- state
 local Runtime = {
   startedAt = os.clock(),
   stopped = false,

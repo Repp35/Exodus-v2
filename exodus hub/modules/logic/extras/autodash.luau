@@ -11,8 +11,6 @@ local CONFIG = {
 
 -- module
 local AutoDash = {}
-
--- dependencies
 local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
 local root, heartbeat
 local inFlight, handledSignals = nil, {}

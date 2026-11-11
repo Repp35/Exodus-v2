@@ -10,11 +10,7 @@ local CONFIG = {
 
 -- module
 local ClashStats = {}
-
--- dependencies
 local utils, gameInfo, players, localPlayer
-
--- state
 local stats
 
 -- helpers

@@ -9,12 +9,8 @@ local CONFIG = {
 
 -- module
 local Spam = {}
-
--- dependencies
 local utils, remote, gameInfo, spamObserver, configObserver
 local function traceback(err) return debug.traceback(tostring(err), 2) end
-
--- state
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
 local nextAllowedAt = 0
