@@ -1939,14 +1939,12 @@ function ExodusUI.setup(deps)
     if incoming then conn = trackConn(incoming.Completed:Connect(finish)); task.delay(0.5, finish) else finish() end
   end
   trackConn(settingsButton.Activated:Connect(function()
-    settingsOpen = not settingsOpen
-    UIState.pageGeneration += 1
+    settingsOpen = not settingsOpen; UIState.pageGeneration += 1
     local generation = UIState.pageGeneration
     for _, tween in ipairs(UIState.pageTweens) do
       safeCancel(tween)
     end
-    UIState.pageTweens = {}
-    pageInputShield.Visible = true
+    UIState.pageTweens = {}; pageInputShield.Visible = true
     local function animate(group, offset, transparency)
       local tween = twPlay(group, 0.28, {
         Position = UDim2.new(0, PAD + offset, 0, TITLE_H + PAD),
@@ -1957,8 +1955,7 @@ function ExodusUI.setup(deps)
     for index, group in ipairs(pageGroups) do
       if not settingsOpen and index == page then
         if not group.Visible then
-          group.Position = UDim2.new(0, PAD - 20, 0, TITLE_H + PAD)
-          group.GroupTransparency = 1
+          group.Position = UDim2.new(0, PAD - 20, 0, TITLE_H + PAD); group.GroupTransparency = 1
           group.Visible = true
         end
         animate(group, 0, 0)
@@ -1968,8 +1965,7 @@ function ExodusUI.setup(deps)
     end
     if settingsOpen then
       if not hubSettingsGroup.Visible then
-        hubSettingsGroup.Position = UDim2.new(0, PAD + 20, 0, TITLE_H + PAD)
-        hubSettingsGroup.GroupTransparency = 1
+        hubSettingsGroup.Position = UDim2.new(0, PAD + 20, 0, TITLE_H + PAD); hubSettingsGroup.GroupTransparency = 1
         hubSettingsGroup.Visible = true
       end
       animate(hubSettingsGroup, 0, 0)
@@ -1980,14 +1976,11 @@ function ExodusUI.setup(deps)
     task.delay(0.3, function()
       if generation ~= UIState.pageGeneration or not pageInputShield.Parent then return end
       for index, group in ipairs(pageGroups) do
-        group.Visible = not settingsOpen and index == page
-        group.GroupTransparency = index == page and 0 or 1
+        group.Visible = not settingsOpen and index == page; group.GroupTransparency = index == page and 0 or 1
         group.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
       end
-      hubSettingsGroup.Visible = settingsOpen
-      hubSettingsGroup.GroupTransparency = settingsOpen and 0 or 1
-      hubSettingsGroup.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
-      UIState.pageTweens = {}
+      hubSettingsGroup.Visible = settingsOpen; hubSettingsGroup.GroupTransparency = settingsOpen and 0 or 1
+      hubSettingsGroup.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD); UIState.pageTweens = {}
       pageInputShield.Visible = false
     end)
   end))
