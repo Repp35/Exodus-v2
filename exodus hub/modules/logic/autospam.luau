@@ -2,7 +2,7 @@
 
 -- module
 local AutoSpam = {}
-local utils, gameInfo, clashStatsModule, players, runService, localPlayer
+local utils, gameInfo, autoParry, clashStatsModule, players, runService, localPlayer
 local current, generation = nil, 0
 local clashStats
 
@@ -126,7 +126,8 @@ local function geometry(snapshot, factor)
 end
 local function returnWindow(window, speed, base)
   local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0
-  return math.max(CONFIG.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
+  local pressure = autoParry.getPressure(); local multiplier = pressure and pressure.returnMultiplier == 1.4 and 1.4 or 1
+  return math.max(CONFIG.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window)) * multiplier
 end
 
 -- dash-assist
@@ -397,9 +398,9 @@ local function detach(reason)
   generation += 1
 end
 function AutoSpam.setup(deps)
-  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats then return false, "dependências ausentes" end
+  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.AutoParry then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule = deps.Utils, deps.GameInfo, deps.ClashStats; clashStats = clashStatsModule.get()
+  utils, gameInfo, autoParry, clashStatsModule = deps.Utils, deps.GameInfo, deps.AutoParry, deps.ClashStats; clashStats = clashStatsModule.get()
   players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then return false, "serviços indisponíveis" end
   return true
@@ -588,7 +589,7 @@ function AutoSpam.bindCharacter(character)
 end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
-  detach("teardown"); clashStatsModule = nil
+  detach("teardown"); clashStatsModule, autoParry = nil, nil
   clashStats = nil; utils, gameInfo, players, runService, localPlayer = nil, nil, nil, nil, nil, nil
 end
 
@@ -720,6 +721,7 @@ AutoSpam.__contract = {
     Utils = "utils",
     GameInfo = "gameinfo",
     ClashStats = "clashstats",
+    AutoParry = "autoparry",
   },
   requiresMethods = {
     Utils = {
@@ -755,6 +757,7 @@ AutoSpam.__contract = {
       "getBallSpeedLimits",
       "getClashContext",
     },
+    AutoParry = { "getPressure" },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
   },
   provides = {
