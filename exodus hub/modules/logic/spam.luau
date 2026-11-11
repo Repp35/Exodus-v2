@@ -8,12 +8,12 @@ local function traceback(err) return debug.traceback(tostring(err), 2) end
 -- state
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
--- CONFIGURACAO DESTE MODULO: tempos em segundos
 local CONFIG = {
-    MAX_DELAY_DEBT = 0.2, -- atraso acumulado maximo
-    POLL_INTERVAL = 0.01, -- verificacao de envio
-    ERROR_RETRY_INTERVAL = 0.03, -- espera apos erro
+	MAX_DELAY_DEBT = 0.2,
+	POLL_INTERVAL = 0.01,
+	ERROR_RETRY_INTERVAL = 0.03,
 }
+
 local nextAllowedAt = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 

@@ -3,10 +3,8 @@
 -- dependencies
 local AutoDark = {}
 local utils, remote, gameInfo, world
-
--- CONFIGURACAO DESTE MODULO
 local CONFIG = {
-    REQUIRE_ABILITIES_ENABLED = true, -- valida habilidades na partida
+	REQUIRE_ABILITIES_ENABLED = true,
 }
 
 -- state

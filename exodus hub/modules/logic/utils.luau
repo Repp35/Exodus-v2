@@ -8,14 +8,13 @@ local replicated = game:GetService("ReplicatedStorage")
 local runService = game:GetService("RunService")
 local workspace = game:GetService("Workspace")
 local http = game:GetService("HttpService")
--- CONFIGURACAO DESTE MODULO: identidade do hub e armazenamento
 local CONFIG = {
-    API_VERSION = 1, -- versao da API
-    VERSION = "3.0.0", -- versao exibida
-    NAME = "Exodus Hub", -- nome do hub
-    AUTHOR = "delta", -- nome do autor
-    FOLDER = "Exodus Hub", -- pasta de dados
-    HISTORY_LIMIT = 32, -- quantidade de registros
+	API_VERSION = 1,
+	VERSION = "3.0.0",
+	NAME = "Exodus Hub",
+	AUTHOR = "delta",
+	FOLDER = "Exodus Hub",
+	HISTORY_LIMIT = 32,
 }
 
 -- state
@@ -149,7 +148,8 @@ end
 local function refreshNamespace()
 	if refreshing then return end
 	refreshing = true; local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
-	namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author = CONFIG.NAME, "Exodus", CONFIG.VERSION, CONFIG.API_VERSION, CONFIG.AUTHOR
+	namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author =
+		CONFIG.NAME, "Exodus", CONFIG.VERSION, CONFIG.API_VERSION, CONFIG.AUTHOR
 	namespace.State, namespace.Config, namespace.ModuleURLs, namespace.Diagnostics =
 		stateSnapshot(), snapshot(state.config), snapshot(state.urls), diagnosticsSnapshot()
 	_G.Exodus = namespace; refreshing = false

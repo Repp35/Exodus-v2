@@ -47,7 +47,6 @@ local state = {
 	awayTarget = nil,
 }
 
--- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
 local CONFIG = {
 	DEFAULT_WINDOW_FACTOR = 0.8,
 	CPS_BOOST_START = 2,

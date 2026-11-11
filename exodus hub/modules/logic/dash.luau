@@ -8,8 +8,6 @@ local utils, gameInfo, players, handler
 -- state
 local records, connections = {}, {}
 local generation, lastTick = 0, -math.huge
-
--- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
 local CONFIG = {
 	MIN_SPEED = 70,
 	MAX_MEASURED_SPEED = 400,

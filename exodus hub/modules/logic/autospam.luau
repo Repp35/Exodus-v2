@@ -8,8 +8,6 @@ local utils, gameInfo, clashStatsModule, players, runService, localPlayer
 -- state
 local current, generation = nil, 0
 local clashStats
-
--- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
 local CONFIG = {
 	ACTIVATION = {
 		RETURN = 0.15,
@@ -164,7 +162,12 @@ local function start(s, reason, partner, time, serverTime, snapshot)
 	local haunter = reason == "haunter" or reason == "haunter_self"
 	if
 		not haunter
-		and (not s.exchangeReadyAt or s.exchangePartner ~= partner or time < s.exchangeReadyAt or time - s.exchangeReadyAt > CONFIG.ACTIVATION.EXCHANGE_READY_TIME)
+		and (
+			not s.exchangeReadyAt
+			or s.exchangePartner ~= partner
+			or time < s.exchangeReadyAt
+			or time - s.exchangeReadyAt > CONFIG.ACTIVATION.EXCHANGE_READY_TIME
+		)
 	then
 		return
 	end

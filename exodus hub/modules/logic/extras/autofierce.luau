@@ -3,8 +3,6 @@
 -- dependencies
 local AutoFierce = {}
 local utils, gameInfo, remote, autoParry
-
--- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
 local CONFIG = {
 	SIGNAL_RETRY = 0.5,
 	SYNC_MAX_AGE = 0.25,

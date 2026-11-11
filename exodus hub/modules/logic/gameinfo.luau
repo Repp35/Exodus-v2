@@ -11,8 +11,6 @@ local abilityScript, abilities, replicatorScript, replicator, gameBallScript, ga
 local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 local ballData, dashAnimation
-
--- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
 local CONFIG = {
 	MIN_SPEED = 16,
 	MAX_SPEED = 600,
@@ -38,22 +36,21 @@ local CONFIG = {
 	PING_SAMPLE_COUNT = 8,
 	TARGET_CONFIRM_INTERVAL = 1 / 60,
 	TARGET_HOLD_TIME = 0.1,
-	-- Identificadores do jogo: edite somente se a API mudar.
 	GAME_IDS = {
-	DEFLECT = 1,
-	DASH = 2,
-	FIERCE = 19,
-	DARK = 20,
-	HAUNTER_REMOTE = 9.150098456648103e76,
-	COOLDOWN_REMOTE = 5.520474058077904e76,
-	PARRIED_REMOTE = 9.611859444202098e76,
-	COOLDOWN_EVENT = 5.93848805167512e76,
-	COOLDOWN_STOP = 6.60750295352893e76,
-	DARK_EVENT = 2.4141700243704228e76,
-	MANIFEST_REMOTE = 9.318024238496386e76,
-	CRATE_CHECK = 4.702176977990345e76,
-	CRATE_OWNED = 1.796923298985336e75,
-	CRATE_NEW = 1.0038569313364564e77,
+		DEFLECT = 1,
+		DASH = 2,
+		FIERCE = 19,
+		DARK = 20,
+		HAUNTER_REMOTE = 9.150098456648103e76,
+		COOLDOWN_REMOTE = 5.520474058077904e76,
+		PARRIED_REMOTE = 9.611859444202098e76,
+		COOLDOWN_EVENT = 5.93848805167512e76,
+		COOLDOWN_STOP = 6.60750295352893e76,
+		DARK_EVENT = 2.4141700243704228e76,
+		MANIFEST_REMOTE = 9.318024238496386e76,
+		CRATE_CHECK = 4.702176977990345e76,
+		CRATE_OWNED = 1.796923298985336e75,
+		CRATE_NEW = 1.0038569313364564e77,
 	},
 }
 
@@ -753,7 +750,9 @@ function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyO
 		if not finite(actual) then return nil end
 		window = math.max(
 			0,
-			actual + (CONFIG.AP_WINDOW_LOW_SPEED - CONFIG.WINDOW_BASE) * (1 - fraction) + (CONFIG.AP_WINDOW_HIGH_SPEED - (CONFIG.WINDOW_BASE - CONFIG.WINDOW_SPREAD)) * fraction
+			actual
+				+ (CONFIG.AP_WINDOW_LOW_SPEED - CONFIG.WINDOW_BASE) * (1 - fraction)
+				+ (CONFIG.AP_WINDOW_HIGH_SPEED - (CONFIG.WINDOW_BASE - CONFIG.WINDOW_SPREAD)) * fraction
 		)
 	elseif not finite(window) then
 		window = GameInfo.getDeflectWindow(speed, includeResilience)

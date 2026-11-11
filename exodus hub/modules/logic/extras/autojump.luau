@@ -5,10 +5,9 @@ local AutoJump = {}
 local utils
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0
--- CONFIGURACAO DESTE MODULO
 local CONFIG = {
-    AIR_MATERIAL = Enum.Material.Air, -- nao pular no ar
-    JUMPING_STATE = Enum.HumanoidStateType.Jumping, -- estado do salto
+	AIR_MATERIAL = Enum.Material.Air,
+	JUMPING_STATE = Enum.HumanoidStateType.Jumping,
 }
 
 -- helpers

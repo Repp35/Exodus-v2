@@ -5,8 +5,6 @@ local AutoDash = {}
 local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
 local root, heartbeat
 local inFlight, handledSignals = nil, {}
-
--- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
 local CONFIG = { DETECTION_RANGE = 70, FALLBACK_RANGE = 35, MAX_EVENT_AGE = 0.2, MIN_UP_SPEED = 68, MAX_HORIZONTAL_RATIO = 0.65 }
 
 -- helpers

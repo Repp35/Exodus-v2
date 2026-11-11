@@ -4,13 +4,11 @@ local ClashStats = {}
 
 -- dependencies
 local utils, gameInfo, players, localPlayer
-
--- CONFIGURACAO DESTE MODULO
 local CONFIG = {
-    CLASH_RETENTION_SECONDS = 1.5, -- tempo para preservar parceiro recente
-    PACKET_FALLBACK_SECONDS = 0.5, -- usa observacao alternativa sem pacote
-    CPS_SAMPLE_CAP = 35, -- amostra maxima
-    CPS_SMOOTHING_FACTOR = 0.2, -- suavizacao
+	CLASH_RETENTION_SECONDS = 1.5,
+	PACKET_FALLBACK_SECONDS = 0.5,
+	CPS_SAMPLE_CAP = 35,
+	CPS_SMOOTHING_FACTOR = 0.2,
 }
 
 -- state

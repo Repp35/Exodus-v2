@@ -1,9 +1,8 @@
 -- [[ camera sensitivity ]]
 
--- CONFIGURACAO DESTE MODULO
 local CONFIG = {
-    DEFAULT_SENSITIVITY = 1, -- se nao houver valor salvo
-    MODULE_SEARCH_RETRY = 0.5, -- segundos entre tentativas
+	DEFAULT_SENSITIVITY = 1,
+	MODULE_SEARCH_RETRY = 0.5,
 }
 
 -- state

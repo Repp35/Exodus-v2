@@ -8,8 +8,6 @@ local utils, spam, binds
 -- state
 local added, removing, currentLife
 local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
-
--- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
 local CONFIG = { BIND_TIMEOUT = 10 }
 
 -- diagnostics
