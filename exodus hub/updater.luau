@@ -2,12 +2,15 @@
 
 -- configuration
 local CONFIG = {
-  REPOSITORY = "Repp35/Exodus-v2",
-  BRANCH = "main",
-  PROJECT_PATH = "exodus%20hub",
+  DELIVERY_BASE_URL = "https://repp35.github.io/Exodus-v2/",
+  MANIFEST_URL = "https://repp35.github.io/Exodus-v2/manifest.json",
+  PROJECT_PATH = "exodus%20hub/",
   CHECK_INTERVAL = 5,
   RETRY_INTERVAL = 5,
 }
+
+
+-- runtime}
 
 -- runtime
 
@@ -48,21 +51,15 @@ return function(loadedRevision, request, options)
   -- polling
   local function latestRevision()
     local body, requestError, requestMeta = request(
-      "https://api.github.com/repos/" .. CONFIG.REPOSITORY .. "/commits/" .. CONFIG.BRANCH .. "?exodus_cache=" .. tostring(os.time()),
-      { ["Accept"] = "application/vnd.github+json", ["User-Agent"] = "Exodus-Hub-Updater" }
+      CONFIG.MANIFEST_URL .. "?exodus_cache=" .. tostring(os.time()),
+      { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Updater" }
     )
     if body then
       local ok, document = pcall(function() return game:GetService("HttpService"):JSONDecode(body) end)
-      local sha = ok and type(document) == "table" and document.sha
+      local sha = ok and type(document) == "table" and document.revision
       if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
     end
-    local feed, feedError, feedMeta = request(
-      "https://github.com/" .. CONFIG.REPOSITORY .. "/commits/" .. CONFIG.BRANCH .. ".atom?exodus_cache=" .. tostring(os.time()),
-      { ["Accept"] = "application/atom+xml", ["User-Agent"] = "Exodus-Hub-Updater" }
-    )
-    local entry = feed and feed:match("<entry[%s>].-</entry>"); local sha = entry and entry:match("Grit::Commit/([%x]+)")
-    if sha and #sha == 40 then return sha end
-    return nil, feedError or requestError or "SHA mais recente indisponível", feedMeta or requestMeta
+    return nil, requestError or "manifesto de versão indisponível", requestMeta
   end
 
   -- scheduling
@@ -90,13 +87,11 @@ return function(loadedRevision, request, options)
       -- update-fetch
       if pendingRevision and not pendingSource and os.clock() >= nextCheck then
         local source, fetchError, fetchMetadata = request(
-          "https://raw.githubusercontent.com/"
-            .. CONFIG.REPOSITORY
-            .. "/"
+          CONFIG.DELIVERY_BASE_URL
             .. pendingRevision
             .. "/"
             .. CONFIG.PROJECT_PATH
-            .. "/loader.luau?exodus_cache="
+            .. "loader.luau?exodus_cache="
             .. tostring(os.time()),
           { ["User-Agent"] = "Exodus-Hub-Updater" }
         )
