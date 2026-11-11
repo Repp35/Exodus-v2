@@ -24,13 +24,13 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: \${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
     env:
-      EXODUS_AUTHORIZED_USER_IDS: \${{ secrets.EXODUS_AUTHORIZED_USER_IDS }}
-      EXODUS_ALLOWED_GAME_IDS: \${{ vars.EXODUS_ALLOWED_GAME_IDS }}
-      EXODUS_ALLOWED_PLACE_IDS: \${{ vars.EXODUS_ALLOWED_PLACE_IDS }}
-      EXODUS_EXPIRES_AT: \${{ vars.EXODUS_EXPIRES_AT }}
-      PROMETHEUS_DIR: \${{ runner.temp }}/prometheus
+      EXODUS_AUTHORIZED_USER_IDS: ${{ secrets.EXODUS_AUTHORIZED_USER_IDS }}
+      EXODUS_ALLOWED_GAME_IDS: ${{ vars.EXODUS_ALLOWED_GAME_IDS }}
+      EXODUS_ALLOWED_PLACE_IDS: ${{ vars.EXODUS_ALLOWED_PLACE_IDS }}
+      EXODUS_EXPIRES_AT: ${{ vars.EXODUS_EXPIRES_AT }}
+      PROMETHEUS_DIR: ${{ runner.temp }}/prometheus
 
     steps:
       - name: Checkout private source
@@ -42,7 +42,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "\${EXODUS_AUTHORIZED_USER_IDS:-}" ]]; then
+          if [[ -z "${EXODUS_AUTHORIZED_USER_IDS:-}" ]]; then
             echo "::error::Configure the EXODUS_AUTHORIZED_USER_IDS repository secret before publishing."
             exit 1
           fi
@@ -58,17 +58,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --filter=blob:none https://github.com/prostone4/Prometheus.git "\${PROMETHEUS_DIR}"
-          git -C "\${PROMETHEUS_DIR}" checkout --detach 0d3e287c2fd9ef927e210268ea0a8bb1e7a4d581
+          git clone --filter=blob:none https://github.com/prostone4/Prometheus.git "${PROMETHEUS_DIR}"
+          git -C "${PROMETHEUS_DIR}" checkout --detach 0d3e287c2fd9ef927e210268ea0a8bb1e7a4d581
 
       - name: Generate and obfuscate protected build
         shell: bash
         env:
-          REVISION: \${{ github.sha }}
+          REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail
           rm -rf build-source site
-          mkdir -p build-source/security "site/\${REVISION}"
+          mkdir -p build-source/security "site/${REVISION}"
 
           cp -R "exodus hub" build-source/
 
@@ -122,17 +122,17 @@ jobs:
           PY
 
           while IFS= read -r -d '' source; do
-            relative="\${source#build-source/}"
-            destination="site/\${REVISION}/\${relative}"
-            mkdir -p "\$(dirname "\${destination}")"
-            lua5.1 "\${PROMETHEUS_DIR}/cli.lua" \
+            relative="${source#build-source/}"
+            destination="site/${REVISION}/${relative}"
+            mkdir -p "$(dirname "${destination}")"
+            lua5.1 "${PROMETHEUS_DIR}/cli.lua" \
               --preset Medium \
               --LuaU \
-              --out "\${destination}" \
-              "\${source}"
+              --out "${destination}" \
+              "${source}"
           done < <(find build-source -type f -name "*.luau" -print0)
 
-          cp "site/\${REVISION}/exodus hub/loader.luau" site/loader.luau
+          cp "site/${REVISION}/exodus hub/loader.luau" site/loader.luau
 
           python3 - <<'PY'
           import json
@@ -151,8 +151,8 @@ jobs:
 
           test -s site/loader.luau
           test -s site/manifest.json
-          test -s "site/\${REVISION}/security/entitlements.luau"
-          test -s "site/\${REVISION}/exodus hub/loader.luau"
+          test -s "site/${REVISION}/security/entitlements.luau"
+          test -s "site/${REVISION}/exodus hub/loader.luau"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
