@@ -32,8 +32,8 @@ local CONFIG = {
   SPAM_MIN_INTERVAL = 0.0301,
   HELD_COOLDOWN_INTERVAL = 0.05,
   CLIENT_DEFLECT_RESET_MIN = 0.08,
-  CLIENT_DEFLECT_RESET_FAST = 0.1,
-  CLIENT_DEFLECT_RESET_SLOW = 0.25,
+  CLIENT_DEFLECT_RESET_FAST = 0.09,
+  CLIENT_DEFLECT_RESET_SLOW = 0.15,
   CLIENT_DEFLECT_RESET_MAX_PING_MARGIN = 0.06,
   CLIENT_DEFLECT_RESET_FRAME_MARGIN = 1 / 60,
   SPEED_REFRESH = 0.5,
@@ -592,10 +592,7 @@ function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
   budget = budget + math.clamp(ping, 0, CONFIG.CLIENT_DEFLECT_RESET_MAX_PING_MARGIN); local lastSafeDelay = predictUntil - pressedAt - CONFIG.CLIENT_DEFLECT_RESET_FRAME_MARGIN
   if lastSafeDelay < CONFIG.CLIENT_DEFLECT_RESET_MIN then return false end
   local extra = finite(multiplier) and math.max(1, multiplier) or 1
-  if extra > 1 then
-    budget *= extra
-    if lastSafeDelay < budget then return false end
-  end
+  budget *= extra
   return time - pressedAt >= math.min(budget, lastSafeDelay)
 end
 function GameInfo.getSyncData() return syncData() end
