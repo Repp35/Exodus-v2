@@ -642,7 +642,7 @@ local function startInternal()
   clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
   if not playerReady then return false, "Loader", playerError end
   local unpinned = not validRevision(version) and not sourceRoot
-  if unpinned then version = BRANCH; warn("[Exodus] SHA indisponível; carregando main até a próxima verificação: " .. tostring(revisionError)) end
+  if unpinned then return false, "Loader", "revisão remota indisponível e nenhum cache/local completo: " .. tostring(revisionError) end
   local cacheRevision = validRevision(version) and version or nil
   if cacheRevision then sourceRoot = findCompleteCacheRoot(cacheRevision) end
   local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, sourceRoot, cacheRevision)
