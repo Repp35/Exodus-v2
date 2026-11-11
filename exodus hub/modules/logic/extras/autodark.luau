@@ -1,6 +1,6 @@
 -- [[ autodark ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   REQUIRE_ABILITIES_ENABLED = true,
 }
@@ -14,12 +14,14 @@ local utils, remote, gameInfo, world
 -- state
 local connection
 
--- lifecycle
+-- connections
 local function disconnect()
   if not connection then return end
   if utils then utils.untrackGlobal(connection) end
   connection:Disconnect(); connection = nil
 end
+
+-- synchronization
 function AutoDark.sync()
   disconnect()
   if not utils or not remote or not utils.getConfigValue("AutoDark") then return true end
@@ -32,6 +34,8 @@ function AutoDark.sync()
   end)
   utils.trackGlobal(connection); return true
 end
+
+-- setup
 function AutoDark.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.Remote) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências ausentes: Utils, GameInfo ou Remote" end
   AutoDark.teardown(); utils, remote, gameInfo = deps.Utils, deps.Remote, deps.GameInfo

@@ -1,6 +1,6 @@
 -- [[ uiconfig ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   PANEL_TOGGLES = {
     {
@@ -124,6 +124,8 @@ local CONFIG = {
 
 -- module
 local UIConfig = {}
+
+-- public-api
 UIConfig.panelToggles = CONFIG.PANEL_TOGGLES
 UIConfig.panelComponents = CONFIG.PANEL_COMPONENTS
 UIConfig.__config = CONFIG.SETTINGS

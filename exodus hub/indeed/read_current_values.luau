@@ -1,6 +1,6 @@
 -- [[ read_current_values ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   OUTPUT_FILE = "ExodusCurrentValues.txt",
   SYNC_FIELDS = {
@@ -42,7 +42,7 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local output = {}
 
--- helpers
+-- reporting
 local function safe(label, fn)
   local ok, value = pcall(fn)
   if ok then
@@ -52,6 +52,8 @@ local function safe(label, fn)
   local line = ("[CurrentValues] %-28s <indisponível: %s>"):format(label, tostring(value)); output[#output + 1] = line
   warn(line); return nil
 end
+
+-- module-access
 local function requirePath(...)
   local current = ReplicatedStorage; local parts = { ... }
   for _, name in ipairs(parts) do
@@ -124,6 +126,8 @@ if bindableManager and type(bindableManager.GetFunction) == "function" then
     end
   end
 end
+
+-- export
 print("[CurrentValues] ===== fim da leitura =====")
 output[#output + 1] = "[CurrentValues] ===== fim da leitura ====="
 local fileName = CONFIG.OUTPUT_FILE

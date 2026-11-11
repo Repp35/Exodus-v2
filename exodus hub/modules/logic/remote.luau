@@ -1,6 +1,6 @@
 -- [[ remote ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   PARRY_METHOD = "Deflect",
   DARK_METHOD = "SendEvent",
@@ -21,7 +21,7 @@ function Remote.setup(deps)
   gameInfo, parryObserver = deps.GameInfo, nil; return true
 end
 
--- api
+-- dispatch
 local function send(ability, method, ...)
   if ability == nil then return false, method .. " não equipado ou indisponível" end
   local callback = ability[method]
@@ -39,6 +39,8 @@ local function notifyParry(signature)
   local ok, detail = pcall(parryObserver, signature)
   if not ok and type(warn) == "function" then warn("[Remote] Observador de parry falhou: " .. tostring(detail)) end
 end
+
+-- public-api
 function Remote.getAutoParrySignature() return autoParrySignature end
 function Remote.setParryObserver(observer)
   if observer ~= nil and type(observer) ~= "function" then return false, "observador inválido" end

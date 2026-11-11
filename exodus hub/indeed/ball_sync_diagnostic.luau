@@ -1,6 +1,6 @@
 -- [[ ball_sync_diagnostic ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   TAG = "[BallSyncDiag]",
   LOG_PATH = "BallSyncDiagnostic.txt",
@@ -260,6 +260,8 @@ local function stop(reason)
   local ok, err = saveFile()
   if ok then print(CONFIG.TAG .. " saved " .. CONFIG.LOG_PATH) else warn(CONFIG.TAG .. " could not save TXT: " .. tostring(err)) end
 end
+
+-- startup
 local API = {
   stop = stop,
 }

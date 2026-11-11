@@ -1,6 +1,6 @@
 -- [[ movement: dash actions ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   UP_DIRECTION = Vector3.new(0, 1, 0),
   MIN_DIRECTION_MAGNITUDE = 0.001,
@@ -10,7 +10,7 @@ local CONFIG = {
 local Movement = {}
 local utils, gameInfo, remote
 
--- helpers
+-- dash-actions
 local function performDash(direction, upward)
   if not utils or not gameInfo or not remote or not utils.isActive() then return false, "Hub inativo" end
   if not gameInfo.areAbilitiesEnabled() then return false, upward and "Habilidades indisponíveis nesta partida" or "Habilidades indisponíveis" end
@@ -27,6 +27,8 @@ local function performDash(direction, upward)
   if vectorValue then moveDir.Value = targetDirection else ability.MoveDir = targetDirection end
   return true
 end
+
+-- public-api
 function Movement.upDash() return performDash(CONFIG.UP_DIRECTION, true) end
 function Movement.dashToward(direction) return performDash(direction, false) end
 

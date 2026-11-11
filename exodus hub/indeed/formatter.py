@@ -52,8 +52,9 @@ STANDARD_SECTION_ALIASES = {
     "states": "state",
     "dependency": "dependencies",
     "service": "services",
-    "configuration": "config",
-    "configurations": "config",
+    "config": "configuration",
+    "configuration": "configuration",
+    "configurations": "configuration",
     "init": "setup",
     "initialization": "setup",
     "run-time": "runtime",
@@ -176,8 +177,6 @@ def normalize_section_case(
         name = section_name_from_comment(line)
         base_name = canonical_section_name(name) if name else ""
         canonical_name = base_name
-        if name and base_name in {"config", "configuration"} and configuration_section_is_tuning(lines, index):
-            canonical_name = "tuning"
         if (
             not name
             or name.casefold() in exception_names
@@ -515,7 +514,7 @@ def expand_dense_named_tables(source: str, indent_type: str, indent_width: int) 
 
 
 CONFIG_DECLARATION_RE = re.compile(r"(?m)^local\s+CONFIG\s*=\s*\{")
-TUNING_HEADING_RE = re.compile(r"(?m)^--\s+tuning\s*$")
+TUNING_HEADING_RE = re.compile(r"(?m)^--\s+(?:configuration|config|tuning)\s*$")
 POSSIBLE_TUNING_RE = re.compile(
     r"^local\s+([A-Z][A-Z0-9_]{2,})\s*=\s*(.+?)\s*$"
 )
@@ -535,7 +534,7 @@ def audit_module_config(source: str, source_path: Path) -> list[str]:
         )
     if heading is None or heading.start() > declarations[0].start():
         raise FormatterError(
-            f"{source_path}: a seção '-- tuning' deve aparecer antes da tabela CONFIG."
+            f"{source_path}: a seção '-- configuration' (ou '-- tuning') deve aparecer antes da tabela CONFIG."
         )
 
     warnings: list[str] = []
@@ -598,14 +597,18 @@ def require_sections(source: str, file_name: str) -> str:
         )
     required = []
     if re.search(r"(?m)^local\s+T\s*=", source):
-        required.append("tuning")
+        required.append("configuration")
     if re.search(r"(?m)^\w+\.__contract\s*=", source):
         required.append("contract")
     if re.search(r"(?m)^local\s+function\s+shouldActivate\s*\(", source):
         required.append("activation")
     if re.search(r"(?m)^local\s+function\s+shouldDeactivate\s*\(", source):
         required.append("deactivation")
-    missing = [name for name in required if name not in sections]
+    missing = [
+        name
+        for name in required
+        if name not in sections and not (name == "configuration" and "tuning" in sections)
+    ]
     if missing:
         raise FormatterError(f"{file_name}: seção obrigatória ausente: {', '.join(missing)}.")
     return source

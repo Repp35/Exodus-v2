@@ -1,6 +1,6 @@
 -- [[ updater ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   REPOSITORY = "Repp35/Exodus-v2",
   BRANCH = "main",
@@ -12,12 +12,20 @@ local CONFIG = {
 -- runtime
 
 return function(loadedRevision, request, options)
+
+  -- session
   options = type(options) == "table" and options or {}; local players = game:GetService("Players")
   local token = {}; _G.ExodusUpdaterToken = token
+
+  -- guards
   local function running() return _G.ExodusUpdaterToken == token and type(_G.Exodus) == "table" and _G.Exodus.Started == true end
+
+  -- revisions
   local function currentRevision()
     local exodus = _G.Exodus; return exodus and exodus.Revision or loadedRevision
   end
+
+  -- safety
   local function safeToUpdate()
     local exodus = _G.Exodus; local modules = exodus and exodus.Modules
     local info = modules and modules.gameinfo; local auto = modules and modules.autospam
@@ -36,6 +44,8 @@ return function(loadedRevision, request, options)
     if auto.isActive() or info.getClashContext() then return false end
     return true
   end
+
+  -- polling
   local function latestRevision()
     local body, requestError, requestMeta = request(
       "https://api.github.com/repos/" .. CONFIG.REPOSITORY .. "/commits/" .. CONFIG.BRANCH .. "?exodus_cache=" .. tostring(os.time()),
@@ -54,6 +64,8 @@ return function(loadedRevision, request, options)
     if sha and #sha == 40 then return sha end
     return nil, feedError or requestError or "SHA mais recente indisponível", feedMeta or requestMeta
   end
+
+  -- scheduling
   local function retryAt(now, metadata)
     if metadata and metadata.rateLimited then return now + math.max(0, tonumber(metadata.retryAfter) or 5) end
     return now + CONFIG.RETRY_INTERVAL
@@ -74,6 +86,8 @@ return function(loadedRevision, request, options)
           nextCheck = retryAt(now, checkMetadata); warn("[Exodus Updater] " .. tostring(checkError))
         end
       end
+
+      -- update-fetch
       if pendingRevision and not pendingSource and os.clock() >= nextCheck then
         local source, fetchError, fetchMetadata = request(
           "https://raw.githubusercontent.com/"
@@ -103,6 +117,8 @@ return function(loadedRevision, request, options)
           nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
         end
       end
+
+      -- update-apply
       if pendingRevision and pendingSource and running() then
         local safe = false; local ok, result = pcall(safeToUpdate)
         if ok then safe = result == true end

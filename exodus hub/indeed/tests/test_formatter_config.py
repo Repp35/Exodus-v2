@@ -27,6 +27,10 @@ class ConfigAuditTests(unittest.TestCase):
     def test_valid_config(self):
         self.assertEqual(formatter.audit_module_config(VALID, Path("test.luau")), [])
 
+    def test_configuration_heading_is_valid(self):
+        source = VALID.replace("-- tuning", "-- configuration")
+        self.assertEqual(formatter.audit_module_config(source, Path("test.luau")), [])
+
     def test_missing_config_fails(self):
         with self.assertRaisesRegex(formatter.FormatterError, "local CONFIG"):
             formatter.audit_module_config("-- [[ bad ]]\n\n-- state\nlocal x = 1\n", Path("bad.luau"))

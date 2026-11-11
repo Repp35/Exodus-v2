@@ -1,6 +1,6 @@
 -- [[ dash ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   MIN_SPEED = 70,
   MAX_MEASURED_SPEED = 400,
@@ -50,6 +50,8 @@ local function emit(player, record, position, velocity, previous, time, confirme
     })
   end
 end
+
+-- sampling
 local function resetCharacter(record, character)
   record.character = character; record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
   record.lastDetection, record.signalAt, record.signalActive, record.confirmedSignalAt = nil, -math.huge, false, nil
@@ -74,7 +76,7 @@ local function observe(player, record, time, suppliedRoot)
   record.speed, record.fast, record.position, record.positionAt = speed, fast, position, time
 end
 
--- lifecycle
+-- player-tracking
 local function removePlayer(player)
   local record = records[player]
   if not record then return end
@@ -89,6 +91,8 @@ local function addPlayer(player)
   end)
   utils.trackGlobal(record.characterConnection)
 end
+
+-- setup
 function Dash.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependências ausentes: Utils ou GameInfo" end
   Dash.teardown(); utils, gameInfo, players = deps.Utils, deps.GameInfo, deps.Utils.getPlayers()
@@ -146,7 +150,7 @@ function Dash.teardown()
   Dash.resetState(); utils, gameInfo, handler = nil, nil, nil
 end
 
--- api
+-- public-api
 function Dash.getStatus()
   local count = 0
   for _ in pairs(records) do

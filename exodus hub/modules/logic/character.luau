@@ -1,6 +1,6 @@
 -- [[ character ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   BIND_TIMEOUT = 10,
   ROOT_POLL_INTERVAL = 0,
@@ -15,6 +15,8 @@ local utils, spam, binds
 -- state
 local added, removing, currentLife
 local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
+
+-- state-tracking
 local function setPhase(value, reason)
   if phase == value then return end
   local previous = phase; phase = value
@@ -143,7 +145,7 @@ function Character.teardown()
   utils, spam, binds = nil, nil, nil
 end
 
--- api
+-- public-api
 function Character.getStatus() return { schema = utils and utils.apiVersion() or nil, phase = phase, generation = generation } end
 
 -- contract

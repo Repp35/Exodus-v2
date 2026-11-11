@@ -1,6 +1,6 @@
 -- [[ camera sensitivity ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   DEFAULT_SENSITIVITY = 1,
   MODULE_SEARCH_RETRY = 0.5,
@@ -15,7 +15,7 @@ local cameraEpoch = 0
 local cameraInput, cameraOriginal, cameraWrapped, configConnection
 local sensitivity = 1
 
--- helpers
+-- camera-hook
 local function stopCamera()
   cameraEpoch += 1
   if cameraInput and cameraInput.getRotation == cameraWrapped then cameraInput.getRotation = cameraOriginal end
@@ -25,6 +25,8 @@ local function stopCamera()
   end
   cameraInput, cameraOriginal, cameraWrapped = nil, nil, nil
 end
+
+-- camera-watcher
 local function startCamera()
   stopCamera(); local token = cameraEpoch
   task.spawn(function()
@@ -54,7 +56,7 @@ local function startCamera()
   end)
 end
 
--- lifecycle
+-- setup
 function Camera.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   Camera.teardown(); utils = deps.Utils

@@ -1,6 +1,6 @@
 -- [[ autofierce ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   SIGNAL_RETRY = 0.5,
   SYNC_MAX_AGE = 0.25,
@@ -24,6 +24,8 @@ local function track(connection)
   return connection
 end
 local function enabled() return utils and utils.isActive() and utils.getConfigValue("AutoFierce") == true and gameInfo.areAbilitiesEnabled() end
+
+-- signals
 local function onParried()
   graceHandled = true; parryGeneration += 1
   lastParriedAt = os.clock()
@@ -53,7 +55,7 @@ local function deflectPending(now)
   return now - pressedAt <= window + CONFIG.NOOB_WINDOW_EXTRA + 2 * ping
 end
 
--- runtime
+-- detection
 local function update()
   local now = os.clock()
   if not enabled() then graceHandled = false; return end

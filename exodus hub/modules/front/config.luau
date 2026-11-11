@@ -1,6 +1,6 @@
 -- [[ config ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   RATE_MIN = 0,
   DELAY_MIN = 0,
@@ -61,7 +61,7 @@ local function copy(source)
   return result
 end
 
--- api
+-- registration
 function Config.register(name, definition)
   if type(name) ~= "string" or type(definition) ~= "table" or Registry[name] then return false end
   local schema = type(definition.schema) == "table" and definition.schema or {}; local defaults = type(definition.defaults) == "table" and definition.defaults or {}
@@ -77,6 +77,8 @@ function Config.register(name, definition)
   end
   Registry[name] = { schema = copy(schema), defaults = copy(defaults) }; return true
 end
+
+-- defaults
 function Config.defaults()
   local result = {}
   for _, definition in pairs(Registry) do
@@ -86,6 +88,8 @@ function Config.defaults()
   end
   return result
 end
+
+-- validation-api
 function Config.validatePatch(patch)
   if type(patch) ~= "table" then return false, "configuração não é uma tabela" end
   for key, value in pairs(patch) do
@@ -107,6 +111,8 @@ function Config.validate(config)
   if not ok then return false, reason end
   return true
 end
+
+-- public-api
 function Config.getRegistry()
   local result = {}
   for name, definition in pairs(Registry) do

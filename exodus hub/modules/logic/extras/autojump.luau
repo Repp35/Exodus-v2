@@ -1,6 +1,6 @@
 -- [[ auto jump ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   AIR_MATERIAL = Enum.Material.Air,
   JUMPING_STATE = Enum.HumanoidStateType.Jumping,
@@ -14,7 +14,7 @@ local utils
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0
 
--- helpers
+-- jump-control
 local function stopJump()
   epoch += 1; local connection = jumpConnection
   jumpConnection, jumpCharacter, jumpHumanoid = nil, nil, nil
@@ -22,6 +22,8 @@ local function stopJump()
   if utils then utils.untrackGlobal(connection) end
   connection:Disconnect()
 end
+
+-- jump-loop
 local function jumpStep(player)
   local character = player.Character
   if character ~= jumpCharacter then jumpCharacter, jumpHumanoid = character, nil end
@@ -32,7 +34,7 @@ local function jumpStep(player)
   if humanoid:GetState() ~= CONFIG.JUMPING_STATE then humanoid:ChangeState(CONFIG.JUMPING_STATE) end
 end
 
--- lifecycle
+-- synchronization
 function AutoJump.sync()
   stopJump()
   if not utils or not utils.isActive() or utils.getConfigValue("AutoJump") ~= true then return true end
@@ -46,6 +48,8 @@ function AutoJump.sync()
   end)
   utils.trackGlobal(jumpConnection); return true
 end
+
+-- setup
 function AutoJump.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "Utils ausente" end
   AutoJump.teardown(); utils = deps.Utils

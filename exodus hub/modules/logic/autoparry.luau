@@ -1,6 +1,6 @@
 -- [[ autoparry ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   DEFAULT_WINDOW_FACTOR = 0.8,
   CPS_BOOST_START = 2,
@@ -140,6 +140,8 @@ local function radius(speed, factor, baseWindow)
   if not finite(factor) then factor = activeWindowFactor(clock()) end
   factor = math.clamp(factor, 0, 1); return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
 end
+
+-- telemetry
 local function samplePing()
   state.ping, state.pingRaw, state.pingCount = gameInfo.getAveragePing()
 end
@@ -272,7 +274,7 @@ local function tick(character, root, generation)
   if closing > 0 and distance <= threshold then request("parry_requested") end
 end
 
--- api
+-- public-api
 function AutoParry.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" then return false, "dependências inválidas" end
   for name, methods in pairs(AutoParry.__contract.requiresMethods) do
@@ -310,6 +312,8 @@ function AutoParry.bindCharacter(character)
   end))
   return true
 end
+
+-- actions
 function AutoParry.beginFierce()
   if not state.alive or not state.bound then return nil end
   local target = gameInfo.getTargetId()
@@ -387,6 +391,8 @@ function AutoParry.onBallSync(data)
   if state.player and (target == state.player.UserId or data.Grace == true) and state.character and state.root and not state.fired then tick(state.character, state.root, state.generation) end
   return true
 end
+
+-- status
 function AutoParry.getTargetStatus()
   return {
     armed = not state.fired,

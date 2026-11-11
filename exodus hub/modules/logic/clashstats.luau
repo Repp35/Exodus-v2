@@ -1,6 +1,6 @@
 -- [[ clash stats ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   CLASH_RETENTION_SECONDS = 1.5,
   PACKET_FALLBACK_SECONDS = 0.5,
@@ -27,6 +27,8 @@ local function snapshotSpeed(snapshot)
   if not snapshot then return nil end
   local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
 end
+
+-- formatting
 local function formatPoint(point)
   if typeof(point) ~= "Vector3" then return "unavailable" end
   return string.format("%.2f, %.2f, %.2f", point.X, point.Y, point.Z)
@@ -95,6 +97,8 @@ function ClashStats.begin(partner, time)
   stats.partnerId, stats.cps, stats.lastObserved = partner, 0, time; stats.startedAt, stats.startedDate = time, os.date("!%Y-%m-%d %H:%M:%S")
   stats.totalSwitches, stats.frozen = 0, false
 end
+
+-- observation
 function ClashStats.observe(session, snapshot, time, fresh)
   local partner = session.active and session.partner
   if not partner then local context = gameInfo.getClashContext(); partner = context and context.partnerId end

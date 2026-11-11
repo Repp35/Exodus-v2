@@ -1,6 +1,6 @@
 -- [[ gameinfo ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   MIN_SPEED = 16,
   MAX_SPEED = 600,
@@ -226,7 +226,7 @@ local function disconnect(connection)
   end
 end
 
--- lifecycle
+-- synchronization
 local function validSyncRemote(instance)
   return typeof(instance) == "Instance" and (instance:IsA("RemoteEvent") or instance:IsA("UnreliableRemoteEvent")) and instance.Parent ~= nil
 end
@@ -298,6 +298,8 @@ function GameInfo.bindBallSync(handler)
   end
   return true
 end
+
+-- lifecycle
 function GameInfo.startMaintenance(options)
   if type(options) ~= "table" or type(options.isActive) ~= "function" then return false end
   maintenance += 1; local token = maintenance
@@ -627,7 +629,7 @@ function GameInfo.decodeBallPacket(value)
 end
 function GameInfo.getTargetId() return targetId(syncData(), getBall()) end
 
--- api
+-- snapshots
 local function snapshot(time)
   if inTrainingArea() then
     time = type(time) == "number" and time or utils.now(); local sample = trainingState
@@ -704,6 +706,8 @@ local function snapshot(time)
     syncSequence = syncSequence(sync, provider),
   }
 end
+
+-- public-api
 function GameInfo.getSnapshot(_, time) return snapshot(time) end
 function GameInfo.getSnapshotAt(time) return snapshot(time) end
 function GameInfo.isSnapshotValid(value)

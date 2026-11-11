@@ -1,6 +1,6 @@
 -- [[ loader ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   REPOSITORY = "Repp35/Exodus-v2",
   BRANCH = "main",
@@ -564,7 +564,7 @@ local function configureModules(loaded, utils, urls)
   return true
 end
 
--- start
+-- startup
 local activeLoaded
 local function waitForLocalPlayer(timeout)
   local players = game:GetService("Players")

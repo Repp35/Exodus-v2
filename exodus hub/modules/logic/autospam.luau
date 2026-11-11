@@ -1,6 +1,6 @@
 -- [[ auto spam ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   ACTIVATION = {
     RETURN = 0.15,
@@ -129,6 +129,8 @@ local function returnWindow(window, speed, base)
   local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0
   return math.max(CONFIG.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
 end
+
+-- dash-assist
 local function sampleOwnDash(s, time)
   local ability = gameInfo.getDashAbility(); local dashing = ability and ability.Dashing == true
   if not dashing then s.dashStart, s.dashAt = nil, nil; return end
@@ -252,7 +254,7 @@ local function enforceTargetReturnTimeout(s, time)
   stop(s, "target_return_timeout"); return true
 end
 
--- tracking
+-- target-tracking
 local function syncManualPartner(s)
   local manual = utils.isManualSpamActive()
   if manual and not s.manualWasActive then s.manualPartner = s.active and s.partner or nil; s.manualSwitchAt, s.manualSwitchServerAt = now(), nil
@@ -561,6 +563,8 @@ function AutoSpam.teardown()
   detach("teardown"); clashStatsModule = nil
   clashStats = nil; utils, gameInfo, players, runService, localPlayer = nil, nil, nil, nil, nil, nil
 end
+
+-- ball-sync
 function AutoSpam.onBallSync(data)
   local s = current
   if not s or type(data) ~= "table" then return end
@@ -613,7 +617,7 @@ function AutoSpam.onBallSync(data)
   evaluate(s, time, true, serverTime, snapshot, stopped)
 end
 
--- api
+-- public-api
 function AutoSpam.isActive() return current ~= nil and current.active end
 function AutoSpam.stopSpam()
   if current then stop(current, "stop_spam") end
@@ -644,6 +648,8 @@ end
 function AutoSpam.getActivationContext()
   local s = current; return { active = s ~= nil and s.active, reason = s and s.reason or "detached", partner = s and s.partner or -1 }
 end
+
+-- status
 function AutoSpam.getStatus()
   local s = current
   return {

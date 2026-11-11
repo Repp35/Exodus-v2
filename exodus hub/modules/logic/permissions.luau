@@ -2,6 +2,8 @@
 
 -- module
 local Permissions = {}
+
+-- policy-builder
 local function allow(names)
   local items = {}
   for name in string.gmatch(names or "", "%S+") do
@@ -10,7 +12,7 @@ local function allow(names)
   return items
 end
 
--- tuning
+-- configuration
 local CONFIG = {
   POLICIES = {
     permissions = {
@@ -175,7 +177,7 @@ local CONFIG = {
 
 local POLICIES = CONFIG.POLICIES
 
--- helpers
+-- validation
 local function policy(name)
   local entry = POLICIES[name]
   if not entry then error("Permissions: módulo não registrado: " .. tostring(name), 2) end
@@ -214,7 +216,7 @@ local function validate(name, module)
   return true
 end
 
--- resolution
+-- access-views
 local function readonly(value, visited)
   if type(value) ~= "table" then return value end
   visited = visited or {}
@@ -244,6 +246,8 @@ local function wrap(consumer, source, provider)
   metatable.__metatable = "locked"; table.freeze(metatable)
   return view
 end
+
+-- resolution
 local function resolve(consumer, loaded)
   if type(loaded) ~= "table" or type(loaded[consumer]) ~= "table" then error("Permissions: módulo não carregado: " .. tostring(consumer), 2) end
   local contract = loaded[consumer].__contract
@@ -277,7 +281,7 @@ local function resolve(consumer, loaded)
   return dependencies
 end
 
--- api
+-- public-api
 Permissions.validate = validate
 Permissions.wrap = wrap
 Permissions.resolve = resolve

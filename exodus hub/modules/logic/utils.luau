@@ -1,6 +1,6 @@
 -- [[ utils ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   API_VERSION = 1,
   VERSION = "3.1.5",
@@ -321,6 +321,8 @@ function Utils.stop()
   state.lifecycle.phase = "stopped"; recordTransition("Utils", previous, "stopped", "stop")
   refreshNamespace(); return true
 end
+
+-- state-api
 function Utils.isActive() return state.active end
 function Utils.getStateSnapshot() return stateSnapshot() end
 function Utils.getConfig() return snapshot(state.config) end
@@ -366,13 +368,15 @@ end
 function Utils.isFiniteNumber(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 function Utils.isNonNegativeFiniteNumber(value) return Utils.isFiniteNumber(value) and value >= 0 end
 
--- api
+-- configuration-api
 function Utils.normalizeSpamRate(value, fallback)
   local rate = tonumber(value)
   if not Utils.isFiniteNumber(rate) then rate = tonumber(fallback) end
   if not Utils.isFiniteNumber(rate) then rate = 0 end
   return math.max(rate, 0)
 end
+
+-- public-api
 function Utils.setConfig(patch)
   if type(patch) ~= "table" then error("Config patch inválido: esperado table", 2) end
   local normalized

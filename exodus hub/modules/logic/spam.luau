@@ -1,6 +1,6 @@
 -- [[ spam ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   MAX_DELAY_DEBT = 0.2,
   POLL_INTERVAL = 0.01,
@@ -30,7 +30,7 @@ local function readRate()
   return mode, rate
 end
 
--- control
+-- state-control
 local function transition(active, reason)
   local phase = active and "running" or "stopped"
   if status.phase == phase then return end
@@ -42,7 +42,7 @@ local function cancel(reason)
   transition(false, reason)
 end
 
--- runtime
+-- dispatch
 local function request(boundUtils, boundRemote, token, guard, minimum)
   if inFlight then return end
   inFlight = true; status.lastRequestAt = os.clock()
@@ -58,6 +58,8 @@ local function request(boundUtils, boundRemote, token, guard, minimum)
     if type(boundUtils.recordError) == "function" then boundUtils.recordError("Spam", message) end
   end
 end
+
+-- scheduler
 local function sync()
   if not utils or not remote then return end
   local mode, rate = readRate(); local enabled = utils.isActive() and (utils.isManualSpamActive() or utils.isAutoSpamActive()) and rate > 0
@@ -151,7 +153,7 @@ function Spam.teardown()
   spamObserver, configObserver, utils, remote, gameInfo = nil, nil, nil, nil, nil
 end
 
--- api
+-- public-api
 function Spam.getStatus()
   return {
     schema = utils and utils.apiVersion() or 1,

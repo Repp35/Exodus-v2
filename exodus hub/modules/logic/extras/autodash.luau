@@ -1,6 +1,6 @@
 -- [[ auto dash ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   DETECTION_RANGE = 70,
   FALLBACK_RANGE = 35,
@@ -20,6 +20,8 @@ local inFlight, handledSignals = nil, {}
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function validVector(value) return typeof(value) == "Vector3" and finite(value.X) and finite(value.Y) and finite(value.Z) end
+
+-- event-filtering
 local function relevantOpponent(event, localRoot)
   local active = autoSpam.getActivationContext()
   if active.active then return active.partner == event.userId end
@@ -35,6 +37,8 @@ local function relevantOpponent(event, localRoot)
   if not finite(speed) or speed <= 0 then return false end
   local geometry = gameInfo.getDeflectGeometry(speed, "game", 0.8, false); return geometry ~= nil and (snapshot.position - localRoot.Position).Magnitude <= geometry.fullRadius
 end
+
+-- event-handling
 local function onDash(event)
   local localRoot = root
   if
@@ -85,7 +89,7 @@ local function onDash(event)
   if not ok then warn("[AutoDash] " .. tostring(result)) end
 end
 
--- lifecycle
+-- setup
 function AutoDash.setup(deps)
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.Dash or not deps.Movement or not deps.AutoSpam then return false, "dependências ausentes" end
   AutoDash.teardown(); utils, gameInfo, dash, movement, autoSpam = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement, deps.AutoSpam
@@ -93,6 +97,8 @@ function AutoDash.setup(deps)
   if not players or not localPlayer or not runService then return false, "serviços indisponíveis" end
   dash.setHandler(onDash); return true
 end
+
+-- character-binding
 function AutoDash.bindCharacter(character)
   AutoDash.detachCharacter(); local newRoot = character and character:FindFirstChild("HumanoidRootPart")
   if not newRoot or not newRoot:IsA("BasePart") then return false, "HumanoidRootPart indisponível" end

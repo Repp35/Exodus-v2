@@ -1,6 +1,6 @@
 -- [[ ui ]]
 
--- tuning
+-- configuration
 local CONFIG = {
   COLORS = {
     bg = Color3.fromRGB(8, 8, 22),
@@ -162,7 +162,7 @@ local function safeCancel(t)
   if t then t:Cancel() end
 end
 
--- interaction
+-- layout
 local function viewport()
   local currentCamera = workspace.CurrentCamera or Camera; return currentCamera and currentCamera.ViewportSize or Vector2.new(1920, 1080)
 end
@@ -174,6 +174,8 @@ local function toggleSetting(key, label, after)
   if showToast then showToast(label .. (state and " On" or " Off")) end
   return state
 end
+
+-- connections
 local function trackConn(c)
   if c and type(c.Disconnect) == "function" then UIState.connections[#UIState.connections + 1] = c end
   return c
@@ -191,6 +193,8 @@ local function disconnectUIConnections()
     safeDisconnect(UIState.connections[i]); UIState.connections[i] = nil
   end
 end
+
+-- input
 local function inputBinding(input)
   if input.UserInputType == Enum.UserInputType.Keyboard then return input.KeyCode end
   if
@@ -227,6 +231,8 @@ local function bindInput()
     end
   end))
 end
+
+-- dragging
 local function makeDraggable(handle, target, onDragEnd, disableOnMobile)
   local dragInput, dragOffX, dragOffY = nil, 0, 0; local state, wasDragged, startX, startY = "Idle", false, 0, 0
   local THRESH_SQ = CONFIG.DRAG_THRESHOLD_SQ
@@ -268,6 +274,8 @@ local function registerFlow(obj)
   local gradient = attachFlow(obj); local tween = TweenService:Create(gradient, TweenInfo.new(12, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1), { Rotation = 360 })
   flowingTweens[#flowingTweens + 1] = tween; tween:Play()
 end
+
+-- floating-controls
 local BTN_SIZE = CONFIG.BTN_SIZE
 local function btnPos()
   local config = Utils.getConfig(); local x, y = config.BtnX, config.BtnY
@@ -364,12 +372,16 @@ local function offOnText(labelText, value)
   local color = value and "#22C55E" or "#EF4444"; return labelText .. ': <font color="' .. color .. '">' .. (value and "ON" or "OFF") .. "</font>"
 end
 local function nextCardY(yPos, height) return yPos + cardHeight(height) * CARD_SCALE + CARD_GAP end
+
+-- panel
 local function panelPos()
   local config = Utils.getConfig(); local x, y = config.PanelX, config.PanelY
   if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
   return UDim2.new(0.5, -PW / 2, 0.5, -PH / 2)
 end
 local PARTICLE_COLORS = CONFIG.PARTICLE_COLORS
+
+-- cleanup
 local function cleanupUI()
   safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
   disconnectUIConnections(); UIState.connections = {}
@@ -408,6 +420,8 @@ local function cleanupUI()
   autoJumpSetVisual = nil
   if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil; _G.ExodusUIFadeOut = nil end
 end
+
+-- particles
 local function spawnParticle()
   if not particleLayer or not particleLayer.Parent then return end
   local isFar = math.random() < 0.6; local size = isFar and math.random(2, 3) or math.random(4, 6)
@@ -428,7 +442,7 @@ local function spawnParticle()
   end)
 end
 
--- cards
+-- card-primitives
 local function cardFrame(yPos, h, parent)
   local f = inst("Frame", {
     Size = UDim2.new(1, -22, 0, cardHeight(h)),
@@ -477,6 +491,8 @@ local function makeBtn(text, x, y, w, h, parent, bg)
   })
   corner(b, 8); return b
 end
+
+-- notifications
 showToast = function(message)
   if not toastLayer or not toastLayer.Parent then return end
   UIState.toastGeneration += 1; local generation = UIState.toastGeneration
@@ -546,6 +562,8 @@ local function makeToggle(trackParent, initial)
   end
   return track, thumb, setVisual
 end
+
+-- keybinds
 local function bindKeyCapture(btn, onPicked)
   local listening = false
   trackConn(btn.Activated:Connect(function()
@@ -603,6 +621,8 @@ local function makeKeycap(parent, configKey, rightAligned, baseHeight)
   end)
   return keycap
 end
+
+-- cards
 local function createToggleCard(labelText, configKey, yPos, parent, onAfter, shortcutKey)
   local f = cardFrame(yPos, CARD_H, parent)
   local label = inst("TextLabel", {
