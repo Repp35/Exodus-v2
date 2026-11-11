@@ -182,8 +182,7 @@ local function shouldActivate(s, snapshot, time)
   if not snapshot or snapshot.targetUncertain == true or gameInfo.getBallFrozen() == true or not s.pending then return false end
   if s.target ~= localPlayer.UserId or snapshot.targetId ~= localPlayer.UserId then return false end
   if typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return false end
-  local towardPlayer = s.root.Position - snapshot.position
-  local distance = towardPlayer.Magnitude
+  local towardPlayer = s.root.Position - snapshot.position; local distance = towardPlayer.Magnitude
   if distance <= 0 then return false end
   local closingSpeed = snapshot.velocity:Dot(towardPlayer) / distance
   if not finite(closingSpeed) or closingSpeed <= 0 then return false end
@@ -191,10 +190,8 @@ local function shouldActivate(s, snapshot, time)
   if dashAssistPartner(s, snapshot, time) == s.pending.partner then factor *= CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER end
   local g = geometry(snapshot, factor)
   if not g or distance > g.fullRadius then return false end
-  local timeToRange = math.max(0, distance - g.noWindowParryRadius) / closingSpeed
-  local cooldown = gameInfo.getDeflectCooldownState()
-  local blockedUntilArrival = cooldown and finite(cooldown.remaining) and cooldown.remaining > timeToRange
-  return s.pending.fastReturn == true or blockedUntilArrival == true
+  local timeToRange = math.max(0, distance - g.noWindowParryRadius) / closingSpeed; local cooldown = gameInfo.getDeflectCooldownState()
+  local blockedUntilArrival = cooldown and finite(cooldown.remaining) and cooldown.remaining > timeToRange; return s.pending.fastReturn == true or blockedUntilArrival == true
 end
 
 -- deactivation
