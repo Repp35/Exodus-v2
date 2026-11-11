@@ -102,10 +102,8 @@ local function resetTracking()
   state.teleported, state.teleportSequence, state.sequence = false, nil, nil; state.mode = nil
   state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
-  state.awayAt, state.awayTarget, state.trainingAwaySeen = nil, nil, false
-  state.trainingLastValidAt, state.trainingNextAttemptAt, state.trainingLastServerTime = 0, 0, nil
-  table.clear(state.clicks)
-  table.clear(state.returns)
+  state.awayAt, state.awayTarget, state.trainingAwaySeen = nil, nil, false; state.trainingLastValidAt, state.trainingNextAttemptAt, state.trainingLastServerTime = 0, 0, nil
+  table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -151,11 +149,9 @@ local function recordAutoParryRequest()
 end
 local function minimumBallSpeed() return CONFIG.MIN_PARRY_SPEED end
 local function trainingGeometry(speed)
-  speed = finite(speed) and math.max(speed, CONFIG.TRAINING_BASE_SPEED) or CONFIG.TRAINING_BASE_SPEED
-  local span = CONFIG.TRAINING_MAX_SPEED - CONFIG.TRAINING_BASE_SPEED
+  speed = finite(speed) and math.max(speed, CONFIG.TRAINING_BASE_SPEED) or CONFIG.TRAINING_BASE_SPEED; local span = CONFIG.TRAINING_MAX_SPEED - CONFIG.TRAINING_BASE_SPEED
   local progress = span > 0 and math.clamp((speed - CONFIG.TRAINING_BASE_SPEED) / span, 0, 1) or 1
-  local blockWindow = CONFIG.TRAINING_WINDOW_SLOW + (CONFIG.TRAINING_WINDOW_FAST - CONFIG.TRAINING_WINDOW_SLOW) * progress
-  local deflectDistance = CONFIG.TRAINING_DEFLECT_DISTANCE
+  local blockWindow = CONFIG.TRAINING_WINDOW_SLOW + (CONFIG.TRAINING_WINDOW_FAST - CONFIG.TRAINING_WINDOW_SLOW) * progress; local deflectDistance = CONFIG.TRAINING_DEFLECT_DISTANCE
   return {
     fullRadius = deflectDistance + CONFIG.TRAINING_TRIGGER_PADDING,
     pureRadius = deflectDistance,
@@ -207,11 +203,8 @@ end
 local function observeTarget(target, time)
   if not state.player or not finite(target) then return end
   if target <= 0 then
-    if state.targetKnown and state.target == state.player.UserId then
-      state.awaySeen, state.awayAt, state.awayTarget = true, time, nil
-    end
-    state.target, state.targetKnown = -1, false
-    return
+    if state.targetKnown and state.target == state.player.UserId then state.awaySeen, state.awayAt, state.awayTarget = true, time, nil end
+    state.target, state.targetKnown = -1, false; return
   end
   if target == state.target and state.targetKnown then return end
   local me, previous = state.player.UserId, state.target; state.lastTargeted = previous == me
@@ -230,8 +223,7 @@ local function observeSnapshot(snapshot, time)
   local mode = snapshot.mode == "training" and "training" or "match"
   if state.mode ~= mode then
     state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false; state.fired, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, nil
-    state.awayAt, state.awayTarget = nil, nil
-    state.trainingLastValidAt, state.trainingNextAttemptAt, state.trainingLastServerTime = 0, 0, nil
+    state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingNextAttemptAt, state.trainingLastServerTime = 0, 0, nil
   end
   local order = sequenceOrder(snapshot.syncSequence)
   if order == "old" then return false end
@@ -293,60 +285,36 @@ local function trainingBallPosition(value)
   return value.position
 end
 local function trainingClosing(position, velocity, rootPosition)
-  local delta = rootPosition - position
-  local distance = delta.Magnitude
+  local delta = rootPosition - position; local distance = delta.Magnitude
   if distance <= 0 then return distance, 0 end
-  local closing = velocity:Dot(delta) / distance
-  return distance, finite(closing) and closing or 0
+  local closing = velocity:Dot(delta) / distance; return distance, finite(closing) and closing or 0
 end
 local function resetTrainingAfterGap(time)
   if state.mode ~= "training" or state.trainingLastValidAt <= 0 then return end
   if time - state.trainingLastValidAt <= CONFIG.TRAINING_STATE_TIMEOUT then return end
-  state.fired, state.trainingAwaySeen = false, false
-  state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
+  state.fired, state.trainingAwaySeen = false, false; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.cycle += 1
 end
 local function tickTraining(value, root, time)
   local position, velocity, rootPosition = trainingBallPosition(value), value.velocity, gameInfo.getRootPosition(root)
   if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
-  local syncSpeed = tonumber(value.syncSpeed)
-  local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
+  local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
   if not finite(speed) or speed < CONFIG.TRAINING_MIN_SPEED then
-    state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0
-    phase("waiting", "training_speed_unavailable")
+    state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0; phase("waiting", "training_speed_unavailable")
     return
   end
-  local distance, closing = trainingClosing(position, velocity, rootPosition)
-  local geometry = trainingGeometry(speed)
-  state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
-  state.closingSpeed, state.triggerDistance = closing, geometry.fullRadius
+  local distance, closing = trainingClosing(position, velocity, rootPosition); local geometry = trainingGeometry(speed)
+  state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0; state.closingSpeed, state.triggerDistance = closing, geometry.fullRadius
   state.trainingLastValidAt, state.trainingLastServerTime = time, value.serverTime
   if state.fired then
     if value.targeted ~= true or closing < -CONFIG.TRAINING_REARM_AWAY_SPEED then state.trainingAwaySeen = true end
-    if state.trainingAwaySeen and closing > CONFIG.TRAINING_REARM_RETURN_SPEED and distance > geometry.fullRadius then
-      state.fired, state.trainingAwaySeen = false, false
-      state.cycle += 1
-    else
-      phase("waiting", "training_awaiting_return")
-      return
-    end
+    if state.trainingAwaySeen and closing > CONFIG.TRAINING_REARM_RETURN_SPEED and distance > geometry.fullRadius then state.fired, state.trainingAwaySeen = false, false; state.cycle += 1
+    else phase("waiting", "training_awaiting_return"); return end
   end
-  if not state.player or value.targetId ~= state.player.UserId then
-    phase("waiting", "training_not_target")
-    return
-  end
-  if time < state.trainingNextAttemptAt then
-    phase("waiting", "training_miss_cooldown")
-    return
-  end
-  if closing <= CONFIG.TRAINING_MIN_CLOSING_SPEED then
-    phase("waiting", "training_not_approaching")
-    return
-  end
-  if distance > geometry.fullRadius then
-    phase("waiting", "training_outside_window")
-    return
-  end
+  if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "training_not_target"); return end
+  if time < state.trainingNextAttemptAt then phase("waiting", "training_miss_cooldown"); return end
+  if closing <= CONFIG.TRAINING_MIN_CLOSING_SPEED then phase("waiting", "training_not_approaching"); return end
+  if distance > geometry.fullRadius then phase("waiting", "training_outside_window"); return end
   request("training_parry")
 end
 local function tick(character, root, generation)
@@ -355,15 +323,13 @@ local function tick(character, root, generation)
   local time = clock(); local value = gameInfo.getSnapshotAt(time)
   if generation ~= state.generation or not state.bound or not state.alive then return end
   if not gameInfo.isSnapshotValid(value) then
-    resetTrainingAfterGap(time); phase("waiting", "snapshot_indisponível"); return
+    resetTrainingAfterGap(time); phase("waiting", "snapshot_indisponível")
+    return
   end
   if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
   if utils.isSpamActive() then phase("waiting", "spam_active"); return end
   if state.teleported or value.teleported then phase("waiting", "teleport_lock"); return end
-  if value.mode == "training" then
-    tickTraining(value, root, time)
-    return
-  end
+  if value.mode == "training" then tickTraining(value, root, time); return end
   if state.fired then phase("waiting", "target_already_parried"); return end
   if value.locked == true then
     state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0; phase("waiting", "ball_locked")
