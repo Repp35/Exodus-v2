@@ -336,10 +336,7 @@ local function tick(character, root, generation)
   if not utils.isActive() or utils.getConfigValue("AutoParry") == false then return end
   local time = clock(); local value = gameInfo.getSnapshotAt(time)
   if generation ~= state.generation or not state.bound or not state.alive then return end
-  if not gameInfo.isSnapshotValid(value) then
-    phase("waiting", "snapshot_indisponível")
-    return
-  end
+  if not gameInfo.isSnapshotValid(value) then phase("waiting", "snapshot_indisponível"); return end
   if not observeSnapshot(value, time) then phase("waiting", "stale_snapshot"); return end
   if utils.isSpamActive() then phase("waiting", "spam_active"); return end
   if state.teleported or value.teleported then
@@ -719,4 +716,3 @@ AutoParry.__contract = {
 }
 
 return AutoParry
-
