@@ -12,7 +12,7 @@ local minimumSpeed, maximumSpeed, speedAt
 local errors, cooldownConnection, parriedConnection = {}, nil, nil
 local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
 local cooldown, signalAt, heldAt, missingAt, warningAt
-local pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil
+local pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
 local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
 local targetFrame, targetFrameConnection = 0, nil
 local trainingConnection, trainingRemote, trainingState, trainingSequence = nil, nil, nil, 0
@@ -257,7 +257,8 @@ function GameInfo.bindBallSync(handler)
     trainingRemote = training
     trainingConnection = training.OnClientEvent:Connect(function(position, velocity, serverTime, goal, target, speed)
       if typeof(position) ~= "Vector3" or typeof(velocity) ~= "Vector3" or not finite(serverTime) then return end
-      if trainingState and serverTime <= trainingState.serverTime and os.clock() - trainingState.receivedAt <= 0.6 then return end
+      local receivedAt = os.clock()
+      if trainingState and serverTime <= trainingState.serverTime and receivedAt - trainingState.receivedAt <= 0.6 then return end
       trainingSequence = (trainingSequence + 1) % 65536
       trainingState = {
         position = position,
@@ -266,7 +267,7 @@ function GameInfo.bindBallSync(handler)
         goal = goal,
         target = target,
         speed = speed,
-        receivedAt = os.clock(),
+        receivedAt = receivedAt,
         sequence = trainingSequence,
       }
 
@@ -327,7 +328,7 @@ function GameInfo.setup(deps)
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
   sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
   minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}
-  pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
+  pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
   targetFrame = 0; local service = utils.getRunService()
   if service and service.Heartbeat then
     targetFrameConnection = service.Heartbeat:Connect(function()
@@ -355,9 +356,14 @@ function GameInfo.getAveragePing()
   if pingSampleAt == nil or time < pingSampleAt or time - pingSampleAt >= CONFIG.PING_SAMPLE_INTERVAL then
     pingSampleAt = time; local value = GameInfo.getLocalPing()
     if finite(value) and value >= 0 then
-      pingRaw = value; pingSamples[#pingSamples + 1] = value
+      pingRaw = value
+      if #pingSamples < CONFIG.PING_SAMPLE_COUNT then
+        pingSamples[#pingSamples + 1] = value
+      else
+        pingIndex = pingIndex % CONFIG.PING_SAMPLE_COUNT + 1; pingSum -= pingSamples[pingIndex]
+        pingSamples[pingIndex] = value
+      end
       pingSum += value
-      if #pingSamples > CONFIG.PING_SAMPLE_COUNT then pingSum -= table.remove(pingSamples, 1) end
     end
   end
   return #pingSamples > 0 and pingSum / #pingSamples or 0, pingRaw, #pingSamples
@@ -761,8 +767,10 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
     local minimum = gameBall:GetClashMinWindow(speed)
     if finite(minimum) then window = math.max(window, minimum) end
   end
-  local range = GameInfo.getDeflectRange()
-  if not sharedLayout() and includeResilience ~= false and finite(range) then window += math.clamp((range - CONFIG.RANGE_BASE) / CONFIG.RANGE_BONUS_SPAN, 0, 1) * CONFIG.RANGE_WINDOW_BONUS end
+  if includeResilience ~= false and not sharedLayout() then
+    local range = GameInfo.getDeflectRange()
+    if finite(range) then window += math.clamp((range - CONFIG.RANGE_BASE) / CONFIG.RANGE_BONUS_SPAN, 0, 1) * CONFIG.RANGE_WINDOW_BONUS end
+  end
   if inClash and type(gameBall.GetClashWindowScale) == "function" then
     local scale = gameBall:GetClashWindowScale()
     if finite(scale) and scale > 0 then window *= scale end

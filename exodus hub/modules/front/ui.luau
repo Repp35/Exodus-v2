@@ -157,6 +157,9 @@ end
 local function safeCancel(t)
   if t then t:Cancel() end
 end
+local function setTextIfChanged(label, text)
+  if label.Text ~= text then label.Text = text end
+end
 
 -- layout
 local function viewport()
@@ -1073,47 +1076,55 @@ function ExodusUI.setup(deps)
   })
   compactInformation(distanceLabel); compactInformation(travelLabel)
   corner(travelLabel, 8); local nextTravelUpdate = 0
+  local telemetryAt, telemetryStatus, telemetrySnapshot = -math.huge, nil, nil
+  local function getTelemetry(time)
+    if time < telemetryAt or time - telemetryAt >= 1 / 240 then telemetryAt, telemetryStatus, telemetrySnapshot = time, AutoSpam.getStatus(), GameInfo.getSnapshotAt(time) end
+    return telemetryStatus, telemetrySnapshot
+  end
   trackConn(RunService.Heartbeat:Connect(function()
     if not travelLabel.Parent then return end
-    local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true; travelLabel.Visible = visible
+    local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true
+    if travelLabel.Visible ~= visible then travelLabel.Visible = visible end
     local time = os.clock()
     if not visible or time < nextTravelUpdate then return end
-    nextTravelUpdate = time + 0.05; local status = AutoSpam.getStatus()
-    local stats = status and status.clashStats; local snapshot = GameInfo.getSnapshotAt(time)
+    nextTravelUpdate = time + 0.05; local status, snapshot = getTelemetry(time)
+    local stats = status and status.clashStats
     local speed
     if GameInfo.isSnapshotValid(snapshot) then
       speed = tonumber(snapshot.syncSpeed)
       if not speed or speed ~= speed or speed <= 0 or speed == math.huge then speed = snapshot.speed end
     end
     local speedText = type(speed) == "number" and speed == speed and speed >= 0 and speed < math.huge and string.format("%.0f", speed) or "—"
-    if not stats then travelLabel.Text = "Current SPD: " .. speedText .. "\nBall travel time: —"; return end
+    if not stats then setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\nBall travel time: —"); return end
     local me = Players.LocalPlayer and Players.LocalPlayer.UserId
+    local text
     if stats.frozen then
       if stats.deceasedId then
         local who = stats.deceasedId == me and "You" or "Opponent"; local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "unavailable"
         local previousWho = stats.penultimateTarget == me and "you" or (stats.penultimateTarget == stats.partnerId and "opponent" or "—")
         local previous = stats.penultimateTravelTime and string.format("%.0f ms", stats.penultimateTravelTime * 1000) or "unavailable"
-        travelLabel.Text = who .. " died\nTarget time to death: " .. value .. "\nPrevious (" .. previousWho .. "): " .. previous
+        text = who .. " died\nTarget time to death: " .. value .. "\nPrevious (" .. previousWho .. "): " .. previous
       else
-        travelLabel.Text = "Clash ended\nFinal time: unavailable"
+        text = "Clash ended\nFinal time: unavailable"
       end
     else
       local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"
       local who = stats.travelTarget == me and "You" or (stats.travelTarget == stats.partnerId and "Opponent" or "—")
       local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
       local lastWho = stats.lastTravelTarget == me and "you" or (stats.lastTravelTarget == stats.partnerId and "opponent" or "—")
-      travelLabel.Text = "Target: " .. who .. " | Time: " .. value .. "\nLast exchange (" .. lastWho .. "): " .. last
+      text = "Target: " .. who .. " | Time: " .. value .. "\nLast exchange (" .. lastWho .. "): " .. last
     end
-    travelLabel.Text = "Current SPD: " .. speedText .. "\n" .. travelLabel.Text
+    setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\n" .. text)
   end))
   corner(distanceLabel, 8); local nextDistanceUpdate = 0
   trackConn(RunService.Heartbeat:Connect(function()
     if not distanceLabel.Parent then return end
-    local visible = Utils.getConfigValue("ClashDistanceVisible") == true; distanceLabel.Visible = visible
+    local visible = Utils.getConfigValue("ClashDistanceVisible") == true
+    if distanceLabel.Visible ~= visible then distanceLabel.Visible = visible end
     local time = os.clock()
     if not visible or time < nextDistanceUpdate then return end
-    nextDistanceUpdate = time + 0.1; local status = AutoSpam.getStatus()
-    local stats = status and status.clashStats; local snapshot = GameInfo.getSnapshotAt(time)
+    nextDistanceUpdate = time + 0.1; local status, snapshot = getTelemetry(time)
+    local stats = status and status.clashStats
     local currentSpeed
     if GameInfo.isSnapshotValid(snapshot) then
       currentSpeed = tonumber(snapshot.syncSpeed)
@@ -1121,6 +1132,7 @@ function ExodusUI.setup(deps)
     end
     local speedText = type(currentSpeed) == "number" and currentSpeed == currentSpeed and currentSpeed < math.huge and string.format("%.0f", currentSpeed)
       or "—"
+    local text
     if stats and (not stats.frozen or stats.endReason == "jogador morreu") then
       local function sampleText(sample)
         if not sample then return "—" end
@@ -1128,7 +1140,7 @@ function ExodusUI.setup(deps)
         local speed = type(sample.speed) == "number" and string.format("%.0f", sample.speed) or "?"; return distance .. " studs | SPD " .. speed
       end
       local cps = type(stats.currentCps) == "number" and string.format("%.2f", stats.currentCps) or "—"
-      distanceLabel.Text = string.format(
+      text = string.format(
         "Current SPD: %s\nStart: %s\n%s: %s\nCurrent CPS: %s | %.2fs",
         speedText,
         sampleText(stats.startSample),
@@ -1139,8 +1151,9 @@ function ExodusUI.setup(deps)
         stats.duration or 0
       )
     else
-      distanceLabel.Text = "Current SPD: " .. speedText .. "\nClash: —\nCurrent CPS: —"
+      text = "Current SPD: " .. speedText .. "\nClash: —\nCurrent CPS: —"
     end
+    setTextIfChanged(distanceLabel, text)
   end))
   bindInput()
   floatingButton = inst("TextButton", {

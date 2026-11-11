@@ -26,9 +26,8 @@ local function relevantOpponent(event, localRoot)
   local context = gameInfo.getClashContext()
   if context and context.partnerId then return context.partnerId == event.userId end
   if (event.position - localRoot.Position).Magnitude > CONFIG.FALLBACK_RANGE then return false end
-  local snapshot = gameInfo.getSnapshotAt(utils.now())
+  local time = utils.now(); local snapshot = gameInfo.getSnapshotAt(time)
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported or snapshot.locked or snapshot.targetUncertain or snapshot.targetId ~= event.userId then return false end
-  local time = utils.now()
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > 0.5) then return false end
   local speed = tonumber(snapshot.syncSpeed)
   if not finite(speed) or speed <= 0 then speed = snapshot.speed end
