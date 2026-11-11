@@ -31,6 +31,8 @@ local T = {
 	DEACTIVATION = {
 		MIN_DISTANCE = 20,
 		MAX_DISTANCE_REFERENCE = 51,
+		MIN_ACTIVE_TIME = 0.1,
+		TARGET_RETURN_TIMEOUT = 0.05,
 	},
 	SHARED = {
 		MIN_RETURN = 1 / 25,
@@ -172,6 +174,8 @@ local function start(s, reason, partner, time, serverTime, snapshot)
 	s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil
 	s.dashSwitchPartner, s.dashSwitchAt = nil, nil
 	s.activatedAt = time
+	local initialTarget = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
+	s.targetAwaySince = initialTarget and initialTarget ~= localPlayer.UserId and time or nil
 	s.diversionSince, s.diversionSyncAt = nil, nil
 	s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
 	utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
@@ -198,6 +202,7 @@ local function stop(s, reason)
 		utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
 	end
 	s.reason, s.pending, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil
+	s.targetAwaySince = nil
 	resetExchange(s)
 end
 local function stopBoth(s, reason)
@@ -239,6 +244,24 @@ local function applyDeactivation(s, snapshot, time)
 	if not reason then return false end
 	stop(s, reason)
 	if reason == "distant_target" then utils.setManualSpamActive(false) end
+	return true
+end
+
+-- target-return watchdog: only authoritative, ordered ball sync packets update the clock.
+local function observeTargetReturn(s, target, time)
+	if not s.active or not target then return end
+	if target == localPlayer.UserId then
+		s.targetAwaySince = nil
+	else
+		s.targetAwaySince = s.targetAwaySince or time
+	end
+end
+
+local function enforceTargetReturnTimeout(s, time)
+	if not s.active or not s.activatedAt or not s.targetAwaySince then return false end
+	if time - s.activatedAt < T.DEACTIVATION.MIN_ACTIVE_TIME then return false end
+	if time - s.targetAwaySince < T.DEACTIVATION.TARGET_RETURN_TIMEOUT then return false end
+	stop(s, "target_return_timeout")
 	return true
 end
 
@@ -331,6 +354,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
 	end
 	syncManualPartner(s)
 	if gameInfo.getBallFrozen() == true then applyDeactivation(s, nil, now()); resetExchange(s); s.target = nil; return end
+	if enforceTargetReturnTimeout(s, time) then return end
 	snapshot = snapshot or gameInfo.getSnapshotAt(time)
 	if not fresh and applyDeactivation(s, snapshot, time) then blockedActivation = true end
 	sampleOwnDash(s, time)
@@ -388,6 +412,7 @@ function AutoSpam.bindCharacter(character)
 		target = nil,
 		partner = nil,
 		pending = nil,
+		targetAwaySince = nil,
 		stoppedPartner = nil,
 		stoppedAt = nil,
 		reason = "waiting",
@@ -563,7 +588,7 @@ function AutoSpam.onBallSync(data)
 	local sequence = data.Sequence or data.TeleportSequence
 	if finite(sequence) and finite(s.sequence) then
 		local delta = (sequence - s.sequence) % T.SHARED.SEQUENCE_MODULUS
-		if delta >= T.SHARED.SEQUENCE_HALF then return end
+		if delta == 0 or delta >= T.SHARED.SEQUENCE_HALF then return end
 	end
 	if finite(sequence) then s.sequence = sequence end
 	if data.Teleported == true then
@@ -582,6 +607,7 @@ function AutoSpam.onBallSync(data)
 		s.target = userId(data.TargetPlayerID) or userId(gameInfo.getTargetId()) or s.target; resetExchange(s); return
 	end
 	local time = now(); local target = userId(data.TargetPlayerID); local serverTime = tonumber(data.ServerTime)
+	observeTargetReturn(s, target, time)
 	if not finite(serverTime) then serverTime = nil end
 	local speed = tonumber(data.Speed); local snapshot = gameInfo.getSnapshotAt(time)
 	if snapshot and data.Source == "packet" then
