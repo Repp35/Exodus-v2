@@ -581,18 +581,11 @@ function GameInfo.getDeflectCooldownState()
 end
 function GameInfo.isClientDeflectResetLate(activatedAt, speed)
   if not finite(activatedAt) then return false end
-  local ability = GameInfo.getDeflectAbility()
-  local time = os.clock()
-  if not ability or not finite(ability.Cooldown) or time < activatedAt then
-    localCooldownObservation = nil
-    return false
-  end
-
-  local remaining = math.max(0, ability.Cooldown)
-  local observation = localCooldownObservation
+  local ability = GameInfo.getDeflectAbility(); local time = os.clock()
+  if not ability or not finite(ability.Cooldown) or time < activatedAt then localCooldownObservation = nil; return false end
+  local remaining = math.max(0, ability.Cooldown); local observation = localCooldownObservation
   if not observation or observation.activatedAt ~= activatedAt or observation.ability ~= ability or time < observation.sampledAt then
-    observation = { activatedAt = activatedAt, ability = ability, sampledAt = time }
-    localCooldownObservation = observation
+    observation = { activatedAt = activatedAt, ability = ability, sampledAt = time }; localCooldownObservation = observation
     if remaining > 0 then observation.startedAt = time end
   elseif remaining <= 0 then
     observation.startedAt = nil
@@ -600,12 +593,10 @@ function GameInfo.isClientDeflectResetLate(activatedAt, speed)
     observation.startedAt = time
   end
   observation.sampledAt = time
-
   if not observation.startedAt or not finite(speed) or speed <= 0 then return false end
   local low, high = GameInfo.getBallSpeedLimits()
   if not finite(low) or not finite(high) or high <= low then return false end
-  local progress = math.clamp((speed - low) / (high - low), 0, 1)
-  local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress
+  local progress = math.clamp((speed - low) / (high - low), 0, 1); local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress
   return time - observation.startedAt >= budget
 end
 function GameInfo.getSyncData() return syncData() end

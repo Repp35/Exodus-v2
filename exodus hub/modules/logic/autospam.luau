@@ -173,12 +173,10 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   if distanceReason then return end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
-  s.activatedAt = time
-  gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot))
-  local initialTarget = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
-  s.targetAwaySince = initialTarget and initialTarget ~= localPlayer.UserId and time or nil; s.diversionSince, s.diversionSyncAt = nil, nil
-  s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason; utils.setAutoSpamActive(true)
-  utils.recordTransition("AutoSpam", "idle", "active", reason)
+  s.activatedAt = time; gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot))
+  local initialTarget = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil; s.targetAwaySince = initialTarget and initialTarget ~= localPlayer.UserId and time or nil
+  s.diversionSince, s.diversionSyncAt = nil, nil; s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
+  utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function activationGeometry(s, snapshot, partner, time)
   local factor = CONFIG.ACTIVATION.RADIUS_FACTOR
@@ -247,11 +245,8 @@ local function applyDeactivation(s, snapshot, time)
   if not s.active then return false end
   local reason = shouldDeactivate(s, snapshot, time)
   if not reason and s.activatedAt then
-    local speed = snapshot and snapshotSpeed(snapshot)
-    local resetLate = gameInfo.isClientDeflectResetLate(s.activatedAt, speed)
-    if resetLate and time - s.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then
-      reason = "client_deflect_reset_late"
-    end
+    local speed = snapshot and snapshotSpeed(snapshot); local resetLate = gameInfo.isClientDeflectResetLate(s.activatedAt, speed)
+    if resetLate and time - s.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then reason = "client_deflect_reset_late" end
   end
   if not reason then return false end
   stop(s, reason); return true
