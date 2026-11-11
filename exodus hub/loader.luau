@@ -1,5 +1,8 @@
 -- [[ loader ]]
 
+-- module
+local Loader = {}
+
 -- configuration
 local CONFIG = {
   REPOSITORY = "Repp35/Exodus-v2",
@@ -32,7 +35,7 @@ local CONFIG = {
   },
 }
 
--- module
+-- runtime
 local function printRawError(moduleName, message, filePath)
   local output = ("[%s] %s: %s"):format(tostring(filePath or "loader.luau"), tostring(moduleName), tostring(message))
   if type(warn) == "function" then warn(output) elseif type(print) == "function" then print(output) end
@@ -42,7 +45,6 @@ local function printStartup(message)
 end
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
-local Loader = {}
 local REPOSITORY = CONFIG.REPOSITORY
 local BRANCH = CONFIG.BRANCH
 local PROJECT_PATH = CONFIG.PROJECT_PATH
