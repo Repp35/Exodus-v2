@@ -372,8 +372,8 @@ local function authorizeRevision(revision)
   local executed, entitlements = pcall(chunk)
   if not executed or type(entitlements) ~= "table" then return false, "manifesto de autorização inválido" end
   if entitlements.schema ~= 1 or entitlements.product ~= "Exodus-v2" or entitlements.revision ~= revision then return false, "manifesto de autorização incompatível" end
-  if type(entitlements.userIds) ~= "table" or next(entitlements.userIds) == nil then return false, "nenhum usuário autorizado configurado" end
-  if not setContains(entitlements.userIds, player.UserId) then return false, "usuário não autorizado" end
+  if type(entitlements.blockedUserIds) ~= "table" then return false, "manifesto de bloqueio inválido" end
+  if setContains(entitlements.blockedUserIds, player.UserId) then return false, "usuário bloqueado" end
   if type(entitlements.gameIds) == "table" and next(entitlements.gameIds) ~= nil and not setContains(entitlements.gameIds, game.GameId) then return false, "experiência não autorizada" end
   if type(entitlements.placeIds) == "table" and next(entitlements.placeIds) ~= nil and not setContains(entitlements.placeIds, game.PlaceId) then return false, "lugar não autorizado" end
   local expiresAt = tonumber(entitlements.expiresAt or 0) or 0
