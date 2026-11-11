@@ -65,7 +65,7 @@ BLOCK_WORD_RE = re.compile(
 )
 ASSIGNMENT_RE = re.compile(
     r"^(?:local\s+)?[A-Za-z_][A-Za-z0-9_]*(?:(?:\s*\.\s*|\s*:\s*)[A-Za-z_][A-Za-z0-9_]*|\s*\[[^\]\n]+\])*"
-    r"(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*\s*(?:[+\-*/%^]?=)\s*\S"
+    r"(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*(?:(?:\s*\.\s*|\s*:\s*)[A-Za-z_][A-Za-z0-9_]*|\s*\[[^\]\n]+\])*)*\s*(?:[+\-*/%^]?=)\s*\S"
 )
 CALL_RE = re.compile(
     r"^[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|:)[A-Za-z_][A-Za-z0-9_]*|\s*\[[^\]\n]+\])*\s*\("
@@ -929,7 +929,10 @@ def compact_if_at(
     if len(inline_line.expandtabs(tab_width)) <= max_width:
         return end_index, [inline_line]
 
-    # Never flatten only the branch bodies: that obscures the block structure.
+    # Keep each branch together when the full conditional would be too wide.
+    if len((compact_branches[-1] + " end").expandtabs(tab_width)) <= max_width:
+        compact_branches[-1] += " end"
+        return end_index, compact_branches
     return None
 
 
@@ -1154,8 +1157,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--compact-width",
         type=int,
-        default=160,
-        help="largura máxima para compactação de instruções e blocos simples (padrão: 160)",
+        default=200,
+        help="largura máxima para compactação de instruções e blocos simples (padrão: 200)",
     )
     parser.add_argument(
         "--max-statements",

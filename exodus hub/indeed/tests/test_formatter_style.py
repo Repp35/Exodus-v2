@@ -24,9 +24,10 @@ class FormatterStyleTests(unittest.TestCase):
         source = '    point = { x = 1, y = 2 },\n'
         self.assertEqual(formatter.expand_dense_named_tables(source, 'Spaces', 4), source)
 
-    def test_long_if_does_not_leave_body_on_header(self):
+    def test_long_if_keeps_each_branch_together(self):
         source = 'if ready then\n    first = 1\nelse\n    second = 2\nend\n'
-        self.assertEqual(formatter.compact_simple_if_blocks(source, 25, 2, 4, 'Spaces'), source)
+        self.assertEqual(formatter.compact_simple_if_blocks(source, 25, 2, 4, 'Spaces'),
+                         'if ready then first = 1\nelse second = 2 end\n')
         self.assertEqual(formatter.compact_simple_if_blocks(source, 120, 2, 4, 'Spaces'),
                          'if ready then first = 1 else second = 2 end\n')
 
@@ -79,7 +80,7 @@ end
             args = formatter.build_parser().parse_args(['--in-place', str(path)])
             self.assertEqual(formatter.format_files(args), 0)
             result = path.read_text(encoding='utf-8')
-            self.assertIn('        connectionCounts = {\n            global =', result)
+            self.assertIn('    connectionCounts = {\n      global =', result)
             self.assertEqual(formatter.format_files(args), 0)
             self.assertEqual(path.read_text(encoding='utf-8'), result)
 
