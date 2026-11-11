@@ -30,7 +30,6 @@ jobs:
       EXODUS_ALLOWED_GAME_IDS: ${{ vars.EXODUS_ALLOWED_GAME_IDS }}
       EXODUS_ALLOWED_PLACE_IDS: ${{ vars.EXODUS_ALLOWED_PLACE_IDS }}
       EXODUS_EXPIRES_AT: ${{ vars.EXODUS_EXPIRES_AT }}
-      PROMETHEUS_DIR: ${{ runner.temp }}/prometheus
 
     steps:
       - name: Checkout private source
@@ -47,6 +46,8 @@ jobs:
 
       - name: Checkout pinned Prometheus
         shell: bash
+        env:
+          PROMETHEUS_DIR: ${{ runner.temp }}/prometheus
         run: |
           set -euo pipefail
           git clone --filter=blob:none https://github.com/prostone4/Prometheus.git "${PROMETHEUS_DIR}"
