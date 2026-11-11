@@ -49,7 +49,15 @@ Os identificadores de habilidades, eventos e caixas ficam em `GAME_IDS`, em `gam
 
 Cada módulo contabiliza suas próprias solicitações de clique, independentemente do resultado do remote. O AutoParry registra o instante de cada solicitação que faz, sem token nem observador no `remote`; solicitações do Spam não entram nessa medição. O CPS do AutoParry é o inverso do intervalo entre as duas últimas solicitações.
 
-O fator da janela começa em 0,8. Até 2 CPS ele permanece em 0,8; entre 2 e 2,5 CPS o fator sobe progressivamente até 1; a partir de 2,5 CPS fica em 1. Um intervalo acima de 0,5 segundo elimina o bônus no próximo clique. `autoparry.getStatus()` expõe `cps`, `windowFactor` e os limites em `cpsGate`.
+O fator da janela é configurado em `AutoParryWindowFactor` (padrão 0,3, limite 0,35); não aumenta com CPS.
+
+## Pressão do AutoParry
+
+`autoparry.getPressure()` compara o instante esperado do clique com o clique aceito pelo cliente. O instante esperado é o cruzamento do limiar normal do AP, interpolado entre observações e limitado ao início do target atual. Cooldown e tentativas recusadas preservam esse instante; o primeiro clique aceito encerra a medição. Cliques manuais, treinamento e Spam não entram nas amostras.
+
+O retorno expõe `expectedClickAt`, `actualClickAt`, `latestDelay`, `averageDelay`, `pendingDelay`, `samples`, `level`, `currentLevel` e `high`. Há tolerância de um frame (1/60 s); mais 80 ms levam o nível a 1. Pressão alta exige nível de 0,6 e atraso ainda pendente, ou pelo menos duas amostras com média alta. As amostras expiram em três segundos e o sinal do último clique decai em um segundo. Teleporte, troca de modo e personagem limpam a medição.
+
+Na ativação próxima do AutoSpam, a bola precisa já estar no raio bruto (alcance + ping, sem window) quando o target vira o jogador local. Com pressão alta, o limiar passa de 80% para 90% desse raio e essa situação pode dispensar a troca confirmada. Sem pressão alta, permanecem as exigências normais de troca/retorno. Bola travada, target incerto, cooldown de reativação e distância do adversário continuam bloqueando a ativação. A window permanece apenas no cálculo temporal de retorno rápido, sem ampliar a proximidade da bola.
 
 ## Verificação de contratos
 
