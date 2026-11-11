@@ -179,13 +179,19 @@ local function start(s, reason, partner, time, serverTime, snapshot)
 end
 local function shouldActivate(s, snapshot, time)
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
-  if snapshot and snapshot.targetUncertain == true then return false end
-  if gameInfo.getBallFrozen() == true or not s.pending then return false end
-  local expectedTarget = s.pending.outgoing and s.pending.partner or localPlayer.UserId
-  if not snapshot or s.target ~= expectedTarget or snapshot.targetId ~= expectedTarget then return false end
+  if not snapshot or snapshot.targetUncertain == true or gameInfo.getBallFrozen() == true or not s.pending then return false end
+  if s.target ~= localPlayer.UserId or snapshot.targetId ~= localPlayer.UserId then return false end
+  if typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return false end
+  local towardPlayer = s.root.Position - snapshot.position; local distance = towardPlayer.Magnitude
+  if distance <= 0 then return false end
+  local closingSpeed = snapshot.velocity:Dot(towardPlayer) / distance
+  if not finite(closingSpeed) or closingSpeed <= 0 then return false end
   local factor = CONFIG.ACTIVATION.RADIUS_FACTOR
   if dashAssistPartner(s, snapshot, time) == s.pending.partner then factor *= CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER end
-  local g = geometry(snapshot, factor); return g ~= nil and (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
+  local g = geometry(snapshot, factor)
+  if not g or distance > g.fullRadius then return false end
+  local timeToRange = math.max(0, distance - g.noWindowParryRadius) / closingSpeed; local cooldown = gameInfo.getDeflectCooldownState()
+  local blockedUntilArrival = cooldown and finite(cooldown.remaining) and cooldown.remaining > timeToRange; return s.pending.fastReturn == true or blockedUntilArrival == true
 end
 
 -- deactivation
@@ -224,8 +230,8 @@ local function shouldDeactivate(s, snapshot, time)
   local target = userId(snapshot.targetId)
   if not target then return nil end
   if target ~= localPlayer.UserId and target ~= s.partner then
-    local position = gameInfo.getPlayerMotion(target); local g = geometry(snapshot, 1)
-    if g and s.root and s.root.Parent and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > g.fullRadius then return "distant_target" end
+    local position = gameInfo.getPlayerMotion(target); local limit = distanceLimit(snapshot, target)
+    if limit and s.root and s.root.Parent and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > limit then return "distant_target" end
   end
   local reason = distanceGate(s, snapshot, s.partner)
   if reason ~= "distance_unavailable" then return reason end
@@ -307,13 +313,8 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
   elseif target == me and previous ~= me then
     if not s.pending and not s.active and previous ~= s.stoppedPartner and previous == s.departedTo and s.departedAt and window then
       local limit = returnWindow(window, speed, CONFIG.ACTIVATION.RETURN); local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
-      if returnElapsed and returnElapsed <= limit then s.pending = { partner = previous } end
+      if returnElapsed then s.pending = { partner = previous, fastReturn = returnElapsed <= limit } end
     end
-  end
-  if not s.active and completedPartner and completedPartner ~= s.stoppedPartner and snapshot.targetUncertain ~= true then
-    local activation = geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR); local limit = distanceLimit(snapshot, completedPartner)
-    local partnerDistance = distanceToPlayer(completedPartner)
-    if activation and limit and partnerDistance and partnerDistance <= limit then s.pending = { partner = completedPartner, closeReturn = true, outgoing = target ~= me } end
   end
 end
 
@@ -350,7 +351,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
   then
     local activationServerTime = serverTime
     if not fresh then activationServerTime = snapshot.serverTime end
-    start(s, s.pending.closeReturn and "close_return" or "return_target", s.pending.partner, time, activationServerTime, snapshot)
+    start(s, "return_target", s.pending.partner, time, activationServerTime, snapshot)
   end
 end
 
