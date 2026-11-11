@@ -2,15 +2,13 @@
 
 -- module
 local Movement = {}
+local utils, gameInfo, remote
 
 -- configuration
 local CONFIG = {
   UP_DIRECTION = Vector3.new(0, 1, 0),
   MIN_DIRECTION_MAGNITUDE = 0.001,
 }
-
--- runtime
-local utils, gameInfo, remote
 
 -- dash-actions
 local function performDash(direction, upward)

@@ -2,18 +2,6 @@
 
 -- module
 local Utils = {}
-
--- configuration
-local CONFIG = {
-  API_VERSION = 1,
-  VERSION = "3.1.5",
-  NAME = "Exodus Hub",
-  AUTHOR = "deltapolinha_2915",
-  FOLDER = "Exodus Hub",
-  HISTORY_LIMIT = 32,
-}
-
--- runtime
 local players = game:GetService("Players")
 local replicated = game:GetService("ReplicatedStorage")
 local runService = game:GetService("RunService")
@@ -40,6 +28,16 @@ local configModule, modules, persistenceReady = nil, {}, false
 local savePending, saveToken, saveDirty = false, 0, false
 local refreshPending, refreshing = false, false
 local spamObservers, configObservers = {}, {}
+
+-- configuration
+local CONFIG = {
+  API_VERSION = 1,
+  VERSION = "3.1.5",
+  NAME = "Exodus Hub",
+  AUTHOR = "deltapolinha_2915",
+  FOLDER = "Exodus Hub",
+  HISTORY_LIMIT = 32,
+}
 
 -- helpers
 local function copy(value, depth)

@@ -2,6 +2,9 @@
 
 -- module
 local Dash = {}
+local utils, gameInfo, players, handler
+local records, connections = {}, {}
+local generation, lastTick = 0, -math.huge
 
 -- configuration
 local CONFIG = {
@@ -12,11 +15,6 @@ local CONFIG = {
   DETECTION_GAP = 0.06,
   TICK_INTERVAL = 1 / 120,
 }
-
--- runtime
-local utils, gameInfo, players, handler
-local records, connections = {}, {}
-local generation, lastTick = 0, -math.huge
 
 -- helpers
 local function now() return utils and utils.now() or os.clock() end

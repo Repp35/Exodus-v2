@@ -2,6 +2,9 @@
 
 -- module
 local AutoDash = {}
+local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
+local root, heartbeat
+local inFlight, handledSignals = nil, {}
 
 -- configuration
 local CONFIG = {
@@ -11,11 +14,6 @@ local CONFIG = {
   MIN_UP_SPEED = 68,
   MAX_HORIZONTAL_RATIO = 0.65,
 }
-
--- runtime
-local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
-local root, heartbeat
-local inFlight, handledSignals = nil, {}
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end

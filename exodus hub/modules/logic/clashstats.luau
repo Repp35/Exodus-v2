@@ -2,6 +2,8 @@
 
 -- module
 local ClashStats = {}
+local utils, gameInfo, players, localPlayer
+local stats
 
 -- configuration
 local CONFIG = {
@@ -10,10 +12,6 @@ local CONFIG = {
   CPS_SAMPLE_CAP = 35,
   CPS_SMOOTHING_FACTOR = 0.2,
 }
-
--- runtime
-local utils, gameInfo, players, localPlayer
-local stats
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end

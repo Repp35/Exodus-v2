@@ -2,6 +2,12 @@
 
 -- module
 local Spam = {}
+local utils, remote, gameInfo, spamObserver, configObserver
+local function traceback(err) return debug.traceback(tostring(err), 2) end
+local generation, running, inFlight = 0, false, false
+local currentMode, currentRate
+local nextAllowedAt = 0
+local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 
 -- configuration
 local CONFIG = {
@@ -9,14 +15,6 @@ local CONFIG = {
   POLL_INTERVAL = 0.01,
   ERROR_RETRY_INTERVAL = 0.03,
 }
-
--- runtime
-local utils, remote, gameInfo, spamObserver, configObserver
-local function traceback(err) return debug.traceback(tostring(err), 2) end
-local generation, running, inFlight = 0, false, false
-local currentMode, currentRate
-local nextAllowedAt = 0
-local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 
 -- helpers
 local function readRate()

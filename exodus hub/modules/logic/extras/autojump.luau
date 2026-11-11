@@ -2,17 +2,15 @@
 
 -- module
 local AutoJump = {}
+local utils
+local jumpConnection, jumpCharacter, jumpHumanoid
+local epoch = 0
 
 -- configuration
 local CONFIG = {
   AIR_MATERIAL = Enum.Material.Air,
   JUMPING_STATE = Enum.HumanoidStateType.Jumping,
 }
-
--- runtime
-local utils
-local jumpConnection, jumpCharacter, jumpHumanoid
-local epoch = 0
 
 -- jump-control
 local function stopJump()
