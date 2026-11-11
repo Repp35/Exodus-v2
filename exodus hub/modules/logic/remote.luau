@@ -31,19 +31,12 @@ local function allowed(guard)
   if type(guard) ~= "function" then return true end
   local result = guard(); return result ~= nil and result ~= false
 end
-
-local function finite(value)
-  return type(value) == "number" and value == value and value > -math.huge and value < math.huge
-end
-
+local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function fireDeflect(ability)
-  local before = gameInfo.getLastDeflectPressAt()
-  local sent, detail = send(ability, CONFIG.PARRY_METHOD)
+  local before = gameInfo.getLastDeflectPressAt(); local sent, detail = send(ability, CONFIG.PARRY_METHOD)
   if not sent then return false, detail end
   local after = gameInfo.getLastDeflectPressAt()
-  if not finite(after) or (finite(before) and after <= before + 0.001) or (not finite(before) and after <= 0) then
-    return false, "Deflect não aceito pelo cliente"
-  end
+  if not finite(after) or (finite(before) and after <= before + 0.001) or (not finite(before) and after <= 0) then return false, "Deflect não aceito pelo cliente" end
   return true, detail
 end
 
