@@ -265,8 +265,7 @@ local function enforceTargetReturnTimeout(s, snapshot, time)
     and time >= snapshot.syncAt
     and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
   then
-    local g = geometry(snapshot, 1)
-    local distance = distanceToPlayer(s.partner)
+    local g = geometry(snapshot, 1); local distance = distanceToPlayer(s.partner)
     if g and finite(distance) and distance <= g.fullRadius then
       local interval = clashStats and not clashStats.frozen and clashStats.partnerId == s.partner and clashStats.cycleInterval
       timeout = finite(interval) and math.clamp(interval, timeout, CONFIG.DEACTIVATION.PARTNER_RETURN_MAX) or CONFIG.DEACTIVATION.PARTNER_RETURN_FALLBACK
