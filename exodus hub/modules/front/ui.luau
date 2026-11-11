@@ -391,11 +391,11 @@ local function cleanupUI()
     safeCancel(tween)
   end
   UIState.pageTweens = {}; UIState.panelOpen = false
-  UIState.reopenAllowed = false
-  UIState.clashBallOn = false; UIState.closing = false
-  UIState.keyCapture = false; UIState.panelTween = nil
-  UIState.btnTween = nil; UIState.toastGeneration += 1
-  safeCancel(UIState.toastTween); UIState.toastTween = nil
+  UIState.reopenAllowed = false; UIState.clashBallOn = false
+  UIState.closing = false; UIState.keyCapture = false
+  UIState.panelTween = nil; UIState.btnTween = nil
+  UIState.toastGeneration += 1; safeCancel(UIState.toastTween)
+  UIState.toastTween = nil
   UIState.btnIsDragging = function() return false end
   for i = #flowingTweens, 1, -1 do
     safeCancel(flowingTweens[i]); flowingTweens[i] = nil
@@ -892,13 +892,11 @@ local function togglePanel(closedByButton)
   UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween)
   safeCancel(UIState.btnTween)
   if UIState.panelOpen then
-    UIState.reopenAllowed = false
-    floatingButton.Visible = false
+    UIState.reopenAllowed = false; floatingButton.Visible = false
     if not configPanel.Visible then configPanel.GroupTransparency = 1; configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97) end
     configPanel.Visible = true; UIState.panelTween = twPlay(configPanel, 0.28, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
   else
-    UIState.reopenAllowed = closedByButton == true
-    floatingButton.Visible = UIState.reopenAllowed
+    UIState.reopenAllowed = closedByButton == true; floatingButton.Visible = UIState.reopenAllowed
     UIState.panelTween = twPlay(configPanel, 0.22, { Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97), GroupTransparency = 1 }, EASE_OUT, DIR_IN)
     UIState.btnTween =
       twPlay(floatingButton, 0.22, { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE) }, EASE_OUT, DIR_OUT)
@@ -920,16 +918,13 @@ end
 local function restoreAfterReloadFailure(message)
   if not configPanel or not configPanel.Parent then return end
   UIState.closing = false; UIState.panelOpen = true
-  UIState.reopenAllowed = false
-  configPanel.Visible = true; configPanel.Size = UDim2.new(0, PW * 0.96, 0, PH * 0.96)
-  configPanel.GroupTransparency = 1
+  UIState.reopenAllowed = false; configPanel.Visible = true
+  configPanel.Size = UDim2.new(0, PW * 0.96, 0, PH * 0.96); configPanel.GroupTransparency = 1
   if floatingButton and floatingButton.Parent then
-    floatingButton.Visible = false
-    floatingButton.Size = UDim2.new(0, 42, 0, 42); floatingButton.BackgroundTransparency = 1
-    floatingButton.TextTransparency = 1
+    floatingButton.Visible = false; floatingButton.Size = UDim2.new(0, 42, 0, 42)
+    floatingButton.BackgroundTransparency = 1; floatingButton.TextTransparency = 1
   end
-  twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
-  local config = Utils.getConfig()
+  twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT); local config = Utils.getConfig()
   if not UIState.desktop then
     showClashBall(config.ClashBallVisible == true); showParryBall(config.ParryBallVisible == true)
     showDarkBall(config.DarkBallVisible == true); showJumpBall(config.JumpBallVisible == true)
@@ -1025,8 +1020,7 @@ function ExodusUI.setup(deps)
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = playerGui,
   })
-  local menuScale = inst("UIScale", { Scale = 1, Parent = menuGui })
-  responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
+  local menuScale = inst("UIScale", { Scale = 1, Parent = menuGui }); responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
   local function updateResponsiveScale()
     local size = viewport(); responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
     menuScale.Scale = responsiveScale.Scale
@@ -1195,9 +1189,8 @@ function ExodusUI.setup(deps)
     Parent = screenGui,
   })
   corner(floatingButton, 999); local floatingStroke = stroke(floatingButton, C.accent, 2)
-  registerFlow(floatingStroke)
-  local config = Utils.getConfig(); local clashX = config.ClashBallX or 14
-  local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
+  registerFlow(floatingStroke); local config = Utils.getConfig()
+  local clashX = config.ClashBallX or 14; local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
   clashBall = inst("TextButton", {
     Name = "ExodusClashBall",
     Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE),
@@ -2056,10 +2049,8 @@ function ExodusUI.setup(deps)
   end
   setSpam(Utils.isManualSpamActive(), true)
   if restoreMinimized then
-    UIState.reopenAllowed = true
-    floatingButton.Visible = true
-    floatingButton.BackgroundTransparency = 0.1
-    floatingButton.TextTransparency = 0
+    UIState.reopenAllowed = true; floatingButton.Visible = true
+    floatingButton.BackgroundTransparency = 0.1; floatingButton.TextTransparency = 0
   else
     togglePanel()
   end
