@@ -32,6 +32,21 @@ local function allowed(guard)
   local result = guard(); return result ~= nil and result ~= false
 end
 
+local function finite(value)
+  return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+end
+
+local function fireDeflect(ability)
+  local before = gameInfo.getLastDeflectPressAt()
+  local sent, detail = send(ability, CONFIG.PARRY_METHOD)
+  if not sent then return false, detail end
+  local after = gameInfo.getLastDeflectPressAt()
+  if not finite(after) or (finite(before) and after <= before + 0.001) or (not finite(before) and after <= 0) then
+    return false, "Deflect não aceito pelo cliente"
+  end
+  return true, detail
+end
+
 -- public-api
 function Remote.fireParry(_flag, guard)
   if not gameInfo then return false, "Remote não inicializado" end
@@ -42,7 +57,7 @@ function Remote.fireParry(_flag, guard)
   local ability = gameInfo.getDeflectAbility()
   if not ability then return false, "Deflect indisponível" end
   if not allowed(guard) then return false, "Deflect cancelado" end
-  local sent, detail = send(ability, CONFIG.PARRY_METHOD); return sent, detail
+  local sent, detail = fireDeflect(ability); return sent, detail
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
@@ -60,6 +75,7 @@ Remote.__contract = {
       "isTrainingArea",
       "fireTrainingParry",
       "getDeflectAbility",
+      "getLastDeflectPressAt",
       "getDarkSealAbility",
       "getFierceDeflectAbility",
       "getDashAbility",
