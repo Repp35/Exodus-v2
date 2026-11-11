@@ -188,13 +188,14 @@ local function shouldActivate(s, snapshot, time)
   if not utils.isActive() or utils.getConfigValue("AutoSpam") ~= true then return false end
   if not snapshot or snapshot.targetUncertain == true or gameInfo.getBallFrozen() == true or not s.pending then return false end
   if s.target ~= localPlayer.UserId or snapshot.targetId ~= localPlayer.UserId then return false end
-  if typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return false end
+  if typeof(snapshot.position) ~= "Vector3" then return false end
   local towardPlayer = s.root.Position - snapshot.position; local distance = towardPlayer.Magnitude
-  if distance <= 0 then return false end
-  local closingSpeed = snapshot.velocity:Dot(towardPlayer) / distance
-  if not finite(closingSpeed) or closingSpeed <= 0 then return false end
   local g = activationGeometry(s, snapshot, s.pending.partner, time)
   if not g or distance > g.fullRadius then return false end
+  if s.pending.fastReturn then return true end
+  if distance <= 0 or typeof(snapshot.velocity) ~= "Vector3" then return false end
+  local closingSpeed = snapshot.velocity:Dot(towardPlayer) / distance
+  if not finite(closingSpeed) or closingSpeed <= 0 then return false end
   if s.pending.startedNear then
     local timeToRange = math.max(0, distance - g.noWindowParryRadius) / closingSpeed
     if timeToRange > g.effectiveWindow then return false end
@@ -335,8 +336,9 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
       local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
       if not returnElapsed then return end
       local startedNear = (snapshot.position - s.root.Position).Magnitude <= g.fullRadius
-      if startedNear and returnElapsed > returnWindow(window, speed, CONFIG.ACTIVATION.RETURN) then return end
-      s.pending = { partner = previous, startedNear = startedNear }
+      local fastReturn = returnElapsed <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
+      if startedNear and not fastReturn then return end
+      s.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn }
     end
   end
 end
