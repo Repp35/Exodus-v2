@@ -2,7 +2,7 @@
 
 -- module
 local AutoParry = {}
-local utils, gameInfo, remote, autoParrySignature
+local utils, gameInfo, remote
 local state = {
   phase = "detached",
   reason = "initial",
@@ -125,8 +125,7 @@ local function activeWindowFactor(at)
   if state.lastAutoParryClickAt and finite(at) and at > state.lastAutoParryClickAt then local interval = at - state.lastAutoParryClickAt; cps = interval > 0 and 1 / interval or math.huge end
   state.windowFactor = math.clamp(factorForCps(cps), 0, 1); return state.windowFactor
 end
-local function recordAutoParryRemote(signature)
-  if signature ~= autoParrySignature then return end
+local function recordAutoParryRequest()
   local now, previous = clock(), state.lastAutoParryClickAt; local interval = previous and now - previous or nil
   state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(factorForCps(state.autoParryCps), 0, 1)
 end
@@ -217,7 +216,8 @@ local function request(reason)
       and not boundUtils.isSpamActive()
       and (reason == "manual_parry" or boundUtils.getConfigValue("AutoParry") ~= false)
   end
-  local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed, autoParrySignature)
+  recordAutoParryRequest()
+  local ok, sent, detail = pcall(boundRemote.fireParry, 1, allowed)
   if not ok then detail, sent = sent, false end
   if not sameCycle() then return false end
   if sent ~= true then
@@ -278,14 +278,10 @@ function AutoParry.setup(deps)
       if type(deps[name][method]) ~= "function" then return false, "dependência ausente: " .. name .. "." .. method end
     end
   end
-  if remote and type(remote.setParryObserver) == "function" then remote.setParryObserver(nil) end
   detach("setup"); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote
   state.player = utils.getLocalPlayer()
   if not state.player then return false, "Players.LocalPlayer indisponível" end
-  autoParrySignature = remote.getAutoParrySignature()
-  if type(autoParrySignature) ~= "table" then return false, "assinatura do AutoParry indisponível" end
-  resetTracking(); local observed, detail = remote.setParryObserver(recordAutoParryRemote)
-  if observed ~= true then autoParrySignature = nil; return false, tostring(detail or "observador do AutoParry indisponível") end
+  resetTracking()
   phase("detached", "setup_complete"); return true
 end
 function AutoParry.bindCharacter(character)
@@ -351,7 +347,7 @@ function AutoParry.resetState() detach("reset") end
 function AutoParry.detachCharacter() detach("detach") end
 function AutoParry.teardown()
   if remote and type(remote.setParryObserver) == "function" then remote.setParryObserver(nil) end
-  detach("teardown"); utils, gameInfo, remote, state.player, autoParrySignature = nil, nil, nil, nil, nil
+  detach("teardown"); utils, gameInfo, remote, state.player = nil, nil, nil, nil
 end
 
 -- ball-sync
@@ -566,7 +562,7 @@ end
 AutoParry.__contract = {
   requires = { Remote = "remote", GameInfo = "gameinfo", Utils = "utils" },
   requiresMethods = {
-    Remote = { "getAutoParrySignature", "setParryObserver", "fireParry" },
+    Remote = { "fireParry" },
     GameInfo = {
       "getSnapshotAt",
       "isSnapshotValid",
