@@ -990,8 +990,7 @@ function ExodusUI.setup(deps)
   Utils = deps.Utils; UIConfig = deps.UIConfig
   GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam
   Controls = type(deps.Controls) == "table" and deps.Controls or {}; local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
-  local restoreMinimized = UIState.reopenAllowed == true
-    or (not UIState.initialized and _G.ExodusLoaderSessionToken ~= nil)
+  local restoreMinimized = UIState.reopenAllowed == true or (not UIState.initialized and _G.ExodusLoaderSessionToken ~= nil)
   if type(_G.ExodusUICleanup) == "function" then
     if type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
     _G.ExodusUICleanup()
@@ -2049,8 +2048,7 @@ function ExodusUI.setup(deps)
   for _, property in ipairs({ "KeyboardEnabled", "MouseEnabled", "TouchEnabled" }) do
     trackConn(UIS:GetPropertyChangedSignal(property):Connect(refreshDevice))
   end
-  setSpam(Utils.isManualSpamActive(), true)
-  UIState.initialized = true
+  setSpam(Utils.isManualSpamActive(), true); UIState.initialized = true
   if restoreMinimized then
     UIState.reopenAllowed = true; floatingButton.Visible = true
     floatingButton.BackgroundTransparency = 0.1; floatingButton.TextTransparency = 0
