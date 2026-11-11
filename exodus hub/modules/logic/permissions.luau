@@ -50,7 +50,7 @@ local CONFIG = {
       },
     },
     remote = {
-      provide = allow("setup getAutoParrySignature setParryObserver fireParry fireDark fireFierce fireDash"),
+      provide = allow("setup fireParry fireDark fireFierce fireDash"),
       consume = {
         gameinfo = allow("isTrainingArea fireTrainingParry getDeflectAbility getDarkSealAbility getFierceDeflectAbility getDashAbility"),
       },
@@ -66,7 +66,7 @@ local CONFIG = {
         gameinfo = allow(
           "getBallPosition getBallVelocity getDeflectCooldownState getDeflectGeometry getDeflectRangeParameters getProjectedDeflectRadius getAveragePing getRootPosition getSnapshotAt getSyncData getSyncSequence getTargetId isSnapshotValid"
         ),
-        remote = allow("getAutoParrySignature setParryObserver fireParry"),
+        remote = allow("fireParry"),
       },
     },
     autospam = {
@@ -192,9 +192,18 @@ local function validate(name, module)
   for key, value in pairs(module) do
     if type(value) == "function" and not entry.provide[key] then deny(name, "api.expose." .. tostring(key)) end
   end
+  local declared = {}
   for _, method in ipairs(contract.provides) do
+    if type(method) ~= "string" or declared[method] then error(name .. ": método declarado inválido ou duplicado: " .. tostring(method), 2) end
+    declared[method] = true
     if not entry.provide[method] then deny(name, "api.expose." .. tostring(method)) end
     if type(module[method]) ~= "function" then error(name .. ": API declarada ausente: " .. method, 2) end
+  end
+  for method in pairs(entry.provide) do
+    if not declared[method] then error(name .. ": política expõe método não declarado: " .. method, 2) end
+  end
+  for key, value in pairs(module) do
+    if type(value) == "function" and not declared[key] then error(name .. ": função não declarada no contrato: " .. tostring(key), 2) end
   end
   local requires, requirements, versions = contract.requires or {}, contract.requiresMethods or {}, contract.requiresVersions or {}
   if type(requires) ~= "table" or type(requirements) ~= "table" or type(versions) ~= "table" then error(name .. ": dependências inválidas", 2) end
