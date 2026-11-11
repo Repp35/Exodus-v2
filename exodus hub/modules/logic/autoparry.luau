@@ -47,8 +47,8 @@ local state = {
 	awayTarget = nil,
 }
 
--- tuning
-local T = {
+-- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
+local CONFIG = {
 	DEFAULT_WINDOW_FACTOR = 0.8,
 	CPS_BOOST_START = 2,
 	CPS_BOOST_FULL = 2.5,
@@ -91,7 +91,7 @@ local function resetTracking()
 	state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false
 	state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
 	state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0
-	state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, T.DEFAULT_WINDOW_FACTOR
+	state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
 	state.awayAt, state.awayTarget = nil, nil
 	table.clear(state.clicks); table.clear(state.returns)
 end
@@ -118,12 +118,12 @@ local function resilience()
 	}
 end
 local function configuredFactor()
-	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, 1) or T.DEFAULT_WINDOW_FACTOR
+	local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, 1) or CONFIG.DEFAULT_WINDOW_FACTOR
 end
 local function factorForCps(cps)
 	local base = configuredFactor()
-	if not finite(cps) or cps <= T.CPS_BOOST_START then return base end
-	local span = T.CPS_BOOST_FULL - T.CPS_BOOST_START; local progress = span > 0 and math.clamp((cps - T.CPS_BOOST_START) / span, 0, 1) or 1; return base + (1 - base) * progress
+	if not finite(cps) or cps <= CONFIG.CPS_BOOST_START then return base end
+	local span = CONFIG.CPS_BOOST_FULL - CONFIG.CPS_BOOST_START; local progress = span > 0 and math.clamp((cps - CONFIG.CPS_BOOST_START) / span, 0, 1) or 1; return base + (1 - base) * progress
 end
 local function activeWindowFactor(at)
 	local cps = state.autoParryCps
@@ -135,7 +135,7 @@ local function recordAutoParryRemote(signature)
 	local now, previous = clock(), state.lastAutoParryClickAt; local interval = previous and now - previous or nil; state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0
 	state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(factorForCps(state.autoParryCps), 0, 1)
 end
-local function minimumBallSpeed() return T.MIN_PARRY_SPEED end
+local function minimumBallSpeed() return CONFIG.MIN_PARRY_SPEED end
 local function radius(speed, factor, baseWindow)
 	speed = finite(speed) and math.max(speed, 0) or 0; factor = tonumber(factor)
 	if not finite(factor) then factor = activeWindowFactor(clock()) end
@@ -148,7 +148,7 @@ local function samplePing()
 end
 local function appendRecent(list, item)
 	list[#list + 1] = item
-	if #list > T.PRESSURE_SAMPLE_LIMIT then table.remove(list, 1) end
+	if #list > CONFIG.PRESSURE_SAMPLE_LIMIT then table.remove(list, 1) end
 end
 local function trajectory(position, velocity, rootPosition, nominalSpeed, geometry)
 	local delta = rootPosition - position; local distance = delta.Magnitude; local magnitude = velocity.Magnitude; local closing = 0
@@ -162,11 +162,11 @@ end
 
 -- target-sync
 local function sequenceOrder(incoming)
-	if not finite(incoming) or incoming < 0 or incoming >= T.TARGET_SEQUENCE_MODULUS or incoming % 1 ~= 0 then return nil end
+	if not finite(incoming) or incoming < 0 or incoming >= CONFIG.TARGET_SEQUENCE_MODULUS or incoming % 1 ~= 0 then return nil end
 	if state.sequence == nil then return "new" end
-	local delta = (incoming - state.sequence) % T.TARGET_SEQUENCE_MODULUS
+	local delta = (incoming - state.sequence) % CONFIG.TARGET_SEQUENCE_MODULUS
 	if delta == 0 then return "same" end
-	return delta < T.TARGET_SEQUENCE_HALF and "new" or "old"
+	return delta < CONFIG.TARGET_SEQUENCE_HALF and "new" or "old"
 end
 local function observeTarget(target, time)
 	if not state.player or not finite(target) then return end
@@ -303,7 +303,7 @@ function AutoParry.bindCharacter(character)
 	resetTracking(); phase("waiting", "character_bound"); gameInfo.getDeflectCooldownState()
 	track(signal:Connect(function(deltaTime)
 		if generation ~= state.generation then return end
-		if finite(deltaTime) and deltaTime >= 0 then state.frameAllowance = math.clamp(deltaTime - T.FRAME_BASE, 0, T.MAX_FRAME_ALLOWANCE) end
+		if finite(deltaTime) and deltaTime >= 0 then state.frameAllowance = math.clamp(deltaTime - CONFIG.FRAME_BASE, 0, CONFIG.MAX_FRAME_ALLOWANCE) end
 		tick(character, root, generation)
 	end))
 	track(character.AncestryChanged:Connect(function(_, parent)
@@ -371,7 +371,7 @@ function AutoParry.onBallSync(data)
 		state.teleported, state.teleportSequence = true, sequence
 		state.lastBall = nil
 		state.speed, state.distance, state.approaching = 0, 0, false
-		state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, T.DEFAULT_WINDOW_FACTOR
+		state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
 		state.awayAt, state.awayTarget = nil, nil
 		table.clear(state.clicks); table.clear(state.returns); phase("waiting", "teleport_lock"); return true
 	end
@@ -457,7 +457,7 @@ function AutoParry.getPressure()
 	local time, count, factors, configured, speeds, ratios = clock(), 0, 0, 0, 0, 0
 	for i = #state.clicks, 1, -1 do
 		local item = state.clicks[i]
-		if time < item.at or time - item.at > T.PRESSURE_WINDOW then
+		if time < item.at or time - item.at > CONFIG.PRESSURE_WINDOW then
 			table.remove(state.clicks, i)
 		else
 			count += 1
@@ -468,7 +468,7 @@ function AutoParry.getPressure()
 	local returns, intervals = 0, 0
 	for i = #state.returns, 1, -1 do
 		local item = state.returns[i]
-		if time < item.at or time - item.at > T.PRESSURE_WINDOW then table.remove(state.returns, i) else returns += 1; intervals += item.interval end
+		if time < item.at or time - item.at > CONFIG.PRESSURE_WINDOW then table.remove(state.returns, i) else returns += 1; intervals += item.interval end
 	end
 	local latest, lastReturn = state.clicks[#state.clicks], state.returns[#state.returns]
 	local currentLevel, factorDrop
@@ -478,7 +478,7 @@ function AutoParry.getPressure()
 	end
 	return {
 		samples = count,
-		cps = count / T.PRESSURE_WINDOW,
+		cps = count / CONFIG.PRESSURE_WINDOW,
 		averageFactor = count > 0 and factors / count or nil,
 		configuredFactor = count > 0 and configured / count or nil,
 		averageSpeed = count > 0 and speeds / count or nil,
@@ -492,7 +492,7 @@ function AutoParry.getPressure()
 	}
 end
 function AutoParry.getStatus()
-	local geometry = AutoParry.getRadius("geometry", utils and activeWindowFactor(clock()) or T.DEFAULT_WINDOW_FACTOR); local target = AutoParry.getTargetStatus()
+	local geometry = AutoParry.getRadius("geometry", utils and activeWindowFactor(clock()) or CONFIG.DEFAULT_WINDOW_FACTOR); local target = AutoParry.getTargetStatus()
 	return {
 		schema = utils and utils.apiVersion() or nil,
 		api = {
@@ -500,7 +500,7 @@ function AutoParry.getStatus()
 			version = 11,
 			endpoints = { "getRadius", "getTiming", "getStatus", "getTargetStatus" },
 			radiusModes = { "geometry", "tti", "speed_distance" },
-			defaultWindowFactor = T.DEFAULT_WINDOW_FACTOR,
+			defaultWindowFactor = CONFIG.DEFAULT_WINDOW_FACTOR,
 			windowFactorRange = { min = 0, max = 1 },
 		},
 
@@ -535,14 +535,14 @@ function AutoParry.getStatus()
 		ping = { oneWay = state.ping, raw = state.pingRaw, samples = state.pingCount },
 		cps = state.autoParryCps,
 		windowFactor = state.windowFactor,
-		cpsGate = { boostStart = T.CPS_BOOST_START, fullBoost = T.CPS_BOOST_FULL },
+		cpsGate = { boostStart = CONFIG.CPS_BOOST_START, fullBoost = CONFIG.CPS_BOOST_FULL },
 		target = target,
 		pressure = AutoParry.getPressure(),
 		cycle = { fired = state.fired, armed = not state.fired, lastFireAt = state.lastFireAt, lastTTI = geometry.tti },
 		config = {
 			baseRadius = geometry.pureRadius,
 			baseWindow = geometry.deflectWindow,
-			defaultWindowFactor = T.DEFAULT_WINDOW_FACTOR,
+			defaultWindowFactor = CONFIG.DEFAULT_WINDOW_FACTOR,
 			windowFactorRange = { min = 0, max = 1 },
 			minBallSpeed = minimumBallSpeed(),
 		},

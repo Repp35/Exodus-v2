@@ -4,6 +4,11 @@
 local AutoDark = {}
 local utils, remote, gameInfo, world
 
+-- CONFIGURACAO DESTE MODULO
+local CONFIG = {
+    REQUIRE_ABILITIES_ENABLED = true, -- valida habilidades na partida
+}
+
 -- state
 local connection
 
@@ -19,7 +24,7 @@ function AutoDark.sync()
 	local runService = utils.getRunService()
 	if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
 	connection = runService.Heartbeat:Connect(function()
-		if not utils.getConfigValue("AutoDark") or not gameInfo.areAbilitiesEnabled() then return end
+		if not utils.getConfigValue("AutoDark") or (CONFIG.REQUIRE_ABILITIES_ENABLED and not gameInfo.areAbilitiesEnabled()) then return end
 		local camera = world.CurrentCamera
 		if camera then remote.fireDark(gameInfo.getDarkSealEventId(), camera.CFrame) end
 	end)

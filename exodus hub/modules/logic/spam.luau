@@ -8,9 +8,12 @@ local function traceback(err) return debug.traceback(tostring(err), 2) end
 -- state
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
-local MAX_DELAY_DEBT = 0.2
-local POLL_INTERVAL = 0.01
-local ERROR_RETRY_INTERVAL = 0.03
+-- CONFIGURACAO DESTE MODULO: tempos em segundos
+local CONFIG = {
+    MAX_DELAY_DEBT = 0.2, -- atraso acumulado maximo
+    POLL_INTERVAL = 0.01, -- verificacao de envio
+    ERROR_RETRY_INTERVAL = 0.03, -- espera apos erro
+}
 local nextAllowedAt = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
 
@@ -66,10 +69,10 @@ local function sync()
 			local due = os.clock()
 			while guard() do
 				local time = os.clock(); local minimum = boundGameInfo.getMinimumSpamInterval(); local interval = mode ~= "Auto" and math.max(1 / (mode == "CPF" and rate * 60 or rate), minimum) or nil
-				if interval then due = math.max(due, time - MAX_DELAY_DEBT) end
+				if interval then due = math.max(due, time - CONFIG.MAX_DELAY_DEBT) end
 				local gameDelay = boundGameInfo.getAutoSpamDelay()
 				if inFlight or (mode == "Auto" and gameDelay == nil) then
-					task.wait(POLL_INTERVAL)
+					task.wait(CONFIG.POLL_INTERVAL)
 				else
 					local readyAt = math.max(nextAllowedAt, interval and due or time)
 					if type(gameDelay) == "number" and gameDelay == gameDelay and gameDelay > 0 and gameDelay < math.huge then readyAt = math.max(readyAt, time + gameDelay) end
@@ -77,7 +80,7 @@ local function sync()
 						request(boundUtils, boundRemote, token, guard, minimum)
 						if interval then due += interval end
 					else
-						task.wait(math.clamp(readyAt - time, 1 / 240, POLL_INTERVAL))
+						task.wait(math.clamp(readyAt - time, 1 / 240, CONFIG.POLL_INTERVAL))
 					end
 				end
 			end
@@ -91,7 +94,7 @@ local function sync()
 				if not reported then warn("[Spam] " .. tostring(reportError)) end
 			end
 			local retryToken = generation
-			task.delay(ERROR_RETRY_INTERVAL, function()
+			task.delay(CONFIG.ERROR_RETRY_INTERVAL, function()
 				if retryToken == generation and utils == boundUtils and boundUtils.isActive() then sync() end
 			end)
 		end

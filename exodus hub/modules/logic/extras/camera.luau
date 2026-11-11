@@ -1,5 +1,11 @@
 -- [[ camera sensitivity ]]
 
+-- CONFIGURACAO DESTE MODULO
+local CONFIG = {
+    DEFAULT_SENSITIVITY = 1, -- se nao houver valor salvo
+    MODULE_SEARCH_RETRY = 0.5, -- segundos entre tentativas
+}
+
 -- state
 local Camera = {}
 local utils, runService
@@ -38,7 +44,7 @@ local function startCamera()
 				end
 				cameraWrapped = wrapped; cameraInput.getRotation = cameraWrapped; return
 			end
-			task.wait(0.5)
+			task.wait(CONFIG.MODULE_SEARCH_RETRY)
 		end
 	end)
 end
@@ -48,9 +54,9 @@ function Camera.setup(deps)
 	if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
 	Camera.teardown(); utils = deps.Utils; runService = utils.getRunService()
 	if not runService then return false, "RunService indisponível" end
-	sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or 1; startCamera()
+	sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or CONFIG.DEFAULT_SENSITIVITY; startCamera()
 	configConnection = utils.observeConfig(function(changes)
-		if changes.CameraSensitivity ~= nil then sensitivity = tonumber(changes.CameraSensitivity) or 1 end
+		if changes.CameraSensitivity ~= nil then sensitivity = tonumber(changes.CameraSensitivity) or CONFIG.DEFAULT_SENSITIVITY end
 	end)
 	utils.trackGlobal(configConnection); return true
 end

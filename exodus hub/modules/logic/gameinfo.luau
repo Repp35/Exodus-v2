@@ -12,8 +12,8 @@ local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 local ballData, dashAnimation
 
--- tuning
-local T = {
+-- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
+local CONFIG = {
 	MIN_SPEED = 16,
 	MAX_SPEED = 600,
 	PACKET_AGE = 0.5,
@@ -38,10 +38,8 @@ local T = {
 	PING_SAMPLE_COUNT = 8,
 	TARGET_CONFIRM_INTERVAL = 1 / 60,
 	TARGET_HOLD_TIME = 0.1,
-}
-
--- game-identifiers
-local GAME_IDS = {
+	-- Identificadores do jogo: edite somente se a API mudar.
+	GAME_IDS = {
 	DEFLECT = 1,
 	DASH = 2,
 	FIERCE = 19,
@@ -56,10 +54,11 @@ local GAME_IDS = {
 	CRATE_CHECK = 4.702176977990345e76,
 	CRATE_OWNED = 1.796923298985336e75,
 	CRATE_NEW = 1.0038569313364564e77,
+	},
 }
 
 -- runtime-state
-local minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0
+local minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
 local errors, cooldownConnection, parriedConnection = {}, nil, nil
 local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
 local cooldown, signalAt, heldAt, missingAt, warningAt
@@ -151,7 +150,7 @@ local function getReplicator()
 end
 local function syncData(provider)
 	if provider == nil then provider = getReplicator() end
-	if packet and os.clock() - packetAt > T.PACKET_AGE then packet = nil end
+	if packet and os.clock() - packetAt > CONFIG.PACKET_AGE then packet = nil end
 	if packet then
 		local sequence = provider and provider.hasState == true and provider.lastSeq
 		if type(sequence) ~= "number" or (packet.Sequence ~= sequence and (packet.Sequence - sequence) % 65536 < 32768) then return packet end
@@ -198,7 +197,7 @@ local function targetId(data, currentBall)
 			targetEvidence.uncertain = true
 		elseif
 			(targetFrameConnection and targetEvidence.pendingFrame ~= targetFrame)
-			or (not targetFrameConnection and targetEvidence.pendingAt and time - targetEvidence.pendingAt >= T.TARGET_CONFIRM_INTERVAL)
+			or (not targetFrameConnection and targetEvidence.pendingAt and time - targetEvidence.pendingAt >= CONFIG.TARGET_CONFIRM_INTERVAL)
 		then
 			targetEvidence.stable, targetEvidence.observedAt = candidate, time
 			targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.source = nil, nil, nil, source
@@ -208,7 +207,7 @@ local function targetId(data, currentBall)
 		targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = nil, nil, nil
 		targetEvidence.uncertain = true
 	end
-	if targetEvidence.stable and targetEvidence.observedAt and time - targetEvidence.observedAt <= T.TARGET_HOLD_TIME then return targetEvidence.stable end
+	if targetEvidence.stable and targetEvidence.observedAt and time - targetEvidence.observedAt <= CONFIG.TARGET_HOLD_TIME then return targetEvidence.stable end
 	targetEvidence.stable, targetEvidence.source, targetEvidence.uncertain = nil, nil, true
 	return -1
 end
@@ -220,7 +219,7 @@ end
 local function getBall()
 	if ball and ball.Parent then return ball end
 	if watching and os.clock() < searchAt then return nil end
-	ball, searchAt = findBall(), os.clock() + T.BALL_SEARCH_INTERVAL; return ball
+	ball, searchAt = findBall(), os.clock() + CONFIG.BALL_SEARCH_INTERVAL; return ball
 end
 local function disconnect(connection)
 	if connection then
@@ -303,7 +302,7 @@ function GameInfo.startMaintenance(options)
 			if not options.isActive() or token ~= maintenance then break end
 			local linked = type(options.onBallSync) == "function" and GameInfo.bindBallSync(options.onBallSync)
 			if token ~= maintenance then break end
-			task.wait(linked and T.SYNC_CONNECTED_INTERVAL or T.SYNC_RETRY_INTERVAL)
+			task.wait(linked and CONFIG.SYNC_CONNECTED_INTERVAL or CONFIG.SYNC_RETRY_INTERVAL)
 		end
 	end)
 	return true
@@ -322,7 +321,7 @@ function GameInfo.setup(deps)
 	GameInfo.stopMaintenance(); disconnect(cooldownConnection); disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil; utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
 	if not players or not world then return false, "dependência ausente: Players ou Workspace" end
 	ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil; abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0; sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil
-	trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil; minimumSpeed, maximumSpeed, speedAt = T.MIN_SPEED, T.MAX_SPEED, 0; errors = {}; pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }; targetFrame = 0; local service = utils.getRunService()
+	trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil; minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}; pingSamples, pingSum, pingSampleAt, pingRaw = {}, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }; targetFrame = 0; local service = utils.getRunService()
 	if service and service.Heartbeat then
 		targetFrameConnection = service.Heartbeat:Connect(function()
 			targetFrame += 1
@@ -338,11 +337,11 @@ function GameInfo.getRootPosition(root) return root.Position end
 function GameInfo.getLocalPing() return players.LocalPlayer and players.LocalPlayer:GetNetworkPing() or nil end
 function GameInfo.getAveragePing()
 	local time = os.clock()
-	if pingSampleAt == nil or time < pingSampleAt or time - pingSampleAt >= T.PING_SAMPLE_INTERVAL then
+	if pingSampleAt == nil or time < pingSampleAt or time - pingSampleAt >= CONFIG.PING_SAMPLE_INTERVAL then
 		pingSampleAt = time; local value = GameInfo.getLocalPing()
 		if finite(value) and value >= 0 then
 			pingRaw = value; pingSamples[#pingSamples + 1] = value; pingSum += value
-			if #pingSamples > T.PING_SAMPLE_COUNT then pingSum -= table.remove(pingSamples, 1) end
+			if #pingSamples > CONFIG.PING_SAMPLE_COUNT then pingSum -= table.remove(pingSamples, 1) end
 		end
 	end
 	return #pingSamples > 0 and pingSum / #pingSamples or 0, pingRaw, #pingSamples
@@ -354,7 +353,7 @@ end
 local function generatedRemote(id)
 	local root = ts(); local remotes = child(child(root, "Network"), "GeneratedNetworkRemotes") or child(root, "GeneratedNetworkRemotes"); local remote = child(remotes, "RE_" .. tostring(id)); return remote and remote:IsA("RemoteEvent") and remote or nil
 end
-function GameInfo.getHaunterEvent() return generatedRemote(GAME_IDS.HAUNTER_REMOTE) end
+function GameInfo.getHaunterEvent() return generatedRemote(CONFIG.GAME_IDS.HAUNTER_REMOTE) end
 local function playerRoot(id)
 	local player = type(id) == "number" and players:GetPlayerByUserId(id); local character = player and player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
 	if root and root.Parent then return root, character end
@@ -370,7 +369,7 @@ function GameInfo.getPlayerDistance(id)
 	if not ownRoot or not ownRoot.Parent or not otherRoot then return nil end
 	return (ownRoot.Position - otherRoot.Position).Magnitude
 end
-function GameInfo.getDeflectRangeParameters() return T.RANGE_BASE, T.RANGE_BONUS_SPAN, sharedLayout() and 0.1125 or T.RANGE_BONUS_STEP end
+function GameInfo.getDeflectRangeParameters() return CONFIG.RANGE_BASE, CONFIG.RANGE_BONUS_SPAN, sharedLayout() and 0.1125 or CONFIG.RANGE_BONUS_STEP end
 function GameInfo.getDeflectRange()
 	local player = players.LocalPlayer; local range = player and player:GetAttribute("DeflectRange") or nil
 	if sharedLayout() and player and type(GameInfo.getPlayerDeflectRange) == "function" then return GameInfo.getPlayerDeflectRange(player.UserId) end
@@ -380,13 +379,13 @@ function GameInfo.getPlayerDeflectRange(id)
 	local player = type(id) == "number" and players:GetPlayerByUserId(id)
 	if not player then return nil end
 	local range = player:GetAttribute("DeflectRange")
-	if not finite(range) then return T.RANGE_BASE end
-	range = math.clamp(range, T.RANGE_BASE, T.RANGE_BASE + T.RANGE_BONUS_SPAN)
-	if sharedLayout() and range > T.RANGE_BASE and type(GameInfo.getClashContext) == "function" then
+	if not finite(range) then return CONFIG.RANGE_BASE end
+	range = math.clamp(range, CONFIG.RANGE_BASE, CONFIG.RANGE_BASE + CONFIG.RANGE_BONUS_SPAN)
+	if sharedLayout() and range > CONFIG.RANGE_BASE and type(GameInfo.getClashContext) == "function" then
 		local context = GameInfo.getClashContext(); local own = players.LocalPlayer
 		if context and own and (id == own.UserId or id == context.partnerId) then
 			local distance = GameInfo.getPlayerDistance(context.partnerId)
-			if finite(distance) and distance <= math.max(20, range + 8) then return T.RANGE_BASE end
+			if finite(distance) and distance <= math.max(20, range + 8) then return CONFIG.RANGE_BASE end
 		end
 	end
 	return range
@@ -398,7 +397,7 @@ function GameInfo.getPlayerRawRadius(id, speed, includePing)
 	if not finite(latency) or latency < 0 then latency = 0 end
 	return range + (finite(speed) and math.max(0, speed) * latency or 0)
 end
-function GameInfo.getDeflectAbility() return getAbility(GAME_IDS.DEFLECT, "Deflect") end
+function GameInfo.getDeflectAbility() return getAbility(CONFIG.GAME_IDS.DEFLECT, "Deflect") end
 function GameInfo.getLastDeflectPressAt()
 	local ability = GameInfo.getDeflectAbility()
 	if not ability then return nil end
@@ -413,11 +412,11 @@ function GameInfo.getLastDeflectPressAt()
 	end
 	return latest and (os.clock() - (1 - latest)) or 0
 end
-function GameInfo.getMinimumSpamInterval() return T.SPAM_MIN_INTERVAL end
+function GameInfo.getMinimumSpamInterval() return CONFIG.SPAM_MIN_INTERVAL end
 function GameInfo.getAutoSpamDelay()
 	local ability = GameInfo.getDeflectAbility()
 	if not ability then return nil end
-	local time = os.clock(); local last = ability.LastPressClock; local delay = finite(last) and math.max(0, T.SPAM_MIN_INTERVAL - (time - last)) or 0; local limit = world:GetAttribute("CPS_LIMIT")
+	local time = os.clock(); local last = ability.LastPressClock; local delay = finite(last) and math.max(0, CONFIG.SPAM_MIN_INTERVAL - (time - last)) or 0; local limit = world:GetAttribute("CPS_LIMIT")
 	if not finite(limit) then limit = 50 end
 	limit = math.floor(limit)
 	if limit <= 0 then return nil end
@@ -433,7 +432,7 @@ function GameInfo.getAutoSpamDelay()
 	end
 	return delay
 end
-function GameInfo.getDashAbility() return getAbility(GAME_IDS.DASH, "Dash") end
+function GameInfo.getDashAbility() return getAbility(CONFIG.GAME_IDS.DASH, "Dash") end
 function GameInfo.isPlayerDashing(player)
 	if not player then return false end
 	if player == players.LocalPlayer then local ability = GameInfo.getDashAbility(); return ability ~= nil and ability.Dashing == true end
@@ -449,17 +448,17 @@ function GameInfo.isPlayerDashing(player)
 	end
 	return false
 end
-function GameInfo.getFierceDeflectAbility() return getAbility(GAME_IDS.FIERCE, "ActivateAndBlock") end
-function GameInfo.getDarkSealAbility() return getAbility(GAME_IDS.DARK, "SendEvent") end
+function GameInfo.getFierceDeflectAbility() return getAbility(CONFIG.GAME_IDS.FIERCE, "ActivateAndBlock") end
+function GameInfo.getDarkSealAbility() return getAbility(CONFIG.GAME_IDS.DARK, "SendEvent") end
 function GameInfo.getDeflectServerEvents()
-	local first, second = generatedRemote(GAME_IDS.COOLDOWN_REMOTE), generatedRemote(GAME_IDS.PARRIED_REMOTE)
+	local first, second = generatedRemote(CONFIG.GAME_IDS.COOLDOWN_REMOTE), generatedRemote(CONFIG.GAME_IDS.PARRIED_REMOTE)
 	if not first then return nil end
 	return { cooldown = first.OnClientEvent, parried = second and second.OnClientEvent or nil }
 end
 function GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
-	if abilityId ~= GAME_IDS.DEFLECT then return nil end
-	if eventId == GAME_IDS.COOLDOWN_EVENT and finite(value) then return value > 0 and "started" or "reset", math.max(value, 0) end
-	if eventId == GAME_IDS.COOLDOWN_STOP then return "stopped", 0 end
+	if abilityId ~= CONFIG.GAME_IDS.DEFLECT then return nil end
+	if eventId == CONFIG.GAME_IDS.COOLDOWN_EVENT and finite(value) then return value > 0 and "started" or "reset", math.max(value, 0) end
+	if eventId == CONFIG.GAME_IDS.COOLDOWN_STOP then return "stopped", 0 end
 	return nil
 end
 function GameInfo.getHeldDeflectServerCooldown()
@@ -477,7 +476,7 @@ function GameInfo.getDeflectCooldownState()
 	end
 	if parriedConnection and parriedConnection.Connected == false then disconnect(parriedConnection); parriedConnection = nil end
 	if not cooldownConnection and time >= signalAt then
-		signalAt = time + T.COOLDOWN_RETRY; local signals = GameInfo.getDeflectServerEvents()
+		signalAt = time + CONFIG.COOLDOWN_RETRY; local signals = GameInfo.getDeflectServerEvents()
 		if signals and signals.cooldown then
 			cooldownConnection = signals.cooldown:Connect(function(abilityId, eventId, value)
 				local kind, duration = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
@@ -501,7 +500,7 @@ function GameInfo.getDeflectCooldownState()
 		end
 	end
 	if not cooldown.rawActive and time >= heldAt then
-		heldAt = time + T.HELD_COOLDOWN_INTERVAL; local duration, received = GameInfo.getHeldDeflectServerCooldown()
+		heldAt = time + CONFIG.HELD_COOLDOWN_INTERVAL; local duration, received = GameInfo.getHeldDeflectServerCooldown()
 		if duration and received and received <= time and time < received + duration and received > cooldown.lastEventAt + 0.01 then
 			cooldown.known, cooldown.rawActive, cooldown.lastEventAt, cooldown.endsAt = true, true, received, received + duration
 		end
@@ -631,11 +630,11 @@ local function snapshot(time)
 	time = type(time) == "number" and time or utils.now(); local provider = getReplicator(); local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData(provider or false)
 	if sampledBall ~= currentBall or (sync and sync.Teleported == true) then
 		sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = currentBall, position, time, Vector3.zero, nil
-	elseif sampledPosition and sampledAt and time - sampledAt >= T.SAMPLE_INTERVAL then
+	elseif sampledPosition and sampledAt and time - sampledAt >= CONFIG.SAMPLE_INTERVAL then
 		local elapsed = time - sampledAt; local displacement = position - sampledPosition
 		if displacement.Magnitude > 0.001 then
 			local measured, expected = displacement / elapsed, sync and tonumber(sync.Speed)
-			if elapsed <= T.SAMPLE_MAX_GAP and (not expected or expected <= 0 or measured.Magnitude <= expected * 2.5 + 30) then measuredVelocity, movedAt = measured, time else measuredVelocity, movedAt = Vector3.zero, nil end
+			if elapsed <= CONFIG.SAMPLE_MAX_GAP and (not expected or expected <= 0 or measured.Magnitude <= expected * 2.5 + 30) then measuredVelocity, movedAt = measured, time else measuredVelocity, movedAt = Vector3.zero, nil end
 		elseif movedAt and time - movedAt > 0.1 then
 			measuredVelocity = Vector3.zero
 		end
@@ -703,12 +702,12 @@ function GameInfo.installBallWatcher(track)
 	track((world.DescendantRemoving or world.ChildRemoved):Connect(function(item)
 		if ball == item then ball, searchAt = nil, 0 end
 	end))
-	ball, watching, searchAt = findBall(), true, os.clock() + T.BALL_SEARCH_INTERVAL; return true
+	ball, watching, searchAt = findBall(), true, os.clock() + CONFIG.BALL_SEARCH_INTERVAL; return true
 end
 function GameInfo.getBallSpeedLimits()
 	local time = os.clock()
 	if time < speedAt then return minimumSpeed, maximumSpeed end
-	speedAt = time + T.SPEED_REFRESH; local module = child(child(ts(), "Gameplay"), "GameBall")
+	speedAt = time + CONFIG.SPEED_REFRESH; local module = child(child(ts(), "Gameplay"), "GameBall")
 	if module ~= gameBallScript then gameBallScript, gameBall = module, nil end
 	if not module then return minimumSpeed, maximumSpeed end
 	if not gameBall then gameBall = load(module, "GameBall").GameBall end
@@ -724,14 +723,14 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
 		if sync and finite(sync.Speed) then speed = sync.Speed end
 	end
 	if not finite(speed) or high <= low then return nil end
-	local window = T.WINDOW_BASE - T.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer; local inClash = false
+	local window = CONFIG.WINDOW_BASE - CONFIG.WINDOW_SPREAD * math.clamp((speed - low) / (high - low), 0, 1); local player = players.LocalPlayer; local inClash = false
 	if gameBall and player and type(gameBall.IsInClash) == "function" then inClash = gameBall:IsInClash(player) == true end
 	if inClash and type(gameBall.GetClashMinWindow) == "function" then
 		local minimum = gameBall:GetClashMinWindow(speed)
 		if finite(minimum) then window = math.max(window, minimum) end
 	end
 	local range = GameInfo.getDeflectRange()
-	if not sharedLayout() and includeResilience ~= false and finite(range) then window += math.clamp((range - T.RANGE_BASE) / T.RANGE_BONUS_SPAN, 0, 1) * T.RANGE_WINDOW_BONUS end
+	if not sharedLayout() and includeResilience ~= false and finite(range) then window += math.clamp((range - CONFIG.RANGE_BASE) / CONFIG.RANGE_BONUS_SPAN, 0, 1) * CONFIG.RANGE_WINDOW_BONUS end
 	if inClash and type(gameBall.GetClashWindowScale) == "function" then
 		local scale = gameBall:GetClashWindowScale()
 		if finite(scale) and scale > 0 then window *= scale end
@@ -745,8 +744,8 @@ function GameInfo.getBallFrozen()
 end
 function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyOverride, options)
 	if not finite(speed) or speed < 0 then return nil end
-	options = type(options) == "table" and options or EMPTY_OPTIONS; local includeResilience = options.resilience ~= false; local range = includeResilience and GameInfo.getDeflectRange() or T.RANGE_BASE
-	if not finite(range) or range <= 0 then range = T.RANGE_BASE end
+	options = type(options) == "table" and options or EMPTY_OPTIONS; local includeResilience = options.resilience ~= false; local range = includeResilience and GameInfo.getDeflectRange() or CONFIG.RANGE_BASE
+	if not finite(range) or range <= 0 then range = CONFIG.RANGE_BASE end
 	if window == "ap" then
 		local low, high = GameInfo.getBallSpeedLimits()
 		if not finite(low) or not finite(high) or high <= low then return nil end
@@ -754,11 +753,11 @@ function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyO
 		if not finite(actual) then return nil end
 		window = math.max(
 			0,
-			actual + (T.AP_WINDOW_LOW_SPEED - T.WINDOW_BASE) * (1 - fraction) + (T.AP_WINDOW_HIGH_SPEED - (T.WINDOW_BASE - T.WINDOW_SPREAD)) * fraction
+			actual + (CONFIG.AP_WINDOW_LOW_SPEED - CONFIG.WINDOW_BASE) * (1 - fraction) + (CONFIG.AP_WINDOW_HIGH_SPEED - (CONFIG.WINDOW_BASE - CONFIG.WINDOW_SPREAD)) * fraction
 		)
 	elseif not finite(window) then
 		window = GameInfo.getDeflectWindow(speed, includeResilience)
-		if finite(window) then local minimum = finite(options.minimumWindow) and math.max(0, options.minimumWindow) or T.AP_WINDOW_HIGH_SPEED; window = math.max(window, minimum) end
+		if finite(window) then local minimum = finite(options.minimumWindow) and math.max(0, options.minimumWindow) or CONFIG.AP_WINDOW_HIGH_SPEED; window = math.max(window, minimum) end
 	end
 	if not finite(window) or window < 0 then return nil end
 	local latency = options.ping == false and 0 or (finite(latencyOverride) and latencyOverride or GameInfo.getAveragePing())
@@ -766,9 +765,9 @@ function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyO
 	factor = finite(factor) and math.max(0, factor) or 1; local base = range
 	return {
 		fullRadius = base + speed * (window + latency) * factor,
-		pureRadius = T.RANGE_BASE,
+		pureRadius = CONFIG.RANGE_BASE,
 		noWindowParryRadius = range,
-		resilienceBonus = range - T.RANGE_BASE,
+		resilienceBonus = range - CONFIG.RANGE_BASE,
 		pingRadius = speed * latency * factor,
 		deflectWindow = window,
 		effectiveWindow = (window + latency) * factor,
@@ -790,18 +789,18 @@ function GameInfo.isBallWithinDeflectRadius(factor)
 	if not finite(speed) or speed <= 0 then return false end
 	local geometry = GameInfo.getDeflectGeometry(speed, nil, factor, false); return geometry ~= nil and (snapshot.position - root.Position).Magnitude <= geometry.fullRadius
 end
-function GameInfo.getDarkSealEventId() return GAME_IDS.DARK_EVENT end
+function GameInfo.getDarkSealEventId() return CONFIG.GAME_IDS.DARK_EVENT end
 function GameInfo.createCrateNetwork()
 	local root = ts()
 	if not root then error("API externa ausente: Shared ou TS", 2) end
 	local network = root:WaitForChild("Network"):WaitForChild("Network"); return require(network).Network.new()
 end
 function GameInfo.spinCrate(network, crate, guard)
-	local owned = network:CSendFunction(GAME_IDS.CRATE_CHECK, crate)
+	local owned = network:CSendFunction(CONFIG.GAME_IDS.CRATE_CHECK, crate)
 	if type(guard) == "function" and not guard() then return false end
-	network:CSendEvent(owned == true and GAME_IDS.CRATE_OWNED or GAME_IDS.CRATE_NEW, crate); return true
+	network:CSendEvent(owned == true and CONFIG.GAME_IDS.CRATE_OWNED or CONFIG.GAME_IDS.CRATE_NEW, crate); return true
 end
-function GameInfo.getManifestRemote() return generatedRemote(GAME_IDS.MANIFEST_REMOTE) end
+function GameInfo.getManifestRemote() return generatedRemote(CONFIG.GAME_IDS.MANIFEST_REMOTE) end
 function GameInfo.getClashContext()
 	local player = players.LocalPlayer
 	if not player then return nil end

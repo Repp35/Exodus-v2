@@ -8,10 +8,15 @@ local replicated = game:GetService("ReplicatedStorage")
 local runService = game:GetService("RunService")
 local workspace = game:GetService("Workspace")
 local http = game:GetService("HttpService")
-local API_VERSION, VERSION, NAME, AUTHOR = 1, "3.0.0", "Exodus Hub", "delta"
-
--- tuning
-local T = { FOLDER = "Exodus Hub", HISTORY_LIMIT = 32 }
+-- CONFIGURACAO DESTE MODULO: identidade do hub e armazenamento
+local CONFIG = {
+    API_VERSION = 1, -- versao da API
+    VERSION = "3.0.0", -- versao exibida
+    NAME = "Exodus Hub", -- nome do hub
+    AUTHOR = "delta", -- nome do autor
+    FOLDER = "Exodus Hub", -- pasta de dados
+    HISTORY_LIMIT = 32, -- quantidade de registros
+}
 
 -- state
 local state = {
@@ -45,7 +50,7 @@ end
 local function snapshot(value) return type(value) == "table" and copy(value) or {} end
 local function append(list, value)
 	list[#list + 1] = value
-	if #list > T.HISTORY_LIMIT then table.remove(list, 1) end
+	if #list > CONFIG.HISTORY_LIMIT then table.remove(list, 1) end
 end
 local function setValues(target, source)
 	for key, value in pairs(source or {}) do
@@ -96,12 +101,12 @@ end
 -- snapshots
 local function lifecycleSnapshot()
 	local result = snapshot(state.lifecycle)
-	result.schema, result.generatedAt = API_VERSION, os.clock()
+	result.schema, result.generatedAt = CONFIG.API_VERSION, os.clock()
 	return result
 end
 local function stateSnapshot()
 	return {
-		schema = API_VERSION,
+		schema = CONFIG.API_VERSION,
 		generatedAt = os.clock(),
 		active = state.active,
 		manualSpamActive = state.manualSpam,
@@ -127,7 +132,7 @@ local function diagnosticsSnapshot()
 	end
 	local diagnostics = state.diagnostics
 	return {
-		schema = API_VERSION,
+		schema = CONFIG.API_VERSION,
 		generatedAt = os.clock(),
 		lastError = snapshot(diagnostics.lastError),
 		lastTransition = snapshot(diagnostics.lastTransition),
@@ -144,7 +149,7 @@ end
 local function refreshNamespace()
 	if refreshing then return end
 	refreshing = true; local namespace = type(_G.Exodus) == "table" and _G.Exodus or {}
-	namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author = NAME, "Exodus", VERSION, API_VERSION, AUTHOR
+	namespace.Name, namespace.InternalName, namespace.Version, namespace.ApiVersion, namespace.Author = CONFIG.NAME, "Exodus", CONFIG.VERSION, CONFIG.API_VERSION, CONFIG.AUTHOR
 	namespace.State, namespace.Config, namespace.ModuleURLs, namespace.Diagnostics =
 		stateSnapshot(), snapshot(state.config), snapshot(state.urls), diagnosticsSnapshot()
 	_G.Exodus = namespace; refreshing = false
@@ -175,8 +180,8 @@ end
 function Utils.ensureDataFolder()
 	if type(makefolder) ~= "function" then error("API externa ausente: makefolder", 2) end
 	if type(isfolder) ~= "function" then error("API externa ausente: isfolder", 2) end
-	if not isfolder(T.FOLDER) then makefolder(T.FOLDER) end
-	return true, T.FOLDER
+	if not isfolder(CONFIG.FOLDER) then makefolder(CONFIG.FOLDER) end
+	return true, CONFIG.FOLDER
 end
 function Utils.createClashLog(partnerId, startedDate)
 	if type(writefile) ~= "function" or type(isfile) ~= "function" then error("APIs externas ausentes: writefile/isfile", 2) end
@@ -394,10 +399,10 @@ function Utils.getRunService() return runService end
 function Utils.getWorkspace() return workspace end
 function Utils.getLocalPlayer() return players.LocalPlayer end
 function Utils.now() return os.clock() end
-function Utils.name() return NAME end
-function Utils.version() return VERSION end
-function Utils.apiVersion() return API_VERSION end
-function Utils.author() return AUTHOR end
+function Utils.name() return CONFIG.NAME end
+function Utils.version() return CONFIG.VERSION end
+function Utils.apiVersion() return CONFIG.API_VERSION end
+function Utils.author() return CONFIG.AUTHOR end
 _G.ExodusStop = Utils.stop
 
 -- contract

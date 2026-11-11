@@ -5,6 +5,14 @@ local ClashStats = {}
 -- dependencies
 local utils, gameInfo, players, localPlayer
 
+-- CONFIGURACAO DESTE MODULO
+local CONFIG = {
+    CLASH_RETENTION_SECONDS = 1.5, -- tempo para preservar parceiro recente
+    PACKET_FALLBACK_SECONDS = 0.5, -- usa observacao alternativa sem pacote
+    CPS_SAMPLE_CAP = 35, -- amostra maxima
+    CPS_SMOOTHING_FACTOR = 0.2, -- suavizacao
+}
+
 -- state
 local stats
 
@@ -94,7 +102,7 @@ function ClashStats.observe(session, snapshot, time, fresh)
 		not partner
 		and stats
 		and not stats.frozen
-		and time - (stats.lastSwitchAt or stats.startedAt) <= 1.5
+		and time - (stats.lastSwitchAt or stats.startedAt) <= CONFIG.CLASH_RETENTION_SECONDS
 		and (target == localPlayer.UserId or target == stats.partnerId)
 	then
 		partner = stats.partnerId
@@ -106,10 +114,10 @@ function ClashStats.observe(session, snapshot, time, fresh)
 	if stats and stats.frozen then
 		if not stats.waitingForClash then return end
 		ClashStats.begin(partner, time)
-	elseif not stats or stats.partnerId ~= partner or time - stats.lastObserved > 1.5 then
+	elseif not stats or stats.partnerId ~= partner or time - stats.lastObserved > CONFIG.CLASH_RETENTION_SECONDS then
 		ClashStats.begin(partner, time)
 	end
-	local observeTarget = fresh or not stats.lastPacketAt or time - stats.lastPacketAt > 0.5
+	local observeTarget = fresh or not stats.lastPacketAt or time - stats.lastPacketAt > CONFIG.PACKET_FALLBACK_SECONDS
 	if fresh then stats.lastPacketAt = time end
 	if observeTarget and target then
 		local me = localPlayer.UserId
@@ -134,7 +142,7 @@ function ClashStats.observe(session, snapshot, time, fresh)
 		elseif stats.lastTarget == partner and target == me then
 			if stats.cycleArmed then
 				stats.totalSwitches += 1
-				if stats.lastCycleAt and time > stats.lastCycleAt then stats.cycleInterval = time - stats.lastCycleAt; local sample = math.min(35, 1 / stats.cycleInterval); stats.currentCps = stats.currentCps and (stats.currentCps + 0.2 * (sample - stats.currentCps)) or sample end
+				if stats.lastCycleAt and time > stats.lastCycleAt then stats.cycleInterval = time - stats.lastCycleAt; local sample = math.min(CONFIG.CPS_SAMPLE_CAP, 1 / stats.cycleInterval); stats.currentCps = stats.currentCps and (stats.currentCps + CONFIG.CPS_SMOOTHING_FACTOR * (sample - stats.currentCps)) or sample end
 				stats.lastCycleAt = time
 			end
 			stats.cycleArmed = false; stats.lastSwitchAt = time

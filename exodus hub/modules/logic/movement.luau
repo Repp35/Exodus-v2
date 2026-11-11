@@ -3,11 +3,15 @@
 -- helpers
 local Movement = {}
 local utils, gameInfo, remote
-local UP = Vector3.new(0, 1, 0)
+-- CONFIGURACAO DESTE MODULO
+local CONFIG = {
+    UP_DIRECTION = Vector3.new(0, 1, 0), -- direcao do Up Dash
+    MIN_DIRECTION_MAGNITUDE = 0.001, -- direcao minima para dash
+}
 local function performDash(direction, upward)
 	if not utils or not gameInfo or not remote or not utils.isActive() then return false, "Hub inativo" end
 	if not gameInfo.areAbilitiesEnabled() then return false, upward and "Habilidades indisponíveis nesta partida" or "Habilidades indisponíveis" end
-	if not upward and (typeof(direction) ~= "Vector3" or direction.Magnitude <= 0.001) then return false, "Direção indisponível" end
+	if not upward and (typeof(direction) ~= "Vector3" or direction.Magnitude <= CONFIG.MIN_DIRECTION_MAGNITUDE) then return false, "Direção indisponível" end
 	local ability = gameInfo.getDashAbility()
 	if not ability then return false, upward and "Dash não está equipada ou ainda não carregou" or "Dash indisponível" end
 	if ability.Dashing then return false, upward and "Dash já está em andamento" or "Dash indisponível" end
@@ -16,11 +20,11 @@ local function performDash(direction, upward)
 	local ok, err = remote.fireDash()
 	if not ok then return false, tostring(err) end
 	if not ability.Dashing then return false, "Dash indisponível ou em cooldown" end
-	local targetDirection = upward and UP or direction.Unit
+	local targetDirection = upward and CONFIG.UP_DIRECTION or direction.Unit
 	if vectorValue then moveDir.Value = targetDirection else ability.MoveDir = targetDirection end
 	return true
 end
-function Movement.upDash() return performDash(UP, true) end
+function Movement.upDash() return performDash(CONFIG.UP_DIRECTION, true) end
 function Movement.dashToward(direction) return performDash(direction, false) end
 
 -- lifecycle

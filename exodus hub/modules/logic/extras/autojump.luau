@@ -5,7 +5,11 @@ local AutoJump = {}
 local utils
 local jumpConnection, jumpCharacter, jumpHumanoid
 local epoch = 0
-local AIR, JUMPING = Enum.Material.Air, Enum.HumanoidStateType.Jumping
+-- CONFIGURACAO DESTE MODULO
+local CONFIG = {
+    AIR_MATERIAL = Enum.Material.Air, -- nao pular no ar
+    JUMPING_STATE = Enum.HumanoidStateType.Jumping, -- estado do salto
+}
 
 -- helpers
 local function stopJump()
@@ -20,8 +24,8 @@ local function jumpStep(player)
 	if not character or not character.Parent then return end
 	local humanoid = jumpHumanoid
 	if not humanoid or humanoid.Parent ~= character then humanoid = character:FindFirstChildOfClass("Humanoid"); jumpHumanoid = humanoid end
-	if not humanoid or humanoid.Health <= 0 or humanoid.FloorMaterial == AIR then return end
-	if humanoid:GetState() ~= JUMPING then humanoid:ChangeState(JUMPING) end
+	if not humanoid or humanoid.Health <= 0 or humanoid.FloorMaterial == CONFIG.AIR_MATERIAL then return end
+	if humanoid:GetState() ~= CONFIG.JUMPING_STATE then humanoid:ChangeState(CONFIG.JUMPING_STATE) end
 end
 
 -- lifecycle

@@ -6,8 +6,8 @@ local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runServic
 local root, heartbeat
 local inFlight, handledSignals = nil, {}
 
--- tuning
-local T = { DETECTION_RANGE = 70, FALLBACK_RANGE = 35, MAX_EVENT_AGE = 0.2, MIN_UP_SPEED = 68, MAX_HORIZONTAL_RATIO = 0.65 }
+-- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
+local CONFIG = { DETECTION_RANGE = 70, FALLBACK_RANGE = 35, MAX_EVENT_AGE = 0.2, MIN_UP_SPEED = 68, MAX_HORIZONTAL_RATIO = 0.65 }
 
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
@@ -17,7 +17,7 @@ local function relevantOpponent(event, localRoot)
 	if active.active then return active.partner == event.userId end
 	local context = gameInfo.getClashContext()
 	if context and context.partnerId then return context.partnerId == event.userId end
-	if (event.position - localRoot.Position).Magnitude > T.FALLBACK_RANGE then return false end
+	if (event.position - localRoot.Position).Magnitude > CONFIG.FALLBACK_RANGE then return false end
 	local snapshot = gameInfo.getSnapshotAt(utils.now())
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported or snapshot.locked or snapshot.targetUncertain or snapshot.targetId ~= event.userId then return false end
 	local time = utils.now()
@@ -53,7 +53,7 @@ local function onDash(event)
 	if not finite(event.userId) or event.userId <= 0 then return end
 	if
 		time < event.detectedAt
-		or time - event.detectedAt > T.MAX_EVENT_AGE
+		or time - event.detectedAt > CONFIG.MAX_EVENT_AGE
 		or event.userId == localPlayer.UserId
 		or handledSignals[event.userId] == event.signalAt
 	then
@@ -63,9 +63,9 @@ local function onDash(event)
 	if not player or player.UserId ~= event.userId then return end
 	local character = player.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local localHumanoid = localRoot.Parent:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 or not localHumanoid or localHumanoid.Health <= 0 then return end
-	if (event.position - localRoot.Position).Magnitude > T.DETECTION_RANGE then return end
+	if (event.position - localRoot.Position).Magnitude > CONFIG.DETECTION_RANGE then return end
 	local velocity = event.velocity; local horizontalSpeed = math.sqrt(velocity.X * velocity.X + velocity.Z * velocity.Z)
-	if velocity.Y < T.MIN_UP_SPEED or horizontalSpeed > velocity.Y * T.MAX_HORIZONTAL_RATIO then return end
+	if velocity.Y < CONFIG.MIN_UP_SPEED or horizontalSpeed > velocity.Y * CONFIG.MAX_HORIZONTAL_RATIO then return end
 	if not relevantOpponent(event, localRoot) then return end
 	local token = {}; inFlight = token; local ok, result = pcall(movement.upDash)
 	if inFlight == token then
@@ -89,7 +89,7 @@ function AutoDash.bindCharacter(character)
 	heartbeat = runService.Heartbeat:Connect(function()
 		if not root or not root.Parent then return end
 		if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then return end
-		dash.tick(utils.now(), true, root.Position, T.DETECTION_RANGE)
+		dash.tick(utils.now(), true, root.Position, CONFIG.DETECTION_RANGE)
 	end)
 	utils.trackCharacter(heartbeat); return true
 end

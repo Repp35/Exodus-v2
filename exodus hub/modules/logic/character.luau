@@ -9,8 +9,8 @@ local utils, spam, binds
 local added, removing, currentLife
 local generation, setupEpoch, phase, workerRunning = 0, 0, "stopped", false
 
--- tuning
-local T = { BIND_TIMEOUT = 10 }
+-- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
+local CONFIG = { BIND_TIMEOUT = 10 }
 
 -- diagnostics
 local function setPhase(value, reason)
@@ -43,7 +43,7 @@ local function valid(life) return currentLife == life and utils ~= nil and utils
 local function bindLife(life)
 	life.attempted = true
 	if not valid(life) then return end
-	setPhase("binding", "character_bind_start"); local root = life.character:FindFirstChild("HumanoidRootPart"); local deadline = os.clock() + T.BIND_TIMEOUT
+	setPhase("binding", "character_bind_start"); local root = life.character:FindFirstChild("HumanoidRootPart"); local deadline = os.clock() + CONFIG.BIND_TIMEOUT
 	while valid(life) and (not root or not root:IsA("BasePart") or not root.Parent) and os.clock() < deadline do
 		task.wait(); root = life.character:FindFirstChild("HumanoidRootPart")
 	end

@@ -9,8 +9,8 @@ local utils, gameInfo, players, handler
 local records, connections = {}, {}
 local generation, lastTick = 0, -math.huge
 
--- tuning
-local T = {
+-- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
+local CONFIG = {
 	MIN_SPEED = 70,
 	MAX_MEASURED_SPEED = 400,
 	MAX_SAMPLE_GAP = 0.15,
@@ -32,7 +32,7 @@ local function disconnect(connection)
 end
 local function emit(player, record, position, velocity, previous, time, confirmed)
 	local newConfirmation = confirmed and record.confirmedSignalAt ~= record.signalAt
-	if not newConfirmation and time - (record.lastDetection or -math.huge) < T.DETECTION_GAP then return end
+	if not newConfirmation and time - (record.lastDetection or -math.huge) < CONFIG.DETECTION_GAP then return end
 	if confirmed then record.confirmedSignalAt = record.signalAt end
 	record.lastDetection = time
 	if handler then
@@ -64,13 +64,13 @@ local function observe(player, record, time, suppliedRoot)
 		return
 	end
 	local position, velocity = root.Position, root.AssemblyLinearVelocity; local previous, previousAt = record.position, record.positionAt; local delta = previousAt and time - previousAt
-	if previous and delta and delta > 0 and delta <= T.MAX_SAMPLE_GAP then
+	if previous and delta and delta > 0 and delta <= CONFIG.MAX_SAMPLE_GAP then
 		local measured = (position - previous) / delta
-		if measured.Magnitude > velocity.Magnitude and measured.Magnitude < T.MAX_MEASURED_SPEED then velocity = measured end
+		if measured.Magnitude > velocity.Magnitude and measured.Magnitude < CONFIG.MAX_MEASURED_SPEED then velocity = measured end
 	end
 	local signal = gameInfo.isPlayerDashing(player)
 	if signal and not record.signalActive then record.signalAt = time end
-	record.signalActive = signal; local speed = velocity.Magnitude; local fast = speed >= T.MIN_SPEED; local signaled = signal or time - record.signalAt <= T.SIGNAL_GRACE
+	record.signalActive = signal; local speed = velocity.Magnitude; local fast = speed >= CONFIG.MIN_SPEED; local signaled = signal or time - record.signalAt <= CONFIG.SIGNAL_GRACE
 	if signaled and fast then emit(player, record, position, velocity, previous, time, true) end
 	record.speed, record.fast, record.position, record.positionAt = speed, fast, position, time
 end
@@ -112,7 +112,7 @@ end
 function Dash.tick(time, excludeLocal, center, radius)
 	if not players then return end
 	time = type(time) == "number" and time or now()
-	if time - lastTick < T.TICK_INTERVAL then return end
+	if time - lastTick < CONFIG.TICK_INTERVAL then return end
 	lastTick = time
 	if type(center) == "number" then
 		local player = players:GetPlayerByUserId(center); local record = player and records[player]

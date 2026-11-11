@@ -4,8 +4,8 @@
 local AutoFierce = {}
 local utils, gameInfo, remote, autoParry
 
--- tuning
-local T = {
+-- CONFIGURACAO DESTE MODULO (edite os valores abaixo)
+local CONFIG = {
 	SIGNAL_RETRY = 0.5,
 	SYNC_MAX_AGE = 0.25,
 	NOOB_WINDOW_EXTRA = 0.15,
@@ -28,13 +28,13 @@ local function onParried()
 end
 local function connectSignals(now)
 	if now < nextSignalAt or parriedConnection then return end
-	nextSignalAt = now + T.SIGNAL_RETRY; local signals = gameInfo.getDeflectServerEvents()
+	nextSignalAt = now + CONFIG.SIGNAL_RETRY; local signals = gameInfo.getDeflectServerEvents()
 	if signals and signals.parried then parriedConnection = track(signals.parried:Connect(onParried)) end
 end
 local function graceDanger(now)
 	local snapshot = gameInfo.getSnapshotAt(now)
 	if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return false, nil end
-	local fresh = type(snapshot.syncAt) == "number" and snapshot.syncAt > 0 and now >= snapshot.syncAt and now - snapshot.syncAt <= T.SYNC_MAX_AGE
+	local fresh = type(snapshot.syncAt) == "number" and snapshot.syncAt > 0 and now >= snapshot.syncAt and now - snapshot.syncAt <= CONFIG.SYNC_MAX_AGE
 	if not fresh then return false, nil end
 	local grace = snapshot.grace == true; local danger = grace and localUserId ~= nil and snapshot.targetId == localUserId and gameInfo.getBallFrozen() ~= true; return danger, grace
 end
@@ -47,7 +47,7 @@ local function deflectPending(now)
 	if type(window) ~= "number" or window ~= window or window <= 0 then return true end
 	local ping = gameInfo.getLocalPing()
 	if type(ping) ~= "number" or ping ~= ping or ping < 0 then ping = 0 end
-	return now - pressedAt <= window + T.NOOB_WINDOW_EXTRA + 2 * ping
+	return now - pressedAt <= window + CONFIG.NOOB_WINDOW_EXTRA + 2 * ping
 end
 
 -- activation
