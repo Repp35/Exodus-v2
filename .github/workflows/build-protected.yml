@@ -37,26 +37,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Lua runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install --yes lua5.1
-
-      - name: Checkout pinned Prometheus
+      - name: Generate protected build
         shell: bash
         env:
-          PROMETHEUS_DIR: ${{ runner.temp }}/prometheus
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/prostone4/Prometheus.git "${PROMETHEUS_DIR}"
-          git -C "${PROMETHEUS_DIR}" checkout --detach 0d3e287c2fd9ef927e210268ea0a8bb1e7a4d581
-
-      - name: Generate and obfuscate protected build
-        shell: bash
-        env:
-          PROMETHEUS_DIR: ${{ runner.temp }}/prometheus
           REVISION: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -64,8 +47,7 @@ jobs:
           mkdir -p build-source/security "site/${REVISION}"
 
           cp -R "exodus hub" build-source/
-          # This standalone diagnostic is not loaded by the hub and uses Luau type annotations
-          # that the pinned Prometheus parser does not support.
+          # This standalone diagnostic is not loaded by the hub and is not published.
           rm -rf "build-source/exodus hub/indeed"
 
           python3 - <<'PY'
@@ -115,16 +97,8 @@ jobs:
           )
           PY
 
-          while IFS= read -r -d '' source; do
-            relative="${source#build-source/}"
-            destination="site/${REVISION}/${relative}"
-            mkdir -p "$(dirname "${destination}")"
-            lua5.1 "${PROMETHEUS_DIR}/cli.lua" \
-              --preset Medium \
-              --LuaU \
-              --out "${destination}" \
-              "${source}"
-          done < <(find build-source -type f -name "*.luau" -print0)
+          # Publish the private source as-is. No obfuscator is used.
+          cp -R "build-source/." "site/${REVISION}/"
 
           cp "site/${REVISION}/exodus hub/loader.luau" site/loader.luau
 
