@@ -318,16 +318,17 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
 end
 
 -- evaluation
-local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation)
+local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation, autoEnabled)
   if current ~= s or not s.root.Parent then return end
   if not utils.isActive() then stopBoth(s, "hub_inactive"); return end
-  if utils.getConfigValue("AutoSpam") ~= true then
+  if autoEnabled == nil then autoEnabled = utils.getConfigValue("AutoSpam") == true end
+  if not autoEnabled then
     if s.active then stop(s, "disabled") end
     resetExchange(s)
   end
   syncManualPartner(s)
   if gameInfo.getBallFrozen() == true then
-    applyDeactivation(s, nil, now()); resetExchange(s)
+    applyDeactivation(s, nil, time); resetExchange(s)
     s.target = nil; return
   end
   if enforceTargetReturnTimeout(s, time) then return end
@@ -504,7 +505,22 @@ function AutoSpam.bindCharacter(character)
     local time = now()
     if (not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent) and time >= nextHaunterCheck then nextHaunterCheck = time + 0.25; connectHaunter() end
     local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
-    local clashContext = gameInfo.getClashContext(); clashStats = clashStatsModule.get()
+    local manualEnabled = utils.isManualSpamActive(); local clashContext = gameInfo.getClashContext()
+    clashStats = clashStatsModule.get()
+    if
+      not autoEnabled
+      and not upDashEnabled
+      and not manualEnabled
+      and not s.active
+      and not clashContext
+      and (not clashStats or clashStats.frozen)
+      and not s.pendingReset
+      and not s.haunterPartner
+    then
+      if clashStats then clashStats.waitingForClash = true end
+      s.lobbyCheckAt, s.lobbySnapshotValid = nil, false; s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
+      return
+    end
     local liveSnapshot
     if not s.lobbyCheckAt or time - s.lobbyCheckAt >= 0.25 then s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time); s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot) end
     if not s.lobbySnapshotValid then
@@ -532,18 +548,11 @@ function AutoSpam.bindCharacter(character)
       elseif target == localPlayer.UserId or target == s.haunterPartner then start(s, "haunter_self", s.haunterPartner, time, nil) end
     end
     if clashStats and not clashStats.frozen and not s.active and not clashContext and time - clashStats.lastObserved > 1.5 then clashStatsModule.finish("clash encerrado", clashStats.lastObserved) end
-    if
-      not autoEnabled
-      and not upDashEnabled
-      and not utils.isManualSpamActive()
-      and not s.active
-      and not clashContext
-      and (not clashStats or clashStats.frozen)
-    then
+    if not autoEnabled and not upDashEnabled and not manualEnabled and not s.active and not clashContext and (not clashStats or clashStats.frozen) then
       if clashStats and clashStats.frozen then clashStats.waitingForClash = true end
       s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil; return
     end
-    evaluate(s, time, false)
+    evaluate(s, time, false, nil, nil, nil, autoEnabled)
     if typeof(s.lastRootPosition) == "Vector3" and (s.root.Position - s.lastRootPosition).Magnitude > CONFIG.ACTIVATION.HAUNTER_RANGE then
       s.recentRootPosition, s.recentRootAt = s.lastRootPosition, time
     end
@@ -605,9 +614,8 @@ function AutoSpam.onBallSync(data)
     if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
   end
   local stopped = false
-  if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and userId(target) then
-    if not stopped and target ~= s.target then stopped = applyDeactivation(s, snapshot, time) end
-    if not stopped and target == s.target then stopped = applyDeactivation(s, snapshot, time) end
+  if gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and target then
+    if not stopped then stopped = applyDeactivation(s, snapshot, time) end
     inspectTarget(s, target, time, snapshot, serverTime)
   end
   evaluate(s, time, true, serverTime, snapshot, stopped)
