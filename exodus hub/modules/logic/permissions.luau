@@ -91,23 +91,30 @@ local function wrap(consumer, source, provider)
     if dependency.source == source then use = dependency; break end
   end
   if not use then deny(consumer, "api.consume." .. source) end
-  local view = {}
+  local members = {}
   for method in pairs(use.methods) do
     if not exposed.provides[method] then deny(consumer, "api.consume." .. source .. "." .. method) end
-    view[method] = provider[method]
-    if type(view[method]) ~= "function" then error("Permissions: API ausente: " .. source .. "." .. method, 2) end
+    members[method] = provider[method]
+    if type(members[method]) ~= "function" then error("Permissions: API ausente: " .. source .. "." .. method, 2) end
   end
   for field in pairs(use.data) do
-    if not exposed.data[field] then deny(consumer, "api.consume." .. source .. "." .. field) end
+    if not exposed.data[field] then deny(consumer, "api.consume." .. source .. "." .. field, 2) end
     if type(provider[field]) ~= "table" then error("Permissions: dado ausente: " .. source .. "." .. field, 2) end
-    view[field] = readonly(provider[field])
+    members[field] = readonly(provider[field])
   end
+  table.freeze(members)
+
+  local view = {}
   setmetatable(view, {
-    __index = function(_, field) deny(consumer, "api.consume." .. source .. "." .. tostring(field)) end,
+    __index = function(_, field)
+      local value = members[field]
+      if value ~= nil then return value end
+      deny(consumer, "api.consume." .. source .. "." .. tostring(field))
+    end,
     __newindex = function(_, field) deny(consumer, "api.write." .. source .. "." .. tostring(field)) end,
     __metatable = "locked",
   })
-  return table.freeze(view)
+  return view
 end
 
 -- resolution
