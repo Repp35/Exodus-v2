@@ -428,7 +428,8 @@ def expand_inline_config_tables(source: str, indent_type: str = "Tabs", indent_w
     indentation = "\t" if indent_type.lower() == "tabs" else " " * indent_width
     pattern = re.compile(r"^(\s*)local\s+CONFIG\s*=\s*\{(.*)\}\s*$")
     output: list[str] = []
-    for line in source.splitlines():
+    source_lines = source.splitlines()
+    for index, line in enumerate(source_lines):
         match = pattern.fullmatch(line)
         if not match or not match.group(2).strip():
             output.append(line)
@@ -462,7 +463,7 @@ def expand_inline_config_tables(source: str, indent_type: str = "Tabs", indent_w
         last = inside[start:].strip()
         if last:
             fields.append(last)
-        if len(fields) < 2 or any(not re.match(r"^[A-Za-z_][A-Za-z_0-9]*\s*=", field) for field in fields):
+        if not fields or any(not re.match(r"^[A-Za-z_][A-Za-z_0-9]*\s*=", field) for field in fields):
             output.append(line)
             continue
         prefix = match.group(1)
@@ -470,6 +471,9 @@ def expand_inline_config_tables(source: str, indent_type: str = "Tabs", indent_w
         for field in fields:
             output.append(prefix + indentation + field.rstrip(",") + ",")
         output.append(prefix + "}")
+        following = source_lines[index + 1] if index + 1 < len(source_lines) else ""
+        if following.strip() and not section_from_comment(following):
+            output.append("")
     return finish_source(output)
 
 
