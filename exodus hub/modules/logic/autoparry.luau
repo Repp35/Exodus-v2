@@ -48,6 +48,7 @@ local state = {
 -- configuration
 local CONFIG = {
   DEFAULT_WINDOW_FACTOR = 0.8,
+  MAX_WINDOW_FACTOR = 0.8,
   CPS_BOOST_START = 2,
   CPS_BOOST_FULL = 2.5,
   PRESSURE_SAMPLE_LIMIT = 100,
@@ -112,28 +113,28 @@ local function resilience()
   }
 end
 local function configuredFactor()
-  local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, 1) or CONFIG.DEFAULT_WINDOW_FACTOR
+  local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, CONFIG.MAX_WINDOW_FACTOR) or CONFIG.DEFAULT_WINDOW_FACTOR
 end
 local function factorForCps(cps)
   local base = configuredFactor()
   if not finite(cps) or cps <= CONFIG.CPS_BOOST_START then return base end
   local span = CONFIG.CPS_BOOST_FULL - CONFIG.CPS_BOOST_START; local progress = span > 0 and math.clamp((cps - CONFIG.CPS_BOOST_START) / span, 0, 1) or 1
-  return base + (1 - base) * progress
+  return base + (CONFIG.MAX_WINDOW_FACTOR - base) * progress
 end
 local function activeWindowFactor(at)
   local cps = state.autoParryCps
   if state.lastAutoParryClickAt and finite(at) and at > state.lastAutoParryClickAt then local interval = at - state.lastAutoParryClickAt; cps = interval > 0 and 1 / interval or math.huge end
-  state.windowFactor = math.clamp(factorForCps(cps), 0, 1); return state.windowFactor
+  state.windowFactor = math.clamp(factorForCps(cps), 0, CONFIG.MAX_WINDOW_FACTOR); return state.windowFactor
 end
 local function recordAutoParryRequest()
   local now, previous = clock(), state.lastAutoParryClickAt; local interval = previous and now - previous or nil
-  state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(factorForCps(state.autoParryCps), 0, 1)
+  state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(factorForCps(state.autoParryCps), 0, CONFIG.MAX_WINDOW_FACTOR)
 end
 local function minimumBallSpeed() return CONFIG.MIN_PARRY_SPEED end
 local function radius(speed, factor, baseWindow)
   speed = finite(speed) and math.max(speed, 0) or 0; factor = tonumber(factor)
   if not finite(factor) then factor = activeWindowFactor(clock()) end
-  factor = math.clamp(factor, 0, 1); return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
+  factor = math.clamp(factor, 0, CONFIG.MAX_WINDOW_FACTOR); return gameInfo.getDeflectGeometry(speed, baseWindow or "ap", factor, false, state.ping)
 end
 
 -- telemetry
@@ -254,12 +255,6 @@ local function tick(character, root, generation)
   if not vector(position) or not vector(velocity) or not vector(rootPosition) then return end
   if not value.ball.Parent then return end
   local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or velocity.Magnitude
-  if value.grace == true and value.targetUncertain ~= true and state.player and value.targetId == state.player.UserId then
-    local delta = rootPosition - position; local distance = delta.Magnitude
-    local closing = distance > 0 and velocity:Dot(delta) / distance or 0; state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
-    state.closingSpeed, state.triggerDistance = closing, 0; request("grace_parry_requested")
-    return
-  end
   if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
   samplePing(); local geometry = radius(speed, activeWindowFactor(time))
