@@ -38,6 +38,8 @@ local CONFIG = {
   RANGE_BONUS_SPAN = 7.5,
   RANGE_BONUS_STEP = 0.225,
   RANGE_WINDOW_BONUS = 0.12,
+  AUTO_PARRY_TRIGGER_PADDING = 1,
+  AUTO_PARRY_NETWORK_MARGIN = 0.015,
   AP_WINDOW_LOW_SPEED = 0.45,
   AP_WINDOW_HIGH_SPEED = 0.25,
   PING_SAMPLE_INTERVAL = 0.25,
@@ -341,6 +343,7 @@ function GameInfo.setup(deps)
     active = false,
     rawActive = false,
     lastEventAt = -math.huge,
+    lastParriedAt = -math.huge,
   }
 
   signalAt, heldAt, missingAt, warningAt = 0, 0, nil, 0; GameInfo.getDeflectCooldownState()
@@ -523,7 +526,7 @@ function GameInfo.getDeflectCooldownState()
     local signals = GameInfo.getDeflectServerEvents()
     if signals and signals.parried then
       parriedConnection = signals.parried:Connect(function()
-        cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt = false, false, nil, os.clock()
+        cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt, cooldown.lastParriedAt = false, false, nil, os.clock(), os.clock()
       end)
       utils.trackGlobal(parriedConnection)
     end
@@ -687,6 +690,7 @@ local function snapshot(time)
     speed = velocity.Magnitude,
     syncSpeed = sync and sync.Speed or nil,
     realPosition = sync and sync.RealPosition or nil,
+    syncDirection = sync and sync.ForcedDirection or nil,
     targetId = target,
     targeted = players.LocalPlayer ~= nil and target == players.LocalPlayer.UserId,
     targetSource = targetEvidence.source,
@@ -818,6 +822,35 @@ function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyO
     windowFactor = factor,
   }
 end
+function GameInfo.getAutoParryGeometry(speed, factor, frameLead, latencyOverride)
+  if not finite(speed) or speed < 0 then return nil end
+  local window = GameInfo.getDeflectWindow(speed, true)
+  local range = GameInfo.getDeflectRange()
+  if not finite(range) or range <= 0 then range = CONFIG.RANGE_BASE end
+  if not finite(window) or window < 0 then return nil end
+  local latency = finite(latencyOverride) and math.max(0, latencyOverride) or GameInfo.getAveragePing()
+  if not finite(latency) then latency = 0 end
+  local factorValue = finite(factor) and math.clamp(factor, 0, 1) or 0.25
+  local frame = finite(frameLead) and math.clamp(frameLead, 0, 0.15) or 1 / 60
+  local networkLead = latency + frame + CONFIG.AUTO_PARRY_NETWORK_MARGIN
+  local lead = math.min(window + latency, math.max(window * factorValue, networkLead))
+  return {
+    fullRadius = range + CONFIG.AUTO_PARRY_TRIGGER_PADDING + speed * lead,
+    pureRadius = CONFIG.RANGE_BASE,
+    noWindowParryRadius = range,
+    resilienceBonus = range - CONFIG.RANGE_BASE,
+    pingRadius = speed * latency,
+    deflectWindow = window,
+    effectiveWindow = lead,
+    leadTime = lead,
+    serverLeadTime = window + latency,
+    windowFactor = factorValue,
+    triggerPadding = CONFIG.AUTO_PARRY_TRIGGER_PADDING,
+    networkLead = networkLead,
+    autoParry = true,
+  }
+end
+
 function GameInfo.getProjectedDeflectRadius(geometry, closingSpeed)
   if type(geometry) ~= "table" or not finite(geometry.noWindowParryRadius) or not finite(geometry.effectiveWindow) or not finite(closingSpeed) then return nil end
   return geometry.noWindowParryRadius + math.max(0, closingSpeed) * geometry.effectiveWindow
@@ -907,6 +940,7 @@ GameInfo.__contract = {
     "getHaunterEvent",
     "getDeflectWindow",
     "getDeflectGeometry",
+    "getAutoParryGeometry",
     "getProjectedDeflectRadius",
     "isBallWithinDeflectRadius",
     "getBallFrozen",
