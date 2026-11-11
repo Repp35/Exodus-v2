@@ -9,6 +9,7 @@ local clashStats
 -- configuration
 local CONFIG = {
   ACTIVATION = {
+    STARTED_NEAR_ENABLED = false,
     RETURN = 0.15,
     EXCHANGE_MAX_INTERVAL = 2,
     EXCHANGE_READY_TIME = 0.5,
@@ -207,6 +208,7 @@ local function shouldActivate(s, snapshot, time)
   if typeof(snapshot.position) ~= "Vector3" then return false end
   local towardPlayer = s.root.Position - snapshot.position; local distance = towardPlayer.Magnitude
   if s.pending.nearSwitch then
+    if not CONFIG.ACTIVATION.STARTED_NEAR_ENABLED then return false end
     local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, snapshotSpeed(snapshot), true); return time == s.pending.switchAt and snapshot.locked ~= true and finite(raw) and distance <= raw
   end
   local g = activationGeometry(s, snapshot, s.pending.partner, time)
@@ -356,7 +358,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
       local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
       if not returnElapsed then return end
       local raw = gameInfo.getPlayerRawRadius(me, speed, true); local startedNear = finite(raw) and (snapshot.position - s.root.Position).Magnitude <= raw
-      local observed = s.opponentWindow; local nearSwitch = startedNear
+      local observed = s.opponentWindow; local nearSwitch = CONFIG.ACTIVATION.STARTED_NEAR_ENABLED and startedNear
         and snapshot.locked ~= true
         and snapshot.targetUncertain ~= true
         and completedPartner == previous
