@@ -358,7 +358,8 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
       local returnElapsed = elapsed(s.departedAt, s.departedServerAt, time, serverTime)
       if not returnElapsed then return end
       local raw = gameInfo.getPlayerRawRadius(me, speed, true); local startedNear = finite(raw) and (snapshot.position - s.root.Position).Magnitude <= raw
-      local observed = s.opponentWindow; local nearSwitch = CONFIG.ACTIVATION.STARTED_NEAR_ENABLED and startedNear
+      local observed = s.opponentWindow; local nearSwitch = CONFIG.ACTIVATION.STARTED_NEAR_ENABLED
+        and startedNear
         and snapshot.locked ~= true
         and snapshot.targetUncertain ~= true
         and completedPartner == previous
