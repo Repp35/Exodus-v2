@@ -27,6 +27,15 @@ local CONFIG = {
     DASH_ALIGNMENT = 0.7,
   },
   DEACTIVATION = {
+    PROTECTED_GATES = {
+      opponent_distance = true,
+      ball_distance = true,
+      client_deflect_reset_late = true,
+      target_return_timeout = true,
+      frozen = true,
+      disabled = true,
+      hub_inactive = true,
+    },
     MIN_DISTANCE = 20,
     MAX_DISTANCE_REFERENCE = 51,
     MIN_ACTIVE_TIME = 0.1,
@@ -225,8 +234,33 @@ local function shouldActivate(s, snapshot, time)
 end
 
 -- deactivation
-local function stop(s, reason)
-  if current ~= s then return end
+local function partnerWithinRadius(s, snapshot)
+  if not s.partner or not s.root or not s.root.Parent then return false end
+  local speed = snapshotSpeed(snapshot)
+  if not finite(speed) or speed <= 0 then return false end
+  local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true)
+  local position = gameInfo.getPlayerMotion(s.partner)
+  return finite(radius) and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude <= radius
+end
+local function distantTarget(s, snapshot, time)
+  if not snapshot or not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported or snapshot.locked == true or snapshot.targetUncertain == true then return false end
+  local age = finite(snapshot.syncAt) and time - snapshot.syncAt
+  if not age or age < 0 or age > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return false end
+  local target = userId(snapshot.targetId)
+  if not target or target == localPlayer.UserId or target == s.partner then return false end
+  local position = gameInfo.getPlayerMotion(target)
+  local limit = distanceLimit(snapshot, target)
+  return limit ~= nil and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > limit
+end
+local function stop(s, reason, snapshot, time)
+  if current ~= s then return false end
+  if s.active and CONFIG.DEACTIVATION.PROTECTED_GATES[reason] then
+    time = time or now()
+    snapshot = snapshot or gameInfo.getSnapshotAt(time)
+    if partnerWithinRadius(s, snapshot) then
+      if distantTarget(s, snapshot, time) then reason = "distant_target" else return false end
+    end
+  end
   if s.active then
     local stoppedAt = now(); s.stoppedPartner, s.stoppedAt = s.partner, stoppedAt
     s.active = false; s.lastDeactivatedAt = stoppedAt
@@ -235,6 +269,7 @@ local function stop(s, reason)
   end
   s.reason, s.pending, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil; s.targetAwaySince = nil
   resetExchange(s)
+  return true
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
@@ -285,7 +320,7 @@ local function applyDeactivation(s, snapshot, time)
     if resetLate and time - s.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then reason = "client_deflect_reset_late" end
   end
   if not reason then return false end
-  stop(s, reason); return true
+  return stop(s, reason, snapshot, time)
 end
 local function observeTargetReturn(s, target, time)
   if not s.active or not target then return end
@@ -312,7 +347,7 @@ local function enforceTargetReturnTimeout(s, snapshot, time)
     end
   end
   if time - s.targetAwaySince < timeout then return false end
-  stop(s, "target_return_timeout"); return true
+  return stop(s, "target_return_timeout", snapshot, time)
 end
 
 -- target-tracking
