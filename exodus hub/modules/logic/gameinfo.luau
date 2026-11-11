@@ -29,6 +29,11 @@ local CONFIG = {
   COOLDOWN_RETRY = 0.5,
   SPAM_MIN_INTERVAL = 0.0301,
   HELD_COOLDOWN_INTERVAL = 0.05,
+  CLIENT_DEFLECT_RESET_MIN = 0.08,
+  CLIENT_DEFLECT_RESET_FAST = 0.09,
+  CLIENT_DEFLECT_RESET_SLOW = 0.16,
+  CLIENT_DEFLECT_RESET_MAX_PING_MARGIN = 0.06,
+  CLIENT_DEFLECT_RESET_FRAME_MARGIN = 1 / 60,
   SPEED_REFRESH = 0.5,
   SAMPLE_INTERVAL = 1 / 240,
   SAMPLE_MAX_GAP = 0.5,
@@ -462,6 +467,11 @@ function GameInfo.getAutoSpamDelay()
   return delay
 end
 function GameInfo.getDashAbility() return getAbility(CONFIG.GAME_IDS.DASH, "Dash") end
+function GameInfo.getLocalDashState()
+  local ability = GameInfo.getDashAbility()
+  if not ability then return false end
+  return ability.Dashing == true, tonumber(ability.DashSpeed), tonumber(ability.DashTime)
+end
 function GameInfo.isPlayerDashing(player)
   if not player then return false end
   if player == players.LocalPlayer then local ability = GameInfo.getDashAbility(); return ability ~= nil and ability.Dashing == true end
@@ -544,6 +554,26 @@ function GameInfo.getDeflectCooldownState()
   if cooldown.rawActive and finite(cooldown.endsAt) then remaining = math.max(remaining, cooldown.endsAt - time) end
   cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true
   cooldown.blocking = cooldown.active; return cooldown
+end
+-- A positive cooldown alone is not evidence of a late reset. Only inspect
+-- a local press that can still be confirmed by the client's prediction.
+function GameInfo.isClientDeflectResetLate(activatedAt, speed)
+  if not finite(activatedAt) or not finite(speed) or speed <= 0 then return false end
+  local ability = GameInfo.getDeflectAbility()
+  if not ability or not finite(ability.Cooldown) or ability.Cooldown <= 0 then return false end
+  local time = os.clock()
+  local pressedAt, predictUntil = ability.PendingPressAt, ability.PendingPredictUntil
+  if not finite(pressedAt) or pressedAt < activatedAt or pressedAt > time then return false end
+  if not finite(predictUntil) or time >= predictUntil then return false end
+
+  local low, high = GameInfo.getBallSpeedLimits()
+  local progress = math.clamp((speed - low) / (high - low), 0, 1)
+  local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress
+  local ping = GameInfo.getAveragePing()
+  budget = budget + math.clamp(ping, 0, CONFIG.CLIENT_DEFLECT_RESET_MAX_PING_MARGIN)
+  local lastSafeDelay = predictUntil - pressedAt - CONFIG.CLIENT_DEFLECT_RESET_FRAME_MARGIN
+  if lastSafeDelay < CONFIG.CLIENT_DEFLECT_RESET_MIN then return false end
+  return time - pressedAt >= math.min(budget, lastSafeDelay)
 end
 function GameInfo.getSyncData() return syncData() end
 local function syncSequence(current, provider)
@@ -948,7 +978,9 @@ GameInfo.__contract = {
     "decodeDeflectServerEvent",
     "getHeldDeflectServerCooldown",
     "getDeflectCooldownState",
+    "isClientDeflectResetLate",
     "getDashAbility",
+    "getLocalDashState",
     "isPlayerDashing",
     "getFierceDeflectAbility",
     "getDarkSealAbility",
