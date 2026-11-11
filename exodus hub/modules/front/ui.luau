@@ -18,6 +18,7 @@ local _spawn = task.spawn
 local UIState = {
   connections = {},
   panelOpen = false,
+  reopenAllowed = false,
   spamOn = false,
   clashBallOn = false,
   btnIsDragging = function() return false end,
@@ -35,6 +36,7 @@ local UIState = {
 local setSpam
 local showToast
 local screenGui
+local menuGui
 local floatingButton
 local clashBall
 local parryBall
@@ -389,6 +391,7 @@ local function cleanupUI()
     safeCancel(tween)
   end
   UIState.pageTweens = {}; UIState.panelOpen = false
+  UIState.reopenAllowed = false
   UIState.clashBallOn = false; UIState.closing = false
   UIState.keyCapture = false; UIState.panelTween = nil
   UIState.btnTween = nil; UIState.toastGeneration += 1
@@ -399,6 +402,7 @@ local function cleanupUI()
   end
   local current = screenGui
   if current then current:Destroy() end
+  if menuGui then menuGui:Destroy(); menuGui = nil end
   local overlay = Players.LocalPlayer and Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
   if overlay then
     local oldOverlay = overlay:FindFirstChild("ExodusInformationOverlay")
@@ -883,15 +887,18 @@ local offOnCallbacks = {
   end,
 }
 
-local function togglePanel()
+local function togglePanel(closedByButton)
   if not configPanel or not configPanel.Parent or not floatingButton or not floatingButton.Parent then return end
   UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween)
   safeCancel(UIState.btnTween)
   if UIState.panelOpen then
+    UIState.reopenAllowed = false
+    floatingButton.Visible = false
     if not configPanel.Visible then configPanel.GroupTransparency = 1; configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97) end
     configPanel.Visible = true; UIState.panelTween = twPlay(configPanel, 0.28, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
-    UIState.btnTween = twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN)
   else
+    UIState.reopenAllowed = closedByButton == true
+    floatingButton.Visible = UIState.reopenAllowed
     UIState.panelTween = twPlay(configPanel, 0.22, { Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97), GroupTransparency = 1 }, EASE_OUT, DIR_IN)
     UIState.btnTween =
       twPlay(floatingButton, 0.22, { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE) }, EASE_OUT, DIR_OUT)
@@ -913,14 +920,15 @@ end
 local function restoreAfterReloadFailure(message)
   if not configPanel or not configPanel.Parent then return end
   UIState.closing = false; UIState.panelOpen = true
+  UIState.reopenAllowed = false
   configPanel.Visible = true; configPanel.Size = UDim2.new(0, PW * 0.96, 0, PH * 0.96)
   configPanel.GroupTransparency = 1
   if floatingButton and floatingButton.Parent then
+    floatingButton.Visible = false
     floatingButton.Size = UDim2.new(0, 42, 0, 42); floatingButton.BackgroundTransparency = 1
     floatingButton.TextTransparency = 1
   end
   twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
-  if floatingButton and floatingButton.Parent then twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN) end
   local config = Utils.getConfig()
   if not UIState.desktop then
     showClashBall(config.ClashBallVisible == true); showParryBall(config.ParryBallVisible == true)
@@ -986,12 +994,15 @@ function ExodusUI.setup(deps)
   Utils = deps.Utils; UIConfig = deps.UIConfig
   GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam
   Controls = type(deps.Controls) == "table" and deps.Controls or {}; local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+  local restoreMinimized = UIState.reopenAllowed == true
   if type(_G.ExodusUICleanup) == "function" then
     if type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
     _G.ExodusUICleanup()
   else
     local old = playerGui:FindFirstChild("ExodusUISystem")
     if old then old:Destroy() end
+    local oldMenu = playerGui:FindFirstChild("ExodusMenuLayer")
+    if oldMenu then oldMenu:Destroy() end
   end
   UIState.panelOpen = false; UIState.spamOn = false
   UIState.clashBallOn = false; UIState.closing = false
@@ -1006,15 +1017,25 @@ function ExodusUI.setup(deps)
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = playerGui,
   })
+  menuGui = inst("ScreenGui", {
+    Name = "ExodusMenuLayer",
+    DisplayOrder = 2147483647,
+    ResetOnSpawn = false,
+    IgnoreGuiInset = true,
+    ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+    Parent = playerGui,
+  })
+  local menuScale = inst("UIScale", { Scale = 1, Parent = menuGui })
   responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
   local function updateResponsiveScale()
     local size = viewport(); responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
+    menuScale.Scale = responsiveScale.Scale
   end
   updateResponsiveScale(); local currentCamera = workspace.CurrentCamera or Camera
   if currentCamera then trackConn(currentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale)) end
   local informationGui = inst("ScreenGui", {
     Name = "ExodusInformationOverlay",
-    DisplayOrder = 2147483647,
+    DisplayOrder = 2147483646,
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
     ZIndexBehavior = Enum.ZIndexBehavior.Global,
@@ -1159,6 +1180,7 @@ function ExodusUI.setup(deps)
   end))
   bindInput()
   floatingButton = inst("TextButton", {
+    Visible = false,
     Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE),
     Position = btnPos(),
     BackgroundColor3 = C.header,
@@ -1173,11 +1195,7 @@ function ExodusUI.setup(deps)
     Parent = screenGui,
   })
   corner(floatingButton, 999); local floatingStroke = stroke(floatingButton, C.accent, 2)
-  floatingStroke.Transparency = 1; registerFlow(floatingStroke)
-  task.defer(function()
-    if not floatingButton or not floatingButton.Parent then return end
-    twPlay(floatingButton, 0.38, { BackgroundTransparency = 0.1, TextTransparency = 0 }, EASE_OUT, DIR_OUT); twPlay(floatingStroke, 0.42, { Transparency = 0 }, EASE_OUT, DIR_OUT)
-  end)
+  registerFlow(floatingStroke)
   local config = Utils.getConfig(); local clashX = config.ClashBallX or 14
   local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
   clashBall = inst("TextButton", {
@@ -1392,7 +1410,7 @@ function ExodusUI.setup(deps)
     Visible = false,
     ZIndex = 5,
     ClipsDescendants = true,
-    Parent = screenGui,
+    Parent = menuGui,
   })
   corner(configPanel, 16); stroke(configPanel, C.accent, 1.5)
   particleLayer = inst("Frame", {
@@ -1485,7 +1503,7 @@ function ExodusUI.setup(deps)
   trackConn(minimizeButton.MouseEnter:Connect(function() twPlay(minimizeButton, 0.12, { BackgroundTransparency = 0 }) end))
   trackConn(minimizeButton.MouseLeave:Connect(function() twPlay(minimizeButton, 0.12, { BackgroundTransparency = 0.3 }) end))
   trackConn(minimizeButton.Activated:Connect(function()
-    if UIState.panelOpen then togglePanel() end
+    if UIState.panelOpen then togglePanel(true) end
   end))
   local settingsButton = inst("TextButton", {
     Name = "HubSettingsButton",
@@ -1837,7 +1855,7 @@ function ExodusUI.setup(deps)
     task.defer(function()
       if not screenGui or not screenGui.Parent then return end
       local rebuilt, detail = ExodusUI.setup(deps)
-      if rebuilt then togglePanel() else warn("[Exodus] Reset UI: " .. tostring(detail)) end
+      if not rebuilt then warn("[Exodus] Reset UI: " .. tostring(detail)) end
     end)
   end))
   local page = 1; local settingsOpen = false
@@ -2030,14 +2048,22 @@ function ExodusUI.setup(deps)
     if desktop == UIState.desktop or UIState.closing then return end
     task.defer(function()
       if screenGui ~= currentGui or not currentGui.Parent then return end
-      local wasOpen = UIState.panelOpen; ExodusUI.setup(deps)
-      if wasOpen then togglePanel() end
+      ExodusUI.setup(deps)
     end)
   end
   for _, property in ipairs({ "KeyboardEnabled", "MouseEnabled", "TouchEnabled" }) do
     trackConn(UIS:GetPropertyChangedSignal(property):Connect(refreshDevice))
   end
-  setSpam(Utils.isManualSpamActive(), true); return true
+  setSpam(Utils.isManualSpamActive(), true)
+  if restoreMinimized then
+    UIState.reopenAllowed = true
+    floatingButton.Visible = true
+    floatingButton.BackgroundTransparency = 0.1
+    floatingButton.TextTransparency = 0
+  else
+    togglePanel()
+  end
+  return true
 end
 
 -- contract
