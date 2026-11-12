@@ -29,9 +29,8 @@ local CONFIG = {
     MIN_DISTANCE = 20,
     MAX_DISTANCE_REFERENCE = 51,
     MIN_ACTIVE_TIME = 0.05,
-    TARGET_RETURN_TIMEOUT = 0.05,
-    PARTNER_RETURN_FALLBACK = 0.1,
-    PARTNER_RETURN_MAX = 0.25,
+    STATIONARY_TIMEOUT = 0.1,
+    STATIONARY_POSITION_EPSILON = 0.01,
   },
   SHARED = {
     MIN_RETURN = 1 / 25,
@@ -74,6 +73,29 @@ local function resetExchange(s)
   s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil; s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 end
 local function distanceToPlayer(id) return id and gameInfo.getPlayerDistance(id) or nil end
+local function ballStationaryTooLong(s, time)
+  if not s.active then
+    s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
+    return false
+  end
+  local ball = gameInfo.getBall()
+  if not ball or not ball:IsA("BasePart") or not ball.Parent then
+    s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
+    return false
+  end
+  local position = ball.Position
+  if s.stationaryBall ~= ball or typeof(s.stationaryPosition) ~= "Vector3" then
+    s.stationaryBall, s.stationaryPosition, s.stationarySince = ball, position, time
+    return false
+  end
+  if (position - s.stationaryPosition).Magnitude > CONFIG.DEACTIVATION.STATIONARY_POSITION_EPSILON then
+    s.stationaryPosition, s.stationarySince = position, time
+    return false
+  end
+  local ping = gameInfo.getAveragePing()
+  if not finite(ping) or ping < 0 then ping = 0 end
+  return finite(s.stationarySince) and time - s.stationarySince >= CONFIG.DEACTIVATION.STATIONARY_TIMEOUT + ping
+end
 local function distanceLimit(snapshot, partner)
   local speed = snapshotSpeed(snapshot)
   if not finite(speed) or speed <= 0 then return nil end
@@ -174,7 +196,7 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
   s.activatedAt = time; gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot))
-  local initialTarget = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil; s.targetAwaySince = initialTarget and initialTarget ~= localPlayer.UserId and time or nil
+  s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
   s.diversionSince, s.diversionSyncAt = nil, nil; s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
   utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
@@ -211,13 +233,14 @@ local function stop(s, reason)
     s.lastStopReason, s.lastStopAt = reason, s.lastDeactivatedAt; utils.setAutoSpamActive(false)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
-  s.reason, s.pending, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil; s.targetAwaySince = nil
+  s.reason, s.pending, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil
+  s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
   resetExchange(s)
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
-  if gameInfo.getBallFrozen() == true then return "frozen" end
+  if gameInfo.getBallFrozen() == true or ballStationaryTooLong(s, time) then return "frozen" end
   local age = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt
   if
     not snapshot
@@ -254,34 +277,6 @@ local function applyDeactivation(s, snapshot, time)
   if not reason then return false end
   stop(s, reason); return true
 end
-local function observeTargetReturn(s, target, time)
-  if not s.active or not target then return end
-  if target == localPlayer.UserId then s.targetAwaySince = nil else s.targetAwaySince = s.targetAwaySince or time end
-end
-local function enforceTargetReturnTimeout(s, snapshot, time)
-  if not s.active or not s.activatedAt or not s.targetAwaySince then return false end
-  if time - s.activatedAt < CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then return false end
-  local timeout = CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT
-  if
-    s.partner
-    and snapshot
-    and snapshot.targetId == s.partner
-    and snapshot.targetUncertain ~= true
-    and not snapshot.teleported
-    and finite(snapshot.syncAt)
-    and time >= snapshot.syncAt
-    and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
-  then
-    local g = geometry(snapshot, 1); local distance = distanceToPlayer(s.partner)
-    if g and finite(distance) and distance <= g.fullRadius then
-      local interval = clashStats and not clashStats.frozen and clashStats.partnerId == s.partner and clashStats.cycleInterval
-      timeout = finite(interval) and math.clamp(interval, timeout, CONFIG.DEACTIVATION.PARTNER_RETURN_MAX) or CONFIG.DEACTIVATION.PARTNER_RETURN_FALLBACK
-    end
-  end
-  if time - s.targetAwaySince < timeout then return false end
-  stop(s, "target_return_timeout"); return true
-end
-
 -- target-tracking
 local function inspectTarget(s, target, time, snapshot, serverTime)
   if not target or target == s.target then return end
@@ -349,7 +344,6 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
   if not fresh and applyDeactivation(s, snapshot, time) then blockedActivation = true end
-  if enforceTargetReturnTimeout(s, snapshot, time) then return end
   sampleOwnDash(s, time)
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
@@ -403,7 +397,9 @@ function AutoSpam.bindCharacter(character)
     target = nil,
     partner = nil,
     pending = nil,
-    targetAwaySince = nil,
+    stationaryBall = nil,
+    stationaryPosition = nil,
+    stationarySince = nil,
     stoppedPartner = nil,
     stoppedAt = nil,
     reason = "waiting",
@@ -610,7 +606,7 @@ function AutoSpam.onBallSync(data)
     return
   end
   local time = now(); local target = userId(data.TargetPlayerID)
-  local serverTime = tonumber(data.ServerTime); observeTargetReturn(s, target, time)
+  local serverTime = tonumber(data.ServerTime)
   if not finite(serverTime) then serverTime = nil end
   local speed = tonumber(data.Speed); local snapshot = gameInfo.getSnapshotAt(time)
   if snapshot and data.Source == "packet" then
