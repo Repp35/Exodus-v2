@@ -15,6 +15,7 @@ local RunService = game:GetService("RunService")
 local states = { Fly = false }
 local flyCharacter, flyHumanoid, flyRoot, flyVelocity, flyGyro
 local flyPlatformStand, flyAutoRotate
+local playerControls
 local controls = { Forward = 0, Backward = 0, Left = 0, Right = 0, Up = 0, Down = 0 }
 local bindings = {
   [Enum.KeyCode.W] = { "Forward", 1 }, [Enum.KeyCode.S] = { "Backward", -1 },
@@ -62,14 +63,32 @@ local function flyCharacterReady()
   end
   return humanoid
 end
+local function getPlayerControls()
+  if playerControls then return playerControls end
+  local player = Utils.getLocalPlayer(); local scripts = player and player:FindFirstChild("PlayerScripts")
+  local module = scripts and scripts:FindFirstChild("PlayerModule")
+  if not module then return nil end
+  local ok, value = pcall(require, module)
+  if ok and type(value) == "table" and type(value.GetControls) == "function" then
+    local ready, result = pcall(value.GetControls, value)
+    if ready and result and type(result.GetMoveVector) == "function" then playerControls = result end
+  end
+  return playerControls
+end
 local function updateFly()
   if not states.Fly then return end
   local humanoid = flyCharacterReady(); local camera = Workspace.CurrentCamera
   if not humanoid or not camera then return end
-  local direction = UIS.TouchEnabled and camera.CFrame.LookVector
-    or camera.CFrame.LookVector * (controls.Forward + controls.Backward)
+  local direction
+  if UIS.TouchEnabled then
+    local controller = getPlayerControls()
+    local movement = controller and controller:GetMoveVector() or Vector3.zero
+    direction = camera.CFrame.RightVector * movement.X - camera.CFrame.LookVector * movement.Z
+  else
+    direction = camera.CFrame.LookVector * (controls.Forward + controls.Backward)
       + camera.CFrame.RightVector * (controls.Left + controls.Right)
       + Vector3.new(0, controls.Up + controls.Down, 0)
+  end
   if direction.Magnitude > 1 then direction = direction.Unit end
   flyVelocity.Velocity = direction * (tonumber(Utils.getConfigValue("UniversalFlySpeed")) or 1) * 50
   flyGyro.CFrame = camera.CFrame; humanoid.PlatformStand = true; humanoid.AutoRotate = false
@@ -85,7 +104,7 @@ local function startFly()
   connect("FlyStep", RunService.RenderStepped, updateFly); return true
 end
 local function stopFly()
-  disconnectPrefix("Fly"); clearControls(); detachFly(); return true
+  disconnectPrefix("Fly"); clearControls(); detachFly(); playerControls = nil; return true
 end
 
 
