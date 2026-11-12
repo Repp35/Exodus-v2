@@ -316,18 +316,20 @@ local function deactivationReason(state, snapshot, time)
   if state.reason == "own_ball_proximity" and not ownBallClose(state, snapshot, time) then return "proximity_gate_lost" end
   local reason = distanceGate(state, snapshot, state.partner)
   if reason ~= "distance_unavailable" then return reason end
-  if
-    state.activatedAt
-    and gameInfo.isClientDeflectResetLate(state.activatedAt, snapshotSpeed(snapshot))
-    and time - state.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME
-  then
-    local opponent = gameInfo.getPlayerMotion(state.partner)
-    if typeof(opponent) == "Vector3" and (opponent - state.root.Position).Magnitude > CONFIG.DEACTIVATION.LATE_RESET_DISTANCE then return "client_deflect_reset_late" end
-  end
 end
 local function checkDeactivation(state, snapshot, time)
   if not state.active then return false end
-  local reason = deactivationReason(state, snapshot, time); return reason ~= nil and deactivate(state, reason, time)
+  local reason = deactivationReason(state, snapshot, time)
+  if
+    not reason
+    and state.activatedAt
+    and gameInfo.isClientDeflectResetLate(state.activatedAt, snapshot and snapshotSpeed(snapshot))
+    and time - state.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME
+  then
+    local opponent = gameInfo.getPlayerMotion(state.partner)
+    if typeof(opponent) == "Vector3" and (opponent - state.root.Position).Magnitude > CONFIG.DEACTIVATION.LATE_RESET_DISTANCE then reason = "client_deflect_reset_late" end
+  end
+  return reason ~= nil and deactivate(state, reason, time)
 end
 
 -- target-tracking
@@ -409,12 +411,12 @@ local function armReturn(state, previous, time, snapshot, serverTime)
   local value, speed, window = activationGeometry(state, snapshot, previous, time); local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime)
   if not value or not window or not duration then return end
   local startedNear = (snapshot.position - state.root.Position).Magnitude <= value.fullRadius; local fastReturn = duration <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
-  if startedNear or fastReturn then state.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn } end
+  if startedNear and not fastReturn then return end
+  state.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn }
 end
 local function targetChanged(state, target, time, snapshot, serverTime)
   if not target or target == state.target then return end
   local previous, ownId = state.target, localPlayer.UserId; local switchedToMe = target == ownId and previous and previous ~= ownId
-  if state.active and switchedToMe and not state.firstReturnSeen then state.firstReturnSeen = true end
   local exchangeReady
   if
     previous
@@ -466,6 +468,7 @@ local function targetChanged(state, target, time, snapshot, serverTime)
       state.proximityPartner, state.proximityAt, state.proximitySequence = previous, time, state.sequence; state.proximityLastDistance = (snapshot.position - state.root.Position).Magnitude
     end
   end
+  if state.active and switchedToMe and not state.firstReturnSeen then state.firstReturnSeen = true end
   if
     state.stoppedPartner
     and previous
