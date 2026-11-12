@@ -443,7 +443,7 @@ end
 function GameInfo.getDeflectRangeParameters() return CONFIG.RANGE_BASE, CONFIG.RANGE_BONUS_SPAN, sharedLayout() and 0.1125 or CONFIG.RANGE_BONUS_STEP end
 function GameInfo.getDeflectRange()
   local player = players.LocalPlayer; local range = player and player:GetAttribute("DeflectRange") or nil
-  if sharedLayout() and player and type(GameInfo.getPlayerDeflectRange) == "function" then return GameInfo.getPlayerDeflectRange(player.UserId) end
+  if sharedLayout() and player then return GameInfo.getPlayerDeflectRange(player.UserId) end
   return range
 end
 function GameInfo.getPlayerDeflectRange(id)
@@ -740,7 +740,7 @@ local function snapshot(time)
   end
   local currentBall = getBall()
   if not currentBall then return nil end
-  time = type(time) == "number" and time or utils.now(); local provider = getReplicator()
+  local provider = getReplicator()
   local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData(provider or false)
   if sampledBall ~= currentBall or (sync and sync.Teleported == true) then
     sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = currentBall, position, time, Vector3.zero, nil

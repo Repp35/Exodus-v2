@@ -1030,7 +1030,7 @@ function ExodusUI.setup(deps)
     label.TextWrapped = false; label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextYAlignment = Enum.TextYAlignment.Top; label.BorderSizePixel = 0
     label.ZIndex = 100
-    local padding = inst("UIPadding", {
+    inst("UIPadding", {
       PaddingLeft = UDim.new(0, paddingX),
       PaddingRight = UDim.new(0, paddingX),
       PaddingTop = UDim.new(0, paddingY),
@@ -1439,12 +1439,6 @@ function ExodusUI.setup(deps)
   makeDraggable(titleBar, configPanel, function()
     setConfigValue("PanelX", configPanel.Position.X.Offset); setConfigValue("PanelY", configPanel.Position.Y.Offset)
   end)
-  local titleText = ("%s | %s"):format(Utils.name(), Utils.version()); local authorText = " — " .. Utils.author()
-  local titleFontSize, authorFontSize = CONFIG.TITLE_TEXT_SIZE, CONFIG.AUTHOR_TEXT_SIZE; local maxTitleWidth = PW - PAD * 2 - CONFIG.TITLE_SIDE_RESERVE
-  local titleMeasured = math.ceil(TextService:GetTextSize(titleText, titleFontSize, Enum.Font.GothamBold, Vector2.new(1000, TITLE_H)).X)
-  local authorMeasured = math.ceil(TextService:GetTextSize(authorText, authorFontSize, Enum.Font.Gotham, Vector2.new(1000, TITLE_H)).X)
-  local authorReserved = math.min(authorMeasured, math.floor(maxTitleWidth * 0.38)); local titleWidth = math.min(titleMeasured, maxTitleWidth - authorReserved)
-  local authorWidth = math.min(authorMeasured, maxTitleWidth - titleWidth); local groupWidth = titleWidth + authorWidth
   local titleGroup = inst("Frame", {
     Size = UDim2.new(1, -CONFIG.TITLE_SIDE_MARGIN * 2, 1, 0),
     Position = UDim2.new(0, CONFIG.TITLE_SIDE_MARGIN, 0, 0),
@@ -1677,7 +1671,7 @@ function ExodusUI.setup(deps)
   })
   local fierceYPos, miniDarkCard = darkYPos, nil
   if not UIState.desktop then fierceYPos, miniDarkCard = createToggleCard("Mini Dark UI", "DarkBallVisible", fierceYPos, autosLeft, showDarkBall) end
-  local autoFierceYPos, fierceCard = createOffOnCard("Auto Fierce", fierceYPos, autosLeft, { configKey = "AutoFierce", toastLabel = "Auto Fierce" })
+  local _, fierceCard = createOffOnCard("Auto Fierce", fierceYPos, autosLeft, { configKey = "AutoFierce", toastLabel = "Auto Fierce" })
   local jumpYPos, jumpCard = createOffOnCard("Auto Jump", 4, autosRight, {
     configKey = "AutoJump",
     shortcutKey = UIState.desktop and "JumpKeybind" or nil,
@@ -1699,7 +1693,7 @@ function ExodusUI.setup(deps)
   else
     upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", upDashYPos, autosRight, showUpDashBall)
   end
-  local autoDashYPos, autoUpDashCard =
+  local _, autoUpDashCard =
     createOffOnCard("Auto Dash (clash)", upDashYPos, autosRight, { configKey = "AutoClashUpDash", toastLabel = "Auto Dash (clash)" })
   local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft)
   local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 4, settingsRight)

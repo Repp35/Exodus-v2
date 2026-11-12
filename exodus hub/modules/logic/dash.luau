@@ -49,7 +49,7 @@ end
 
 -- sampling
 local function resetCharacter(record, character)
-  record.character = character; record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false
+  record.character = character; record.position, record.positionAt = nil, nil
   record.lastDetection, record.signalAt, record.signalActive, record.confirmedSignalAt = nil, -math.huge, false, nil
 end
 local function observe(player, record, time, suppliedRoot)
@@ -57,7 +57,7 @@ local function observe(player, record, time, suppliedRoot)
   if record.character ~= character then resetCharacter(record, character) end
   if not character or not character.Parent then return end
   local root = suppliedRoot or rootOf(player)
-  if not root then record.position, record.positionAt, record.speed, record.fast = nil, nil, nil, false; return end
+  if not root then record.position, record.positionAt = nil, nil; return end
   local position, velocity = root.Position, root.AssemblyLinearVelocity; local previous, previousAt = record.position, record.positionAt
   local delta = previousAt and time - previousAt
   if previous and delta and delta > 0 and delta <= CONFIG.MAX_SAMPLE_GAP then
@@ -69,7 +69,7 @@ local function observe(player, record, time, suppliedRoot)
   record.signalActive = signal; local speed = velocity.Magnitude
   local fast = speed >= CONFIG.MIN_SPEED; local signaled = signal or time - record.signalAt <= CONFIG.SIGNAL_GRACE
   if signaled and fast then emit(player, record, position, velocity, previous, time, true) end
-  record.speed, record.fast, record.position, record.positionAt = speed, fast, position, time
+  record.position, record.positionAt = position, time
 end
 
 -- player-tracking
@@ -137,8 +137,8 @@ end
 function Dash.resetState()
   generation += 1; disconnect(connections.added)
   disconnect(connections.removing); connections = {}
-  for player in pairs(records) do
-    removePlayer(player)
+  while next(records) do
+    removePlayer(next(records))
   end
   players, lastTick = nil, -math.huge
 end

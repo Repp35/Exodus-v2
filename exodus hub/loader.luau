@@ -18,8 +18,6 @@ local CONFIG = {
   MANIFEST_URL = "https://repp35.github.io/Exodus-v2/manifest.json",
   PROJECT_PATH = "exodus%20hub/",
   AUTHORIZATION_PATH = "security/entitlements.luau",
-  LOCAL_ROOTS = { "Exodus-v2/exodus hub", "Exodus-v2-main/exodus hub", "exodus hub", "Exodus Hub" },
-  ALLOW_LOCAL_FALLBACK = false,
   MODULES = {
     { name = "permissions", path = "modules/logic/permissions.luau" },
     { name = "config", path = "modules/front/config.luau" },
@@ -45,7 +43,6 @@ local CONFIG = {
 
 local PROJECT_PATH = CONFIG.PROJECT_PATH
 local AUTHORIZATION_PATH = CONFIG.AUTHORIZATION_PATH
-local LOCAL_ROOTS = CONFIG.LOCAL_ROOTS
 local BASE_URL = CONFIG.DELIVERY_BASE_URL
 local MANIFEST_URL = CONFIG.MANIFEST_URL
 local CACHE_BUSTER = tostring(os.time())
@@ -57,7 +54,6 @@ for _, entry in ipairs(MODULE_MANIFEST) do
   MODULE_BY_NAME[entry.name] = entry
   if entry.name ~= "ui" and entry.name ~= "permissions" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
 end
-local ALLOW_LOCAL_FALLBACK = CONFIG.ALLOW_LOCAL_FALLBACK
 
 -- http
 local function getRequestFunction()
@@ -140,17 +136,6 @@ local function request(url, headers)
     if attempt < 3 then waitBeforeRetry(attempt) end
   end
   local message = lastError or "Nenhum serviço HTTP disponível"; return nil, message, lastMeta
-end
-local function findCompleteLocalRoot()
-  if not ALLOW_LOCAL_FALLBACK or type(isfile) ~= "function" or type(readfile) ~= "function" then return nil end
-  for _, root in ipairs(LOCAL_ROOTS) do
-    local complete = true
-    for _, entry in ipairs(MODULE_MANIFEST) do
-      if not isfile(root .. "/" .. entry.path) then complete = false; break end
-    end
-    if complete then return root end
-  end
-  return nil
 end
 local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
 local SIGNATURE_ROOT = "Exodus Hub/Signatures"
@@ -273,12 +258,7 @@ local function buildCDNURL(url)
   if not repository or not version or not path then return nil end
   return "https://cdn.jsdelivr.net/gh/" .. repository .. "@" .. version .. "/" .. path
 end
-local function loadModule(name, relativePath, url, sourceRoot)
-  if sourceRoot then
-    local path = sourceRoot .. "/" .. relativePath; local source = readfile(path)
-    if type(source) ~= "string" or source == "" then error("Arquivo local inválido: " .. path, 2) end
-    local chunk, compileError = compile(name .. " [local]", source); return chunk, compileError, "local"
-  end
+local function loadModule(name, relativePath, url)
   local signature = signatureFor(relativePath)
   if not signatureValid(signature) then return nil, "assinatura inválida: " .. relativePath end
   local saved = storedSource(signature, relativePath)
@@ -369,10 +349,10 @@ local function orderModulesByDependencies(loaded)
     MODULE_ORDER[#MODULE_ORDER + 1] = name
   end
 end
-local function loadModules(urls, sourceRoot)
+local function loadModules(urls)
   local loaded, results = {}, {}
   local function load(name)
-    local entry = MODULE_BY_NAME[name]; local chunk, loadError = loadModule(name, entry.path, urls[name], sourceRoot)
+    local entry = MODULE_BY_NAME[name]; local chunk, loadError = loadModule(name, entry.path, urls[name])
     results[name] = { chunk = chunk, error = loadError }
   end
   if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
@@ -629,22 +609,20 @@ end
 local startupPerformed = false
 local function startInternal()
   local requestedRevision = validRevision(_G.ExodusRequestedRevision) and _G.ExodusRequestedRevision or nil; _G.ExodusRequestedRevision = nil
-  local version, revisionError, _, signatures = resolveLatestRevision()
+  local version, _, _, signatures = resolveLatestRevision()
   if requestedRevision and version ~= requestedRevision then return false, "Loader", "revisão solicitada não é a atual" end
   releaseSignatures = signatures
   if not version then return false, "Authorization", "revisão de distribuição indisponível" end
   local authorized, authorizationError = authorizeRevision(version)
   if not authorized then return false, "Authorization", authorizationError end
   if not requestedRevision and Exodus.Started == true and Exodus.UIReady == true and validRevision(version) and Exodus.Revision == version then return true end
-  local sourceRoot = nil; startupPerformed = true
+  startupPerformed = true
   printStartup("Exodus: iniciando")
   if not stopPreviousRuntime() then return false, "Loader", "falha ao encerrar a sessão anterior" end
   clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
   if not playerReady then return false, "Loader", playerError end
-  local unpinned = not validRevision(version) and not sourceRoot
-  if unpinned then return false, "Loader", "revisão remota indisponível e nenhum cache/local completo: " .. tostring(revisionError) end
-  local cacheRevision = validRevision(version) and version or nil; local urls = version and buildURLs(version) or {}
-  local loaded, moduleName, loadError = loadModules(urls, sourceRoot)
+  local urls = buildURLs(version)
+  local loaded, moduleName, loadError = loadModules(urls)
   if not loaded then return false, moduleName, loadError end
   activeLoaded = loaded; local utils = loaded.utils
   if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
@@ -676,7 +654,7 @@ local function startInternal()
   Exodus.Context = loaded; Exodus.UIReady = uiReady == true
   Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
-  Exodus.Revision = cacheRevision; printStartup("Exodus: iniciado")
+  Exodus.Revision = version; printStartup("Exodus: iniciado")
   return true
 end
 

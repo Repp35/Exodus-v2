@@ -272,20 +272,6 @@ local CLOSE_CLASH_PROTECTION_RADII = {
   client_deflect_reset_late = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
 }
 
-local CLOSE_CLASH_EXPLICIT_STOPS = {
-  hub_inactive = true,
-  disabled = true,
-  ball_missing = true,
-  player_died = true,
-  opponent_left = true,
-  character_removed = true,
-  detach = true,
-  teardown = true,
-  rebind = true,
-  setup = true,
-  stop_spam = true,
-}
-
 local function stop(s, reason)
   if current ~= s then return end
   if s.active and CLOSE_CLASH_PROTECTION_RADII[reason] and closeClashProtected(s, now(), CLOSE_CLASH_PROTECTION_RADII[reason]) then return end
@@ -664,8 +650,12 @@ function AutoSpam.bindCharacter(character)
     local time = now()
     if (not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent) and time >= nextHaunterCheck then nextHaunterCheck = time + 0.25; connectHaunter() end
     local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
-    local manualEnabled = utils.isManualSpamActive(); local clashContext = gameInfo.getClashContext()
+    local manualEnabled = utils.isManualSpamActive()
     clashStats = clashStatsModule.get()
+    local clashContext
+    if autoEnabled or upDashEnabled or manualEnabled or s.active or (clashStats and not clashStats.frozen) or s.pendingReset or s.haunterPartner then
+      clashContext = gameInfo.getClashContext()
+    end
     if
       not autoEnabled
       and not upDashEnabled
@@ -783,7 +773,6 @@ function AutoSpam.isActive() return current ~= nil and current.active end
 function AutoSpam.stopSpam()
   if current then stop(current, "stop_spam") end
 end
-function AutoSpam.getPullEvent() return nil end
 function AutoSpam.getDashData()
   local s = current
   local dashing, speed, duration
@@ -908,7 +897,6 @@ AutoSpam.__contract = {
     "getStatus",
     "getTargetSwitch",
     "getDashData",
-    "getPullEvent",
     "stopSpam",
   },
   onBallSync = true,
