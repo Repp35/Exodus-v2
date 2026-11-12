@@ -61,7 +61,7 @@ end
 local function update()
   local now = os.clock()
   if not enabled() then graceHandled = false; return end
-  connectSignals(now)
+  if not parriedConnection or not parriedConnection.Connected then connectSignals(now) end
   if not parriedConnection then return end
   local danger, grace = graceDanger(now)
   if grace == nil then return end
