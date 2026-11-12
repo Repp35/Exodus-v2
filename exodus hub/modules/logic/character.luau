@@ -32,7 +32,8 @@ local function clearLife()
     end
   end
   if not utils then return end
-  utils.disconnectCharacterConnections(); utils.setManualSpamActive(false)
+  utils.disconnectCharacterConnections()
+  -- Manual spam is user-controlled: character rebinds must not toggle it off.
   utils.setAutoSpamActive(false)
   if spam then spam.resetState() end
 end
