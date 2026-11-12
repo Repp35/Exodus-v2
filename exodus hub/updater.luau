@@ -19,6 +19,18 @@ return function(loadedRevision, request)
 
   -- guards
   local function running() return _G.ExodusUpdaterToken == token and type(_G.Exodus) == "table" and _G.Exodus.Started == true end
+  local function notify(message, key, kind)
+    local show = _G.ExodusShowPersistentNotification
+    if type(show) == "function" then pcall(show, message, key, kind) end
+  end
+  local function clear(key)
+    local hide = _G.ExodusClearPersistentNotification
+    if type(hide) == "function" then pcall(hide, key) end
+  end
+  local function updateFailed()
+    clear("update")
+    notify("Update failed. Check the console.", "critical", "critical")
+  end
 
   -- revisions
   local function currentRevision()
@@ -54,7 +66,7 @@ return function(loadedRevision, request)
       local sha = ok and type(document) == "table" and document.revision
       if type(sha) == "string" and #sha == 40 and sha:match("^[%x]+$") then return sha end
     end
-    return nil, requestError or "manifesto de versão indisponível", requestMeta
+    return nil, requestError or "Version manifest unavailable", requestMeta
   end
 
   -- scheduling
@@ -75,7 +87,7 @@ return function(loadedRevision, request)
           local current = currentRevision()
           if revision ~= current and revision ~= loadedRevision then pendingRevision = revision; nextCheck = now else nextCheck = now + CONFIG.CHECK_INTERVAL end
         else
-          nextCheck = retryAt(now, checkMetadata); warn("[Exodus Updater] " .. tostring(checkError))
+          nextCheck = retryAt(now, checkMetadata); warn("[Exodus Updater] Manifest check failed: " .. tostring(checkError))
         end
       end
 
@@ -91,13 +103,13 @@ return function(loadedRevision, request)
           if chunk then
             pendingSource = chunk
           else
-            warn("[Exodus Updater] " .. tostring(compileError)); pendingRevision = nil
+            warn("[Exodus Updater] Compile failed: " .. tostring(compileError)); updateFailed(); pendingRevision = nil
             nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
           end
         elseif fetchMetadata and fetchMetadata.rateLimited then
-          nextCheck = retryAt(os.clock(), fetchMetadata); warn("[Exodus Updater] " .. tostring(fetchError))
+          nextCheck = retryAt(os.clock(), fetchMetadata); warn("[Exodus Updater] Fetch rate limited: " .. tostring(fetchError))
         else
-          warn("[Exodus Updater] " .. tostring(fetchError)); pendingRevision = nil
+          warn("[Exodus Updater] Fetch failed: " .. tostring(fetchError)); updateFailed(); pendingRevision = nil
           nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
         end
       end
@@ -107,15 +119,16 @@ return function(loadedRevision, request)
         local safe = false; local ok, result = pcall(safeToUpdate)
         if ok then safe = result == true end
         if safe and running() and pendingRevision ~= currentRevision() and not _G.ExodusLoaderStartToken then
-          print("[Exodus] Atualizando hub...")
+          notify("Updating...", "update", "info")
+          print("[Exodus] Updating...")
           if type(_G.ExodusUIFadeOut) == "function" then
             local fadeOk, fadeError = pcall(_G.ExodusUIFadeOut)
-            if not fadeOk then warn("[Exodus Updater] Transição: " .. tostring(fadeError)) end
+            if not fadeOk then warn("[Exodus Updater] Fade out failed: " .. tostring(fadeError)); updateFailed() end
           end
           if not running() then return end
           _G.ExodusRequestedRevision = pendingRevision
           local executed, executionError = xpcall(pendingSource, function(err) return debug.traceback(tostring(err), 2) end)
-          if not executed then _G.ExodusRequestedRevision = nil; warn("[Exodus Updater] " .. tostring(executionError)) end
+          if not executed then _G.ExodusRequestedRevision = nil; warn("[Exodus Updater] Execution failed: " .. tostring(executionError)); updateFailed() end
           return
         end
       end
