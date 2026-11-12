@@ -10,6 +10,7 @@ local clashStats
 local CONFIG = {
   ACTIVATION = {
     RETURN = 0.15,
+    OWN_BALL_CLOSE_RADIUS = 4.5,
     EXCHANGE_MAX_INTERVAL = 2,
     EXCHANGE_READY_TIME = 0.5,
     REACTIVATION_COOLDOWN = 0.04,
@@ -172,14 +173,15 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
   if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN) then return end
-  local haunter = reason == "haunter" or reason == "haunter_self"
+  local proximity = reason == "own_ball_proximity"
+  local haunter = proximity or reason == "haunter" or reason == "haunter_self"
   if
     not haunter
     and (not s.exchangeReadyAt or s.exchangePartner ~= partner or time < s.exchangeReadyAt or time - s.exchangeReadyAt > CONFIG.ACTIVATION.EXCHANGE_READY_TIME)
   then
     return
   end
-  snapshot = snapshot or gameInfo.getSnapshotAt(time); local distanceReason = distanceGate(s, snapshot, partner)
+  snapshot = snapshot or gameInfo.getSnapshotAt(time); local distanceReason = not proximity and distanceGate(s, snapshot, partner)
   if distanceReason then return end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
@@ -210,6 +212,14 @@ local function shouldActivate(s, snapshot, time)
     if timeToRange > g.effectiveWindow then return false end
   end
   return true
+end
+
+local function ownBallClose(s, snapshot)
+  return s.root and s.root.Parent
+    and snapshot and snapshot.targetUncertain ~= true
+    and snapshot.targetId == localPlayer.UserId
+    and typeof(snapshot.position) == "Vector3"
+    and (snapshot.position - s.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_CLOSE_RADIUS
 end
 
 -- deactivation
@@ -247,6 +257,7 @@ local function shouldDeactivate(s, snapshot, time)
     local position = gameInfo.getPlayerMotion(target); local limit = distanceLimit(snapshot, target)
     if limit and s.root and s.root.Parent and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > limit then return "distant_target" end
   end
+  if s.reason == "own_ball_proximity" and ownBallClose(s, snapshot) then return nil end
   local reason = distanceGate(s, snapshot, s.partner)
   if reason ~= "distance_unavailable" then return reason end
   return nil
@@ -336,6 +347,15 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(s, snapshot, time, true); clashStats = clashStatsModule.get() end
+  if
+    autoEnabled
+    and not s.active
+    and not blockedActivation
+    and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
+    and ownBallClose(s, snapshot)
+  then
+    start(s, "own_ball_proximity", s.pending and s.pending.partner or s.exchangePartner, time, serverTime or snapshot.serverTime, snapshot)
+  end
   if
     not s.active
     and not blockedActivation
