@@ -831,9 +831,7 @@ local function startUpdateChannel()
   local closeConnection
   if closeSignal and type(closeSignal.Connect) == "function" then
     closeConnection = closeSignal:Connect(function()
-      if _G.ExodusUpdateToken == token then
-        _G.ExodusUpdateSocket = nil; _G.ExodusUpdateToken = nil
-      end
+      if _G.ExodusUpdateToken == token then _G.ExodusUpdateSocket = nil; _G.ExodusUpdateToken = nil end
     end)
   end
   _G.ExodusUpdateStop = function()
