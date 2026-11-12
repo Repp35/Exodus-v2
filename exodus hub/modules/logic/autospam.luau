@@ -252,6 +252,19 @@ end
 
 -- deactivation
 local closeClashProtected
+-- Only ambiguous timing, packet and geometry gates are protected at close range.
+-- Confirmed lifecycle and explicit shutdown reasons always take precedence.
+local CLOSE_CLASH_UNCERTAIN_STOPS = {
+  first_return_timeout = true,
+  frozen = true, -- stationary-ball heuristic, not confirmed server freeze
+  invalid_or_stale_ball = true,
+  target_unavailable = true,
+  distant_target = true,
+  proximity_gate_lost = true,
+  opponent_distance = true,
+  ball_distance = true,
+  client_deflect_reset_late = true,
+}
 local CLOSE_CLASH_EXPLICIT_STOPS = {
   hub_inactive = true,
   disabled = true,
@@ -268,7 +281,7 @@ local CLOSE_CLASH_EXPLICIT_STOPS = {
 
 local function stop(s, reason)
   if current ~= s then return end
-  if s.active and not CLOSE_CLASH_EXPLICIT_STOPS[reason] and closeClashProtected(s, now()) then return end
+  if s.active and CLOSE_CLASH_UNCERTAIN_STOPS[reason] and closeClashProtected(s, now()) then return end
   if s.active then
     local stoppedAt = now(); s.stoppedPartner, s.stoppedAt = s.partner, stoppedAt
     s.active = false; s.lastDeactivatedAt = stoppedAt
@@ -301,7 +314,8 @@ local function shouldDeactivate(s, snapshot, time)
   if not ball or not ball:IsA("BasePart") or not ball.Parent then return "ball_missing" end
   if snapshot and (snapshot.teleported == true or snapshot.locked == true or snapshot.targetUncertain == true) then return nil end
   if s.activatedAt and not s.firstReturnSeen and time - s.activatedAt >= CONFIG.DEACTIVATION.FIRST_RETURN_TIMEOUT then return "first_return_timeout" end
-  if gameInfo.getBallFrozen() == true or ballStationaryTooLong(s, time) then return "frozen" end
+  if gameInfo.getBallFrozen() == true then return "ball_frozen" end
+  if ballStationaryTooLong(s, time) then return "frozen" end
   local age = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt
   if not snapshot or not gameInfo.isSnapshotValid(snapshot) or not age or age < 0 or age > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return "invalid_or_stale_ball" end
   local target = userId(snapshot.targetId)
@@ -330,13 +344,13 @@ local function applyDeactivation(s, snapshot, time)
   end
   if
     reason
-    and (reason == "first_return_timeout" or reason == "frozen" or reason == "invalid_or_stale_ball" or reason == "target_unavailable" or reason == "distant_target" or reason == "proximity_gate_lost" or reason == "opponent_distance" or reason == "ball_distance" or reason == "client_deflect_reset_late")
+    and CLOSE_CLASH_UNCERTAIN_STOPS[reason]
     and closeClashProtected(s, time)
   then
     reason = nil
   end
   if not reason then return false end
-  if not CLOSE_CLASH_EXPLICIT_STOPS[reason] and closeClashProtected(s, time) then return false end
+  if CLOSE_CLASH_UNCERTAIN_STOPS[reason] and closeClashProtected(s, time) then return false end
   stop(s, reason); return not s.active
 end
 
