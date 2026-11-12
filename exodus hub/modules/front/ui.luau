@@ -932,9 +932,8 @@ local function restoreAfterReloadFailure(message)
 end
 local function fadeOutForReplacement()
   if not screenGui or not screenGui.Parent or UIState.closing then return end
-  UIState.closing = true
-  safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
-  local duration = 0.3
+  UIState.closing = true; safeCancel(UIState.panelTween)
+  safeCancel(UIState.btnTween); local duration = 0.3
   if configPanel and configPanel.Parent and configPanel.Visible then twPlay(configPanel, duration, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.96, PH * 0.96) }, EASE_OUT, DIR_IN) end
   if floatingButton and floatingButton.Parent then twPlay(floatingButton, duration, { BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN) end
   for _, element in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall, miniGui }) do
@@ -1953,8 +1952,7 @@ function ExodusUI.setup(deps)
   for _, property in ipairs({ "KeyboardEnabled", "MouseEnabled", "TouchEnabled" }) do
     trackConn(UIS:GetPropertyChangedSignal(property):Connect(refreshDevice))
   end
-  setSpam(Utils.isManualSpamActive(), true)
-  _G.ExodusUIReturnAfterUpdate = nil
+  setSpam(Utils.isManualSpamActive(), true); _G.ExodusUIReturnAfterUpdate = nil
   return true
 end
 
