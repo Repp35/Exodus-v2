@@ -499,9 +499,11 @@ end
 local function paintManualSpam()
   local spamButton = miniGui and miniGui:FindFirstChild("SpamButton")
   if not spamButton then return end
-  local active = UIState.spamOn == true; spamButton.Text = active and "ON" or "OFF"
+  local active = UIState.spamOn == true
+  spamButton.Text = active and "ON" or "OFF"
   spamButton.BackgroundColor3 = active and C.green or C.red
 end
+
 setSpam = function(v)
   v = v == true; UIState.spamOn = v
   Utils.setManualSpamActive(v); UIState.spamOn = Utils.isManualSpamActive()
@@ -1618,6 +1620,14 @@ function ExodusUI.setup(deps)
     Parent = miniGui,
   })
   corner(spamButton, 10)
+  -- Keep the displayed color tied to the displayed label, including external text changes.
+  trackConn(spamButton:GetPropertyChangedSignal("Text"):Connect(function()
+    spamButton.BackgroundColor3 = spamButton.Text == "ON" and C.green or C.red
+  end))
+  trackConn(spamButton:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
+    local expected = spamButton.Text == "ON" and C.green or C.red
+    if spamButton.BackgroundColor3 ~= expected then spamButton.BackgroundColor3 = expected end
+  end))
   trackConn(spamButton.Activated:Connect(function() setSpam(not UIState.spamOn) end))
   miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY)
   makeDraggable(miniTitleBar, miniGui, function()
