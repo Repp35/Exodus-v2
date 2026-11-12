@@ -101,8 +101,9 @@ para serem removidas durante o cleanup.
 - Quando ambos os indicadores estão ocultos, o Heartbeat retorna sem acessar
   o jogo ou formatar texto, desde que o indicador de gates também esteja oculto.
 - A opção `Auto Spam gates` exibe os motivos da última ativação e da última
-  desativação efetivas. Os valores começam vazios e são reiniciados ao trocar
-  de personagem; não representam tentativas bloqueadas nem gates protegidos.
+  desativação efetivas. Os valores permanecem ao trocar de personagem e são
+  substituídos apenas por novas transições; não representam tentativas
+  bloqueadas nem gates protegidos. Reiniciar o hub reinicia o histórico.
 - Partículas e gradientes infinitos não são criados com movimento reduzido.
 - Resize observa somente mudanças de viewport/câmera; a escala é aplicada
   aos três layers da UI.
