@@ -217,17 +217,13 @@ pulseButton = function(button)
   local scale = inst("UIScale", { Name = "PressScale", Scale = 1 }, button)
   local activeTween
   trackConn(button.Activated:Connect(function()
-    safeCancel(activeTween)
-    scale.Scale = 1
-    local tween = twPlay(scale, 0.07, { Scale = 0.94 }, EASE_SINE, DIR_IN)
-    activeTween = tween
+    safeCancel(activeTween); scale.Scale = 1
+    local tween = twPlay(scale, 0.07, { Scale = 0.94 }, EASE_SINE, DIR_IN); activeTween = tween
     if not tween then return end
     local connection
     connection = trackConn(tween.Completed:Connect(function(playbackState)
       safeDisconnect(connection); untrackConn(connection)
-      if playbackState == Enum.PlaybackState.Completed and button.Parent then
-        activeTween = twPlay(scale, 0.15, { Scale = 1 }, EASE_OUT, DIR_OUT)
-      end
+      if playbackState == Enum.PlaybackState.Completed and button.Parent then activeTween = twPlay(scale, 0.15, { Scale = 1 }, EASE_OUT, DIR_OUT) end
     end))
   end))
 end
@@ -371,9 +367,7 @@ local function pulseBall(ball)
   local connection
   connection = trackConn(shrink.Completed:Connect(function(playbackState)
     safeDisconnect(connection); untrackConn(connection)
-    if playbackState == Enum.PlaybackState.Completed and ball and ball.Parent then
-      twPlay(ball, 0.16, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_SINE, DIR_OUT)
-    end
+    if playbackState == Enum.PlaybackState.Completed and ball and ball.Parent then twPlay(ball, 0.16, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_SINE, DIR_OUT) end
   end))
 end
 local function showParryBall(value) showBall(parryBall, value, "ParryBallVisible", "ParryBallX", "ParryBallY", 14, viewport().Y / 2 - CLASH_SIZE - 40) end
@@ -419,17 +413,13 @@ local MINI_W, MINI_H = CONFIG.MINI_W, CONFIG.MINI_H
 local function showMini(v)
   if UIState.desktop then v = false end
   if not miniGui or not miniGui.Parent then return end
-  local config = Utils.getConfig()
-  local miniX = config.MiniX or (viewport().X - MINI_W - 14)
-  local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2)
-  local hiddenPosition = UDim2.new(0, viewport().X + 30, 0, miniY)
-  UIState.miniGeneration += 1
-  local generation = UIState.miniGeneration
+  local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14)
+  local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local hiddenPosition = UDim2.new(0, viewport().X + 30, 0, miniY)
+  UIState.miniGeneration += 1; local generation = UIState.miniGeneration
   safeCancel(UIState.miniTween)
   if v then
     if not miniGui.Visible then
-      miniGui.Position = hiddenPosition
-      miniGui.GroupTransparency = 1
+      miniGui.Position = hiddenPosition; miniGui.GroupTransparency = 1
       miniGui.Visible = true
     end
     UIState.miniTween = twPlay(miniGui, 0.24, {
@@ -448,9 +438,7 @@ local function showMini(v)
     local connection
     connection = trackConn(tween.Completed:Connect(function(playbackState)
       safeDisconnect(connection); untrackConn(connection)
-      if playbackState == Enum.PlaybackState.Completed and generation == UIState.miniGeneration and miniGui and miniGui.Parent then
-        miniGui.Visible = false
-      end
+      if playbackState == Enum.PlaybackState.Completed and generation == UIState.miniGeneration and miniGui and miniGui.Parent then miniGui.Visible = false end
     end))
   else
     miniGui.Visible = false
@@ -467,9 +455,7 @@ setSpam = function(v)
       local connection
       connection = trackConn(shrink.Completed:Connect(function(playbackState)
         safeDisconnect(connection); untrackConn(connection)
-        if playbackState == Enum.PlaybackState.Completed and spamButton.Parent then
-          twPlay(spamButton, 0.15, { Size = UDim2.new(1, -16, 0, 48) }, EASE_SINE, DIR_OUT)
-        end
+        if playbackState == Enum.PlaybackState.Completed and spamButton.Parent then twPlay(spamButton, 0.15, { Size = UDim2.new(1, -16, 0, 48) }, EASE_SINE, DIR_OUT) end
       end))
     end
   end
@@ -498,9 +484,9 @@ local PARTICLE_COLORS = CONFIG.PARTICLE_COLORS
 -- cleanup
 local function cleanupUI()
   safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
-  safeCancel(UIState.miniTween); UIState.miniTween = nil; UIState.miniGeneration += 1
-  disconnectUIConnections(); UIState.connections = {}
-  UIState.pageGeneration += 1
+  safeCancel(UIState.miniTween); UIState.miniTween = nil
+  UIState.miniGeneration += 1; disconnectUIConnections()
+  UIState.connections = {}; UIState.pageGeneration += 1
   for _, tween in ipairs(UIState.pageTweens) do
     safeCancel(tween)
   end
@@ -521,18 +507,20 @@ local function cleanupUI()
     if oldOverlay then oldOverlay:Destroy() end
   end
   clearPersistentNotification("closing"); screenGui = nil
-  floatingButton = nil; floatingButtonStroke = nil; clashBall = nil
-  parryBall = nil; darkBall = nil
-  jumpBall = nil; upDashBall = nil
-  miniGui = nil; configPanel = nil; toastCard = nil; toastLabel = nil
-  particleLayer = nil; titleBar = nil
-  minimizeButton = nil; reloadButton = nil
-  colLeft = nil; colRight = nil
-  killBtn = nil; toastLayer = nil
-  responsiveScale = nil; shortcutLabels = {}
-  statusToggleVisuals = {}; autoClashTrack = nil
-  autoClashThumb = nil; autoParrySetVisual = nil
-  autoDarkSetVisual = nil; autoJumpSetVisual = nil
+  floatingButton = nil; floatingButtonStroke = nil
+  clashBall = nil; parryBall = nil
+  darkBall = nil; jumpBall = nil
+  upDashBall = nil; miniGui = nil
+  configPanel = nil; toastCard = nil
+  toastLabel = nil; particleLayer = nil
+  titleBar = nil; minimizeButton = nil
+  reloadButton = nil; colLeft = nil
+  colRight = nil; killBtn = nil
+  toastLayer = nil; responsiveScale = nil
+  shortcutLabels = {}; statusToggleVisuals = {}
+  autoClashTrack = nil; autoClashThumb = nil
+  autoParrySetVisual = nil; autoDarkSetVisual = nil
+  autoJumpSetVisual = nil
   if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil; _G.ExodusUIFadeOut = nil end
   if _G.ExodusShowPersistentNotification == showPersistentNotification then _G.ExodusShowPersistentNotification = nil end
   if _G.ExodusClearPersistentNotification == clearPersistentNotification then _G.ExodusClearPersistentNotification = nil end
@@ -576,9 +564,8 @@ local function cardFrame(yPos, h, parent)
     ZIndex = 6,
     Parent = parent,
   })
-  local scale = inst("UIScale", { Name = "CardScale", Scale = CARD_SCALE }, f)
-  scale:SetAttribute("BaseScale", CARD_SCALE); corner(f, 12)
-  local s = stroke(f, C.border, 1)
+  local scale = inst("UIScale", { Name = "CardScale", Scale = CARD_SCALE }, f); scale:SetAttribute("BaseScale", CARD_SCALE)
+  corner(f, 12); local s = stroke(f, C.border, 1)
   trackConn(f.MouseEnter:Connect(function()
     twPlay(s, 0.22, { Color = C.accent }, EASE_SINE, DIR_INOUT); twPlay(f, 0.22, { BackgroundColor3 = Color3.fromRGB(24, 24, 50) }, EASE_SINE, DIR_INOUT)
   end))
@@ -590,15 +577,12 @@ end
 local function pressCard(card)
   local scale = card:FindFirstChild("CardScale")
   if not scale then return end
-  local baseScale = scale:GetAttribute("BaseScale") or scale.Scale
-  local tween = twPlay(scale, 0.07, { Scale = baseScale * 0.97 }, EASE_SINE, DIR_OUT)
+  local baseScale = scale:GetAttribute("BaseScale") or scale.Scale; local tween = twPlay(scale, 0.07, { Scale = baseScale * 0.97 }, EASE_SINE, DIR_OUT)
   if not tween then return end
   local connection
   connection = trackConn(tween.Completed:Connect(function(playbackState)
     safeDisconnect(connection); untrackConn(connection)
-    if playbackState == Enum.PlaybackState.Completed and card.Parent then
-      twPlay(scale, 0.15, { Scale = baseScale }, EASE_OUT, DIR_OUT)
-    end
+    if playbackState == Enum.PlaybackState.Completed and card.Parent then twPlay(scale, 0.15, { Scale = baseScale }, EASE_OUT, DIR_OUT) end
   end))
 end
 local function addCardHitbox(card, height, callback)
@@ -613,8 +597,7 @@ local function addCardHitbox(card, height, callback)
     Parent = card,
   })
   trackConn(button.Activated:Connect(function()
-    pressCard(card)
-    callback()
+    pressCard(card); callback()
   end))
   return button
 end
@@ -788,8 +771,7 @@ showToast = function(message, important)
   if not important and Utils.getConfigValue(notificationKey) ~= true then return end
   if not toastLayer or not toastLayer.Parent then return end
   UIState.toastGeneration += 1; local generation = UIState.toastGeneration
-  safeCancel(UIState.toastTween)
-  local isOff = string.find(tostring(message), " Off", 1, true) ~= nil
+  safeCancel(UIState.toastTween); local isOff = string.find(tostring(message), " Off", 1, true) ~= nil
   if not toastCard or not toastCard.Parent or toastCard.Parent ~= toastLayer then
     toastCard = inst("CanvasGroup", {
       Name = "ExodusToast",
@@ -814,26 +796,22 @@ showToast = function(message, important)
       Parent = toastCard,
     })
   end
-  toastCard.BackgroundColor3 = isOff and C.redDark or C.btnBlue
-  local toastStroke = toastCard:FindFirstChildOfClass("UIStroke")
+  toastCard.BackgroundColor3 = isOff and C.redDark or C.btnBlue; local toastStroke = toastCard:FindFirstChildOfClass("UIStroke")
   if toastStroke then toastStroke.Color = isOff and C.red or C.accent end
   if toastLabel then toastLabel.Text = tostring(message) end
-  toastCard.Position = UDim2.new(0.5, 0, 1, 18)
-  toastCard.GroupTransparency = 1
-  local toast = toastCard
-  UIState.toastTween = twPlay(toast, 0.22, { Position = UDim2.new(0.5, 0, 1, -24), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
+  toastCard.Position = UDim2.new(0.5, 0, 1, 18); toastCard.GroupTransparency = 1
+  local toast = toastCard; UIState.toastTween = twPlay(toast, 0.22, { Position = UDim2.new(0.5, 0, 1, -24), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
   task.delay(1.35, function()
     if generation ~= UIState.toastGeneration or not toast.Parent then return end
-    local fade = twPlay(toast, 0.22, { Position = UDim2.new(0.5, 0, 1, 18), GroupTransparency = 1 }, EASE_OUT, DIR_IN)
-    UIState.toastTween = fade
+    local fade = twPlay(toast, 0.22, { Position = UDim2.new(0.5, 0, 1, 18), GroupTransparency = 1 }, EASE_OUT, DIR_IN); UIState.toastTween = fade
     if fade then
       local connection
       connection = trackConn(fade.Completed:Connect(function(playbackState)
-        safeDisconnect(connection)
-        untrackConn(connection)
+        safeDisconnect(connection); untrackConn(connection)
         if playbackState ~= Enum.PlaybackState.Completed then return end
         if generation == UIState.toastGeneration and toast == toastCard then
-          toastCard = nil; toastLabel = nil; UIState.toastTween = nil
+          toastCard = nil; toastLabel = nil
+          UIState.toastTween = nil
           if toast.Parent then toast:Destroy() end
         end
       end))
@@ -1065,8 +1043,7 @@ local function createStatusToggleCard(option, yPos, parent, options)
 end
 local function createClickCard(option, yPos, parent, onActivate)
   local _, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
-  local f = cardFrame(yPos, height, parent)
-  addOptionText(f, option, height, -28)
+  local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, -28)
   addCardHitbox(f, height, function()
     if onActivate then onActivate() end
   end)
@@ -1612,8 +1589,7 @@ function ExodusUI.setup(deps)
   floatingButtonStroke.Transparency = 1; registerFlow(floatingButtonStroke)
   task.defer(function()
     if not floatingButton or not floatingButton.Parent then return end
-    twPlay(floatingButton, 0.26, { BackgroundTransparency = 0.1, TextTransparency = 0 }, EASE_OUT, DIR_OUT)
-    twPlay(floatingButtonStroke, 0.26, { Transparency = 0 }, EASE_OUT, DIR_OUT)
+    twPlay(floatingButton, 0.26, { BackgroundTransparency = 0.1, TextTransparency = 0 }, EASE_OUT, DIR_OUT); twPlay(floatingButtonStroke, 0.26, { Transparency = 0 }, EASE_OUT, DIR_OUT)
   end)
   local config = Utils.getConfig(); local clashX = config.ClashBallX or 14
   local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
@@ -1983,8 +1959,7 @@ function ExodusUI.setup(deps)
   reloadButton = makeBtn("Reload", 0, 0, 124, 26, configPanel, C.btnBlue); reloadButton.Name = "ReloadHub"
   reloadButton.Position = UDim2.new(1, -PAD - 256, 1, -PAD - 26); reloadButton.TextSize = 11
   trackConn(reloadButton.Activated:Connect(function() animateClose("reload") end))
-  cardLabel("TOGGLES", colLeft)
-  local yL = 26
+  cardLabel("TOGGLES", colLeft); local yL = 26
   local toggleCallbacks = {
     AutoParry = paintParryBall,
     ParryBallVisible = showParryBall,
@@ -2000,7 +1975,8 @@ function ExodusUI.setup(deps)
       yL = createToggleCard(definition, definition.key, yL, colLeft, toggleCallbacks[definition.key], shortcutByConfig[definition.key])
     end
   end
-  colLeft.CanvasSize = UDim2.new(0, 0, 0, yL); cardLabel("SPAM CONTROLS", colRight); local yR = 26
+  colLeft.CanvasSize = UDim2.new(0, 0, 0, yL); cardLabel("SPAM CONTROLS", colRight)
+  local yR = 26
   local components = {
     rate_selector = createRateSelector,
     keybind_selector = createKeybindSelector,
@@ -2124,15 +2100,14 @@ function ExodusUI.setup(deps)
       if showPersistentNotification then showPersistentNotification("Dumper is already running.", "dumper", "warning") end
     end
   end
-  cardLabel("ACTIONS", indeedContent)
-  local indeedY = 26; local indeedPage = UIConfig.pages.indeed
+  cardLabel("ACTIONS", indeedContent); local indeedY = 26
+  local indeedPage = UIConfig.pages.indeed
   if type(indeedPage) == "table" and type(indeedPage.components) == "table" then
     for _, definition in ipairs(indeedPage.components) do
       if definition.kind == "click" and definition.action == "dumper" then indeedY = createClickCard(definition, indeedY, indeedContent, runDumper) end
     end
   end
-  indeedContent.CanvasSize = UDim2.fromOffset(0, indeedY + CARD_GAP)
-  cardLabel("OFF / ON", autosLeft)
+  indeedContent.CanvasSize = UDim2.fromOffset(0, indeedY + CARD_GAP); cardLabel("OFF / ON", autosLeft)
   cardLabel(UIState.desktop and "ACTIONS" or "TOGGLES", autosRight)
   local darkYPos, darkCard = createStatusToggleCard("Auto Dark", 26, autosLeft, {
     configKey = "AutoDark",
@@ -2194,8 +2169,7 @@ function ExodusUI.setup(deps)
   end
   updateAbilityVisibility(GameInfo.areAbilitiesEnabled()); trackConn(GameInfo.observeAbilityMode(updateAbilityVisibility))
   local antiConnection
-  local antiGeneration = 0
-  cardLabel("OFF / ON", utilities)
+  local antiGeneration = 0; cardLabel("OFF / ON", utilities)
   local utilitiesY = 26
   utilitiesY = createStatusToggleCard("Anti AFK", utilitiesY, utilities, {
     onToggle = function(enabled)
