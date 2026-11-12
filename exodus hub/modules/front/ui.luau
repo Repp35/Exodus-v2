@@ -1091,8 +1091,8 @@ function ExodusUI.setup(deps)
     ZIndex = 20,
     Parent = informationGui,
   })
-  compactInformation(distanceLabel); compactInformation(travelLabel); compactInformation(gateLabel)
-  corner(gateLabel, 8)
+  compactInformation(distanceLabel); compactInformation(travelLabel)
+  compactInformation(gateLabel); corner(gateLabel, 8)
   local nextGateUpdate = 0
   trackConn(RunService.Heartbeat:Connect(function()
     if not gateLabel.Parent then return end
@@ -1100,12 +1100,9 @@ function ExodusUI.setup(deps)
     if gateLabel.Visible ~= visible then gateLabel.Visible = visible end
     local time = os.clock()
     if not visible or time < nextGateUpdate then return end
-    nextGateUpdate = time + 0.1
-    local status = AutoSpam.getStatus()
-    local phase = status.active and "ACTIVE" or "INACTIVE"
-    local activation = status.lastActivationReason or "—"
-    local deactivation = status.lastStopReason or "—"
-    setTextIfChanged(gateLabel, "AutoSpam: " .. phase .. "\nActivation: " .. activation .. "\nDeactivation: " .. deactivation)
+    nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
+    local phase = status.active and "ACTIVE" or "INACTIVE"; local activation = status.lastActivationReason or "—"
+    local deactivation = status.lastStopReason or "—"; setTextIfChanged(gateLabel, "AutoSpam: " .. phase .. "\nActivation: " .. activation .. "\nDeactivation: " .. deactivation)
   end))
   corner(travelLabel, 8); local nextTravelUpdate = 0
   local telemetryAt, telemetryStatus, telemetrySnapshot = -math.huge, nil, nil
@@ -1715,8 +1712,7 @@ function ExodusUI.setup(deps)
     createOffOnCard("Auto Dash (clash)", upDashYPos, autosRight, { configKey = "AutoClashUpDash", toastLabel = "Auto Dash (clash)" })
   local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft)
   local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 4, settingsRight)
-  local gateYPos = createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight)
-  createToggleCard("AutoSpam Gates", "ClashGateInfoVisible", gateYPos, settingsRight)
+  local gateYPos = createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight); createToggleCard("AutoSpam Gates", "ClashGateInfoVisible", gateYPos, settingsRight)
   local function updateAbilityVisibility(enabled)
     for _, card in ipairs({ darkCard, miniDarkCard, jumpCard, miniJumpCard, upDashCard, fierceCard, autoUpDashCard }) do
       if card then card.Visible = enabled end
