@@ -73,8 +73,8 @@ local function snapshotSpeed(snapshot)
   local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
 end
 local function resetExchange(s)
-  s.proximityPartner, s.proximityAt, s.proximityLastDistance, s.proximitySequence = nil, nil, nil, nil; s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil
-  s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
+  s.proximityPartner, s.proximityAt, s.proximityLastDistance, s.proximitySequence = nil, nil, nil, nil
+  s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil; s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 end
 local function distanceToPlayer(id) return id and gameInfo.getPlayerDistance(id) or nil end
 local function ballStationaryTooLong(s, time)
@@ -220,15 +220,18 @@ local function ownBallClose(s, snapshot, time)
   if snapshot.targetId ~= localPlayer.UserId or snapshot.locked == true or snapshot.teleported then return false end
   if not gameInfo.isSnapshotValid(snapshot) or gameInfo.getBallFrozen() == true then return false end
   if typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return false end
-  local candidateValid = s.proximityPartner ~= nil and finite(s.proximityAt) and finite(time)
-    and time >= s.proximityAt and time - s.proximityAt <= CONFIG.ACTIVATION.OWN_BALL_CANDIDATE_MAX_AGE
-    and s.target == localPlayer.UserId and (s.proximitySequence == nil or s.sequence == s.proximitySequence)
+  local candidateValid = s.proximityPartner ~= nil
+    and finite(s.proximityAt)
+    and finite(time)
+    and time >= s.proximityAt
+    and time - s.proximityAt <= CONFIG.ACTIVATION.OWN_BALL_CANDIDATE_MAX_AGE
+    and s.target == localPlayer.UserId
+    and (s.proximitySequence == nil or s.sequence == s.proximitySequence)
   local toward = s.root.Position - snapshot.position; local distance = toward.Magnitude
   if s.proximityPartner and not s.active then
     local movingAway = s.proximityLastDistance and distance > s.proximityLastDistance + 0.25
     if not candidateValid or distance > CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS or movingAway then
-      s.proximityPartner, s.proximityAt, s.proximityLastDistance, s.proximitySequence = nil, nil, nil, nil
-      candidateValid = false
+      s.proximityPartner, s.proximityAt, s.proximityLastDistance, s.proximitySequence = nil, nil, nil, nil; candidateValid = false
     else
       s.proximityLastDistance = distance
     end
@@ -391,14 +394,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
     and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
     and ownBallClose(s, snapshot, time)
   then
-    start(
-      s,
-      "own_ball_proximity",
-      s.pending and s.pending.partner or s.proximityPartner,
-      time,
-      serverTime or snapshot.serverTime,
-      snapshot
-    )
+    start(s, "own_ball_proximity", s.pending and s.pending.partner or s.proximityPartner, time, serverTime or snapshot.serverTime, snapshot)
   end
   if
     not s.active
