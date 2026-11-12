@@ -1079,8 +1079,8 @@ function ExodusUI.setup(deps)
   local gateLabel = inst("TextLabel", {
     Name = "AutoSpamGateInfo",
     Size = UDim2.fromOffset(1, 1),
-    AnchorPoint = Vector2.new(0, 0),
-    Position = UDim2.new(0, 0, 0, 12),
+    AnchorPoint = Vector2.new(0, 0.5),
+    Position = UDim2.new(0, 0, 0.5, 0),
     BackgroundColor3 = C.header,
     BackgroundTransparency = 0.2,
     Text = "AutoSpam: —\nActivation: —\nDeactivation: —",
