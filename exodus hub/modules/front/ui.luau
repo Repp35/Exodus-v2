@@ -1960,7 +1960,7 @@ function ExodusUI.setup(deps)
   reloadButton = makeBtn("Reload", 0, 0, 124, 26, configPanel, C.btnBlue); reloadButton.Name = "ReloadHub"
   reloadButton.Position = UDim2.new(1, -PAD - 256, 1, -PAD - 26); reloadButton.TextSize = 11
   trackConn(reloadButton.Activated:Connect(function() animateClose("reload") end))
-  cardLabel("Toggle", colLeft); local yL = 26
+  cardLabel("Combat", colLeft); local yL = 26
   local toggleCallbacks = {
     AutoParry = paintParryBall,
     ParryBallVisible = showParryBall,
@@ -1976,7 +1976,7 @@ function ExodusUI.setup(deps)
       yL = createToggleCard(definition, definition.key, yL, colLeft, toggleCallbacks[definition.key], shortcutByConfig[definition.key])
     end
   end
-  colLeft.CanvasSize = UDim2.new(0, 0, 0, yL); cardLabel("Spam Controls", colRight)
+  colLeft.CanvasSize = UDim2.new(0, 0, 0, yL); cardLabel("Spam", colRight)
   local yR = 26
   local components = {
     rate_selector = createRateSelector,
@@ -2101,15 +2101,15 @@ function ExodusUI.setup(deps)
       if showPersistentNotification then showPersistentNotification("Dumper is already running.", "dumper", "warning", 2.0) end
     end
   end
-  cardLabel("Actions", indeedContent); local indeedY = 26
+  cardLabel("Developer Tools", indeedContent); local indeedY = 26
   local indeedPage = UIConfig.pages.indeed
   if type(indeedPage) == "table" and type(indeedPage.components) == "table" then
     for _, definition in ipairs(indeedPage.components) do
       if definition.kind == "click" and definition.action == "dumper" then indeedY = createClickCard(definition, indeedY, indeedContent, runDumper) end
     end
   end
-  indeedContent.CanvasSize = UDim2.fromOffset(0, indeedY + CARD_GAP); cardLabel("Off / On", autosLeft)
-  cardLabel(UIState.desktop and "Actions" or "Toggle", autosRight)
+  indeedContent.CanvasSize = UDim2.fromOffset(0, indeedY + CARD_GAP); cardLabel("Automatic Abilities", autosLeft)
+  cardLabel("Quick Controls", autosRight)
   local darkYPos, darkCard = createStatusToggleCard("Auto Dark", 26, autosLeft, {
     configKey = "AutoDark",
     shortcutKey = UIState.desktop and "DarkKeybind" or nil,
@@ -2158,7 +2158,7 @@ function ExodusUI.setup(deps)
       description = "Exibe o botão de Up Dash na tela.",
     }, "UpDashBallVisible", miniJumpY, autosRight, showUpDashBall)
   end
-  cardLabel("Parry / Camera", settingsLeft); cardLabel("Toggle", settingsRight)
+  cardLabel("Parry & Camera", settingsLeft); cardLabel("Clash Indicators", settingsRight)
   local parryYPos = createParryTimingCard(26, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft)
   local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 26, settingsRight)
   local gateYPos = createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight); createToggleCard("AutoSpam Gates", "ClashGateInfoVisible", gateYPos, settingsRight)
@@ -2170,7 +2170,7 @@ function ExodusUI.setup(deps)
   end
   updateAbilityVisibility(GameInfo.areAbilitiesEnabled()); trackConn(GameInfo.observeAbilityMode(updateAbilityVisibility))
   local antiConnection
-  local antiGeneration = 0; cardLabel("Off / On", utilities)
+  local antiGeneration = 0; cardLabel("Utilities", utilities)
   local utilitiesY = 26
   utilitiesY = createStatusToggleCard("Anti AFK", utilitiesY, utilities, {
     onToggle = function(enabled)
