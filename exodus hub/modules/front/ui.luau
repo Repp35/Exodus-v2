@@ -115,9 +115,6 @@ local CONFIG = {
   TITLE_TEXT_SIZE = 16,
   AUTHOR_TEXT_SIZE = 14,
   AUTHOR_TRANSPARENCY = 0.22,
-  TITLE_TEXT_SIZE = 16,
-  AUTHOR_TEXT_SIZE = 14,
-  AUTHOR_TRANSPARENCY = 0.22,
   TITLE_SIDE_RESERVE = 80,
 }
 
@@ -1093,81 +1090,68 @@ function ExodusUI.setup(deps)
   })
   compactInformation(distanceLabel); compactInformation(travelLabel)
   compactInformation(gateLabel); corner(gateLabel, 8)
-  local nextGateUpdate = 0
+  local nextGateUpdate, nextTravelUpdate, nextDistanceUpdate = 0, 0, 0
   local function validGate(value)
     return type(value) == "string" and value ~= "" and value ~= "null" and value ~= "nil" and value ~= "inactive" and value ~= "detached"
   end
-  trackConn(RunService.Heartbeat:Connect(function()
-    if not gateLabel.Parent then return end
-    local enabled = Utils.getConfigValue("ClashGateInfoVisible") == true; local time = os.clock()
-    if enabled and time >= nextGateUpdate then
-      nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
-      local lines = {}
-      if status and status.active == true then table.insert(lines, "AutoSpam: ACTIVE") end
-      if status and validGate(status.lastActivationReason) then table.insert(lines, "Activation: " .. status.lastActivationReason) end
-      if status and validGate(status.lastStopReason) then table.insert(lines, "Deactivation: " .. status.lastStopReason) end
-      setTextIfChanged(gateLabel, table.concat(lines, "\n"))
-    end
-    local visible = enabled and gateLabel.Text ~= ""
-    if gateLabel.Visible ~= visible then gateLabel.Visible = visible end
-  end))
-  corner(travelLabel, 8); local nextTravelUpdate = 0
   local telemetryAt, telemetryStatus, telemetrySnapshot = -math.huge, nil, nil
   local function getTelemetry(time)
     if time < telemetryAt or time - telemetryAt >= 1 / 240 then telemetryAt, telemetryStatus, telemetrySnapshot = time, AutoSpam.getStatus(), GameInfo.getSnapshotAt(time) end
     return telemetryStatus, telemetrySnapshot
   end
-  trackConn(RunService.Heartbeat:Connect(function()
-    if not travelLabel.Parent then return end
-    local visible = Utils.getConfigValue("ClashTravelTimeVisible") == true
-    if travelLabel.Visible ~= visible then travelLabel.Visible = visible end
-    local time = os.clock()
-    if not visible or time < nextTravelUpdate then return end
-    nextTravelUpdate = time + 0.05; local status, snapshot = getTelemetry(time)
-    local stats = status and status.clashStats
-    local speed
-    if GameInfo.isSnapshotValid(snapshot) then
-      speed = tonumber(snapshot.syncSpeed)
-      if not speed or speed ~= speed or speed <= 0 or speed == math.huge then speed = snapshot.speed end
+  local function formatSpeed(snapshot)
+    if not GameInfo.isSnapshotValid(snapshot) then return "—" end
+    local speed = tonumber(snapshot.syncSpeed)
+    if not speed or speed ~= speed or speed <= 0 or speed == math.huge then speed = snapshot.speed end
+    return type(speed) == "number" and speed == speed and speed >= 0 and speed < math.huge and string.format("%.0f", speed) or "—"
+  end
+  local function updateInformation()
+    if not informationGui.Parent then return end
+    local time = os.clock(); local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
+    if gateEnabled and time >= nextGateUpdate then
+      nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
+      local lines = {}
+      if status and status.active == true then lines[#lines + 1] = "AutoSpam: ACTIVE" end
+      if status and validGate(status.lastActivationReason) then lines[#lines + 1] = "Activation: " .. status.lastActivationReason end
+      if status and validGate(status.lastStopReason) then lines[#lines + 1] = "Deactivation: " .. status.lastStopReason end
+      setTextIfChanged(gateLabel, table.concat(lines, "\n"))
     end
-    local speedText = type(speed) == "number" and speed == speed and speed >= 0 and speed < math.huge and string.format("%.0f", speed) or "—"
-    if not stats then setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\nBall travel time: —"); return end
-    local me = Players.LocalPlayer and Players.LocalPlayer.UserId
-    local text
-    if stats.frozen then
-      if stats.deceasedId then
-        local who = stats.deceasedId == me and "You" or "Opponent"; local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "unavailable"
-        local previousWho = stats.penultimateTarget == me and "you" or (stats.penultimateTarget == stats.partnerId and "opponent" or "—")
-        local previous = stats.penultimateTravelTime and string.format("%.0f ms", stats.penultimateTravelTime * 1000) or "unavailable"
-        text = who .. " died\nTarget time to death: " .. value .. "\nPrevious (" .. previousWho .. "): " .. previous
+    local gateVisible = gateEnabled and gateLabel.Text ~= ""
+    if gateLabel.Visible ~= gateVisible then gateLabel.Visible = gateVisible end
+    local travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true
+    if travelLabel.Visible ~= travelVisible then travelLabel.Visible = travelVisible end
+    if travelVisible and time >= nextTravelUpdate then
+      nextTravelUpdate = time + 0.05; local status, snapshot = getTelemetry(time)
+      local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
+      if not stats then
+        setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\nBall travel time: —")
       else
-        text = "Clash ended\nFinal time: unavailable"
+        local me = Players.LocalPlayer and Players.LocalPlayer.UserId
+        local text
+        if stats.frozen then
+          if stats.deceasedId then
+            local who = stats.deceasedId == me and "You" or "Opponent"; local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "unavailable"
+            local previousWho = stats.penultimateTarget == me and "you" or (stats.penultimateTarget == stats.partnerId and "opponent" or "—")
+            local previous = stats.penultimateTravelTime and string.format("%.0f ms", stats.penultimateTravelTime * 1000) or "unavailable"
+            text = who .. " died\nTarget time to death: " .. value .. "\nPrevious (" .. previousWho .. "): " .. previous
+          else
+            text = "Clash ended\nFinal time: unavailable"
+          end
+        else
+          local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"
+          local who = stats.travelTarget == me and "You" or (stats.travelTarget == stats.partnerId and "Opponent" or "—")
+          local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
+          local lastWho = stats.lastTravelTarget == me and "you" or (stats.lastTravelTarget == stats.partnerId and "opponent" or "—")
+          text = "Target: " .. who .. " | Time: " .. value .. "\nLast exchange (" .. lastWho .. "): " .. last
+        end
+        setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\n" .. text)
       end
-    else
-      local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"
-      local who = stats.travelTarget == me and "You" or (stats.travelTarget == stats.partnerId and "Opponent" or "—")
-      local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
-      local lastWho = stats.lastTravelTarget == me and "you" or (stats.lastTravelTarget == stats.partnerId and "opponent" or "—")
-      text = "Target: " .. who .. " | Time: " .. value .. "\nLast exchange (" .. lastWho .. "): " .. last
     end
-    setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\n" .. text)
-  end))
-  corner(distanceLabel, 8); local nextDistanceUpdate = 0
-  trackConn(RunService.Heartbeat:Connect(function()
-    if not distanceLabel.Parent then return end
-    local visible = Utils.getConfigValue("ClashDistanceVisible") == true
-    if distanceLabel.Visible ~= visible then distanceLabel.Visible = visible end
-    local time = os.clock()
-    if not visible or time < nextDistanceUpdate then return end
+    local distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true
+    if distanceLabel.Visible ~= distanceVisible then distanceLabel.Visible = distanceVisible end
+    if not distanceVisible or time < nextDistanceUpdate then return end
     nextDistanceUpdate = time + 0.1; local status, snapshot = getTelemetry(time)
-    local stats = status and status.clashStats
-    local currentSpeed
-    if GameInfo.isSnapshotValid(snapshot) then
-      currentSpeed = tonumber(snapshot.syncSpeed)
-      if not currentSpeed or currentSpeed ~= currentSpeed or currentSpeed <= 0 or currentSpeed == math.huge then currentSpeed = snapshot.speed end
-    end
-    local speedText = type(currentSpeed) == "number" and currentSpeed == currentSpeed and currentSpeed < math.huge and string.format("%.0f", currentSpeed)
-      or "—"
+    local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
     local text
     if stats and (not stats.frozen or stats.endReason == "jogador morreu") then
       local function sampleText(sample)
@@ -1190,8 +1174,8 @@ function ExodusUI.setup(deps)
       text = "Current SPD: " .. speedText .. "\nClash: —\nCurrent CPS: —"
     end
     setTextIfChanged(distanceLabel, text)
-  end))
-  bindInput()
+  end
+  trackConn(RunService.Heartbeat:Connect(updateInformation)); bindInput()
   floatingButton = inst("TextButton", {
     Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE),
     Position = btnPos(),
