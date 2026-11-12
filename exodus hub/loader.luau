@@ -181,15 +181,14 @@ local function storeSource(signature, relativePath, source)
   if type(writefile) ~= "function" or type(makefolder) ~= "function" or type(isfolder) ~= "function" then return end
   if fingerprint(source) ~= signature then return end
   pcall(function()
-    local root = "Exodus Hub"
-    if not isfolder(root) then makefolder(root) end
-    for part in (SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath):gmatch("[^/]+") do
-      if part ~= relativePath:match("[^/]+$") then
-        root = root .. "/" .. part
-        if not isfolder(root) then makefolder(root) end
-      end
+    local root = ""
+    local fullPath = SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath
+    local directory = fullPath:match("^(.*)/[^/]+$")
+    for part in directory:gmatch("[^/]+") do
+      root = root == "" and part or (root .. "/" .. part)
+      if not isfolder(root) then makefolder(root) end
     end
-    writefile(SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath, source)
+    writefile(fullPath, source)
   end)
 end
 
