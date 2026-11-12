@@ -213,13 +213,15 @@ local function shouldActivate(s, snapshot, time)
   return true
 end
 local function ownBallClose(s, snapshot)
-  return s.root
-    and s.root.Parent
-    and snapshot
-    and snapshot.targetUncertain ~= true
-    and snapshot.targetId == localPlayer.UserId
-    and typeof(snapshot.position) == "Vector3"
-    and (snapshot.position - s.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_CLOSE_RADIUS
+  if not s.root or not s.root.Parent or not snapshot or snapshot.targetUncertain == true then return false end
+  if snapshot.targetId ~= localPlayer.UserId or snapshot.locked == true or snapshot.teleported then return false end
+  if not gameInfo.isSnapshotValid(snapshot) or gameInfo.getBallFrozen() == true then return false end
+  if typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return false end
+  local toward = s.root.Position - snapshot.position
+  local distance = toward.Magnitude
+  local speed = snapshot.velocity.Magnitude
+  if distance > CONFIG.ACTIVATION.OWN_BALL_CLOSE_RADIUS or distance < 0.05 or speed < 8 then return false end
+  return snapshot.velocity:Dot(toward) / distance > 2
 end
 
 -- deactivation
@@ -257,7 +259,10 @@ local function shouldDeactivate(s, snapshot, time)
     local position = gameInfo.getPlayerMotion(target); local limit = distanceLimit(snapshot, target)
     if limit and s.root and s.root.Parent and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > limit then return "distant_target" end
   end
-  if s.reason == "own_ball_proximity" and ownBallClose(s, snapshot) then return nil end
+  if s.reason == "own_ball_proximity" then
+    if not ownBallClose(s, snapshot) then return "proximity_gate_lost" end
+    return nil
+  end
   local reason = distanceGate(s, snapshot, s.partner)
   if reason ~= "distance_unavailable" then return reason end
   return nil
