@@ -26,7 +26,14 @@ local function onParried()
   graceHandled = true; parryGeneration += 1
   lastParriedAt = os.clock()
 end
+local function clearDisconnectedSignal()
+  if not parriedConnection or parriedConnection.Connected then return end
+  if utils then utils.untrackGlobal(parriedConnection) end
+  table.remove(connections, table.find(connections, parriedConnection))
+  parriedConnection = nil
+end
 local function connectSignals(now)
+  clearDisconnectedSignal()
   if now < nextSignalAt or parriedConnection then return end
   nextSignalAt = now + CONFIG.SIGNAL_RETRY; local signals = gameInfo.getDeflectServerEvents()
   if signals and signals.parried then parriedConnection = track(signals.parried:Connect(onParried)) end
@@ -55,7 +62,7 @@ end
 local function update()
   local now = os.clock()
   if not enabled() then graceHandled = false; return end
-  if not parriedConnection then connectSignals(now) end
+  connectSignals(now)
   if not parriedConnection then return end
   local danger, grace = graceDanger(now)
   if grace == nil then return end

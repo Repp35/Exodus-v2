@@ -2,7 +2,7 @@
 
 -- module
 local Camera = {}
-local utils, runService
+local utils
 local cameraEpoch = 0
 local cameraInput, cameraOriginal, cameraWrapped, configConnection
 local sensitivity = 1
@@ -58,8 +58,6 @@ end
 function Camera.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   Camera.teardown(); utils = deps.Utils
-  runService = utils.getRunService()
-  if not runService then return false, "RunService indisponível" end
   sensitivity = tonumber(utils.getConfigValue("CameraSensitivity")) or CONFIG.DEFAULT_SENSITIVITY; startCamera()
   configConnection = utils.observeConfig(function(changes)
     if changes.CameraSensitivity ~= nil then sensitivity = tonumber(changes.CameraSensitivity) or CONFIG.DEFAULT_SENSITIVITY end
@@ -67,7 +65,7 @@ function Camera.setup(deps)
   utils.trackGlobal(configConnection); return true
 end
 function Camera.teardown()
-  stopCamera(); utils, runService = nil, nil
+  stopCamera(); utils = nil
 end
 
 -- contract
@@ -76,7 +74,6 @@ Camera.__contract = {
   requiresMethods = {
     Utils = {
       "getLocalPlayer",
-      "getRunService",
       "getConfigValue",
       "isActive",
       "observeConfig",
