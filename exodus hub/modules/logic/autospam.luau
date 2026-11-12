@@ -73,8 +73,8 @@ local function snapshotSpeed(snapshot)
   local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
 end
 local function resetExchange(s)
-  s.proximityPartner, s.proximityAt, s.proximityLastDistance = nil, nil, nil
-  s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil; s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
+  s.proximityPartner, s.proximityAt, s.proximityLastDistance = nil, nil, nil; s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil
+  s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 end
 local function distanceToPlayer(id) return id and gameInfo.getPlayerDistance(id) or nil end
 local function ballStationaryTooLong(s, time)
@@ -216,7 +216,10 @@ local function shouldActivate(s, snapshot, time)
   return true
 end
 local function ownBallClose(s, snapshot, time)
-  local candidateValid = s.proximityPartner and s.proximityAt and time and time - s.proximityAt >= 0
+  local candidateValid = s.proximityPartner
+    and s.proximityAt
+    and time
+    and time - s.proximityAt >= 0
     and time - s.proximityAt <= CONFIG.ACTIVATION.OWN_BALL_CANDIDATE_MAX_AGE
     and s.target == localPlayer.UserId
   local partner = s.active and s.partner or (s.pending and s.pending.partner or (candidateValid and s.proximityPartner or s.exchangePartner))
@@ -231,8 +234,7 @@ local function ownBallClose(s, snapshot, time)
   local toward = s.root.Position - snapshot.position; local distance = toward.Magnitude
   local speed = snapshot.velocity.Magnitude
   if s.proximityPartner and not s.active then
-    local expired = not candidateValid or distance > CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS
-    local movingAway = s.proximityLastDistance and distance > s.proximityLastDistance + 0.25
+    local expired = not candidateValid or distance > CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS; local movingAway = s.proximityLastDistance and distance > s.proximityLastDistance + 0.25
     if expired or movingAway then
       s.proximityPartner, s.proximityAt, s.proximityLastDistance = nil, nil, nil
       if not s.pending then return false end
@@ -318,8 +320,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
     completedPartner = target == me and previous or target
   end
   if previous and (previous == me or target == me) then s.exchangeFrom, s.exchangeTo, s.exchangeAt = previous, target, time else s.exchangeFrom, s.exchangeTo, s.exchangeAt = nil, nil, nil end
-  s.exchangePartner, s.exchangeReadyAt = completedPartner, completedPartner and time or nil
-  s.proximityPartner, s.proximityAt, s.proximityLastDistance = nil, nil, nil
+  s.exchangePartner, s.exchangeReadyAt = completedPartner, completedPartner and time or nil; s.proximityPartner, s.proximityAt, s.proximityLastDistance = nil, nil, nil
   if
     target == me
     and previous
@@ -331,8 +332,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
     and (snapshot.position - s.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS
     and playerIsAlive(previous)
   then
-    s.proximityPartner, s.proximityAt = previous, time
-    s.proximityLastDistance = (snapshot.position - s.root.Position).Magnitude
+    s.proximityPartner, s.proximityAt = previous, time; s.proximityLastDistance = (snapshot.position - s.root.Position).Magnitude
   end
   if
     s.stoppedPartner
@@ -394,7 +394,14 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
     and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
     and ownBallClose(s, snapshot, time)
   then
-    start(s, "own_ball_proximity", s.pending and s.pending.partner or s.proximityPartner or s.exchangePartner, time, serverTime or snapshot.serverTime, snapshot)
+    start(
+      s,
+      "own_ball_proximity",
+      s.pending and s.pending.partner or s.proximityPartner or s.exchangePartner,
+      time,
+      serverTime or snapshot.serverTime,
+      snapshot
+    )
   end
   if
     not s.active
