@@ -5,6 +5,7 @@ local AutoSpam = {}
 local utils, gameInfo, clashStatsModule, players, runService, localPlayer
 local current, generation = nil, 0
 local clashStats
+local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 
 -- configuration
 local CONFIG = {
@@ -196,7 +197,8 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   s.deflectCooldownSince = nil; s.activatedAt, s.firstReturnSeen = time, false
   s.lastClosePartner, s.lastCloseAt, s.lastCloseDistance = nil, nil, nil; gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot))
   s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil; s.diversionSince, s.diversionSyncAt = nil, nil
-  s.lastSwitchAt, s.lastSwitchServerAt, s.reason, s.lastActivationReason, s.lastActivationAt = time, serverTime, reason, reason, time; utils.setAutoSpamActive(true)
+  s.lastSwitchAt, s.lastSwitchServerAt, s.reason, s.lastActivationReason, s.lastActivationAt = time, serverTime, reason, reason, time
+  lastActivationReason, lastActivationAt = reason, time; utils.setAutoSpamActive(true)
   utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function activationGeometry(s, snapshot, partner, time)
@@ -286,7 +288,8 @@ local function stop(s, reason)
   if s.active then
     local stoppedAt = now(); s.stoppedPartner, s.stoppedAt = s.partner, stoppedAt
     s.active = false; s.lastDeactivatedAt = stoppedAt
-    s.lastStopReason, s.lastStopAt = reason, s.lastDeactivatedAt; utils.setAutoSpamActive(false)
+    s.lastStopReason, s.lastStopAt = reason, s.lastDeactivatedAt
+    lastStopReason, lastStopAt = reason, stoppedAt; utils.setAutoSpamActive(false)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
   s.reason, s.pending, s.partner, s.activatedAt, s.firstReturnSeen, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil
@@ -811,10 +814,10 @@ function AutoSpam.getStatus()
     phase = s and (s.active and "active" or "idle") or "detached",
     active = s ~= nil and s.active,
     lastGate = s and s.reason or "detached",
-    lastActivationReason = s and s.lastActivationReason or nil,
-    lastActivationAt = s and s.lastActivationAt or nil,
-    lastStopReason = s and s.lastStopReason or nil,
-    lastStopAt = s and s.lastStopAt or nil,
+    lastActivationReason = lastActivationReason,
+    lastActivationAt = lastActivationAt,
+    lastStopReason = lastStopReason,
+    lastStopAt = lastStopAt,
     clashPartnerId = s and s.partner or -1,
     clashStats = clashStats and {
       partnerId = clashStats.partnerId,
