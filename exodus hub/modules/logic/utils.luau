@@ -66,18 +66,14 @@ end
 -- observers
 local function connectObserver(list, indexMap, observer)
   if type(observer) ~= "function" then error("Observer precisa ser uma função", 2) end
-  local connection = { Connected = true, callback = observer }
-  list[#list + 1] = connection
+  local connection = { Connected = true, callback = observer }; list[#list + 1] = connection
   indexMap[connection] = #list
   function connection:Disconnect()
     if not self.Connected then return end
-    self.Connected = false
-    local index = indexMap[self]
+    self.Connected = false; local index = indexMap[self]
     if not index then return end
-    local lastIndex = #list
-    local last = list[lastIndex]
-    list[index] = last
-    list[lastIndex] = nil
+    local lastIndex = #list; local last = list[lastIndex]
+    list[index] = last; list[lastIndex] = nil
     indexMap[self] = nil
     if last and last ~= self then indexMap[last] = index end
   end
@@ -96,30 +92,23 @@ function Utils.observeSpam(observer) return connectObserver(spamObservers, obser
 function Utils.observeConfig(observer) return connectObserver(configObservers, observerIndexes.config, observer) end
 local function track(list, indexMap, connection)
   if not connection or type(connection.Disconnect) ~= "function" then error("Conexão inválida", 2) end
-  if not indexMap[connection] then
-    list[#list + 1] = connection
-    indexMap[connection] = #list
-  end
+  if not indexMap[connection] then list[#list + 1] = connection; indexMap[connection] = #list end
   return connection
 end
 local function untrack(list, indexMap, connection)
   local index = indexMap[connection]
   if not index then return false end
-  local lastIndex = #list
-  local last = list[lastIndex]
-  list[index] = last
-  list[lastIndex] = nil
+  local lastIndex = #list; local last = list[lastIndex]
+  list[index] = last; list[lastIndex] = nil
   indexMap[connection] = nil
   if last and last ~= connection then indexMap[last] = index end
   return true
 end
 local function disconnectAll(list, indexMap)
   for i = #list, 1, -1 do
-    local connection = list[i]
-    list[i] = nil
+    local connection = list[i]; list[i] = nil
     if connection then
-      indexMap[connection] = nil
-      local ok, err = pcall(connection.Disconnect, connection)
+      indexMap[connection] = nil; local ok, err = pcall(connection.Disconnect, connection)
       if not ok and type(warn) == "function" then warn("Falha ao desconectar: " .. tostring(err)) end
     end
   end
@@ -319,8 +308,8 @@ function Utils.start()
   refreshNamespace(); return stateSnapshot()
 end
 function Utils.stop()
-  local previous = state.lifecycle.phase; state.lifecycle.generation += 1; state.active, state.manualSpam, state.autoSpam = false, false, false
-  local notified, notifyError = pcall(notify, spamObservers)
+  local previous = state.lifecycle.phase; state.lifecycle.generation += 1
+  state.active, state.manualSpam, state.autoSpam = false, false, false; local notified, notifyError = pcall(notify, spamObservers)
   if not notified then warn("Falha ao avisar observadores: " .. tostring(notifyError)) end
   local saved, saveError = pcall(flushSave)
   if not saved then warn("Falha ao salvar configuração: " .. tostring(saveError)) end
@@ -332,7 +321,8 @@ function Utils.stop()
   end
   disconnectAll(state.characterConnections, connectionIndexes.character); disconnectAll(state.globalConnections, connectionIndexes.global)
   state.config, state.urls, modules = {}, {}, {}; persistenceReady, saveDirty = false, false
-  table.clear(spamObservers); table.clear(configObservers); table.clear(observerIndexes.spam); table.clear(observerIndexes.config)
+  table.clear(spamObservers); table.clear(configObservers)
+  table.clear(observerIndexes.spam); table.clear(observerIndexes.config)
   if type(_G.Exodus) == "table" then
     local exodus = _G.Exodus; exodus.Started, exodus.UIReady, exodus.Runtime, exodus.UI = false, false, nil, nil
     if type(exodus.RemoteHooks) == "table" then exodus.RemoteHooks.register = nil end

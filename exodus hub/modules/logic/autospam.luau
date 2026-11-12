@@ -66,10 +66,8 @@ local function elapsed(localStart, serverStart, localNow, serverNow)
   return nil
 end
 local function track(s, signal, callback)
-  local connection = signal:Connect(callback)
-  s.connections[#s.connections + 1] = connection
-  s.connectionIndex[connection] = #s.connections
-  utils.trackCharacter(connection)
+  local connection = signal:Connect(callback); s.connections[#s.connections + 1] = connection
+  s.connectionIndex[connection] = #s.connections; utils.trackCharacter(connection)
   return connection
 end
 local function untrack(s, connection)
@@ -77,10 +75,8 @@ local function untrack(s, connection)
   utils.untrackCharacter(connection); connection:Disconnect()
   local index = s.connectionIndex[connection]
   if not index then return end
-  local lastIndex = #s.connections
-  local last = s.connections[lastIndex]
-  s.connections[index] = last
-  s.connections[lastIndex] = nil
+  local lastIndex = #s.connections; local last = s.connections[lastIndex]
+  s.connections[index] = last; s.connections[lastIndex] = nil
   s.connectionIndex[connection] = nil
   if last and last ~= connection then s.connectionIndex[last] = index end
 end
@@ -508,10 +504,9 @@ end
 -- lifecycle
 local function disconnect(s)
   for i = #s.connections, 1, -1 do
-    local connection = s.connections[i]
-    s.connections[i] = nil
-    s.connectionIndex[connection] = nil
-    utils.untrackCharacter(connection); connection:Disconnect()
+    local connection = s.connections[i]; s.connections[i] = nil
+    s.connectionIndex[connection] = nil; utils.untrackCharacter(connection)
+    connection:Disconnect()
   end
 end
 local function detach(reason)

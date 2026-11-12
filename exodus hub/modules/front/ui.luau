@@ -1107,11 +1107,9 @@ function ExodusUI.setup(deps)
   end
   local function updateInformation()
     if not informationGui.Parent then return end
-    local time = os.clock()
-    local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
+    local time = os.clock(); local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
     if gateEnabled and time >= nextGateUpdate then
-      nextGateUpdate = time + 0.1
-      local status = AutoSpam.getStatus()
+      nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
       local lines = {}
       if status and status.active == true then lines[#lines + 1] = "AutoSpam: ACTIVE" end
       if status and validGate(status.lastActivationReason) then lines[#lines + 1] = "Activation: " .. status.lastActivationReason end
@@ -1120,14 +1118,11 @@ function ExodusUI.setup(deps)
     end
     local gateVisible = gateEnabled and gateLabel.Text ~= ""
     if gateLabel.Visible ~= gateVisible then gateLabel.Visible = gateVisible end
-
     local travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true
     if travelLabel.Visible ~= travelVisible then travelLabel.Visible = travelVisible end
     if travelVisible and time >= nextTravelUpdate then
-      nextTravelUpdate = time + 0.05
-      local status, snapshot = getTelemetry(time)
-      local stats = status and status.clashStats
-      local speedText = formatSpeed(snapshot)
+      nextTravelUpdate = time + 0.05; local status, snapshot = getTelemetry(time)
+      local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
       if not stats then
         setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\nBall travel time: —")
       else
@@ -1135,8 +1130,7 @@ function ExodusUI.setup(deps)
         local text
         if stats.frozen then
           if stats.deceasedId then
-            local who = stats.deceasedId == me and "You" or "Opponent"
-            local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "unavailable"
+            local who = stats.deceasedId == me and "You" or "Opponent"; local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "unavailable"
             local previousWho = stats.penultimateTarget == me and "you" or (stats.penultimateTarget == stats.partnerId and "opponent" or "—")
             local previous = stats.penultimateTravelTime and string.format("%.0f ms", stats.penultimateTravelTime * 1000) or "unavailable"
             text = who .. " died\nTarget time to death: " .. value .. "\nPrevious (" .. previousWho .. "): " .. previous
@@ -1153,28 +1147,25 @@ function ExodusUI.setup(deps)
         setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\n" .. text)
       end
     end
-
     local distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true
     if distanceLabel.Visible ~= distanceVisible then distanceLabel.Visible = distanceVisible end
     if not distanceVisible or time < nextDistanceUpdate then return end
-    nextDistanceUpdate = time + 0.1
-    local status, snapshot = getTelemetry(time)
-    local stats = status and status.clashStats
-    local speedText = formatSpeed(snapshot)
+    nextDistanceUpdate = time + 0.1; local status, snapshot = getTelemetry(time)
+    local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
     local text
     if stats and (not stats.frozen or stats.endReason == "jogador morreu") then
       local function sampleText(sample)
         if not sample then return "—" end
         local distance = type(sample.distance) == "number" and string.format("%.1f", sample.distance) or "?"
-        local speed = type(sample.speed) == "number" and string.format("%.0f", sample.speed) or "?"
-        return distance .. " studs | SPD " .. speed
+        local speed = type(sample.speed) == "number" and string.format("%.0f", sample.speed) or "?"; return distance .. " studs | SPD " .. speed
       end
       local cps = type(stats.currentCps) == "number" and string.format("%.2f", stats.currentCps) or "—"
       text = string.format(
         "Current SPD: %s\nStart: %s\n%s: %s\nCurrent CPS: %s | %.2fs",
         speedText,
         sampleText(stats.startSample),
-        stats.frozen and (stats.endReason == "jogador morreu" and "Player died" or (stats.endReason == "oponente morreu" and "Opponent died" or "End")) or "Current",
+        stats.frozen and (stats.endReason == "jogador morreu" and "Player died" or (stats.endReason == "oponente morreu" and "Opponent died" or "End"))
+          or "Current",
         sampleText(stats.endSample),
         cps,
         stats.duration or 0
@@ -1184,8 +1175,7 @@ function ExodusUI.setup(deps)
     end
     setTextIfChanged(distanceLabel, text)
   end
-  trackConn(RunService.Heartbeat:Connect(updateInformation))
-  bindInput()
+  trackConn(RunService.Heartbeat:Connect(updateInformation)); bindInput()
   floatingButton = inst("TextButton", {
     Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE),
     Position = btnPos(),
