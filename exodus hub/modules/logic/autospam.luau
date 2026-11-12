@@ -11,6 +11,7 @@ local CONFIG = {
   ACTIVATION = {
     RETURN = 0.15,
     OWN_BALL_CLOSE_RADIUS = 6,
+    OWN_BALL_CANDIDATE_MAX_AGE = 0.8,
     OWN_BALL_OPPONENT_RADIUS = 16,
     EXCHANGE_MAX_INTERVAL = 2,
     EXCHANGE_READY_TIME = 0.5,
@@ -72,6 +73,7 @@ local function snapshotSpeed(snapshot)
   local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
 end
 local function resetExchange(s)
+  s.proximityPartner, s.proximityAt, s.proximityLastDistance = nil, nil, nil
   s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil; s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 end
 local function distanceToPlayer(id) return id and gameInfo.getPlayerDistance(id) or nil end
@@ -213,8 +215,11 @@ local function shouldActivate(s, snapshot, time)
   end
   return true
 end
-local function ownBallClose(s, snapshot)
-  local partner = s.active and s.partner or (s.pending and s.pending.partner or s.exchangePartner)
+local function ownBallClose(s, snapshot, time)
+  local candidateValid = s.proximityPartner and s.proximityAt and time and time - s.proximityAt >= 0
+    and time - s.proximityAt <= CONFIG.ACTIVATION.OWN_BALL_CANDIDATE_MAX_AGE
+    and s.target == localPlayer.UserId
+  local partner = s.active and s.partner or (s.pending and s.pending.partner or (candidateValid and s.proximityPartner or s.exchangePartner))
   if not partner or partner == localPlayer.UserId then return false end
   local opponentPosition = gameInfo.getPlayerMotion(partner)
   if typeof(opponentPosition) ~= "Vector3" or not s.root or not s.root.Parent then return false end
@@ -225,6 +230,16 @@ local function ownBallClose(s, snapshot)
   if typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return false end
   local toward = s.root.Position - snapshot.position; local distance = toward.Magnitude
   local speed = snapshot.velocity.Magnitude
+  if s.proximityPartner and not s.active then
+    local expired = not candidateValid or distance > CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS
+    local movingAway = s.proximityLastDistance and distance > s.proximityLastDistance + 0.25
+    if expired or movingAway then
+      s.proximityPartner, s.proximityAt, s.proximityLastDistance = nil, nil, nil
+      if not s.pending then return false end
+    else
+      s.proximityLastDistance = distance
+    end
+  end
   if distance > CONFIG.ACTIVATION.OWN_BALL_CLOSE_RADIUS or distance < 0.05 or speed < 8 then return false end
   return snapshot.velocity:Dot(toward) / distance > 2
 end
@@ -304,6 +319,7 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
   end
   if previous and (previous == me or target == me) then s.exchangeFrom, s.exchangeTo, s.exchangeAt = previous, target, time else s.exchangeFrom, s.exchangeTo, s.exchangeAt = nil, nil, nil end
   s.exchangePartner, s.exchangeReadyAt = completedPartner, completedPartner and time or nil
+  s.proximityPartner, s.proximityAt, s.proximityLastDistance = nil, nil, nil
   if
     target == me
     and previous
@@ -315,7 +331,8 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
     and (snapshot.position - s.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS
     and playerIsAlive(previous)
   then
-    s.exchangePartner = previous
+    s.proximityPartner, s.proximityAt = previous, time
+    s.proximityLastDistance = (snapshot.position - s.root.Position).Magnitude
   end
   if
     s.stoppedPartner
@@ -375,9 +392,9 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
     and not s.active
     and not blockedActivation
     and (not s.lastDeactivatedAt or time - s.lastDeactivatedAt >= CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
-    and ownBallClose(s, snapshot)
+    and ownBallClose(s, snapshot, time)
   then
-    start(s, "own_ball_proximity", s.pending and s.pending.partner or s.exchangePartner, time, serverTime or snapshot.serverTime, snapshot)
+    start(s, "own_ball_proximity", s.pending and s.pending.partner or s.proximityPartner or s.exchangePartner, time, serverTime or snapshot.serverTime, snapshot)
   end
   if
     not s.active
@@ -428,6 +445,9 @@ function AutoSpam.bindCharacter(character)
     target = nil,
     partner = nil,
     pending = nil,
+    proximityPartner = nil,
+    proximityAt = nil,
+    proximityLastDistance = nil,
     stationaryBall = nil,
     stationaryPosition = nil,
     stationarySince = nil,
