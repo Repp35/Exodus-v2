@@ -114,6 +114,10 @@ class InternalAPIContracts(unittest.TestCase):
             if module["sync"]:
                 self.assertIn("onBallSync", exports, name)
 
+    def test_autodash_declares_global_connection_lifecycle_permissions(self):
+        methods = self.contracts["autodash"]["methods"]["Utils"]
+        self.assertTrue({"trackGlobal", "untrackGlobal"}.issubset(methods))
+
     def test_module_dependency_graph_is_acyclic(self):
         visiting, visited = set(), set()
 

@@ -154,6 +154,8 @@ AutoDash.__contract = {
       "now",
       "trackCharacter",
       "untrackCharacter",
+      "trackGlobal",
+      "untrackGlobal",
     },
     GameInfo = {
       "areAbilitiesEnabled",
