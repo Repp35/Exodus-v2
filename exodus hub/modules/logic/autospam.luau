@@ -35,6 +35,7 @@ local CONFIG = {
     MIN_ACTIVE_TIME = 0.05,
     STATIONARY_TIMEOUT = 0.1,
     FIRST_RETURN_TIMEOUT = 0.15,
+    DEFLECT_COOLDOWN_TIMEOUT = 0.15,
     CLOSE_OPPONENT_PROTECTION_RADIUS = 10,
     SYNC_PROTECTION_RADIUS = 16,
     CLOSE_OPPONENT_MEMORY_SECONDS = 0.1,
@@ -192,6 +193,7 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   if distanceReason then return end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
+  s.deflectCooldownSince = nil
   s.activatedAt, s.firstReturnSeen = time, false; s.lastClosePartner, s.lastCloseAt, s.lastCloseDistance = nil, nil, nil
   gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot)); s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
   s.diversionSince, s.diversionSyncAt = nil, nil; s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
@@ -288,7 +290,7 @@ local function stop(s, reason)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
   s.reason, s.pending, s.partner, s.activatedAt, s.firstReturnSeen, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil
-  s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil; resetExchange(s)
+  s.stationaryBall, s.stationaryPosition, s.stationarySince, s.deflectCooldownSince = nil, nil, nil, nil; resetExchange(s)
 end
 closeClashProtected = function(s, time, radius)
   if not s.partner or not s.root or not s.root.Parent then return false end
@@ -333,6 +335,18 @@ local function shouldDeactivate(s, snapshot, time)
 end
 local function applyDeactivation(s, snapshot, time)
   if not s.active then return false end
+  -- Hard stop: a continuously active Deflect cooldown for over 150ms
+  -- overrides all close-range and uncertain-snapshot protections.
+  local cooldownState = gameInfo.getDeflectCooldownState()
+  if cooldownState and cooldownState.blocking == true then
+    s.deflectCooldownSince = s.deflectCooldownSince or time
+    if time - s.deflectCooldownSince > CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT then
+      stop(s, "deflect_cooldown_timeout")
+      return not s.active
+    end
+  else
+    s.deflectCooldownSince = nil
+  end
   local reason = shouldDeactivate(s, snapshot, time)
   if not reason and s.activatedAt then
     local speed = snapshot and snapshotSpeed(snapshot); local resetLate = gameInfo.isClientDeflectResetLate(s.activatedAt, speed)
