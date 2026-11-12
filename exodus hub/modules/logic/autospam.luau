@@ -67,18 +67,13 @@ local function elapsed(localStart, serverStart, localNow, serverNow)
 end
 local function track(s, signal, callback)
   local connection = signal:Connect(callback); s.connections[#s.connections + 1] = connection
-  s.connectionIndex[connection] = #s.connections; utils.trackCharacter(connection)
-  return connection
+  utils.trackCharacter(connection); return connection
 end
 local function untrack(s, connection)
   if not connection then return end
   utils.untrackCharacter(connection); connection:Disconnect()
-  local index = s.connectionIndex[connection]
-  if not index then return end
-  local lastIndex = #s.connections; local last = s.connections[lastIndex]
-  s.connections[index] = last; s.connections[lastIndex] = nil
-  s.connectionIndex[connection] = nil
-  if last and last ~= connection then s.connectionIndex[last] = index end
+  local index = table.find(s.connections, connection)
+  if index then table.remove(s.connections, index) end
 end
 local function snapshotSpeed(snapshot)
   if not snapshot then return nil end
@@ -503,10 +498,8 @@ end
 
 -- lifecycle
 local function disconnect(s)
-  for i = #s.connections, 1, -1 do
-    local connection = s.connections[i]; s.connections[i] = nil
-    s.connectionIndex[connection] = nil; utils.untrackCharacter(connection)
-    connection:Disconnect()
+  for _, connection in ipairs(s.connections) do
+    utils.untrackCharacter(connection); connection:Disconnect()
   end
 end
 local function detach(reason)
@@ -536,7 +529,6 @@ function AutoSpam.bindCharacter(character)
     root = root,
     character = character,
     connections = {},
-    connectionIndex = {},
     active = false,
     target = nil,
     partner = nil,

@@ -3,7 +3,6 @@
 -- module
 local AutoParry = {}
 local utils, gameInfo, remote
-local cooldownSnapshot, cooldownSnapshotAt = nil, -math.huge
 local state = {
   phase = "detached",
   reason = "initial",
@@ -73,7 +72,6 @@ local CONFIG = {
   TRAINING_MIN_CLOSING_SPEED = 1,
   TRAINING_WINDOW_SLOW = 0.85,
   TRAINING_WINDOW_FAST = 0.2,
-  COOLDOWN_CACHE_INTERVAL = 1 / 240,
 }
 
 -- helpers
@@ -104,8 +102,8 @@ local function resetTracking()
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.trainingRound, state.trainingBall = nil, nil; state.nextAttemptAt = 0
-  state.lastPosition, state.lastSampleAt = nil, 0; cooldownSnapshot, cooldownSnapshotAt = nil, -math.huge
-  table.clear(state.clicks); table.clear(state.returns)
+  state.lastPosition, state.lastSampleAt = nil, 0; table.clear(state.clicks)
+  table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -245,11 +243,7 @@ end
 -- parry
 local function safeCooldown()
   if not gameInfo or type(gameInfo.getDeflectCooldownState) ~= "function" then return nil end
-  local time = clock()
-  if cooldownSnapshot and time >= cooldownSnapshotAt and time - cooldownSnapshotAt < CONFIG.COOLDOWN_CACHE_INTERVAL then return cooldownSnapshot end
-  local ok, value = pcall(gameInfo.getDeflectCooldownState)
-  if ok and type(value) == "table" then cooldownSnapshot, cooldownSnapshotAt = value, time; return value end
-  cooldownSnapshot, cooldownSnapshotAt = nil, time; return nil
+  local ok, value = pcall(gameInfo.getDeflectCooldownState); return ok and type(value) == "table" and value or nil
 end
 local function request(reason)
   local now = clock(); local redirectReturn = reason == "redirect_return"
