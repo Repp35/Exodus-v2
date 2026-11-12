@@ -268,6 +268,7 @@ local function applyDeactivation(s, snapshot, time)
   if not reason then return false end
   return stop(s, reason, snapshot, time)
 end
+
 -- target-tracking
 local function inspectTarget(s, target, time, snapshot, serverTime)
   if not target or target == s.target then return end
