@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 26816)
-Total output lines: 2570
-
 -- [[ ui ]]
 
 -- module
@@ -763,7 +760,7 @@ showPersistentNotification = function(message, key, kind, duration)
       Size = UDim2.new(1, -20, 1, 0),
       Position = UDim2.fromOffset(10, 0),
       BackgroundTransparency = 1,
-      TextColor3 = C.text,
+      TextColor3 = Color3.new(1, 1, 1),
       TextSize = 13,
       Font = Enum.Font.GothamBold,
       TextXAlignment = Enum.TextXAlignment.Center,
@@ -809,7 +806,7 @@ showToast = function(message, important)
       Size = UDim2.new(1, -16, 1, 0),
       Position = UDim2.new(0, 8, 0, 0),
       BackgroundTransparency = 1,
-      TextColor3 = C.text,
+      TextColor3 = Color3.new(1, 1, 1),
       TextSize = 13,
       Font = Enum.Font.GothamBold,
       TextXAlignment = Enum.TextXAlignment.Center,
@@ -1236,7 +1233,152 @@ local function createRateSelector(yPos, parent, definition)
   end))
   return nextCardY(yPos, RATE_CARD_H)
 end
-local function createKeybindSel…1816 tokens truncated…"
+local function createKeybindSelector(yPos, parent, definition)
+  return createActionShortcutCard(definition or "Stop Functions", yPos, parent, "Keybind", function()
+    setSpam(false)
+    if type(Controls.onPanic) == "function" then Controls.onPanic() end
+  end)
+end
+local statusToggleCallbacks = {
+  MiniSpamVisible = showMini,
+  ManualSpamEnabled = function(enabled)
+    if not enabled then setSpam(false) end
+  end,
+}
+
+local function togglePanel()
+  if not configPanel or not configPanel.Parent or not floatingButton or not floatingButton.Parent then return end
+  UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween)
+  safeCancel(UIState.btnTween)
+  if UIState.panelOpen then
+    if not configPanel.Visible then configPanel.GroupTransparency = 1; configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97) end
+    configPanel.Visible = true; UIState.panelTween = twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
+    UIState.btnTween = twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN)
+  else
+    UIState.panelTween = twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97), GroupTransparency = 1 }, EASE_OUT, DIR_IN)
+    UIState.btnTween =
+      twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE) }, EASE_OUT, DIR_OUT)
+    if UIState.panelTween then
+      local conn
+      conn = trackConn(UIState.panelTween.Completed:Connect(function()
+        if not UIState.panelOpen then
+          configPanel.Visible = false; configPanel.Size = UDim2.new(0, PW, 0, PH)
+          configPanel.GroupTransparency = 0
+        end
+        safeDisconnect(conn); untrackConn(conn)
+      end))
+    else
+      configPanel.Visible = false; configPanel.Size = UDim2.new(0, PW, 0, PH)
+      configPanel.GroupTransparency = 0
+    end
+  end
+end
+local function restoreAfterReloadFailure(message)
+  if not configPanel or not configPanel.Parent then return end
+  UIState.closing = false; UIState.panelOpen = true
+  configPanel.Visible = true; configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97)
+  configPanel.GroupTransparency = 1
+  if floatingButton and floatingButton.Parent then
+    floatingButton.Size = UDim2.new(0, 42, 0, 42); floatingButton.BackgroundTransparency = 1
+    floatingButton.TextTransparency = 1
+  end
+  twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
+  if floatingButton and floatingButton.Parent then twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN) end
+  local config = Utils.getConfig()
+  if not UIState.desktop then
+    showClashBall(config.ClashBallVisible == true); showParryBall(config.ParryBallVisible == true)
+    showDarkBall(config.DarkBallVisible == true); showJumpBall(config.JumpBallVisible == true)
+    showUpDashBall(config.UpDashBallVisible == true); showMini(config.MiniSpamVisible == true)
+  end
+  if clearPersistentNotification then clearPersistentNotification("update") end
+  if showPersistentNotification then showPersistentNotification("Update failed. Check the console.", "critical", "critical") end
+  if showToast then showToast("Reload failed", true) end
+  warn("[Exodus Reload] " .. tostring(message))
+end
+local function fadeOutForReplacement()
+  if not screenGui or not screenGui.Parent or UIState.closing then return end
+  UIState.closing = true; safeCancel(UIState.panelTween)
+  safeCancel(UIState.btnTween); local tweens = {}
+  if configPanel and configPanel.Parent and configPanel.Visible then
+    local tween = twPlay(configPanel, 0.26, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.97, PH * 0.97) }, EASE_OUT, DIR_IN)
+    if tween then tweens[#tweens + 1] = tween end
+  end
+  if floatingButton and floatingButton.Parent then
+    local tween = twPlay(floatingButton, 0.26, { BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN)
+    if tween then tweens[#tweens + 1] = tween end
+  end
+  if floatingButtonStroke and floatingButtonStroke.Parent then
+    local tween = twPlay(floatingButtonStroke, 0.26, { Transparency = 1 }, EASE_OUT, DIR_IN)
+    if tween then tweens[#tweens + 1] = tween end
+  end
+  for _, element in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall }) do
+    if element and element.Parent then
+      local tween = twPlay(element, 0.22, {
+        Position = UDim2.new(0, OFFSCREEN_X, element.Position.Y.Scale, element.Position.Y.Offset),
+      }, EASE_OUT, DIR_IN)
+      if tween then tweens[#tweens + 1] = tween end
+    end
+  end
+  local miniTween = showMini(false)
+  if miniTween then tweens[#tweens + 1] = miniTween end
+  awaitTweens(tweens)
+end
+local function animateClose(action)
+  if UIState.closing then return end
+  UIState.closing = true; _G.ExodusShutdownReason = action == "close" and "close" or "reload"
+  if showPersistentNotification then showPersistentNotification("Closing...", "closing", "warning") end
+  if type(print) == "function" then print("[Exodus] Closing...") end
+  safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
+  local tweens = {}
+  if configPanel and configPanel.Parent then
+    UIState.panelTween = twPlay(configPanel, 0.26, {
+      Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97),
+      GroupTransparency = 1,
+    }, EASE_OUT, DIR_IN)
+    if UIState.panelTween then tweens[#tweens + 1] = UIState.panelTween end
+  end
+  if floatingButton and floatingButton.Parent then
+    UIState.btnTween = twPlay(floatingButton, 0.26, {
+      Size = UDim2.new(0, 42, 0, 42),
+      BackgroundTransparency = 1,
+      TextTransparency = 1,
+    }, EASE_OUT, DIR_IN)
+    if UIState.btnTween then tweens[#tweens + 1] = UIState.btnTween end
+  end
+  if floatingButtonStroke and floatingButtonStroke.Parent then
+    local tween = twPlay(floatingButtonStroke, 0.26, { Transparency = 1 }, EASE_OUT, DIR_IN)
+    if tween then tweens[#tweens + 1] = tween end
+  end
+  for _, ball in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall }) do
+    if ball and ball.Parent then
+      local tween = twPlay(ball, 0.22, {
+        Position = UDim2.new(0, OFFSCREEN_X, ball.Position.Y.Scale, ball.Position.Y.Offset),
+      }, EASE_OUT, DIR_IN)
+      if tween then tweens[#tweens + 1] = tween end
+    end
+  end
+  local miniTween = showMini(false)
+  if miniTween then tweens[#tweens + 1] = miniTween end
+  watchTweens(tweens, function()
+    if not UIState.closing then return end
+    if action == "reload" and type(Controls.onReload) == "function" then Controls.onReload(restoreAfterReloadFailure)
+    elseif type(Controls.onClose) == "function" then Controls.onClose()
+    elseif Utils and type(Utils.stop) == "function" then Utils.stop() end
+  end)
+end
+
+-- setup
+function ExodusUI.setup(deps)
+  if
+    type(deps) ~= "table"
+    or type(deps.Utils) ~= "table"
+    or type(deps.Utils.getConfig) ~= "function"
+    or type(deps.Utils.setConfig) ~= "function"
+    or type(deps.Utils.normalizeSpamRate) ~= "function"
+    or type(deps.Utils.isManualSpamActive) ~= "function"
+    or type(deps.Utils.setManualSpamActive) ~= "function"
+    or type(deps.Controls) ~= "table"
+    or type(deps.Utils.stop) ~= "function"
     or type(deps.Utils.name) ~= "function"
     or type(deps.Utils.version) ~= "function"
     or type(deps.Utils.author) ~= "function"
