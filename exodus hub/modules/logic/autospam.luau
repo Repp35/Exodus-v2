@@ -256,8 +256,8 @@ local function stop(s, reason)
     s.lastStopReason, s.lastStopAt = reason, s.lastDeactivatedAt; utils.setAutoSpamActive(false)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
-  s.reason, s.pending, s.partner, s.activatedAt, s.firstReturnSeen, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil; s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
-  resetExchange(s)
+  s.reason, s.pending, s.partner, s.activatedAt, s.firstReturnSeen, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil
+  s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil; resetExchange(s)
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
@@ -309,9 +309,7 @@ end
 local function inspectTarget(s, target, time, snapshot, serverTime)
   if not target or target == s.target then return end
   local previous, me = s.target, localPlayer.UserId
-  if s.active and not s.firstReturnSeen and s.activatedAt and time >= s.activatedAt and target == me and previous ~= me then
-    s.firstReturnSeen = true
-  end
+  if s.active and not s.firstReturnSeen and s.activatedAt and time >= s.activatedAt and target == me and previous ~= me then s.firstReturnSeen = true end
   local completedPartner
   if
     previous
