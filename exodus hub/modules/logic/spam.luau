@@ -75,8 +75,7 @@ local function sync()
         local time = os.clock(); local minimum = boundGameInfo.getMinimumSpamInterval()
         local interval = mode ~= "Auto" and math.max(1 / (mode == "CPF" and rate * 60 or rate), minimum) or nil
         if interval then due = math.max(due, time - CONFIG.MAX_DELAY_DEBT) end
-        local manualOnly = boundUtils.isManualSpamActive()
-        local gameDelay = manualOnly and 0 or boundGameInfo.getAutoSpamDelay()
+        local manualOnly = boundUtils.isManualSpamActive(); local gameDelay = manualOnly and 0 or boundGameInfo.getAutoSpamDelay()
         if inFlight or (mode == "Auto" and gameDelay == nil) then
           task.wait(CONFIG.POLL_INTERVAL)
         else
