@@ -19,8 +19,6 @@ local CONFIG = {
   PROJECT_PATH = "exodus%20hub/",
   AUTHORIZATION_PATH = "security/entitlements.luau",
   LOCAL_ROOTS = { "Exodus-v2/exodus hub", "Exodus-v2-main/exodus hub", "exodus hub", "Exodus Hub" },
-  CACHE_ROOT = "Exodus Hub/Cache",
-  VERSION_FILE = "Exodus Hub/current_version.txt",
   ALLOW_LOCAL_FALLBACK = false,
   MODULES = {
     { name = "permissions", path = "modules/logic/permissions.luau" },
@@ -48,7 +46,6 @@ local CONFIG = {
 local PROJECT_PATH = CONFIG.PROJECT_PATH
 local AUTHORIZATION_PATH = CONFIG.AUTHORIZATION_PATH
 local LOCAL_ROOTS = CONFIG.LOCAL_ROOTS
-local CACHE_ROOT, VERSION_FILE = CONFIG.CACHE_ROOT, CONFIG.VERSION_FILE
 local BASE_URL = CONFIG.DELIVERY_BASE_URL
 local MANIFEST_URL = CONFIG.MANIFEST_URL
 local CACHE_BUSTER = tostring(os.time())
@@ -156,64 +153,6 @@ local function findCompleteLocalRoot()
   return nil
 end
 local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
-local function persistentStorageAvailable()
-  return type(isfile) == "function"
-    and type(readfile) == "function"
-    and type(writefile) == "function"
-    and type(isfolder) == "function"
-    and type(makefolder) == "function"
-end
-local function ensureFolder(path)
-  if isfolder(path) then return true end
-  local ok = pcall(makefolder, path); return ok or isfolder(path)
-end
-local function cachePath(revision) return CACHE_ROOT .. "/" .. revision end
-local function ensureCacheRoot(revision)
-  if not persistentStorageAvailable() or not validRevision(revision) then return nil end
-  local ok, root = pcall(function()
-    if not ensureFolder(CONFIG.CACHE_ROOT:match("^([^/]+)") or CONFIG.CACHE_ROOT) or not ensureFolder(CACHE_ROOT) or not ensureFolder(cachePath(revision)) then return nil end
-    return cachePath(revision)
-  end)
-  return ok and root or nil
-end
-local function findCompleteCacheRoot(revision)
-  if not persistentStorageAvailable() or not validRevision(revision) then return nil end
-  local root = cachePath(revision)
-  for _, entry in ipairs(MODULE_MANIFEST) do
-    if not isfile(root .. "/" .. entry.path) then return nil end
-  end
-  return root
-end
-local function readSavedRevision()
-  if not persistentStorageAvailable() or not isfile(VERSION_FILE) then return nil end
-  local ok, value = pcall(readfile, VERSION_FILE); value = ok and type(value) == "string" and value:match("([%x]+)") or nil
-  return validRevision(value) and value or nil
-end
-local function saveCurrentRevision(revision)
-  if not persistentStorageAvailable() or not validRevision(revision) then return false end
-  local ok = pcall(function()
-    ensureFolder(CONFIG.CACHE_ROOT:match("^([^/]+)") or CONFIG.CACHE_ROOT); writefile(VERSION_FILE, revision)
-  end)
-  return ok
-end
-local function saveCacheFile(revision, relativePath, source)
-  local root = ensureCacheRoot(revision)
-  if not root or type(source) ~= "string" then return false end
-  local directory = root; local parts = {}
-  for part in string.gmatch(relativePath, "[^/]+") do
-    parts[#parts + 1] = part
-  end
-  for index = 1, #parts - 1 do
-    directory = directory .. "/" .. parts[index]
-    if not ensureFolder(directory) then return false end
-  end
-  local ok = pcall(writefile, root .. "/" .. relativePath, source); return ok
-end
-local function readCacheFile(revision, relativePath)
-  if not persistentStorageAvailable() or not validRevision(revision) then return nil end
-  local ok, source = pcall(readfile, cachePath(revision) .. "/" .. relativePath); return ok and type(source) == "string" and source ~= "" and source or nil
-end
-
 -- registry
 local function register(name, module)
   Modules[name] = module; return module
@@ -303,22 +242,14 @@ local function buildCDNURL(url)
   if not repository or not version or not path then return nil end
   return "https://cdn.jsdelivr.net/gh/" .. repository .. "@" .. version .. "/" .. path
 end
-local function loadModule(name, relativePath, url, sourceRoot, cacheRevision)
+local function loadModule(name, relativePath, url, sourceRoot)
   if sourceRoot then
     local path = sourceRoot .. "/" .. relativePath; local source = readfile(path)
     if type(source) ~= "string" or source == "" then error("Arquivo local inválido: " .. path, 2) end
     local chunk, compileError = compile(name .. " [local]", source); return chunk, compileError, "local"
   end
-  if cacheRevision then
-    local cachedSource = readCacheFile(cacheRevision, relativePath)
-    if cachedSource then
-      local cachedChunk, cachedError = compile(name .. " [cache]", cachedSource)
-      if cachedChunk then return cachedChunk, nil, "cache" end
-      if not url then return nil, cachedError end
-    end
-  end
   local source, fetchError
-  if url then source, fetchError = request(url) end
+  if url then source, fetchError = request(url .. "?exodus_cache=" .. tostring(os.time()) .. "-" .. tostring(math.random(1, 1000000000))) end
   local sourceKind = "delivery"
   if not source then
     local fallbackURL = buildCDNURL(url)
@@ -330,7 +261,6 @@ local function loadModule(name, relativePath, url, sourceRoot, cacheRevision)
   if source then
     local chunk, compileError = compile(name, source)
     if chunk then
-      if cacheRevision then saveCacheFile(cacheRevision, relativePath, source) end
       return chunk, nil, sourceKind
     end
     fetchError = compileError
@@ -360,12 +290,7 @@ local function authorizeRevision(revision)
   if not validRevision(revision) then return false, "revisão de autorização inválida" end
   local player = waitForAuthorizationPlayer(10)
   if not player or type(player.UserId) ~= "number" then return false, "LocalPlayer/UserId indisponível" end
-  local source = readCacheFile(revision, AUTHORIZATION_PATH)
-  local fetchError
-  if not source then
-    source, fetchError = request(authorizationURL(revision), { ["Accept"] = "text/plain", ["User-Agent"] = "Exodus-Hub-Authorization" })
-    if source then saveCacheFile(revision, AUTHORIZATION_PATH, source) end
-  end
+  local source, fetchError = request(authorizationURL(revision), { ["Accept"] = "text/plain", ["User-Agent"] = "Exodus-Hub-Authorization" })
   if not source then return false, "autorização indisponível: " .. tostring(fetchError) end
   local chunk, compileError = compile("Exodus authorization", source)
   if not chunk then return false, "autorização inválida: " .. tostring(compileError) end
@@ -407,10 +332,10 @@ local function orderModulesByDependencies(loaded)
     MODULE_ORDER[#MODULE_ORDER + 1] = name
   end
 end
-local function loadModules(urls, sourceRoot, cacheRevision)
+local function loadModules(urls, sourceRoot)
   local loaded, results = {}, {}
   local function load(name)
-    local entry = MODULE_BY_NAME[name]; local chunk, loadError = loadModule(name, entry.path, urls[name], sourceRoot, cacheRevision)
+    local entry = MODULE_BY_NAME[name]; local chunk, loadError = loadModule(name, entry.path, urls[name], sourceRoot)
     results[name] = { chunk = chunk, error = loadError }
   end
   if type(task) == "table" and type(task.spawn) == "function" and type(task.wait) == "function" then
@@ -653,11 +578,9 @@ local function reloadLatest(onFailure)
   task.spawn(function()
     local revision, revisionError = resolveLatestRevision()
     if not revision then fail(revisionError); return end
-    local source = readCacheFile(revision, "loader.luau")
-    local fetchError
-    if not source then source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau") end
+    local source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau?exodus_cache=" .. tostring(os.time()))
     if not source then fail(fetchError); return end
-    saveCacheFile(revision, "loader.luau", source); local chunk, compileError = compile("reload loader", source)
+    local chunk, compileError = compile("reload loader", source)
     if not chunk then fail(compileError); return end
     _G.ExodusRequestedRevision = revision
     local ok, executionError = xpcall(chunk, function(err) return debug.traceback(tostring(err), 2) end)
@@ -674,12 +597,11 @@ local function startInternal()
   local requestedRevision = validRevision(_G.ExodusRequestedRevision) and _G.ExodusRequestedRevision or nil; _G.ExodusRequestedRevision = nil
   local version, revisionError = requestedRevision, nil
   if not version then version, revisionError = resolveLatestRevision() end
-  if not version then version = readSavedRevision() end
   if not version then return false, "Authorization", "revisão de distribuição indisponível" end
   local authorized, authorizationError = authorizeRevision(version)
   if not authorized then return false, "Authorization", authorizationError end
   if not requestedRevision and Exodus.Started == true and Exodus.UIReady == true and validRevision(version) and Exodus.Revision == version then return true end
-  local sourceRoot = version and findCompleteCacheRoot(version) or findCompleteLocalRoot(); startupPerformed = true
+  local sourceRoot = nil; startupPerformed = true
   printStartup("Exodus: iniciando")
   if not stopPreviousRuntime() then return false, "Loader", "falha ao encerrar a sessão anterior" end
   clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
@@ -687,8 +609,7 @@ local function startInternal()
   local unpinned = not validRevision(version) and not sourceRoot
   if unpinned then return false, "Loader", "revisão remota indisponível e nenhum cache/local completo: " .. tostring(revisionError) end
   local cacheRevision = validRevision(version) and version or nil
-  if cacheRevision then sourceRoot = findCompleteCacheRoot(cacheRevision) end
-  local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, sourceRoot, cacheRevision)
+  local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, sourceRoot)
   if not loaded then return false, moduleName, loadError end
   activeLoaded = loaded; local utils = loaded.utils
   if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
@@ -721,7 +642,6 @@ local function startInternal()
   Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
   Exodus.Revision = cacheRevision
-  if cacheRevision then saveCurrentRevision(cacheRevision) end
   printStartup("Exodus: iniciado"); return true
 end
 
@@ -782,19 +702,16 @@ end
 local started = startSafely()
 Exodus.Started = started == true
 if started and startupPerformed then
-  local revision = Exodus.Revision or readSavedRevision() or BRANCH
+  local revision = Exodus.Revision
   task.spawn(function()
-    local source = validRevision(revision) and readCacheFile(revision, "updater.luau")
-    local fetchError
-    if not source then source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "updater.luau") end
+    local source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "updater.luau?exodus_cache=" .. tostring(os.time()))
     if not source then warn("[Exodus Updater] " .. tostring(fetchError)); return end
     if _G.ExodusLoaderSessionToken ~= startToken or not Exodus.Started or (Exodus.Revision and validRevision(revision) and Exodus.Revision ~= revision) then return end
-    if validRevision(revision) then saveCacheFile(revision, "updater.luau", source) end
     local chunk, compileError = compile("Exodus updater", source)
     if not chunk then warn("[Exodus Updater] " .. tostring(compileError)); return end
     local ok, updater = pcall(chunk)
     if not ok or type(updater) ~= "function" then warn("[Exodus Updater] " .. tostring(updater)); return end
-    updater(revision, request, { cacheLoader = saveCacheFile })
+    updater(revision, request)
   end)
 end
 
