@@ -11,10 +11,10 @@ local CONFIG = {
 
 -- runtime
 
-return function(loadedRevision, request, options)
+return function(loadedRevision, request)
 
   -- session
-  options = type(options) == "table" and options or {}; local players = game:GetService("Players")
+  local players = game:GetService("Players")
   local token = {}; _G.ExodusUpdaterToken = token
 
   -- guards
@@ -90,7 +90,6 @@ return function(loadedRevision, request, options)
           local chunk, compileError = loadstring(source, "Exodus updater loader")
           if chunk then
             pendingSource = chunk
-            if type(options.cacheLoader) == "function" then pcall(options.cacheLoader, pendingRevision, source) end
           else
             warn("[Exodus Updater] " .. tostring(compileError)); pendingRevision = nil
             nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
