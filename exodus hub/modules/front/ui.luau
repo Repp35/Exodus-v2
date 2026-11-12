@@ -57,6 +57,7 @@ local toastLayer
 local persistentGui
 local persistentLayer
 local persistentOrder = {}
+local persistentTweens = {}
 local persistentGeneration = 0
 local responsiveScale
 local flowingTweens = {}
@@ -584,7 +585,11 @@ local function reflowPersistentNotifications(animated)
   end
   for index, key in ipairs(persistentOrder) do
     local card = layer:FindFirstChild("Notification_" .. key)
-    if card then local target = UDim2.new(0.5, 0, 1, -24 - (index - 1) * 46); twPlay(card, animated and 0.22 or 0, { Position = target, GroupTransparency = 0 }, EASE_OUT, DIR_OUT) end
+    if card then
+      safeCancel(persistentTweens[key])
+      local target = UDim2.new(0.5, 0, 1, -24 - (index - 1) * 46)
+      persistentTweens[key] = twPlay(card, animated and 0.22 or 0, { Position = target, GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
+    end
   end
 end
 clearPersistentNotification = function(key)
@@ -598,12 +603,16 @@ clearPersistentNotification = function(key)
   for index = #persistentOrder, 1, -1 do
     if persistentOrder[index] == safeKey then table.remove(persistentOrder, index) end
   end
-  if not card then reflowPersistentNotifications(true); return end
+  if not card then persistentTweens[safeKey] = nil; reflowPersistentNotifications(true); return end
+  safeCancel(persistentTweens[safeKey])
   local fade = twPlay(card, 0.18, {
     Position = UDim2.new(card.Position.X.Scale, card.Position.X.Offset, card.Position.Y.Scale, card.Position.Y.Offset + 18),
     GroupTransparency = 1,
   }, EASE_OUT, DIR_IN)
+  persistentTweens[safeKey] = fade
   local function remove()
+    if persistentTweens[safeKey] ~= fade then return end
+    persistentTweens[safeKey] = nil
     if card.Parent then card:Destroy() end
     reflowPersistentNotifications(true)
   end
@@ -1979,6 +1988,9 @@ function ExodusUI.setup(deps)
       end,
       onComplete = function()
         if showPersistentNotification then showPersistentNotification("Dumping completed.", "dumper", "success", 2.2) end
+      end,
+      onCanceled = function()
+        if showPersistentNotification then showPersistentNotification("Dumping canceled.", "dumper", "warning", 1.5) end
       end,
       onError = function(message)
         warn("[Exodus Dumper] " .. tostring(message))

@@ -3,6 +3,7 @@
 -- module
 local Dumper = {}
 local activeToken
+local activeCallbacks
 local status = {
   running = false,
   startedAt = 0,
@@ -22,10 +23,7 @@ local CONFIG = {
   SAVE_BYTECODE = true,
   SAVE_DISASSEMBLY = true,
   INCLUDE_NIL_INSTANCES = true,
-  MAX_DEPTH = 6,
-  MAX_NODES = 500,
   MAX_SOURCE_BYTES = 4_000_000,
-  STRING_LIMIT = 512,
 }
 
 local SCRIPT_CLASSES = {
@@ -141,35 +139,6 @@ local function tags(object, collection)
   if not ok or type(values) ~= "table" then return "[]" end
   table.sort(values); return "[" .. table.concat(values, ", ") .. "]"
 end
-local function formatValue(value)
-  if value == nil then return "nil" end
-  if type(value) == "string" then
-    if #value > CONFIG.STRING_LIMIT then value = value:sub(1, CONFIG.STRING_LIMIT) .. "...<truncated>" end
-    return string.format("%q", value)
-  end
-  local ok, result = pcall(tostring, value); return ok and line(result) or "<unavailable>"
-end
-local function appendTree(value, label, depth, visited, nodes, output)
-  depth, visited, nodes, output = depth or 0, visited or {}, nodes or { count = 0 }, output or {}; nodes.count += 1
-  local indent = string.rep("  ", depth)
-  if typeof(value) == "Instance" then output[#output + 1] = ("%s%s: Instance<%s> %s"):format(indent, label, value.ClassName, objectPath(value)); return output end
-  if type(value) ~= "table" then output[#output + 1] = ("%s%s: type=%s value=%s"):format(indent, label, type(value), formatValue(value)); return output end
-  if visited[value] then output[#output + 1] = indent .. label .. ": table<cycle>"; return output end
-  if depth >= CONFIG.MAX_DEPTH or nodes.count >= CONFIG.MAX_NODES then output[#output + 1] = indent .. label .. ": table<limit>"; return output end
-  visited[value] = true; local keys = {}
-  for key in pairs(value) do
-    keys[#keys + 1] = key
-  end
-  table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-  output[#output + 1] = ("%s%s: table (%d keys)"):format(indent, label, #keys)
-  for _, key in ipairs(keys) do
-    if nodes.count >= CONFIG.MAX_NODES then output[#output + 1] = indent .. "  ... node limit reached"; break end
-    local ok, child = pcall(function() return value[key] end)
-    if ok then appendTree(child, "[" .. tostring(key) .. "]", depth + 1, visited, nodes, output) else output[#output + 1] = indent .. "  [" .. tostring(key) .. "]: <read failed>" end
-  end
-  visited[value] = nil; return output
-end
-local function structure(value, label) return table.concat(appendTree(value, label, 0, {}, { count = 0 }, {}), "\n") end
 local function errorText(value)
   local text = type(value) == "string" and value or ("returned " .. type(value)); return line(text)
 end
@@ -274,6 +243,7 @@ local function run(token, callbacks)
       end
     end
   end
+  status.total = #candidates
   local collection
   pcall(function() collection = game:GetService("CollectionService") end)
   local tree = { "SrcDump - instances", "total=" .. #catalog, "" }; local remotes = { "SrcDump - remotes and bindables", "" }
@@ -431,7 +401,7 @@ end
 function Dumper.start(callbacks)
   if activeToken then return false, "A dump is already running" end
   if type(callbacks) ~= "table" then callbacks = {} end
-  local token = { cancelled = false }; activeToken = token
+  local token = { cancelled = false }; activeToken, activeCallbacks = token, callbacks
   status = {
     running = true,
     startedAt = os.clock(),
@@ -449,8 +419,13 @@ function Dumper.start(callbacks)
       function(errorValue) return debug and type(debug.traceback) == "function" and debug.traceback(tostring(errorValue), 2) or tostring(errorValue) end
     )
     if activeToken ~= token then return end
-    activeToken = nil; status.running = false
-    if token.cancelled then return end
+    local callbacks = activeCallbacks
+    activeToken, activeCallbacks = nil, nil
+    status.running = false
+    if token.cancelled then
+      emit(callbacks, "onCanceled")
+      return
+    end
     if not ok or not result then emit(callbacks, "onError", not ok and result or reason or "Dump failed"); return end
     status.folder = result.folder; status.total, status.saved, status.failed, status.bytecode = result.total, result.saved, result.failed, result.bytecode
     emit(callbacks, "onComplete", table.clone(result))
@@ -458,8 +433,14 @@ function Dumper.start(callbacks)
   return true
 end
 function Dumper.stop()
-  if activeToken then activeToken.cancelled = true; activeToken = nil end
-  status.running = false; return true
+  if activeToken then
+    local callbacks = activeCallbacks
+    activeToken.cancelled = true
+    activeToken, activeCallbacks = nil, nil
+    emit(callbacks, "onCanceled")
+  end
+  status.running = false
+  return true
 end
 function Dumper.isRunning() return activeToken ~= nil end
 function Dumper.getStatus() return table.clone(status) end
