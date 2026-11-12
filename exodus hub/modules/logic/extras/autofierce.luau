@@ -29,8 +29,7 @@ end
 local function clearDisconnectedSignal()
   if not parriedConnection or parriedConnection.Connected then return end
   if utils then utils.untrackGlobal(parriedConnection) end
-  table.remove(connections, table.find(connections, parriedConnection))
-  parriedConnection = nil
+  table.remove(connections, table.find(connections, parriedConnection)); parriedConnection = nil
 end
 local function connectSignals(now)
   clearDisconnectedSignal()
