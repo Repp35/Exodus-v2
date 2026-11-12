@@ -345,7 +345,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
     s.target = nil; return
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
-  if not fresh and applyDeactivation(s, snapshot, time) then blockedActivation = true end
+  if applyDeactivation(s, snapshot, time) then blockedActivation = true end
   sampleOwnDash(s, time)
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
