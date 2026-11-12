@@ -27,7 +27,7 @@ local function onParried()
   lastParriedAt = os.clock()
 end
 local function clearDisconnectedSignal()
-  if not parriedConnection or parriedConnection.Connected then return end
+  if not parriedConnection or parriedConnection.Connected ~= false then return end
   if utils then utils.untrackGlobal(parriedConnection) end
   table.remove(connections, table.find(connections, parriedConnection)); parriedConnection = nil
 end
@@ -61,7 +61,7 @@ end
 local function update()
   local now = os.clock()
   if not enabled() then graceHandled = false; return end
-  if not parriedConnection or not parriedConnection.Connected then connectSignals(now) end
+  if not parriedConnection or parriedConnection.Connected == false then connectSignals(now) end
   if not parriedConnection then return end
   local danger, grace = graceDanger(now)
   if grace == nil then return end
