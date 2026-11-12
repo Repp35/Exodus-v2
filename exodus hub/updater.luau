@@ -14,8 +14,8 @@ local CONFIG = {
 return function(loadedRevision, request)
 
   -- session
-  local players = game:GetService("Players")
-  local token = {}; _G.ExodusUpdaterToken = token
+  local players = game:GetService("Players"); local token = {}
+  _G.ExodusUpdaterToken = token
 
   -- guards
   local function running() return _G.ExodusUpdaterToken == token and type(_G.Exodus) == "table" and _G.Exodus.Started == true end

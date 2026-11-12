@@ -153,6 +153,7 @@ local function findCompleteLocalRoot()
   return nil
 end
 local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
+
 -- registry
 local function register(name, module)
   Modules[name] = module; return module
@@ -260,9 +261,7 @@ local function loadModule(name, relativePath, url, sourceRoot)
   end
   if source then
     local chunk, compileError = compile(name, source)
-    if chunk then
-      return chunk, nil, sourceKind
-    end
+    if chunk then return chunk, nil, sourceKind end
     fetchError = compileError
   end
   return nil, fetchError or "origem remota indisponível"
@@ -608,8 +607,8 @@ local function startInternal()
   if not playerReady then return false, "Loader", playerError end
   local unpinned = not validRevision(version) and not sourceRoot
   if unpinned then return false, "Loader", "revisão remota indisponível e nenhum cache/local completo: " .. tostring(revisionError) end
-  local cacheRevision = validRevision(version) and version or nil
-  local urls = version and buildURLs(version) or {}; local loaded, moduleName, loadError = loadModules(urls, sourceRoot)
+  local cacheRevision = validRevision(version) and version or nil; local urls = version and buildURLs(version) or {}
+  local loaded, moduleName, loadError = loadModules(urls, sourceRoot)
   if not loaded then return false, moduleName, loadError end
   activeLoaded = loaded; local utils = loaded.utils
   if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
@@ -641,8 +640,8 @@ local function startInternal()
   Exodus.Context = loaded; Exodus.UIReady = uiReady == true
   Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
-  Exodus.Revision = cacheRevision
-  printStartup("Exodus: iniciado"); return true
+  Exodus.Revision = cacheRevision; printStartup("Exodus: iniciado")
+  return true
 end
 
 -- rollback
