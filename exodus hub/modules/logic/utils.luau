@@ -25,6 +25,8 @@ local state = {
 }
 
 local configModule, modules, persistenceReady = nil, {}, false
+local connectionIndexes = { global = {}, character = {} }
+local observerIndexes = { spam = {}, config = {} }
 local savePending, saveToken, saveDirty = false, 0, false
 local refreshPending, refreshing = false, false
 local spamObservers, configObservers = {}, {}
@@ -62,42 +64,63 @@ local function setValues(target, source)
 end
 
 -- observers
-local function connectObserver(list, observer)
+local function connectObserver(list, indexMap, observer)
   if type(observer) ~= "function" then error("Observer precisa ser uma função", 2) end
-  local connection = { Connected = true }; list[#list + 1] = connection
-  connection.callback = observer
+  local connection = { Connected = true, callback = observer }
+  list[#list + 1] = connection
+  indexMap[connection] = #list
   function connection:Disconnect()
     if not self.Connected then return end
-    self.Connected = false; local index = table.find(list, self)
-    if index then table.remove(list, index) end
+    self.Connected = false
+    local index = indexMap[self]
+    if not index then return end
+    local lastIndex = #list
+    local last = list[lastIndex]
+    list[index] = last
+    list[lastIndex] = nil
+    indexMap[self] = nil
+    if last and last ~= self then indexMap[last] = index end
   end
   return connection
 end
 local function notify(list, value)
   if #list == 0 then return end
   for _, observer in ipairs(table.clone(list)) do
-    if observer.Connected then observer.callback(value) end
+    if observer.Connected then
+      local ok, err = pcall(observer.callback, value)
+      if not ok and type(warn) == "function" then warn("Falha ao notificar observador: " .. tostring(err)) end
+    end
   end
 end
-function Utils.observeSpam(observer) return connectObserver(spamObservers, observer) end
-function Utils.observeConfig(observer) return connectObserver(configObservers, observer) end
-local function track(list, connection)
+function Utils.observeSpam(observer) return connectObserver(spamObservers, observerIndexes.spam, observer) end
+function Utils.observeConfig(observer) return connectObserver(configObservers, observerIndexes.config, observer) end
+local function track(list, indexMap, connection)
   if not connection or type(connection.Disconnect) ~= "function" then error("Conexão inválida", 2) end
-  if not table.find(list, connection) then list[#list + 1] = connection end
+  if not indexMap[connection] then
+    list[#list + 1] = connection
+    indexMap[connection] = #list
+  end
   return connection
 end
-local function untrack(list, connection)
-  for i = #list, 1, -1 do
-    if list[i] == connection then table.remove(list, i); return true end
-  end
-  return false
+local function untrack(list, indexMap, connection)
+  local index = indexMap[connection]
+  if not index then return false end
+  local lastIndex = #list
+  local last = list[lastIndex]
+  list[index] = last
+  list[lastIndex] = nil
+  indexMap[connection] = nil
+  if last and last ~= connection then indexMap[last] = index end
+  return true
 end
-local function disconnectAll(list)
+local function disconnectAll(list, indexMap)
   for i = #list, 1, -1 do
-    local connection = list[i]; list[i] = nil
+    local connection = list[i]
+    list[i] = nil
     if connection then
+      indexMap[connection] = nil
       local ok, err = pcall(connection.Disconnect, connection)
-      if not ok then warn("Falha ao desconectar: " .. tostring(err)) end
+      if not ok and type(warn) == "function" then warn("Falha ao desconectar: " .. tostring(err)) end
     end
   end
 end
@@ -296,7 +319,7 @@ function Utils.start()
   refreshNamespace(); return stateSnapshot()
 end
 function Utils.stop()
-  local previous = state.lifecycle.phase; state.active, state.manualSpam, state.autoSpam = false, false, false
+  local previous = state.lifecycle.phase; state.lifecycle.generation += 1; state.active, state.manualSpam, state.autoSpam = false, false, false
   local notified, notifyError = pcall(notify, spamObservers)
   if not notified then warn("Falha ao avisar observadores: " .. tostring(notifyError)) end
   local saved, saveError = pcall(flushSave)
@@ -307,9 +330,9 @@ function Utils.stop()
     local cleaned, cleanupError = pcall(_G.ExodusUICleanup)
     if not cleaned then warn("Falha ao limpar interface: " .. tostring(cleanupError)) end
   end
-  disconnectAll(state.characterConnections); disconnectAll(state.globalConnections)
+  disconnectAll(state.characterConnections, connectionIndexes.character); disconnectAll(state.globalConnections, connectionIndexes.global)
   state.config, state.urls, modules = {}, {}, {}; persistenceReady, saveDirty = false, false
-  table.clear(spamObservers); table.clear(configObservers)
+  table.clear(spamObservers); table.clear(configObservers); table.clear(observerIndexes.spam); table.clear(observerIndexes.config)
   if type(_G.Exodus) == "table" then
     local exodus = _G.Exodus; exodus.Started, exodus.UIReady, exodus.Runtime, exodus.UI = false, false, nil, nil
     if type(exodus.RemoteHooks) == "table" then exodus.RemoteHooks.register = nil end
@@ -435,11 +458,11 @@ function Utils.setModuleURLs(urls)
   setValues(state.urls, urls); refreshNamespace()
   return true
 end
-function Utils.trackGlobal(connection) return track(state.globalConnections, connection) end
-function Utils.untrackGlobal(connection) return untrack(state.globalConnections, connection) end
-function Utils.trackCharacter(connection) return track(state.characterConnections, connection) end
-function Utils.untrackCharacter(connection) return untrack(state.characterConnections, connection) end
-function Utils.disconnectCharacterConnections() disconnectAll(state.characterConnections) end
+function Utils.trackGlobal(connection) return track(state.globalConnections, connectionIndexes.global, connection) end
+function Utils.untrackGlobal(connection) return untrack(state.globalConnections, connectionIndexes.global, connection) end
+function Utils.trackCharacter(connection) return track(state.characterConnections, connectionIndexes.character, connection) end
+function Utils.untrackCharacter(connection) return untrack(state.characterConnections, connectionIndexes.character, connection) end
+function Utils.disconnectCharacterConnections() disconnectAll(state.characterConnections, connectionIndexes.character) end
 function Utils.getPlayers() return players end
 function Utils.getReplicatedStorage() return replicated end
 function Utils.getRunService() return runService end

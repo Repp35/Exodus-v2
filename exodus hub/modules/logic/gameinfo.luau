@@ -20,6 +20,8 @@ local trainingConnection, trainingRemote, trainingState, trainingSequence = nil,
 local trainingEventConnection, trainingEventRemote
 local trainingRound, trainingDespawned, trainingServerTime = 0, false, nil
 local trainingDataModule, trainingData
+local snapshotCache, snapshotCacheAt = nil, -math.huge
+local dashStateCache = setmetatable({}, { __mode = "k" })
 
 -- configuration
 local CONFIG = {
@@ -51,6 +53,8 @@ local CONFIG = {
   PING_SAMPLE_COUNT = 8,
   TARGET_CONFIRM_INTERVAL = 1 / 60,
   TARGET_HOLD_TIME = 0.1,
+  SNAPSHOT_CACHE_INTERVAL = 1 / 240,
+  DASH_STATE_CACHE_INTERVAL = 1 / 120,
   GAME_IDS = {
     DEFLECT = 1,
     DASH = 2,
@@ -74,6 +78,7 @@ minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
 -- helpers
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local EMPTY_OPTIONS = {}
+local function invalidateSnapshotCache() snapshotCache, snapshotCacheAt = nil, -math.huge end
 local function child(parent, name) return parent and parent:FindFirstChild(name) end
 local function report(name, message)
   local time = os.clock()
@@ -121,6 +126,7 @@ end
 
 -- abilities
 local function getAbilities()
+  if abilities and abilityScript and abilityScript.Parent then return abilities end
   local root = ts(); local module = child(child(root, "Abilities"), "ClientAbilities") or child(root, "ClientAbilities")
   if abilityScript ~= module then abilityScript, abilities = module, nil end
   if not module then return nil end
@@ -138,6 +144,7 @@ local function getAbility(index, method)
   return ability
 end
 local function getReplicator()
+  if replicator and replicatorScript and replicatorScript.Parent then return replicator end
   local root = ts(); local folder = child(child(root, "Gameplay"), "BallReplicator") or child(root, "BallReplicator")
   local module = folder and (folder:IsA("ModuleScript") and folder or child(folder, "BallReplicator"))
   if module ~= replicatorScript then replicatorScript, replicator = module, nil end
@@ -220,7 +227,10 @@ end
 local function getBall()
   if ball and ball.Parent then return ball end
   if watching and os.clock() < searchAt then return nil end
-  ball, searchAt = findBall(), os.clock() + CONFIG.BALL_SEARCH_INTERVAL; return ball
+  local previous = ball
+  ball, searchAt = findBall(), os.clock() + CONFIG.BALL_SEARCH_INTERVAL
+  if previous ~= ball then invalidateSnapshotCache() end
+  return ball
 end
 local function disconnect(connection)
   if connection then
@@ -257,6 +267,7 @@ local function findSyncRemote()
 end
 local function resetTrainingBall(despawned)
   trainingRound += 1; trainingState, trainingDespawned = nil, despawned
+  invalidateSnapshotCache()
 end
 local function bindTrainingSync()
   local remotes = child(child(storage(), "Training"), "Remotes"); local event = child(remotes, "Event")
@@ -295,6 +306,7 @@ local function bindTrainingSync()
         sequence = trainingSequence,
         round = trainingRound,
       }
+      invalidateSnapshotCache()
 
     end)
     utils.trackGlobal(trainingConnection)
@@ -357,6 +369,7 @@ function GameInfo.setup(deps)
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
   sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
+  snapshotCache, snapshotCacheAt = nil, -math.huge; table.clear(dashStateCache)
   minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}
   pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
   targetFrame = 0; local service = utils.getRunService()
@@ -498,21 +511,34 @@ function GameInfo.getLocalDashState()
 end
 function GameInfo.isPlayerDashing(player)
   if not player then return false end
-  if player == players.LocalPlayer then local ability = GameInfo.getDashAbility(); return ability ~= nil and ability.Dashing == true end
-  local character = player.Character
-  if not character or not character.Parent then return false end
-  if character:GetAttribute("IsDashing") == true then return true end
-  local humanoid = character:FindFirstChildOfClass("Humanoid"); local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-  if not dashAnimation or not dashAnimation.Parent then
-    local replicated = storage(); local animations = replicated and replicated:FindFirstChild("Animations")
-    local movement = animations and animations:FindFirstChild("Movement"); dashAnimation = movement and movement:FindFirstChild("Dash")
+  if player == players.LocalPlayer then
+    local ability = GameInfo.getDashAbility()
+    return ability ~= nil and ability.Dashing == true
   end
-  if not animator or not dashAnimation or not dashAnimation:IsA("Animation") or dashAnimation.AnimationId == "" then return false end
+  local character = player.Character
+  local cached = dashStateCache[player]
+  local time = os.clock()
+  if cached and cached.character == character and time >= cached.at and time - cached.at < CONFIG.DASH_STATE_CACHE_INTERVAL then return cached.value end
+  local function finish(value)
+    dashStateCache[player] = { character = character, at = time, value = value }
+    return value
+  end
+  if not character or not character.Parent then return finish(false) end
+  if character:GetAttribute("IsDashing") == true then return finish(true) end
+  local humanoid = character:FindFirstChildOfClass("Humanoid")
+  local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+  if not dashAnimation or not dashAnimation.Parent then
+    local replicated = storage()
+    local animations = replicated and replicated:FindFirstChild("Animations")
+    local movement = animations and animations:FindFirstChild("Movement")
+    dashAnimation = movement and movement:FindFirstChild("Dash")
+  end
+  if not animator or not dashAnimation or not dashAnimation:IsA("Animation") or dashAnimation.AnimationId == "" then return finish(false) end
   for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
     local animation = track.Animation
-    if track.IsPlaying and animation and animation.AnimationId == dashAnimation.AnimationId then return true end
+    if track.IsPlaying and animation and animation.AnimationId == dashAnimation.AnimationId then return finish(true) end
   end
-  return false
+  return finish(false)
 end
 function GameInfo.getFierceDeflectAbility() return getAbility(CONFIG.GAME_IDS.FIERCE, "ActivateAndBlock") end
 function GameInfo.getDarkSealAbility() return getAbility(CONFIG.GAME_IDS.DARK, "SendEvent") end
@@ -615,7 +641,7 @@ function GameInfo.applyPacket(value)
     local delta = (sequence - previous) % 65536
     if delta == 0 or delta >= 32768 then return false end
   end
-  packet, packetAt = table.clone(value), os.clock(); syncReceivedAt = packetAt
+  packet, packetAt = table.clone(value), os.clock(); syncReceivedAt = packetAt; invalidateSnapshotCache()
   return true
 end
 local function decodeBallPacketFallback(value)
@@ -691,12 +717,14 @@ function GameInfo.getTargetId() return targetId(syncData(), getBall()) end
 
 -- snapshots
 local function snapshot(time)
+  time = type(time) == "number" and time or utils.now()
+  if snapshotCache and time >= snapshotCacheAt and time - snapshotCacheAt < CONFIG.SNAPSHOT_CACHE_INTERVAL then return snapshotCache end
   if inTrainingArea() then
-    time = type(time) == "number" and time or utils.now(); local sample = trainingState
+    local sample = trainingState
     local model = child(child(child(world, "Training"), "TrainingClient"), "TrainingBall")
     if not sample or time < sample.receivedAt or time - sample.receivedAt > 0.6 or not model or not model:IsA("BasePart") or not model.Parent then return nil end
     local age = math.clamp(world:GetServerTimeNow() - sample.serverTime, 0, 0.25); local target = finite(sample.goal) and sample.goal > 0 and sample.goal or -1
-    return {
+    local result = {
       schema = 2,
       mode = "training",
       ball = model,
@@ -715,6 +743,8 @@ local function snapshot(time)
       syncSequence = sample.sequence,
       trainingRound = sample.round,
     }
+    snapshotCache, snapshotCacheAt = result, time
+    return result
   end
   local currentBall = getBall()
   if not currentBall then return nil end
@@ -735,7 +765,7 @@ local function snapshot(time)
   end
   if typeof(velocity) ~= "Vector3" or velocity.Magnitude < 0.1 then velocity = measuredVelocity or Vector3.zero end
   local target = targetId(sync, currentBall)
-  return {
+  local result = {
     schema = 2,
     generatedAt = time,
     valid = true,
@@ -767,6 +797,8 @@ local function snapshot(time)
     serverTime = sync and sync.ServerTime or nil,
     syncSequence = syncSequence(sync, provider),
   }
+  snapshotCache, snapshotCacheAt = result, time
+  return result
 end
 
 -- public-api
@@ -787,15 +819,15 @@ function GameInfo.applySync(value)
   if type(value) == "table" and type(value.syncData) == "table" then value = value.syncData end
   if type(value) ~= "table" then local provider = getReplicator(); value = provider and provider.syncData end
   if type(value) ~= "table" then return nil end
-  lastSync, syncReceivedAt = value, os.clock(); return value
+  lastSync, syncReceivedAt = value, os.clock(); invalidateSnapshotCache(); return value
 end
 function GameInfo.installBallWatcher(track)
   if type(track) ~= "function" then return false, "trackConnection invalido" end
   track((world.DescendantAdded or world.ChildAdded):Connect(function(item)
-    if item.Name == "GameBall" and item:IsA("BasePart") then ball = item end
+    if item.Name == "GameBall" and item:IsA("BasePart") and ball ~= item then ball = item; invalidateSnapshotCache() end
   end))
   track((world.DescendantRemoving or world.ChildRemoved):Connect(function(item)
-    if ball == item then ball, searchAt = nil, 0 end
+    if ball == item then ball, searchAt = nil, 0; invalidateSnapshotCache() end
   end))
   ball, watching, searchAt = findBall(), true, os.clock() + CONFIG.BALL_SEARCH_INTERVAL; return true
 end

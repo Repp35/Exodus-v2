@@ -482,14 +482,13 @@ local function bindRuntime(loaded)
   local function notifyBallSync(decodedData)
     if type(decodedData) ~= "table" then return end
     for _, sub in ipairs(ballSyncSubscribers) do
-      local ok, err = xpcall(function()
-        local result, detail = sub.handler(decodedData)
-        if result == false then error(tostring(detail), 0) end
-      end, function(value) return debug.traceback(tostring(value), 2) end)
-      if not ok then
+      local ok, result, detail = pcall(sub.handler, decodedData)
+      if not ok or result == false then
+        local message = not ok and debug.traceback(tostring(result), 2) or tostring(detail or "handler retornou false")
         local time = os.clock()
         if not syncErrors[sub.name] or time - syncErrors[sub.name] >= 1 then
-          syncErrors[sub.name] = time; local reported, reportError = pcall(utils.recordError, sub.name .. ".onBallSync", err)
+          syncErrors[sub.name] = time
+          local reported, reportError = pcall(utils.recordError, sub.name .. ".onBallSync", message)
           if not reported then printRawError(sub.name, reportError) end
         end
       end
