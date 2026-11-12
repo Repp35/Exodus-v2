@@ -67,6 +67,18 @@ end
 local function notifyCritical(moduleName)
   notifyPersistent(("Critical error in %s. Check the console."):format(tostring(moduleName or "the hub")), "critical", "critical")
 end
+local function closeUpdateChannel()
+  local stop = _G.ExodusUpdateStop
+  _G.ExodusUpdateStop = nil
+  if type(stop) == "function" then pcall(stop) end
+  local socket = _G.ExodusUpdateSocket
+  _G.ExodusUpdateSocket = nil
+  _G.ExodusUpdateToken = nil
+  if socket then
+    local close = socket.Close or socket.close
+    if type(close) == "function" then pcall(close, socket) end
+  end
+end
 local Exodus = type(_G.Exodus) == "table" and _G.Exodus or {}
 local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 
@@ -104,8 +116,13 @@ local PROJECT_PATH = CONFIG.PROJECT_PATH
 local AUTHORIZATION_PATH = CONFIG.AUTHORIZATION_PATH
 local BASE_URL = CONFIG.DELIVERY_BASE_URL
 local MANIFEST_URL = CONFIG.MANIFEST_URL
-local CACHE_BUSTER = tostring(os.time())
 local HttpService = game:GetService("HttpService")
+local UPDATE_WS_URL = "wss://ntfy.sh/exodus-v2-live-9f36c3d1e8b24a7c/ws"
+local cacheSequence = 0
+local function cacheBuster()
+  cacheSequence += 1
+  return ("%d-%d-%d"):format(os.time(), math.floor(os.clock() * 1000000), cacheSequence)
+end
 local MODULE_MANIFEST = CONFIG.MODULES
 local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
@@ -252,7 +269,8 @@ local function cleanupCall(name, action)
   return ok, result
 end
 local function stopPreviousRuntime()
-  local clean = true; _G.ExodusUpdaterToken = nil
+  local clean = true
+  closeUpdateChannel()
   local function attempt(name, action)
     local ok, result = cleanupCall(name, action)
     if not ok then clean = false end
@@ -299,7 +317,7 @@ local function execute(name, chunk)
 end
 local function resolveLatestRevision()
   local body, requestError, requestMeta =
-    request(MANIFEST_URL .. "?exodus_cache=" .. CACHE_BUSTER, { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Loader" })
+    request(MANIFEST_URL .. "?exodus_cache=" .. cacheBuster(), { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Loader" })
   if body then
     local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and document.revision
     if validRevision(sha) and type(document.signatures) == "table" then return sha, nil, nil, document.signatures end
@@ -327,7 +345,7 @@ local function loadModule(name, relativePath, url)
     if cachedChunk then return cachedChunk, nil, "verified" end
   end
   local source, fetchError
-  if url then source, fetchError = request(url .. "?exodus_cache=" .. tostring(os.time()) .. "-" .. tostring(math.random(1, 1000000000))) end
+  if url then source, fetchError = request(url .. "?exodus_cache=" .. cacheBuster()) end
   local sourceKind = "delivery"
   if not source then
     local fallbackURL = buildCDNURL(url)
@@ -344,7 +362,7 @@ local function loadModule(name, relativePath, url)
   end
   return nil, fetchError or "origem remota indisponível"
 end
-local function authorizationURL(revision) return BASE_URL .. revision .. "/" .. AUTHORIZATION_PATH .. "?exodus_cache=" .. CACHE_BUSTER end
+local function authorizationURL(revision) return BASE_URL .. revision .. "/" .. AUTHORIZATION_PATH .. "?exodus_cache=" .. cacheBuster() end
 local function setContains(set, value)
   if type(set) ~= "table" then return false end
   if set[value] == true or set[tostring(value)] == true then return true end
@@ -641,25 +659,39 @@ local function waitForLocalPlayer(timeout)
   return false, "LocalPlayer indisponível após esperar " .. timeout .. "s"
 end
 local reloadInFlight = false
-local function reloadLatest(onFailure)
+local function reloadLatest(onFailure, requestedRevision, automatic)
   local function fail(message)
     warn("[Exodus Reload] " .. tostring(message))
+    if automatic then
+      clearPersistent("update")
+      notifyPersistent("Update failed. Check the console.", "critical", "critical")
+    end
     if type(onFailure) == "function" then task.defer(onFailure, message) end
     reloadInFlight = false
   end
-  if reloadInFlight then fail("reload já em andamento"); return false end
+  if reloadInFlight then return false, "reload already in progress" end
   reloadInFlight = true
+  if automatic then notifyPersistent("Updating...", "update", "info") end
   task.spawn(function()
-    local revision, revisionError = resolveLatestRevision()
-    if not revision then fail(revisionError); return end
-    local source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau?exodus_cache=" .. tostring(os.time()))
+    local revision = validRevision(requestedRevision) and requestedRevision
+    local revisionError
+    if not revision then revision, revisionError = resolveLatestRevision() end
+    if not revision then fail(revisionError or "Version manifest unavailable"); return end
+    local source, fetchError = request(
+      BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau?exodus_cache=" .. cacheBuster()
+    )
     if not source then fail(fetchError); return end
+    if automatic and type(_G.ExodusUIFadeOut) == "function" then
+      local faded, fadeError = pcall(_G.ExodusUIFadeOut)
+      if not faded then warn("[Exodus Reload] Fade out failed: " .. tostring(fadeError)) end
+    end
     local chunk, compileError = compile("reload loader", source)
     if not chunk then fail(compileError); return end
     _G.ExodusRequestedRevision = revision
     local ok, executionError = xpcall(chunk, function(err) return debug.traceback(tostring(err), 2) end)
     if not ok then
-      _G.ExodusRequestedRevision = nil; fail(executionError)
+      _G.ExodusRequestedRevision = nil
+      fail(executionError)
       return
     end
     reloadInFlight = false
@@ -668,6 +700,7 @@ local function reloadLatest(onFailure)
 end
 local startupPerformed = false
 local function startInternal()
+  local wasStarted = Exodus.Started == true
   local requestedRevision = validRevision(_G.ExodusRequestedRevision) and _G.ExodusRequestedRevision or nil; _G.ExodusRequestedRevision = nil
   local version, _, _, signatures = resolveLatestRevision()
   if requestedRevision and version ~= requestedRevision then return false, "Loader", "revisão solicitada não é a atual" end
@@ -675,7 +708,6 @@ local function startInternal()
   if not version then return false, "Authorization", "revisão de distribuição indisponível" end
   local authorized, authorizationError = authorizeRevision(version)
   if not authorized then return false, "Authorization", authorizationError end
-  if not requestedRevision and Exodus.Started == true and Exodus.UIReady == true and validRevision(version) and Exodus.Revision == version then return true end
   startupPerformed = true; printStartup("Exodus: Initializing...")
   _G.ExodusShutdownReason = requestedRevision and "update" or "restart"
   if not stopPreviousRuntime() then _G.ExodusShutdownReason = nil; return false, "Loader", "failed to stop the previous session" end
@@ -715,7 +747,15 @@ local function startInternal()
   Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
   Exodus.Revision = version
-  if requestedRevision then clearPersistent("update"); printStartup("Exodus: Update completed.") else printStartup("Exodus: Initialized.") end
+  _G.ExodusLastLoadedRevision = version
+  if requestedRevision then
+    clearPersistent("update")
+    printStartup("Exodus: Update completed.")
+  elseif wasStarted then
+    printStartup("Exodus: Reloaded.")
+  else
+    printStartup("Exodus: Initialized.")
+  end
   return true
 end
 
@@ -774,7 +814,59 @@ local function startSafely()
   Exodus.StartError = nil; Exodus.StartErrorModule = nil
   return true
 end
+local function handleUpdateMessage(sessionToken, raw)
+  if _G.ExodusLoaderSessionToken ~= sessionToken or not Exodus.Started then return end
+  local ok, event = pcall(HttpService.JSONDecode, HttpService, tostring(raw))
+  if not ok or type(event) ~= "table" or event.event ~= "message" then return end
+  local revision = tostring(event.message or "")
+  if not validRevision(revision) or revision == (_G.ExodusLastLoadedRevision or Exodus.Revision) then return end
+  reloadLatest(nil, revision, true)
+end
+local function startUpdateChannel()
+  closeUpdateChannel()
+  local sessionToken = _G.ExodusLoaderSessionToken
+  local token = {}
+  _G.ExodusUpdateToken = token
+  if type(WebSocket) ~= "table" or type(WebSocket.connect) ~= "function" then
+    _G.ExodusUpdateToken = nil
+    notifyPersistent("Live update channel unavailable.", "critical", "critical")
+    warn("[Exodus Update] WebSocket.connect is unavailable")
+    return false
+  end
+  local socketOk, socket = pcall(WebSocket.connect, UPDATE_WS_URL)
+  if not socketOk or socket == nil then
+    _G.ExodusUpdateToken = nil
+    notifyPersistent("Live update channel unavailable.", "critical", "critical")
+    warn("[Exodus Update] WebSocket connection failed: " .. tostring(socket))
+    return false
+  end
+  _G.ExodusUpdateSocket = socket
+  local messageSignal = socket.OnMessage
+  local closeSignal = socket.OnClose
+  if not messageSignal or type(messageSignal.Connect) ~= "function" then
+    closeUpdateChannel()
+    notifyPersistent("Live update channel is incompatible.", "critical", "critical")
+    return false
+  end
+  local messageConnection = messageSignal:Connect(function(raw) handleUpdateMessage(sessionToken, raw) end)
+  local closeConnection
+  if closeSignal and type(closeSignal.Connect) == "function" then
+    closeConnection = closeSignal:Connect(function()
+      if _G.ExodusUpdateToken == token then
+        _G.ExodusUpdateSocket = nil
+        _G.ExodusUpdateToken = nil
+        notifyPersistent("Live update channel closed.", "critical", "critical")
+      end
+    end)
+  end
+  _G.ExodusUpdateStop = function()
+    if messageConnection then pcall(messageConnection.Disconnect, messageConnection) end
+    if closeConnection then pcall(closeConnection.Disconnect, closeConnection) end
+    if _G.ExodusUpdateToken == token then closeUpdateChannel() end
+  end
+  return true
+end
 local started = startSafely()
 Exodus.Started = started == true
-
+if started and startupPerformed then startUpdateChannel() end
 return Loader
