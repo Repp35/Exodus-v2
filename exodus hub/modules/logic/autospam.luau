@@ -306,7 +306,9 @@ closeClashProtected = function(s, time, radius)
     if s.lastClosePartner == s.partner then s.lastCloseAt = nil end
     return false
   end
-  return s.lastClosePartner == s.partner and finite(s.lastCloseAt) and finite(s.lastCloseDistance) and s.lastCloseDistance <= radius
+  return s.lastClosePartner == s.partner and finite(s.lastCloseAt)
+    and time - s.lastCloseAt <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_MEMORY_SECONDS
+    and finite(s.lastCloseDistance) and s.lastCloseDistance <= radius
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
@@ -356,7 +358,6 @@ local function applyDeactivation(s, snapshot, time)
       if finite(opponentDistance) and opponentDistance > 16 then reason = "client_deflect_reset_late" end
     end
   end
-  if reason and CLOSE_CLASH_PROTECTION_RADII[reason] and closeClashProtected(s, time, CLOSE_CLASH_PROTECTION_RADII[reason]) then reason = nil end
   if not reason then return false end
   if CLOSE_CLASH_PROTECTION_RADII[reason] and closeClashProtected(s, time, CLOSE_CLASH_PROTECTION_RADII[reason]) then return false end
   stop(s, reason); return not s.active
@@ -466,7 +467,7 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
     s.target = nil; return
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
-  if not fresh and applyDeactivation(s, snapshot, time) then blockedActivation = true end
+  if applyDeactivation(s, snapshot, time) then blockedActivation = true end
   sampleOwnDash(s, time)
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
