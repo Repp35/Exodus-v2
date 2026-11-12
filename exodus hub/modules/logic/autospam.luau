@@ -306,9 +306,11 @@ closeClashProtected = function(s, time, radius)
     if s.lastClosePartner == s.partner then s.lastCloseAt = nil end
     return false
   end
-  return s.lastClosePartner == s.partner and finite(s.lastCloseAt)
+  return s.lastClosePartner == s.partner
+    and finite(s.lastCloseAt)
     and time - s.lastCloseAt <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_MEMORY_SECONDS
-    and finite(s.lastCloseDistance) and s.lastCloseDistance <= radius
+    and finite(s.lastCloseDistance)
+    and s.lastCloseDistance <= radius
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
