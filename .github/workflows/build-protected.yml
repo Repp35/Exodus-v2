@@ -146,7 +146,7 @@ jobs:
 
       - name: Notify live clients
         env:
-          REVISION: \${{ github.sha }}
+          REVISION: ${{ github.sha }}
           UPDATE_TOPIC: exodus-v2-live-9f36c3d1e8b24a7c
         shell: bash
         run: |
@@ -155,5 +155,5 @@ jobs:
             -X POST \
             -H "Title: Exodus update" \
             -H "Content-Type: text/plain" \
-            --data "\${REVISION}" \
-            "https://ntfy.sh/\${UPDATE_TOPIC}"
+            --data "${REVISION}" \
+            "https://ntfy.sh/${UPDATE_TOPIC}"
