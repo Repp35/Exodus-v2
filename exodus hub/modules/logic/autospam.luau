@@ -31,7 +31,6 @@ local CONFIG = {
     MIN_DISTANCE = 20,
     MAX_DISTANCE_REFERENCE = 51,
     MIN_ACTIVE_TIME = 0.1,
-    TARGET_RETURN_TIMEOUT = 0.05,
   },
   SHARED = {
     MIN_RETURN = 1 / 25,
@@ -256,7 +255,7 @@ local function shouldDeactivate(s, snapshot, time)
     if limit and s.root and s.root.Parent and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > limit then return "distant_target" end
   end
   local reason = distanceGate(s, snapshot, s.partner)
-  if reason ~= "distance_unavailable" then return reason end
+  if reason ~= "distance_unavailable" and reason ~= "ball_distance" then return reason end
   return nil
 end
 local function applyDeactivation(s, snapshot, time)
@@ -269,17 +268,6 @@ local function applyDeactivation(s, snapshot, time)
   if not reason then return false end
   return stop(s, reason, snapshot, time)
 end
-local function observeTargetReturn(s, target, time)
-  if not s.active or not target then return end
-  if target == localPlayer.UserId then s.targetAwaySince = nil else s.targetAwaySince = s.targetAwaySince or time end
-end
-local function enforceTargetReturnTimeout(s, snapshot, time)
-  if not s.active or not s.activatedAt or not s.targetAwaySince then return false end
-  if time - s.activatedAt < CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then return false end
-  if time - s.targetAwaySince < CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT then return false end
-  return stop(s, "target_return_timeout", snapshot, time)
-end
-
 -- target-tracking
 local function inspectTarget(s, target, time, snapshot, serverTime)
   if not target or target == s.target then return end
@@ -357,7 +345,6 @@ local function evaluate(s, time, fresh, serverTime, snapshot, blockedActivation,
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
   if not fresh and applyDeactivation(s, snapshot, time) then blockedActivation = true end
-  if enforceTargetReturnTimeout(s, snapshot, time) then return end
   sampleOwnDash(s, time)
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
@@ -627,7 +614,7 @@ function AutoSpam.onBallSync(data)
     return
   end
   local time = now(); local target = userId(data.TargetPlayerID)
-  local serverTime = tonumber(data.ServerTime); observeTargetReturn(s, target, time)
+  local serverTime = tonumber(data.ServerTime)
   if not finite(serverTime) then serverTime = nil end
   local speed = tonumber(data.Speed); local snapshot = gameInfo.getSnapshotAt(time)
   if snapshot and data.Source == "packet" then
