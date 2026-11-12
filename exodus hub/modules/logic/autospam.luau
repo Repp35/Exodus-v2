@@ -310,20 +310,27 @@ end
 local function inspectTarget(s, target, time, snapshot, serverTime)
   if not target or target == s.target then return end
   local previous, me = s.target, localPlayer.UserId
-  -- An incoming target switch inside 10 studs is an immediate clash signal.
-  -- Only use the opponent identified by this exact switch, not cached exchange state.
-  if not s.active and utils.isActive() and utils.getConfigValue("AutoSpam") == true
-    and previous and previous ~= me and target == me and snapshot
-    and gameInfo.isSnapshotValid(snapshot) and snapshot.targetUncertain ~= true
-    and snapshot.locked ~= true and not snapshot.teleported and gameInfo.getBallFrozen() ~= true
-    and s.root and s.root.Parent and typeof(snapshot.position) == "Vector3"
+  if
+    not s.active
+    and utils.isActive()
+    and utils.getConfigValue("AutoSpam") == true
+    and previous
+    and previous ~= me
+    and target == me
+    and snapshot
+    and gameInfo.isSnapshotValid(snapshot)
+    and snapshot.targetUncertain ~= true
+    and snapshot.locked ~= true
+    and not snapshot.teleported
+    and gameInfo.getBallFrozen() ~= true
+    and s.root
+    and s.root.Parent
+    and typeof(snapshot.position) == "Vector3"
     and (snapshot.position - s.root.Position).Magnitude <= CONFIG.ACTIVATION.INSTANT_TARGET_SWITCH_RADIUS
     and playerIsAlive(previous)
   then
     local opponent = gameInfo.getPlayerMotion(previous)
-    if typeof(opponent) == "Vector3"
-      and (opponent - s.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS
-    then
+    if typeof(opponent) == "Vector3" and (opponent - s.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS then
       start(s, "close_target_switch", previous, time, serverTime, snapshot)
     end
   end
