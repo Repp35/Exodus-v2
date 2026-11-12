@@ -192,10 +192,9 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
   s.activatedAt, s.firstReturnSeen = time, false; s.lastClosePartner, s.lastCloseAt = nil, nil
-  gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot))
-  s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil; s.diversionSince, s.diversionSyncAt = nil, nil
-  s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason; utils.setAutoSpamActive(true)
-  utils.recordTransition("AutoSpam", "idle", "active", reason)
+  gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot)); s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
+  s.diversionSince, s.diversionSyncAt = nil, nil; s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
+  utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function activationGeometry(s, snapshot, partner, time)
   local factor = CONFIG.ACTIVATION.RADIUS_FACTOR
@@ -254,15 +253,21 @@ end
 -- deactivation
 local closeClashProtected
 local CLOSE_CLASH_EXPLICIT_STOPS = {
-  hub_inactive = true, disabled = true, ball_missing = true,
-  player_died = true, opponent_left = true, character_removed = true,
-  detach = true, teardown = true, rebind = true, setup = true,
+  hub_inactive = true,
+  disabled = true,
+  ball_missing = true,
+  player_died = true,
+  opponent_left = true,
+  character_removed = true,
+  detach = true,
+  teardown = true,
+  rebind = true,
+  setup = true,
   stop_spam = true,
 }
+
 local function stop(s, reason)
   if current ~= s then return end
-  -- Apply the close-range protection at the final stop boundary as well:
-  -- lifecycle and packet handlers must not bypass it on unreliable data.
   if s.active and not CLOSE_CLASH_EXPLICIT_STOPS[reason] and closeClashProtected(s, now()) then return end
   if s.active then
     local stoppedAt = now(); s.stoppedPartner, s.stoppedAt = s.partner, stoppedAt
@@ -276,10 +281,8 @@ end
 closeClashProtected = function(s, time)
   if not s.partner or not s.root or not s.root.Parent then return false end
   local opponent = gameInfo.getPlayerMotion(s.partner)
-  -- Prefer a live character root if the motion cache is unavailable.
   if typeof(opponent) ~= "Vector3" then
-    local player = players:GetPlayerByUserId(s.partner)
-    local character = player and player.Character
+    local player = players:GetPlayerByUserId(s.partner); local character = player and player.Character
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if root and root:IsA("BasePart") and root.Parent then opponent = root.Position end
   end
@@ -289,8 +292,6 @@ closeClashProtected = function(s, time)
     if s.lastClosePartner == s.partner then s.lastCloseAt = nil end
     return false
   end
-  -- During packet loss, keep the last confirmed close-range state until
-  -- a real position confirms the opponent moved away.
   return s.lastClosePartner == s.partner and finite(s.lastCloseAt)
 end
 local function shouldDeactivate(s, snapshot, time)
