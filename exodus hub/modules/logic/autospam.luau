@@ -255,7 +255,7 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
     return false
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
-  if not proximity and distanceGate(state, snapshot, partner) ~= nil then return false end
+  if not bypassExchange and distanceGate(state, snapshot, partner) ~= nil then return false end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
   state.dashSwitchPartner, state.dashSwitchAt = nil, nil; state.deflectCooldownSince = nil
