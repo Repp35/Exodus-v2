@@ -9,50 +9,44 @@ local CONFIG = {
     {
       kind = "toggle",
       title = "Auto Parry",
-      description = "Automatically deflect incoming attacks.",
       key = "AutoParry",
     },
     {
       kind = "toggle",
+      title = "Auto Spam",
+      key = "AutoSpam",
+    },
+    {
+      kind = "toggle",
       title = "Mini Parry UI",
-      description = "Show the compact Auto Parry control.",
+      description = "Exibe um botão compacto para controlar o parry.",
       key = "ParryBallVisible",
       mobileOnly = true,
     },
     {
       kind = "toggle",
-      title = "Auto Spam",
-      description = "Enable automatic clash spam.",
-      key = "AutoSpam",
-    },
-    {
-      kind = "toggle",
       title = "Mini Clash UI",
-      description = "Show the compact Auto Spam control.",
+      description = "Exibe um botão compacto para controlar o spam.",
       key = "ClashBallVisible",
       mobileOnly = true,
     },
   },
   PANEL_COMPONENTS = {
     {
-      kind = "rate_selector",
-      title = "Spam Rate",
-      description = "Choose the spam rate mode and value.",
-    },
-    {
-      kind = "keybind_selector",
-      title = "Stop Functions",
-      description = "Assign a shortcut that stops active functions.",
-    },
-    {
-      kind = "toggle",
-      control = "status",
+      kind = "off_on",
       title = "Manual Spam",
-      description = "Show or enable the manual spam control.",
       mobileKey = "MiniSpamVisible",
       desktopKey = "ManualSpamEnabled",
       shortcutKey = "SpamKeybind",
       mobileToast = "Manual Spam UI",
+    },
+    {
+      kind = "rate_selector",
+      title = "Spam Rate",
+    },
+    {
+      kind = "keybind_selector",
+      title = "Stop Functions",
     },
   },
   PAGES = {
@@ -62,9 +56,8 @@ local CONFIG = {
         {
           kind = "click",
           title = "Dumper",
-          description = "Capture accessible client scripts, remotes and metadata.",
+          description = "Salva scripts e informações acessíveis do jogo.",
           action = "dumper",
-          actionText = "Run",
         },
       },
     },

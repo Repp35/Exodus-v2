@@ -18,12 +18,10 @@ local status = {
 -- configuration
 local CONFIG = {
   PREFIX = "SrcDump",
-  YIELD_EVERY = 50,
   PROGRESS_EVERY = 25,
   SAVE_BYTECODE = true,
   SAVE_DISASSEMBLY = true,
   INCLUDE_NIL_INSTANCES = true,
-  MAX_SOURCE_BYTES = 4_000_000,
 }
 
 local SCRIPT_CLASSES = {
@@ -55,8 +53,8 @@ local function emit(callbacks, name, ...)
   local callback = callbacks and callbacks[name]
   if type(callback) == "function" then pcall(callback, ...) end
 end
-local function yieldIfNeeded(index)
-  if index % CONFIG.YIELD_EVERY == 0 then task.wait() end
+local function log(message)
+  if type(print) == "function" then pcall(print, "[SrcDump] " .. tostring(message)) end
 end
 local function line(value) return tostring(value):gsub("[\r\n]", " ") end
 local function safeProperty(object, key, fallback)
@@ -191,6 +189,7 @@ end
 
 -- dump
 local function run(token, callbacks)
+  log("Starting dump.")
   if type(writefile) ~= "function" or type(makefolder) ~= "function" then return nil, "writefile and makefolder are required" end
   local base = nextFolder()
   for _, path in ipairs({ base, base .. "/scripts", base .. "/remotes" }) do
@@ -205,7 +204,9 @@ local function run(token, callbacks)
     local ok, err = ensureFolder(base .. "/disassembly")
     if not ok then return nil, "cannot create disassembly folder: " .. tostring(err) end
   end
-  emit(callbacks, "onStatus", "Collecting instances..."); local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
+  emit(callbacks, "onStatus", "Collecting instances...")
+  log("Collecting instances...")
+  local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
   local function add(object, origin, detached)
     if not allowed(object, detached) or seen[object] then return end
     seen[object] = true; local item = { instance = object, path = objectPath(object), origin = origin }
@@ -217,7 +218,8 @@ local function run(token, callbacks)
   if ok then
     for index, object in ipairs(descendants) do
       if token.cancelled then return nil, "Dump canceled" end
-      add(object, "game:GetDescendants", false); yieldIfNeeded(index)
+      add(object, "game:GetDescendants", false)
+      if index % 1000 == 0 then log(("Scanned %d instances."):format(index)) end
     end
   else
     discoveryErrors[#discoveryErrors + 1] = "game:GetDescendants: " .. errorText(descendants)
@@ -226,24 +228,10 @@ local function run(token, callbacks)
     local api = lookup(name)
     if api then addDiscovery(api, catalog, candidates, seen, discoveryErrors, token) end
   end
-  for _, name in ipairs({ "gethui", "get_hidden_gui" }) do
-    local api = lookup(name)
-    if api then
-      local success, hiddenGui = pcall(api)
-      if success then
-        add(hiddenGui, name, true)
-        local descendantsOk, descendants = pcall(function() return hiddenGui:GetDescendants() end)
-        if descendantsOk then
-          for index, object in ipairs(descendants) do
-            add(object, name .. ":GetDescendants", true); yieldIfNeeded(index)
-          end
-        end
-      else
-        discoveryErrors[#discoveryErrors + 1] = name .. ": " .. errorText(hiddenGui)
-      end
-    end
-  end
   status.total = #candidates
+  log(("Found %d instances and %d scripts."):format(#catalog, #candidates))
+  emit(callbacks, "onProgress", 0, #candidates)
+  log("Writing instance metadata...")
   local collection
   pcall(function() collection = game:GetService("CollectionService") end)
   local tree = { "SrcDump - instances", "total=" .. #catalog, "" }; local remotes = { "SrcDump - remotes and bindables", "" }
@@ -260,7 +248,7 @@ local function run(token, callbacks)
     )
     tree[#tree + 1] = detail
     if REMOTE_CLASSES[objectClass(object)] then remoteCount += 1; remotes[#remotes + 1] = detail end
-    yieldIfNeeded(index)
+    if index % 1000 == 0 then log(("Writing metadata: %d/%d."):format(index, #catalog)) end
   end
   remotes[2] = "total=" .. remoteCount; local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
   if not treeOk then return nil, "cannot save tree.txt: " .. tostring(treeError) end
@@ -305,7 +293,6 @@ local function run(token, callbacks)
       if validateSource then
         local problem = sourceError(value)
         if problem then attempts[#attempts + 1] = label .. ": " .. problem; return nil end
-        if #value > CONFIG.MAX_SOURCE_BYTES then attempts[#attempts + 1] = label .. ": source exceeds size limit"; return nil end
       end
       attempts[#attempts + 1] = label .. ": returned " .. #value .. " bytes"; return value
     end
@@ -372,8 +359,10 @@ local function run(token, callbacks)
       manifest[#manifest + 1] = "[ERROR] " .. line(item.path) .. " | source unavailable"
     end
     status.processed, status.saved, status.failed, status.bytecode = index, saved, failed, bytecodes
-    if index % CONFIG.PROGRESS_EVERY == 0 then emit(callbacks, "onProgress", index, #candidates, item.path) end
-    yieldIfNeeded(index)
+    if index == 1 or index % CONFIG.PROGRESS_EVERY == 0 then
+      local progress = ("Dumping scripts: %d/%d"):format(index, #candidates)
+      log(progress); emit(callbacks, "onProgress", index, #candidates, item.path)
+    end
   end
   saveFile(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n"); saveFile(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
   saveFile(
@@ -391,6 +380,7 @@ local function run(token, callbacks)
       "",
     }, "\n")
   )
+  log(("Finished: %d saved, %d failed. Folder: %s"):format(saved, failed, base))
   return { folder = base, total = #candidates, saved = saved, failed = failed, bytecode = bytecodes }
 end
 
@@ -422,7 +412,12 @@ function Dumper.start(callbacks)
     local callbacks = activeCallbacks; activeToken, activeCallbacks = nil, nil
     status.running = false
     if token.cancelled then emit(callbacks, "onCanceled"); return end
-    if not ok or not result then emit(callbacks, "onError", not ok and result or reason or "Dump failed"); return end
+    if not ok or not result then
+      local message = not ok and result or reason or "Dump failed"
+      log("Fatal error: " .. tostring(message))
+      emit(callbacks, "onError", message)
+      return
+    end
     status.folder = result.folder; status.total, status.saved, status.failed, status.bytecode = result.total, result.saved, result.failed, result.bytecode
     emit(callbacks, "onComplete", table.clone(result))
   end)
@@ -432,6 +427,7 @@ function Dumper.stop()
   if activeToken then
     local callbacks = activeCallbacks; activeToken.cancelled = true
     activeToken, activeCallbacks = nil, nil; emit(callbacks, "onCanceled")
+    log("Dump canceled.")
   end
   status.running = false; return true
 end
