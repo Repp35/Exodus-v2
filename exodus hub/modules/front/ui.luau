@@ -499,19 +499,14 @@ end
 local function paintManualSpam()
   local spamButton = miniGui and miniGui:FindFirstChild("SpamButton")
   if not spamButton then return end
-  local active = UIState.spamOn == true
-  spamButton.Text = active and "ON" or "OFF"
-  -- Set the state color directly so overlapping tweens cannot leave the wrong color.
+  local active = UIState.spamOn == true; spamButton.Text = active and "ON" or "OFF"
   spamButton.BackgroundColor3 = active and C.green or C.red
 end
 setSpam = function(v)
-  v = v == true
-  UIState.spamOn = v
-  Utils.setManualSpamActive(v)
-  UIState.spamOn = Utils.isManualSpamActive()
+  v = v == true; UIState.spamOn = v
+  Utils.setManualSpamActive(v); UIState.spamOn = Utils.isManualSpamActive()
   paintManualSpam()
 end
-
 local PW, PH = CONFIG.PANEL_W, CONFIG.PANEL_H
 local TITLE_H, PAD, GAP, CARD_GAP = CONFIG.TITLE_H, CONFIG.PAD, CONFIG.GAP, CONFIG.CARD_GAP
 local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = CONFIG.INNER_PAD, CONFIG.CARD_H, CONFIG.RATE_CARD_H, CONFIG.SPAM_CARD_H
@@ -2340,8 +2335,7 @@ function ExodusUI.setup(deps)
   end
   if type(Utils.observeSpam) == "function" then
     trackConn(Utils.observeSpam(function()
-      local manual = Utils.isManualSpamActive()
-      UIState.spamOn = manual
+      local manual = Utils.isManualSpamActive(); UIState.spamOn = manual
       paintManualSpam()
     end))
   end
