@@ -776,18 +776,4 @@ local function startSafely()
 end
 local started = startSafely()
 Exodus.Started = started == true
-if started and startupPerformed then
-  local revision = Exodus.Revision
-  task.spawn(function()
-    local source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "updater.luau?exodus_cache=" .. tostring(os.time()))
-    if not source then warn("[Exodus Updater] Fetch failed: " .. tostring(fetchError)); return end
-    if _G.ExodusLoaderSessionToken ~= startToken or not Exodus.Started or (Exodus.Revision and validRevision(revision) and Exodus.Revision ~= revision) then return end
-    local chunk, compileError = compile("Exodus updater", source)
-    if not chunk then warn("[Exodus Updater] Compile failed: " .. tostring(compileError)); return end
-    local ok, updater = pcall(chunk)
-    if not ok or type(updater) ~= "function" then warn("[Exodus Updater] Initialization failed: " .. tostring(updater)); return end
-    updater(revision, request)
-  end)
-end
-
 return Loader
