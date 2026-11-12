@@ -495,13 +495,13 @@ local function safeToReset(state, time)
   if snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetId == localPlayer.UserId then return end
   state.pendingReset, state.stoppedPartner, state.pending, state.dashSwitchPartner = false, nil, nil, nil
 end
-local function evaluate(state, time, fresh, serverTime, snapshot, blocked)
+local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoEnabled)
   if current ~= state or not state.root.Parent then return end
   if not utils.isActive() then
     deactivate(state, "hub_inactive", time); state.stoppedPartner, state.pendingReset = nil, false
     return
   end
-  local autoEnabled = utils.getConfigValue("AutoSpam") == true
+  if autoEnabled == nil then autoEnabled = utils.getConfigValue("AutoSpam") == true end
   if not autoEnabled then
     if state.active then deactivate(state, "disabled", time) end
     resetExchange(state)
@@ -750,7 +750,7 @@ function AutoSpam.onBallSync(data)
   end
   local target = userId(data.TargetPlayerID); local blocked = state.active and checkDeactivation(state, snapshot, time) or false
   if target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then targetChanged(state, target, time, snapshot, serverTime) end
-  evaluate(state, time, true, serverTime, snapshot, blocked)
+  evaluate(state, time, true, serverTime, snapshot, blocked, autoEnabled)
 end
 
 -- public-api
