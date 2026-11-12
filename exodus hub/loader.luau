@@ -154,6 +154,45 @@ local function findCompleteLocalRoot()
 end
 local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
 
+-- Verified incremental delivery (Adler-32 fingerprints)
+local SIGNATURE_ROOT = "Exodus Hub/Signatures"
+local releaseSignatures
+local function fingerprint(source)
+  local a, b = 1, 0
+  for i = 1, #source do
+    a = (a + string.byte(source, i)) % 65521
+    b = (b + a) % 65521
+  end
+  return string.format("%04x%04x", b, a)
+end
+local function signatureFor(path)
+  return type(releaseSignatures) == "table" and releaseSignatures["exodus hub/" .. path] or nil
+end
+local function signatureValid(value)
+  return type(value) == "string" and #value == 8 and value:match("^[%x]+$") ~= nil
+end
+local function storedSource(signature, relativePath)
+  if not signatureValid(signature) or type(isfile) ~= "function" or type(readfile) ~= "function" then return nil end
+  local path = SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath
+  local ok, source = pcall(function() return isfile(path) and readfile(path) or nil end)
+  return ok and type(source) == "string" and fingerprint(source) == signature and source or nil
+end
+local function storeSource(signature, relativePath, source)
+  if type(writefile) ~= "function" or type(makefolder) ~= "function" or type(isfolder) ~= "function" then return end
+  if fingerprint(source) ~= signature then return end
+  pcall(function()
+    local root = "Exodus Hub"
+    if not isfolder(root) then makefolder(root) end
+    for part in (SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath):gmatch("[^/]+") do
+      if part ~= relativePath:match("[^/]+$") then
+        root = root .. "/" .. part
+        if not isfolder(root) then makefolder(root) end
+      end
+    end
+    writefile(SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath, source)
+  end)
+end
+
 -- registry
 local function register(name, module)
   Modules[name] = module; return module
@@ -227,7 +266,7 @@ local function resolveLatestRevision()
     request(MANIFEST_URL .. "?exodus_cache=" .. CACHE_BUSTER, { ["Accept"] = "application/json", ["User-Agent"] = "Exodus-Hub-Loader" })
   if body then
     local ok, document = pcall(HttpService.JSONDecode, HttpService, body); local sha = ok and type(document) == "table" and document.revision
-    if validRevision(sha) then return sha end
+    if validRevision(sha) and type(document.signatures) == "table" then return sha, nil, nil, document.signatures end
   end
   return nil, requestError or "manifesto de versão indisponível", requestMeta
 end
@@ -249,6 +288,13 @@ local function loadModule(name, relativePath, url, sourceRoot)
     if type(source) ~= "string" or source == "" then error("Arquivo local inválido: " .. path, 2) end
     local chunk, compileError = compile(name .. " [local]", source); return chunk, compileError, "local"
   end
+  local signature = signatureFor(relativePath)
+  if not signatureValid(signature) then return nil, "assinatura inválida: " .. relativePath end
+  local saved = storedSource(signature, relativePath)
+  if saved then
+    local cachedChunk = compile(name .. " [verified]", saved)
+    if cachedChunk then return cachedChunk, nil, "verified" end
+  end
   local source, fetchError
   if url then source, fetchError = request(url .. "?exodus_cache=" .. tostring(os.time()) .. "-" .. tostring(math.random(1, 1000000000))) end
   local sourceKind = "delivery"
@@ -261,7 +307,11 @@ local function loadModule(name, relativePath, url, sourceRoot)
   end
   if source then
     local chunk, compileError = compile(name, source)
-    if chunk then return chunk, nil, sourceKind end
+    if chunk and fingerprint(source) == signature then
+      storeSource(signature, relativePath, source)
+      return chunk, nil, sourceKind
+    end
+    if chunk then return nil, "assinatura divergente: " .. relativePath end
     fetchError = compileError
   end
   return nil, fetchError or "origem remota indisponível"
@@ -594,8 +644,9 @@ end
 local startupPerformed = false
 local function startInternal()
   local requestedRevision = validRevision(_G.ExodusRequestedRevision) and _G.ExodusRequestedRevision or nil; _G.ExodusRequestedRevision = nil
-  local version, revisionError = requestedRevision, nil
-  if not version then version, revisionError = resolveLatestRevision() end
+  local version, revisionError, _, signatures = resolveLatestRevision()
+  if requestedRevision and version ~= requestedRevision then return false, "Loader", "revisão solicitada não é a atual" end
+  releaseSignatures = signatures
   if not version then return false, "Authorization", "revisão de distribuição indisponível" end
   local authorized, authorizationError = authorizeRevision(version)
   if not authorized then return false, "Authorization", authorizationError end
