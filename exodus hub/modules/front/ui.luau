@@ -2114,7 +2114,7 @@ function ExodusUI.setup(deps)
     ZIndex = 6,
     Parent = pageGroups[4],
   })
-  local indeedWidth = math.min(320, PW - PAD * 2)
+  local indeedWidth = math.min(460, PW - PAD * 2)
   local indeedContent = inst("ScrollingFrame", {
     Name = "IndeedContent",
     AutomaticCanvasSize = Enum.AutomaticSize.Y,
