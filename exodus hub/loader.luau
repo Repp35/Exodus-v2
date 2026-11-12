@@ -43,6 +43,7 @@ local function fallbackNotification(message, key, kind, duration)
   end
   local label = card:FindFirstChild("Message")
   if label then label.Text = tostring(message) end
+  if duration == nil and key ~= "dumper" then duration = 2.5 end
   card.GroupTransparency = 0; card.Visible = true
   if duration and duration > 0 then
     task.delay(duration, function()
