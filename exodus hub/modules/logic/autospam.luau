@@ -33,6 +33,7 @@ local CONFIG = {
     MAX_DISTANCE_REFERENCE = 51,
     MIN_ACTIVE_TIME = 0.05,
     STATIONARY_TIMEOUT = 0.1,
+    FIRST_RETURN_TIMEOUT = 0.1,
     STATIONARY_POSITION_EPSILON = 0.01,
   },
   SHARED = {
@@ -187,7 +188,7 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   if distanceReason then return end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
-  s.activatedAt = time; gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot))
+  s.activatedAt, s.firstReturnSeen = time, false; gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot))
   s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil; s.diversionSince, s.diversionSyncAt = nil, nil
   s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason; utils.setAutoSpamActive(true)
   utils.recordTransition("AutoSpam", "idle", "active", reason)
@@ -255,12 +256,13 @@ local function stop(s, reason)
     s.lastStopReason, s.lastStopAt = reason, s.lastDeactivatedAt; utils.setAutoSpamActive(false)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
-  s.reason, s.pending, s.partner, s.activatedAt, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil; s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
+  s.reason, s.pending, s.partner, s.activatedAt, s.firstReturnSeen, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil; s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
   resetExchange(s)
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
+  if s.activatedAt and not s.firstReturnSeen and time - s.activatedAt >= CONFIG.DEACTIVATION.FIRST_RETURN_TIMEOUT then return "first_return_timeout" end
   if gameInfo.getBallFrozen() == true or ballStationaryTooLong(s, time) then return "frozen" end
   local age = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt
   if
@@ -307,6 +309,9 @@ end
 local function inspectTarget(s, target, time, snapshot, serverTime)
   if not target or target == s.target then return end
   local previous, me = s.target, localPlayer.UserId
+  if s.active and not s.firstReturnSeen and s.activatedAt and time >= s.activatedAt and target == me and previous ~= me then
+    s.firstReturnSeen = true
+  end
   local completedPartner
   if
     previous
