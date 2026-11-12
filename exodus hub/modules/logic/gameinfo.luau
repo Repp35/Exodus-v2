@@ -590,26 +590,14 @@ function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
   if not finite(activatedAt) then return false end
   local time = os.clock()
   if time < activatedAt then localCooldownObservation = nil; return false end
-  local ability = GameInfo.getDeflectAbility()
-  local observation = localCooldownObservation
+  local ability = GameInfo.getDeflectAbility(); local observation = localCooldownObservation
   if not observation or observation.activatedAt ~= activatedAt or observation.ability ~= ability or time < observation.sampledAt then
-    observation = { activatedAt = activatedAt, ability = ability, sampledAt = time }
-    localCooldownObservation = observation
+    observation = { activatedAt = activatedAt, ability = ability, sampledAt = time }; localCooldownObservation = observation
   end
-
-  -- Independent evidence from the local ability, server cooldown events and held server state.
-  local localActive = ability and finite(ability.Cooldown) and ability.Cooldown > 0 or false
-  local server = GameInfo.getDeflectCooldownState()
-  local serverActive = server and server.rawActive == true and finite(server.endsAt) and server.endsAt > time or false
-  local heldDuration, heldAt = GameInfo.getHeldDeflectServerCooldown()
-  local heldActive = finite(heldDuration) and finite(heldAt) and heldAt <= time and time < heldAt + heldDuration
-  -- A recent server parry is explicit reset evidence; do not classify it as a late reset.
-  local parriedAt = server and server.lastParriedAt
-  if finite(parriedAt) and parriedAt >= activatedAt then
-    observation.startedAt = nil
-    observation.resetAt = parriedAt
-  end
-
+  local localActive = ability and finite(ability.Cooldown) and ability.Cooldown > 0 or false; local server = GameInfo.getDeflectCooldownState()
+  local serverActive = server and server.rawActive == true and finite(server.endsAt) and server.endsAt > time or false; local heldDuration, heldAt = GameInfo.getHeldDeflectServerCooldown()
+  local heldActive = finite(heldDuration) and finite(heldAt) and heldAt <= time and time < heldAt + heldDuration; local parriedAt = server and server.lastParriedAt
+  if finite(parriedAt) and parriedAt >= activatedAt then observation.startedAt = nil; observation.resetAt = parriedAt end
   local active = localActive or serverActive or heldActive
   if active and not observation.startedAt and not observation.resetAt then observation.startedAt = time end
   if not active then observation.startedAt = nil end
@@ -617,8 +605,7 @@ function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
   if observation.resetAt or not observation.startedAt or not finite(speed) or speed <= 0 then return false end
   local low, high = GameInfo.getBallSpeedLimits()
   if not finite(low) or not finite(high) or high <= low then return false end
-  local progress = math.clamp((speed - low) / (high - low), 0, 1)
-  local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress
+  local progress = math.clamp((speed - low) / (high - low), 0, 1); local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress
   if finite(multiplier) then budget *= math.max(1, multiplier) end
   return time - observation.startedAt >= budget
 end
