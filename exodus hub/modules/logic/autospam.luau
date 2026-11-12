@@ -35,6 +35,7 @@ local CONFIG = {
     MIN_ACTIVE_TIME = 0.05,
     STATIONARY_TIMEOUT = 0.1,
     FIRST_RETURN_TIMEOUT = 0.15,
+    CLOSE_OPPONENT_PROTECTION_RADIUS = 10,
     STATIONARY_POSITION_EPSILON = 0.01,
   },
   SHARED = {
@@ -292,6 +293,26 @@ local function applyDeactivation(s, snapshot, time)
     if resetLate and time - s.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then
       local opponentDistance = distanceToPlayer(s.partner)
       if finite(opponentDistance) and opponentDistance > 16 then reason = "client_deflect_reset_late" end
+    end
+  end
+  -- During a close-range clash, transient timing/geometry/sync failures
+  -- should not interrupt spam. Explicit stops and missing ball still win.
+  if reason and (
+    reason == "first_return_timeout"
+    or reason == "frozen"
+    or reason == "invalid_or_stale_ball"
+    or reason == "target_unavailable"
+    or reason == "distant_target"
+    or reason == "proximity_gate_lost"
+    or reason == "opponent_distance"
+    or reason == "ball_distance"
+    or reason == "client_deflect_reset_late"
+  ) and playerIsAlive(s.partner) and s.root and s.root.Parent then
+    local opponent = gameInfo.getPlayerMotion(s.partner)
+    if typeof(opponent) == "Vector3"
+      and (opponent - s.root.Position).Magnitude <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS
+    then
+      reason = nil
     end
   end
   if not reason then return false end
