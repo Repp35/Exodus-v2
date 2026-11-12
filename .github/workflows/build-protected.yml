@@ -107,11 +107,25 @@ jobs:
           import os
           from pathlib import Path
 
+          def fingerprint(data):
+              a, b = 1, 0
+              for byte in data:
+                  a = (a + byte) % 65521
+                  b = (b + a) % 65521
+              return f"{b:04x}{a:04x}"
+
+          revision_dir = Path("site") / os.environ["REVISION"]
+          signatures = {
+              p.relative_to(revision_dir).as_posix(): fingerprint(p.read_bytes())
+              for p in revision_dir.rglob("*.luau")
+          }
+
           Path("site/manifest.json").write_text(
               json.dumps({
                   "schema": 1,
                   "product": "Exodus-v2",
                   "revision": os.environ["REVISION"],
+                  "signatures": signatures,
               }, separators=(",", ":")) + "\n",
               encoding="utf-8",
           )
