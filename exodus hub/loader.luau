@@ -10,59 +10,40 @@ local function printStartup(message)
   if type(print) == "function" then print(message) end
 end
 local function fallbackNotification(message, key, kind)
-  local players = game:GetService("Players")
-  local player = players.LocalPlayer
+  local players = game:GetService("Players"); local player = players.LocalPlayer
   local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
   if not playerGui then return end
   local gui = playerGui:FindFirstChild("ExodusPersistentNotifications")
   if not gui then
-    gui = Instance.new("ScreenGui")
-    gui.Name = "ExodusPersistentNotifications"
-    gui.DisplayOrder = 2147483647
-    gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    gui = Instance.new("ScreenGui"); gui.Name = "ExodusPersistentNotifications"
+    gui.DisplayOrder = 2147483647; gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true; gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
     gui.Parent = playerGui
   end
   local layer = gui:FindFirstChild("NotificationLayer")
   if not layer then
-    layer = Instance.new("Frame")
-    layer.Name = "NotificationLayer"
-    layer.Size = UDim2.fromScale(1, 1)
-    layer.BackgroundTransparency = 1
+    layer = Instance.new("Frame"); layer.Name = "NotificationLayer"
+    layer.Size = UDim2.fromScale(1, 1); layer.BackgroundTransparency = 1
     layer.Parent = gui
   end
-  local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_")
-  local card = layer:FindFirstChild("Notification_" .. safeKey)
+  local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_"); local card = layer:FindFirstChild("Notification_" .. safeKey)
   if not card then
-    card = Instance.new("CanvasGroup")
-    card.Name = "Notification_" .. safeKey
-    card:SetAttribute("ExodusNotificationKey", safeKey)
-    card.AnchorPoint = Vector2.new(0.5, 1)
-    card.Position = UDim2.new(0.5, 0, 1, -24)
-    card.Size = UDim2.fromOffset(320, 38)
-    card.BackgroundColor3 = kind == "critical" and Color3.fromRGB(153, 27, 27) or Color3.fromRGB(45, 55, 130)
-    card.BackgroundTransparency = 0.12
-    card.ZIndex = 100
-    card.Parent = layer
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = card
-    local label = Instance.new("TextLabel")
-    label.Name = "Message"
-    label.Size = UDim2.new(1, -20, 1, 0)
-    label.Position = UDim2.fromOffset(10, 0)
-    label.BackgroundTransparency = 1
-    label.TextColor3 = Color3.new(1, 1, 1)
-    label.TextSize = 13
-    label.Font = Enum.Font.GothamBold
-    label.TextXAlignment = Enum.TextXAlignment.Center
+    card = Instance.new("CanvasGroup"); card.Name = "Notification_" .. safeKey
+    card:SetAttribute("ExodusNotificationKey", safeKey); card.AnchorPoint = Vector2.new(0.5, 1)
+    card.Position = UDim2.new(0.5, 0, 1, -24); card.Size = UDim2.fromOffset(320, 38)
+    card.BackgroundColor3 = kind == "critical" and Color3.fromRGB(153, 27, 27) or Color3.fromRGB(45, 55, 130); card.BackgroundTransparency = 0.12
+    card.ZIndex = 100; card.Parent = layer
+    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = card; local label = Instance.new("TextLabel")
+    label.Name = "Message"; label.Size = UDim2.new(1, -20, 1, 0)
+    label.Position = UDim2.fromOffset(10, 0); label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.new(1, 1, 1); label.TextSize = 13
+    label.Font = Enum.Font.GothamBold; label.TextXAlignment = Enum.TextXAlignment.Center
     label.Parent = card
   end
   local label = card:FindFirstChild("Message")
   if label then label.Text = tostring(message) end
-  card.GroupTransparency = 0
-  card.Visible = true
+  card.GroupTransparency = 0; card.Visible = true
 end
 local function notifyPersistent(message, key, kind)
   local show = _G.ExodusShowPersistentNotification
@@ -78,12 +59,9 @@ local function clearPersistent(key)
     local ok = pcall(clear, key)
     if ok then return end
   end
-  local player = game:GetService("Players").LocalPlayer
-  local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
-  local gui = playerGui and playerGui:FindFirstChild("ExodusPersistentNotifications")
-  local layer = gui and gui:FindFirstChild("NotificationLayer")
-  local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_")
-  local card = layer and layer:FindFirstChild("Notification_" .. safeKey)
+  local player = game:GetService("Players").LocalPlayer; local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+  local gui = playerGui and playerGui:FindFirstChild("ExodusPersistentNotifications"); local layer = gui and gui:FindFirstChild("NotificationLayer")
+  local safeKey = tostring(key or "critical"):gsub("[^%w_%-]", "_"); local card = layer and layer:FindFirstChild("Notification_" .. safeKey)
   if card then card:Destroy() end
 end
 local function notifyCritical(moduleName)
@@ -700,12 +678,9 @@ local function startInternal()
   if not requestedRevision and Exodus.Started == true and Exodus.UIReady == true and validRevision(version) and Exodus.Revision == version then return true end
   startupPerformed = true; printStartup("Exodus: Initializing...")
   _G.ExodusShutdownReason = requestedRevision and "update" or "restart"
-  if not stopPreviousRuntime() then
-    _G.ExodusShutdownReason = nil
-    return false, "Loader", "failed to stop the previous session"
-  end
-  _G.ExodusShutdownReason = nil
-  clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
+  if not stopPreviousRuntime() then _G.ExodusShutdownReason = nil; return false, "Loader", "failed to stop the previous session" end
+  _G.ExodusShutdownReason = nil; clearRegistry()
+  local playerReady, playerError = waitForLocalPlayer(10)
   if not playerReady then return false, "Loader", playerError end
   local urls = buildURLs(version); local loaded, moduleName, loadError = loadModules(urls)
   if not loaded then return false, moduleName, loadError end
@@ -740,12 +715,7 @@ local function startInternal()
   Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
   Exodus.Revision = version
-  if requestedRevision then
-    clearPersistent("update")
-    printStartup("Exodus: Update completed.")
-  else
-    printStartup("Exodus: Initialized.")
-  end
+  if requestedRevision then clearPersistent("update"); printStartup("Exodus: Update completed.") else printStartup("Exodus: Initialized.") end
   return true
 end
 

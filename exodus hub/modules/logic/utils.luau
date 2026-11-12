@@ -308,10 +308,8 @@ function Utils.start()
   refreshNamespace(); return stateSnapshot()
 end
 function Utils.stop()
-  local previous = state.lifecycle.phase
-  local wasActive = state.active
-  local shutdownReason = _G.ExodusShutdownReason
-  state.lifecycle.generation += 1
+  local previous = state.lifecycle.phase; local wasActive = state.active
+  local shutdownReason = _G.ExodusShutdownReason; state.lifecycle.generation += 1
   state.active, state.manualSpam, state.autoSpam = false, false, false; local notified, notifyError = pcall(notify, spamObservers)
   if not notified then warn("Failed to notify observers: " .. tostring(notifyError)) end
   local saved, saveError = pcall(flushSave)
@@ -336,9 +334,7 @@ function Utils.stop()
     end
   end
   state.lifecycle.phase = "stopped"; recordTransition("Utils", previous, "stopped", "stop")
-  if wasActive and shutdownReason ~= "update" and shutdownReason ~= "restart" and type(print) == "function" then
-    print("[Exodus] Closed.")
-  end
+  if wasActive and shutdownReason ~= "update" and shutdownReason ~= "restart" and type(print) == "function" then print("[Exodus] Closed.") end
   refreshNamespace(); return true
 end
 

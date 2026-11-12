@@ -28,8 +28,7 @@ return function(loadedRevision, request)
     if type(hide) == "function" then pcall(hide, key) end
   end
   local function updateFailed()
-    clear("update")
-    notify("Update failed. Check the console.", "critical", "critical")
+    clear("update"); notify("Update failed. Check the console.", "critical", "critical")
   end
 
   -- revisions
@@ -103,14 +102,14 @@ return function(loadedRevision, request)
           if chunk then
             pendingSource = chunk
           else
-            warn("[Exodus Updater] Compile failed: " .. tostring(compileError)); updateFailed(); pendingRevision = nil
-            nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
+            warn("[Exodus Updater] Compile failed: " .. tostring(compileError)); updateFailed()
+            pendingRevision = nil; nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
           end
         elseif fetchMetadata and fetchMetadata.rateLimited then
           nextCheck = retryAt(os.clock(), fetchMetadata); warn("[Exodus Updater] Fetch rate limited: " .. tostring(fetchError))
         else
-          warn("[Exodus Updater] Fetch failed: " .. tostring(fetchError)); updateFailed(); pendingRevision = nil
-          nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
+          warn("[Exodus Updater] Fetch failed: " .. tostring(fetchError)); updateFailed()
+          pendingRevision = nil; nextCheck = os.clock() + CONFIG.RETRY_INTERVAL
         end
       end
 
@@ -119,8 +118,7 @@ return function(loadedRevision, request)
         local safe = false; local ok, result = pcall(safeToUpdate)
         if ok then safe = result == true end
         if safe and running() and pendingRevision ~= currentRevision() and not _G.ExodusLoaderStartToken then
-          notify("Updating...", "update", "info")
-          print("[Exodus] Updating...")
+          notify("Updating...", "update", "info"); print("[Exodus] Updating...")
           if type(_G.ExodusUIFadeOut) == "function" then
             local fadeOk, fadeError = pcall(_G.ExodusUIFadeOut)
             if not fadeOk then warn("[Exodus Updater] Fade out failed: " .. tostring(fadeError)); updateFailed() end
@@ -128,7 +126,10 @@ return function(loadedRevision, request)
           if not running() then return end
           _G.ExodusRequestedRevision = pendingRevision
           local executed, executionError = xpcall(pendingSource, function(err) return debug.traceback(tostring(err), 2) end)
-          if not executed then _G.ExodusRequestedRevision = nil; warn("[Exodus Updater] Execution failed: " .. tostring(executionError)); updateFailed() end
+          if not executed then
+            _G.ExodusRequestedRevision = nil; warn("[Exodus Updater] Execution failed: " .. tostring(executionError))
+            updateFailed()
+          end
           return
         end
       end

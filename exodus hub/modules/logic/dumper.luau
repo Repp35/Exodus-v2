@@ -33,6 +33,7 @@ local SCRIPT_CLASSES = {
   LocalScript = true,
   ModuleScript = true,
 }
+
 local REMOTE_CLASSES = {
   RemoteEvent = true,
   RemoteFunction = true,
@@ -40,6 +41,7 @@ local REMOTE_CLASSES = {
   BindableEvent = true,
   BindableFunction = true,
 }
+
 local SYSTEM_NAMES = {
   CoreGui = true,
   CorePackages = true,
@@ -58,32 +60,20 @@ end
 local function yieldIfNeeded(index)
   if index % CONFIG.YIELD_EVERY == 0 then task.wait() end
 end
-local function line(value)
-  return tostring(value):gsub("[\r\n]", " ")
-end
+local function line(value) return tostring(value):gsub("[\r\n]", " ") end
 local function safeProperty(object, key, fallback)
   local ok, value = pcall(function() return object[key] end)
   return ok and value ~= nil and value or fallback
 end
-local function objectName(object)
-  return tostring(safeProperty(object, "Name", "Unnamed"))
-end
-local function objectClass(object)
-  return tostring(safeProperty(object, "ClassName", "Unknown"))
-end
+local function objectName(object) return tostring(safeProperty(object, "Name", "Unnamed")) end
+local function objectClass(object) return tostring(safeProperty(object, "ClassName", "Unknown")) end
 local function objectPath(object)
   local ok, value = pcall(function() return object:GetFullName() end)
   return ok and value or objectName(object)
 end
-local function isInstance(object)
-  return typeof(object) == "Instance"
-end
+local function isInstance(object) return typeof(object) == "Instance" end
 local function safeFilename(value)
-  local result = tostring(value)
-    :gsub("[^%w%._%-]", "_")
-    :gsub("_+", "_")
-    :sub(1, 110)
-  return result ~= "" and result or "unnamed"
+  local result = tostring(value):gsub("[^%w%._%-]", "_"):gsub("_+", "_"):sub(1, 110); return result ~= "" and result or "unnamed"
 end
 local function getEnvironment()
   if type(getfenv) == "function" then
@@ -97,8 +87,7 @@ local function getEnvironment()
   return type(_G) == "table" and _G or {}
 end
 local function lookup(name)
-  local environment = getEnvironment()
-  local value = environment[name]
+  local environment = getEnvironment(); local value = environment[name]
   if type(value) == "function" then return value end
   if type(_G) == "table" and type(_G[name]) == "function" then return _G[name] end
   return nil
@@ -119,8 +108,7 @@ local function ensureFolder(path)
 end
 local function saveFile(path, content)
   if type(writefile) ~= "function" then return false, "writefile is unavailable" end
-  local ok, err = pcall(writefile, path, content)
-  return ok, ok and nil or tostring(err)
+  local ok, err = pcall(writefile, path, content); return ok, ok and nil or tostring(err)
 end
 local function allowed(object, allowDetached)
   if not isInstance(object) then return false end
@@ -136,23 +124,22 @@ local function allowed(object, allowDetached)
 end
 local function serialize(value)
   if type(value) == "string" then return string.format("%q", value) end
-  local ok, result = pcall(tostring, value)
-  return ok and line(result) or "<unavailable>"
+  local ok, result = pcall(tostring, value); return ok and line(result) or "<unavailable>"
 end
 local function attributes(object)
   local ok, values = pcall(function() return object:GetAttributes() end)
   if not ok or type(values) ~= "table" then return "{}" end
   local result = {}
-  for key, value in pairs(values) do result[#result + 1] = line(key) .. "=" .. serialize(value) end
-  table.sort(result)
-  return "{" .. table.concat(result, ", ") .. "}"
+  for key, value in pairs(values) do
+    result[#result + 1] = line(key) .. "=" .. serialize(value)
+  end
+  table.sort(result); return "{" .. table.concat(result, ", ") .. "}"
 end
 local function tags(object, collection)
   if not collection then return "[]" end
   local ok, values = pcall(function() return collection:GetTags(object) end)
   if not ok or type(values) ~= "table" then return "[]" end
-  table.sort(values)
-  return "[" .. table.concat(values, ", ") .. "]"
+  table.sort(values); return "[" .. table.concat(values, ", ") .. "]"
 end
 local function formatValue(value)
   if value == nil then return "nil" end
@@ -160,55 +147,31 @@ local function formatValue(value)
     if #value > CONFIG.STRING_LIMIT then value = value:sub(1, CONFIG.STRING_LIMIT) .. "...<truncated>" end
     return string.format("%q", value)
   end
-  local ok, result = pcall(tostring, value)
-  return ok and line(result) or "<unavailable>"
+  local ok, result = pcall(tostring, value); return ok and line(result) or "<unavailable>"
 end
 local function appendTree(value, label, depth, visited, nodes, output)
-  depth, visited, nodes, output = depth or 0, visited or {}, nodes or { count = 0 }, output or {}
-  nodes.count += 1
+  depth, visited, nodes, output = depth or 0, visited or {}, nodes or { count = 0 }, output or {}; nodes.count += 1
   local indent = string.rep("  ", depth)
-  if typeof(value) == "Instance" then
-    output[#output + 1] = ("%s%s: Instance<%s> %s"):format(indent, label, value.ClassName, objectPath(value))
-    return output
+  if typeof(value) == "Instance" then output[#output + 1] = ("%s%s: Instance<%s> %s"):format(indent, label, value.ClassName, objectPath(value)); return output end
+  if type(value) ~= "table" then output[#output + 1] = ("%s%s: type=%s value=%s"):format(indent, label, type(value), formatValue(value)); return output end
+  if visited[value] then output[#output + 1] = indent .. label .. ": table<cycle>"; return output end
+  if depth >= CONFIG.MAX_DEPTH or nodes.count >= CONFIG.MAX_NODES then output[#output + 1] = indent .. label .. ": table<limit>"; return output end
+  visited[value] = true; local keys = {}
+  for key in pairs(value) do
+    keys[#keys + 1] = key
   end
-  if type(value) ~= "table" then
-    output[#output + 1] = ("%s%s: type=%s value=%s"):format(indent, label, type(value), formatValue(value))
-    return output
-  end
-  if visited[value] then
-    output[#output + 1] = indent .. label .. ": table<cycle>"
-    return output
-  end
-  if depth >= CONFIG.MAX_DEPTH or nodes.count >= CONFIG.MAX_NODES then
-    output[#output + 1] = indent .. label .. ": table<limit>"
-    return output
-  end
-  visited[value] = true
-  local keys = {}
-  for key in pairs(value) do keys[#keys + 1] = key end
   table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
   output[#output + 1] = ("%s%s: table (%d keys)"):format(indent, label, #keys)
   for _, key in ipairs(keys) do
-    if nodes.count >= CONFIG.MAX_NODES then
-      output[#output + 1] = indent .. "  ... node limit reached"
-      break
-    end
+    if nodes.count >= CONFIG.MAX_NODES then output[#output + 1] = indent .. "  ... node limit reached"; break end
     local ok, child = pcall(function() return value[key] end)
-    if ok then
-      appendTree(child, "[" .. tostring(key) .. "]", depth + 1, visited, nodes, output)
-    else
-      output[#output + 1] = indent .. "  [" .. tostring(key) .. "]: <read failed>"
-    end
+    if ok then appendTree(child, "[" .. tostring(key) .. "]", depth + 1, visited, nodes, output) else output[#output + 1] = indent .. "  [" .. tostring(key) .. "]: <read failed>" end
   end
-  visited[value] = nil
-  return output
+  visited[value] = nil; return output
 end
-local function structure(value, label)
-  return table.concat(appendTree(value, label, 0, {}, { count = 0 }, {}), "\n")
-end
+local function structure(value, label) return table.concat(appendTree(value, label, 0, {}, { count = 0 }, {}), "\n") end
 local function errorText(value)
-  local text = type(value) == "string" and value or ("returned " .. type(value))
-  return line(text)
+  local text = type(value) == "string" and value or ("returned " .. type(value)); return line(text)
 end
 local SOURCE_ERRORS = {
   "failed to get script bytecode",
@@ -226,6 +189,7 @@ local SOURCE_ERRORS = {
   "server error",
   "decompilation error",
 }
+
 local function sourceError(value)
   local lower = tostring(value):lower():gsub("^%s*%-%-%[%[", ""):gsub("^%s*%-%-+%s*", ""):gsub("^%s+", "")
   for _, phrase in ipairs(SOURCE_ERRORS) do
@@ -240,21 +204,16 @@ local function nextFolder()
   while true do
     local ok, exists = pcall(isfolder, candidate)
     if not ok or not exists then return candidate end
-    index += 1
-    candidate = base .. "_" .. index
+    index += 1; candidate = base .. "_" .. index
   end
 end
 local function addDiscovery(api, catalog, candidates, seen, errors, token)
   local ok, values = pcall(api)
-  if not ok or type(values) ~= "table" then
-    errors[#errors + 1] = "discovery failed: " .. errorText(values)
-    return
-  end
+  if not ok or type(values) ~= "table" then errors[#errors + 1] = "discovery failed: " .. errorText(values); return end
   for _, object in pairs(values) do
     if token.cancelled then return end
     if allowed(object, CONFIG.INCLUDE_NIL_INSTANCES) and not seen[object] then
-      seen[object] = true
-      local item = { instance = object, path = objectPath(object), origin = "executor" }
+      seen[object] = true; local item = { instance = object, path = objectPath(object), origin = "executor" }
       catalog[#catalog + 1] = item
       if SCRIPT_CLASSES[objectClass(object)] then candidates[#candidates + 1] = item end
     end
@@ -263,9 +222,7 @@ end
 
 -- dump
 local function run(token, callbacks)
-  if type(writefile) ~= "function" or type(makefolder) ~= "function" then
-    return nil, "writefile and makefolder are required"
-  end
+  if type(writefile) ~= "function" or type(makefolder) ~= "function" then return nil, "writefile and makefolder are required" end
   local base = nextFolder()
   for _, path in ipairs({ base, base .. "/scripts", base .. "/remotes" }) do
     local ok, err = ensureFolder(path)
@@ -279,12 +236,10 @@ local function run(token, callbacks)
     local ok, err = ensureFolder(base .. "/disassembly")
     if not ok then return nil, "cannot create disassembly folder: " .. tostring(err) end
   end
-  emit(callbacks, "onStatus", "Collecting instances...")
-  local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
+  emit(callbacks, "onStatus", "Collecting instances..."); local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
   local function add(object, origin, detached)
     if not allowed(object, detached) or seen[object] then return end
-    seen[object] = true
-    local item = { instance = object, path = objectPath(object), origin = origin }
+    seen[object] = true; local item = { instance = object, path = objectPath(object), origin = origin }
     catalog[#catalog + 1] = item
     if SCRIPT_CLASSES[objectClass(object)] then candidates[#candidates + 1] = item end
   end
@@ -293,8 +248,7 @@ local function run(token, callbacks)
   if ok then
     for index, object in ipairs(descendants) do
       if token.cancelled then return nil, "Dump canceled" end
-      add(object, "game:GetDescendants", false)
-      yieldIfNeeded(index)
+      add(object, "game:GetDescendants", false); yieldIfNeeded(index)
     end
   else
     discoveryErrors[#discoveryErrors + 1] = "game:GetDescendants: " .. errorText(descendants)
@@ -312,8 +266,7 @@ local function run(token, callbacks)
         local descendantsOk, descendants = pcall(function() return hiddenGui:GetDescendants() end)
         if descendantsOk then
           for index, object in ipairs(descendants) do
-            add(object, name .. ":GetDescendants", true)
-            yieldIfNeeded(index)
+            add(object, name .. ":GetDescendants", true); yieldIfNeeded(index)
           end
         end
       else
@@ -323,8 +276,7 @@ local function run(token, callbacks)
   end
   local collection
   pcall(function() collection = game:GetService("CollectionService") end)
-  local tree = { "SrcDump - instances", "total=" .. #catalog, "" }
-  local remotes = { "SrcDump - remotes and bindables", "" }
+  local tree = { "SrcDump - instances", "total=" .. #catalog, "" }; local remotes = { "SrcDump - remotes and bindables", "" }
   local remoteCount = 0
   for index, item in ipairs(catalog) do
     if token.cancelled then return nil, "Dump canceled" end
@@ -337,14 +289,10 @@ local function run(token, callbacks)
       tags(object, collection)
     )
     tree[#tree + 1] = detail
-    if REMOTE_CLASSES[objectClass(object)] then
-      remoteCount += 1
-      remotes[#remotes + 1] = detail
-    end
+    if REMOTE_CLASSES[objectClass(object)] then remoteCount += 1; remotes[#remotes + 1] = detail end
     yieldIfNeeded(index)
   end
-  remotes[2] = "total=" .. remoteCount
-  local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
+  remotes[2] = "total=" .. remoteCount; local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
   if not treeOk then return nil, "cannot save tree.txt: " .. tostring(treeError) end
   local remoteOk, remoteError = saveFile(base .. "/remotes/remotes.txt", table.concat(remotes, "\n") .. "\n")
   if not remoteOk then return nil, "cannot save remotes.txt: " .. tostring(remoteError) end
@@ -361,12 +309,12 @@ local function run(token, callbacks)
     "scripts=" .. #candidates,
     "remotes=" .. remoteCount,
   }
+
   local productOk, product = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId) end)
   info[#info + 1] = "product_name=" .. (productOk and type(product) == "table" and line(product.Name) or "unavailable")
   local infoOk, infoError = saveFile(base .. "/game_info.txt", table.concat(info, "\n") .. "\n")
   if not infoOk then return nil, "cannot save game_info.txt: " .. tostring(infoError) end
-  local decompiler, disassembler = lookup("decompile"), lookup("disassemble")
-  local closureReaders, readers = {}, {}
+  local decompiler, disassembler = lookup("decompile"), lookup("disassemble"); local closureReaders, readers = {}, {}
   for _, name in ipairs({ "getscriptclosure", "getscriptfunction" }) do
     local fn = lookup(name)
     if fn then closureReaders[#closureReaders + 1] = { name = name, fn = fn } end
@@ -375,43 +323,25 @@ local function run(token, callbacks)
     local fn = lookup(name)
     if fn then readers[#readers + 1] = { name = name, fn = fn } end
   end
-  local manifest, errors = {}, discoveryErrors
-  local saved, failed, bytecodes = 0, 0, 0
+  local manifest, errors = {}, discoveryErrors; local saved, failed, bytecodes = 0, 0, 0
   for index, item in ipairs(candidates) do
     if token.cancelled then return nil, "Dump canceled" end
     local object, attempts = item.instance, {}
     local source, method, bytecode, closure
     local function attempt(label, fn, argument, validateSource)
       local success, value = pcall(fn, argument)
-      if not success then
-        attempts[#attempts + 1] = label .. ": error: " .. errorText(value)
-        return nil
-      end
-      if type(value) ~= "string" or #value == 0 then
-        attempts[#attempts + 1] = label .. ": empty or invalid return (" .. type(value) .. ")"
-        return nil
-      end
+      if not success then attempts[#attempts + 1] = label .. ": error: " .. errorText(value); return nil end
+      if type(value) ~= "string" or #value == 0 then attempts[#attempts + 1] = label .. ": empty or invalid return (" .. type(value) .. ")"; return nil end
       if validateSource then
         local problem = sourceError(value)
-        if problem then
-          attempts[#attempts + 1] = label .. ": " .. problem
-          return nil
-        end
-        if #value > CONFIG.MAX_SOURCE_BYTES then
-          attempts[#attempts + 1] = label .. ": source exceeds size limit"
-          return nil
-        end
+        if problem then attempts[#attempts + 1] = label .. ": " .. problem; return nil end
+        if #value > CONFIG.MAX_SOURCE_BYTES then attempts[#attempts + 1] = label .. ": source exceeds size limit"; return nil end
       end
-      attempts[#attempts + 1] = label .. ": returned " .. #value .. " bytes"
-      return value
+      attempts[#attempts + 1] = label .. ": returned " .. #value .. " bytes"; return value
     end
     local sourceOk, directSource = pcall(function() return object.Source end)
-    if sourceOk and type(directSource) == "string" and directSource:match("%S") then
-      source, method = directSource, "Source"
-      attempts[#attempts + 1] = "Source: available"
-    else
-      attempts[#attempts + 1] = "Source: " .. (sourceOk and "empty or unavailable" or errorText(directSource))
-    end
+    if sourceOk and type(directSource) == "string" and directSource:match("%S") then source, method = directSource, "Source"; attempts[#attempts + 1] = "Source: available"
+    else attempts[#attempts + 1] = "Source: " .. (sourceOk and "empty or unavailable" or errorText(directSource)) end
     if not source and decompiler then
       source = attempt("decompile(instance)", decompiler, object, true)
       if source then method = "decompile(instance)" end
@@ -430,13 +360,9 @@ local function run(token, callbacks)
       for _, reader in ipairs(closureReaders) do
         local success, value = pcall(reader.fn, object)
         if success and type(value) == "function" then
-          closure = value
-          attempts[#attempts + 1] = reader.name .. ": function obtained"
+          closure = value; attempts[#attempts + 1] = reader.name .. ": function obtained"
           source = attempt("decompile(" .. reader.name .. ")", decompiler, closure, true)
-          if source then
-            method = "decompile(" .. reader.name .. ")"
-            break
-          end
+          if source then method = "decompile(" .. reader.name .. ")"; break end
         else
           attempts[#attempts + 1] = reader.name .. ": " .. (success and ("returned " .. type(value)) or errorText(value))
         end
@@ -469,59 +395,63 @@ local function run(token, callbacks)
     if source then
       local savedOk, saveError = saveFile(base .. "/scripts/" .. stem .. ".lua", header .. source .. "\n")
       if savedOk then saved += 1 else failed += 1; errors[#errors + 1] = "[WRITE_ERROR] " .. line(item.path) .. " | " .. tostring(saveError) end
-      if savedOk then
-        manifest[#manifest + 1] = "[OK] " .. line(item.path) .. " | " .. method .. " | scripts/" .. stem .. ".lua"
-      else
-        manifest[#manifest + 1] = "[ERROR] " .. line(item.path) .. " | write failed"
-      end
+      if savedOk then manifest[#manifest + 1] = "[OK] " .. line(item.path) .. " | " .. method .. " | scripts/" .. stem .. ".lua"
+      else manifest[#manifest + 1] = "[ERROR] " .. line(item.path) .. " | write failed" end
     else
-      failed += 1
-      errors[#errors + 1] = "[SOURCE_ERROR] " .. line(item.path) .. " | " .. objectClass(object) .. "\n  " .. table.concat(attempts, "\n  ")
+      failed += 1; errors[#errors + 1] = "[SOURCE_ERROR] " .. line(item.path) .. " | " .. objectClass(object) .. "\n  " .. table.concat(attempts, "\n  ")
       manifest[#manifest + 1] = "[ERROR] " .. line(item.path) .. " | source unavailable"
     end
     status.processed, status.saved, status.failed, status.bytecode = index, saved, failed, bytecodes
     if index % CONFIG.PROGRESS_EVERY == 0 then emit(callbacks, "onProgress", index, #candidates, item.path) end
     yieldIfNeeded(index)
   end
-  saveFile(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n")
-  saveFile(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
-  saveFile(base .. "/summary.txt", table.concat({
-    "SrcDump",
-    "folder=" .. base,
-    "total_found=" .. #candidates,
-    "decompiled_and_saved=" .. saved,
-    "failed=" .. failed,
-    "bytecode_saved=" .. bytecodes,
-    "instances=" .. #catalog,
-    "remotes=" .. remoteCount,
-    "note=Only content accessible to the client environment can be captured.",
-    "",
-  }, "\n"))
+  saveFile(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n"); saveFile(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
+  saveFile(
+    base .. "/summary.txt",
+    table.concat({
+      "SrcDump",
+      "folder=" .. base,
+      "total_found=" .. #candidates,
+      "decompiled_and_saved=" .. saved,
+      "failed=" .. failed,
+      "bytecode_saved=" .. bytecodes,
+      "instances=" .. #catalog,
+      "remotes=" .. remoteCount,
+      "note=Only content accessible to the client environment can be captured.",
+      "",
+    }, "\n")
+  )
   return { folder = base, total = #candidates, saved = saved, failed = failed, bytecode = bytecodes }
 end
 
 -- lifecycle
 function Dumper.setup()
-  Dumper.stop()
-  return true
+  Dumper.stop(); return true
 end
 function Dumper.start(callbacks)
   if activeToken then return false, "A dump is already running" end
   if type(callbacks) ~= "table" then callbacks = {} end
-  local token = { cancelled = false }
-  activeToken = token
-  status = { running = true, startedAt = os.clock(), folder = nil, total = 0, processed = 0, saved = 0, failed = 0, bytecode = 0 }
+  local token = { cancelled = false }; activeToken = token
+  status = {
+    running = true,
+    startedAt = os.clock(),
+    folder = nil,
+    total = 0,
+    processed = 0,
+    saved = 0,
+    failed = 0,
+    bytecode = 0,
+  }
+
   task.spawn(function()
-    local ok, result, reason = xpcall(function() return run(token, callbacks) end, function(errorValue)
-      return debug and type(debug.traceback) == "function" and debug.traceback(tostring(errorValue), 2) or tostring(errorValue)
-    end)
+    local ok, result, reason = xpcall(
+      function() return run(token, callbacks) end,
+      function(errorValue) return debug and type(debug.traceback) == "function" and debug.traceback(tostring(errorValue), 2) or tostring(errorValue) end
+    )
     if activeToken ~= token then return end
     activeToken = nil; status.running = false
     if token.cancelled then return end
-    if not ok or not result then
-      emit(callbacks, "onError", not ok and result or reason or "Dump failed")
-      return
-    end
+    if not ok or not result then emit(callbacks, "onError", not ok and result or reason or "Dump failed"); return end
     status.folder = result.folder; status.total, status.saved, status.failed, status.bytecode = result.total, result.saved, result.failed, result.bytecode
     emit(callbacks, "onComplete", table.clone(result))
   end)
@@ -529,18 +459,11 @@ function Dumper.start(callbacks)
 end
 function Dumper.stop()
   if activeToken then activeToken.cancelled = true; activeToken = nil end
-  status.running = false
-  return true
+  status.running = false; return true
 end
-function Dumper.isRunning()
-  return activeToken ~= nil
-end
-function Dumper.getStatus()
-  return table.clone(status)
-end
-function Dumper.teardown()
-  return Dumper.stop()
-end
+function Dumper.isRunning() return activeToken ~= nil end
+function Dumper.getStatus() return table.clone(status) end
+function Dumper.teardown() return Dumper.stop() end
 
 -- contract
 Dumper.__contract = {

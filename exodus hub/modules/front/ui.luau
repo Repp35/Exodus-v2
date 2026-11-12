@@ -204,16 +204,12 @@ local function watchTweens(tweens, callback)
     if pending > 0 then return end
     finished = true
     for _, connection in ipairs(connections) do
-      safeDisconnect(connection)
-      untrackConn(connection)
+      safeDisconnect(connection); untrackConn(connection)
     end
     callback()
   end
   for _, tween in ipairs(tweens or {}) do
-    if tween then
-      pending += 1
-      connections[#connections + 1] = trackConn(tween.Completed:Connect(finish))
-    end
+    if tween then pending += 1; connections[#connections + 1] = trackConn(tween.Completed:Connect(finish)) end
   end
   if pending == 0 then callback() end
   return pending
@@ -334,11 +330,8 @@ local function pulseBall(ball)
   if not shrink then return end
   local connection
   connection = trackConn(shrink.Completed:Connect(function()
-    safeDisconnect(connection)
-    untrackConn(connection)
-    if ball and ball.Parent then
-      twPlay(ball, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT)
-    end
+    safeDisconnect(connection); untrackConn(connection)
+    if ball and ball.Parent then twPlay(ball, 0.28, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_OUT, DIR_OUT) end
   end))
 end
 local function showParryBall(value) showBall(parryBall, value, "ParryBallVisible", "ParryBallX", "ParryBallY", 14, viewport().Y / 2 - CLASH_SIZE - 40) end
@@ -397,8 +390,7 @@ setSpam = function(v)
     if shrink then
       local connection
       connection = trackConn(shrink.Completed:Connect(function()
-        safeDisconnect(connection)
-        untrackConn(connection)
+        safeDisconnect(connection); untrackConn(connection)
         if spamButton.Parent then twPlay(spamButton, 0.28, { Size = UDim2.new(1, -16, 0, 48) }, EASE_BACK, DIR_OUT) end
       end))
     end
@@ -449,20 +441,19 @@ local function cleanupUI()
     local oldOverlay = overlay:FindFirstChild("ExodusInformationOverlay")
     if oldOverlay then oldOverlay:Destroy() end
   end
-  clearPersistentNotification("closing")
-  screenGui = nil; floatingButton = nil
-  clashBall = nil; parryBall = nil
-  darkBall = nil; jumpBall = nil
-  upDashBall = nil; miniGui = nil
-  configPanel = nil; particleLayer = nil
-  titleBar = nil; minimizeButton = nil
-  reloadButton = nil; colLeft = nil
-  colRight = nil; killBtn = nil
-  toastLayer = nil; responsiveScale = nil
-  shortcutLabels = {}; statusToggleVisuals = {}
-  autoClashTrack = nil; autoClashThumb = nil
-  autoParrySetVisual = nil; autoDarkSetVisual = nil
-  autoJumpSetVisual = nil
+  clearPersistentNotification("closing"); screenGui = nil
+  floatingButton = nil; clashBall = nil
+  parryBall = nil; darkBall = nil
+  jumpBall = nil; upDashBall = nil
+  miniGui = nil; configPanel = nil
+  particleLayer = nil; titleBar = nil
+  minimizeButton = nil; reloadButton = nil
+  colLeft = nil; colRight = nil
+  killBtn = nil; toastLayer = nil
+  responsiveScale = nil; shortcutLabels = {}
+  statusToggleVisuals = {}; autoClashTrack = nil
+  autoClashThumb = nil; autoParrySetVisual = nil
+  autoDarkSetVisual = nil; autoJumpSetVisual = nil
   if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil; _G.ExodusUIFadeOut = nil end
   if _G.ExodusShowPersistentNotification == showPersistentNotification then _G.ExodusShowPersistentNotification = nil end
   if _G.ExodusClearPersistentNotification == clearPersistentNotification then _G.ExodusClearPersistentNotification = nil end
@@ -482,8 +473,7 @@ local function spawnParticle()
     Parent = particleLayer,
   })
   corner(dot, 999); local dur = isFar and math.random(5, 9) or math.random(3, 5)
-  local endX = math.clamp(dot.Position.X.Scale + (math.random() - 0.5) * 0.15, 0, 1)
-  twPlay(dot, 0.6, { BackgroundTransparency = math.max(startTrans - 0.1, 0.05) }, EASE_SINE, DIR_OUT)
+  local endX = math.clamp(dot.Position.X.Scale + (math.random() - 0.5) * 0.15, 0, 1); twPlay(dot, 0.6, { BackgroundTransparency = math.max(startTrans - 0.1, 0.05) }, EASE_SINE, DIR_OUT)
   local travel = twPlay(dot, dur, {
     Position = UDim2.new(endX, 0, -0.1, 0),
     BackgroundTransparency = 1,
@@ -491,8 +481,7 @@ local function spawnParticle()
   if travel then
     local connection
     connection = trackConn(travel.Completed:Connect(function()
-      safeDisconnect(connection)
-      untrackConn(connection)
+      safeDisconnect(connection); untrackConn(connection)
       if dot.Parent then dot:Destroy() end
     end))
   end
@@ -549,9 +538,7 @@ local function makeBtn(text, x, y, w, h, parent, bg)
 end
 
 -- notifications
-local function persistentKey(value)
-  return tostring(value or "general"):gsub("[^%w_%-]", "_")
-end
+local function persistentKey(value) return tostring(value or "general"):gsub("[^%w_%-]", "_") end
 local function persistentPalette(kind)
   if kind == "critical" then return C.redDark, C.red end
   if kind == "success" then return Color3.fromRGB(20, 92, 58), C.green end
@@ -559,8 +546,7 @@ local function persistentPalette(kind)
   return C.btnBlue, C.accent
 end
 local function persistentLayerForPlayer()
-  local player = Players.LocalPlayer
-  local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+  local player = Players.LocalPlayer; local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
   if not playerGui then return nil end
   persistentGui = playerGui:FindFirstChild("ExodusPersistentNotifications")
   if not persistentGui then
@@ -598,30 +584,21 @@ local function reflowPersistentNotifications(animated)
   end
   for index, key in ipairs(persistentOrder) do
     local card = layer:FindFirstChild("Notification_" .. key)
-    if card then
-      local target = UDim2.new(0.5, 0, 1, -24 - (index - 1) * 46)
-      twPlay(card, animated and 0.22 or 0, { Position = target, GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
-    end
+    if card then local target = UDim2.new(0.5, 0, 1, -24 - (index - 1) * 46); twPlay(card, animated and 0.22 or 0, { Position = target, GroupTransparency = 0 }, EASE_OUT, DIR_OUT) end
   end
 end
 clearPersistentNotification = function(key)
-  local safeKey = persistentKey(key)
-  local layer = persistentLayer
+  local safeKey = persistentKey(key); local layer = persistentLayer
   if not layer then
-    local player = Players.LocalPlayer
-    local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
-    local gui = playerGui and playerGui:FindFirstChild("ExodusPersistentNotifications")
-    layer = gui and gui:FindFirstChild("NotificationLayer")
+    local player = Players.LocalPlayer; local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
+    local gui = playerGui and playerGui:FindFirstChild("ExodusPersistentNotifications"); layer = gui and gui:FindFirstChild("NotificationLayer")
   end
   if not layer then return end
   local card = layer:FindFirstChild("Notification_" .. safeKey)
   for index = #persistentOrder, 1, -1 do
     if persistentOrder[index] == safeKey then table.remove(persistentOrder, index) end
   end
-  if not card then
-    reflowPersistentNotifications(true)
-    return
-  end
+  if not card then reflowPersistentNotifications(true); return end
   local fade = twPlay(card, 0.18, {
     Position = UDim2.new(card.Position.X.Scale, card.Position.X.Offset, card.Position.Y.Scale, card.Position.Y.Offset + 18),
     GroupTransparency = 1,
@@ -633,19 +610,16 @@ clearPersistentNotification = function(key)
   if fade then
     local connection
     connection = fade.Completed:Connect(function()
-      safeDisconnect(connection)
-      remove()
+      safeDisconnect(connection); remove()
     end)
   else
     remove()
   end
 end
 showPersistentNotification = function(message, key, kind, duration)
-  local safeKey = persistentKey(key or message)
-  local layer = persistentLayerForPlayer()
+  local safeKey = persistentKey(key or message); local layer = persistentLayerForPlayer()
   if not layer then return false end
-  local card = layer:FindFirstChild("Notification_" .. safeKey)
-  local background, border = persistentPalette(kind)
+  local card = layer:FindFirstChild("Notification_" .. safeKey); local background, border = persistentPalette(kind)
   if not card then
     card = inst("CanvasGroup", {
       Name = "Notification_" .. safeKey,
@@ -658,8 +632,7 @@ showPersistentNotification = function(message, key, kind, duration)
       ZIndex = 100,
       Parent = layer,
     })
-    card:SetAttribute("ExodusNotificationKey", safeKey)
-    corner(card, 10)
+    card:SetAttribute("ExodusNotificationKey", safeKey); corner(card, 10)
     stroke(card, border, 1)
     inst("TextLabel", {
       Name = "Message",
@@ -676,20 +649,15 @@ showPersistentNotification = function(message, key, kind, duration)
     })
     persistentOrder[#persistentOrder + 1] = safeKey
   end
-  card.BackgroundColor3 = background
-  local cardStroke = card:FindFirstChildOfClass("UIStroke")
+  card.BackgroundColor3 = background; local cardStroke = card:FindFirstChildOfClass("UIStroke")
   if cardStroke then cardStroke.Color = border end
   local label = card:FindFirstChild("Message")
   if label then label.Text = tostring(message) end
-  persistentGeneration += 1
-  local generation = persistentGeneration
-  card:SetAttribute("ExodusNotificationGeneration", generation)
-  reflowPersistentNotifications(true)
+  persistentGeneration += 1; local generation = persistentGeneration
+  card:SetAttribute("ExodusNotificationGeneration", generation); reflowPersistentNotifications(true)
   if duration and duration > 0 then
     task.delay(duration, function()
-      if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then
-        clearPersistentNotification(safeKey)
-      end
+      if card.Parent and card:GetAttribute("ExodusNotificationGeneration") == generation then clearPersistentNotification(safeKey) end
     end)
   end
   return true
@@ -827,9 +795,7 @@ end
 
 -- cards
 local function optionInfo(value)
-  if type(value) == "table" then
-    return tostring(value.title or value.label or value.name or "Option"), value.description, value
-  end
+  if type(value) == "table" then return tostring(value.title or value.label or value.name or "Option"), value.description, value end
   return tostring(value or "Option"), nil, nil
 end
 local function addOptionText(parent, value, height, widthOffset)
@@ -879,14 +845,10 @@ local function addOptionText(parent, value, height, widthOffset)
   return title, description
 end
 local function createToggleCard(option, configKey, yPos, parent, onAfter, shortcutKey)
-  local title, description = optionInfo(option)
-  local height = description and CARD_H + 22 or CARD_H
-  local f = cardFrame(yPos, height, parent)
-  addOptionText(f, option, height, UIState.desktop and shortcutKey and -148 or -78)
-  local config = Utils.getConfig()
-  local initial = configKey and config[configKey] == true
-  local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
-  toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -15)
+  local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
+  local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, UIState.desktop and shortcutKey and -148 or -78)
+  local config = Utils.getConfig(); local initial = configKey and config[configKey] == true
+  local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -15)
   if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey, false, height) end
   if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
   if configKey == "AutoParry" then autoParrySetVisual = setVisual end
@@ -900,8 +862,7 @@ local function createToggleCard(option, configKey, yPos, parent, onAfter, shortc
     Parent = f,
   })
   trackConn(overlay.Activated:Connect(function()
-    local current = Utils.getConfig()
-    local state = not (configKey and current[configKey] == true)
+    local current = Utils.getConfig(); local state = not (configKey and current[configKey] == true)
     if not configKey or setConfigValue(configKey, state) then
       setVisual(state)
       if onAfter then onAfter(state) end
@@ -911,17 +872,14 @@ local function createToggleCard(option, configKey, yPos, parent, onAfter, shortc
   return nextCardY(yPos, height), f
 end
 local function createStatusToggleCard(option, yPos, parent, options)
-  options = options or {}
-  local title, description = optionInfo(option)
-  local height = description and CARD_H + 22 or CARD_H
-  local configKey, state = options.configKey, false
+  options = options or {}; local title, description = optionInfo(option)
+  local height = description and CARD_H + 22 or CARD_H; local configKey, state = options.configKey, false
   local function readState()
     if options.getState then return options.getState() == true end
     if configKey then return Utils.getConfigValue(configKey) == true end
     return state
   end
-  state = readState()
-  local f = cardFrame(yPos, height, parent)
+  state = readState(); local f = cardFrame(yPos, height, parent)
   local control
   if description and description ~= "" then
     control = inst("TextButton", {
@@ -968,30 +926,24 @@ local function createStatusToggleCard(option, yPos, parent, options)
     })
   end
   local function setVisual(value)
-    state = value == true
-    control.Text = offOnText(title, state)
+    state = value == true; control.Text = offOnText(title, state)
   end
   if configKey then statusToggleVisuals[configKey] = setVisual end
   if UIState.desktop and options.shortcutKey then makeKeycap(f, options.shortcutKey, options.rightAligned, height) end
   trackConn(control.Activated:Connect(function()
     local requested = not readState()
     if configKey and not setConfigValue(configKey, requested) then return end
-    local result = options.onToggle and options.onToggle(requested)
-    local nextState = type(result) == "boolean" and result or requested
+    local result = options.onToggle and options.onToggle(requested); local nextState = type(result) == "boolean" and result or requested
     setVisual(nextState)
     if options.toastLabel and showToast then showToast(options.toastLabel .. (nextState and " On" or " Off")) end
   end))
   return nextCardY(yPos, height), f, setVisual
 end
 local function createClickCard(option, yPos, parent, onActivate)
-  local title, description, definition = optionInfo(option)
-  local height = description and CARD_H + 22 or CARD_H
-  local f = cardFrame(yPos, height, parent)
-  local actionText = definition and definition.actionText or "Run"
-  addOptionText(f, option, height, -104)
-  local action = makeBtn(actionText, 0, 0, 78, 28, f, C.btnBlue)
-  action.Name = "ClickAction"
-  action.Position = UDim2.new(1, -92, 0.5, -14)
+  local title, description, definition = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
+  local f = cardFrame(yPos, height, parent); local actionText = definition and definition.actionText or "Run"
+  addOptionText(f, option, height, -104); local action = makeBtn(actionText, 0, 0, 78, 28, f, C.btnBlue)
+  action.Name = "ClickAction"; action.Position = UDim2.new(1, -92, 0.5, -14)
   action.TextSize = 11
   trackConn(action.Activated:Connect(function()
     if onActivate then onActivate() end
@@ -999,10 +951,8 @@ local function createClickCard(option, yPos, parent, onActivate)
   return nextCardY(yPos, height), f
 end
 local function createActionShortcutCard(option, yPos, parent, configKey, onActivate)
-  local title, description = optionInfo(option)
-  local height = description and CARD_H + 22 or CARD_H
-  local f = cardFrame(yPos, height, parent)
-  addOptionText(f, option, height, -148)
+  local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
+  local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, -148)
   if UIState.desktop and configKey then makeKeycap(f, configKey, false, height) end
   local overlay = inst("TextButton", {
     Size = UDim2.new(1, 0, 0, height),
@@ -1232,10 +1182,8 @@ local function restoreAfterReloadFailure(message)
 end
 local function fadeOutForReplacement()
   if not screenGui or not screenGui.Parent or UIState.closing then return end
-  UIState.closing = true
-  safeCancel(UIState.panelTween)
-  safeCancel(UIState.btnTween)
-  local tweens = {}
+  UIState.closing = true; safeCancel(UIState.panelTween)
+  safeCancel(UIState.btnTween); local tweens = {}
   if configPanel and configPanel.Parent and configPanel.Visible then
     local tween = twPlay(configPanel, 0.3, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.96, PH * 0.96) }, EASE_OUT, DIR_IN)
     if tween then tweens[#tweens + 1] = tween end
@@ -1256,12 +1204,10 @@ local function fadeOutForReplacement()
 end
 local function animateClose(action)
   if UIState.closing then return end
-  UIState.closing = true
-  _G.ExodusShutdownReason = action == "close" and "close" or "reload"
+  UIState.closing = true; _G.ExodusShutdownReason = action == "close" and "close" or "reload"
   if showPersistentNotification then showPersistentNotification("Closing...", "closing", "warning") end
   if type(print) == "function" then print("[Exodus] Closing...") end
-  safeCancel(UIState.panelTween)
-  safeCancel(UIState.btnTween)
+  safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
   local tweens = {}
   if configPanel and configPanel.Parent then
     UIState.panelTween = twPlay(configPanel, 0.28, {
@@ -1288,13 +1234,9 @@ local function animateClose(action)
   end
   watchTweens(tweens, function()
     if not UIState.closing then return end
-    if action == "reload" and type(Controls.onReload) == "function" then
-      Controls.onReload(restoreAfterReloadFailure)
-    elseif type(Controls.onClose) == "function" then
-      Controls.onClose()
-    elseif Utils and type(Utils.stop) == "function" then
-      Utils.stop()
-    end
+    if action == "reload" and type(Controls.onReload) == "function" then Controls.onReload(restoreAfterReloadFailure)
+    elseif type(Controls.onClose) == "function" then Controls.onClose()
+    elseif Utils and type(Utils.stop) == "function" then Utils.stop() end
   end)
 end
 
@@ -1326,8 +1268,9 @@ function ExodusUI.setup(deps)
     return false, "missing dependency: Utils, Controls, UIConfig, GameInfo, AutoSpam or Dumper"
   end
   Utils = deps.Utils; UIConfig = deps.UIConfig
-  GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam; Dumper = deps.Dumper
-  Controls = type(deps.Controls) == "table" and deps.Controls or {}; local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+  GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam
+  Dumper = deps.Dumper; Controls = type(deps.Controls) == "table" and deps.Controls or {}
+  local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
   if type(_G.ExodusUICleanup) == "function" then
     if type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
     _G.ExodusUICleanup()
@@ -1339,10 +1282,8 @@ function ExodusUI.setup(deps)
   UIState.clashBallOn = false; UIState.closing = false
   UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil
   UIState.btnTween = nil; shortcutLabels = {}
-  persistentLayerForPlayer()
-  _G.ExodusUICleanup = cleanupUI
-  _G.ExodusUIFadeOut = fadeOutForReplacement
-  _G.ExodusShowPersistentNotification = showPersistentNotification
+  persistentLayerForPlayer(); _G.ExodusUICleanup = cleanupUI
+  _G.ExodusUIFadeOut = fadeOutForReplacement; _G.ExodusShowPersistentNotification = showPersistentNotification
   _G.ExodusClearPersistentNotification = clearPersistentNotification
   screenGui = inst("ScreenGui", {
     Name = "ExodusUISystem",
@@ -2034,40 +1975,28 @@ function ExodusUI.setup(deps)
         if showPersistentNotification then showPersistentNotification(tostring(message), "dumper", "info") end
       end,
       onProgress = function(processed, total)
-        if showPersistentNotification then
-          showPersistentNotification(("Dumping... %d/%d"):format(processed, total), "dumper", "info")
-        end
+        if showPersistentNotification then showPersistentNotification(("Dumping... %d/%d"):format(processed, total), "dumper", "info") end
       end,
       onComplete = function()
-        if showPersistentNotification then
-          showPersistentNotification("Dumping completed.", "dumper", "success", 2.2)
-        end
+        if showPersistentNotification then showPersistentNotification("Dumping completed.", "dumper", "success", 2.2) end
       end,
       onError = function(message)
         warn("[Exodus Dumper] " .. tostring(message))
-        if showPersistentNotification then
-          showPersistentNotification("Dumper failed. Check the console.", "dumper", "critical")
-        end
+        if showPersistentNotification then showPersistentNotification("Dumper failed. Check the console.", "dumper", "critical") end
       end,
     })
     if not accepted then
       warn("[Exodus Dumper] " .. tostring(reason))
-      if showPersistentNotification then
-        showPersistentNotification("Dumper is already running.", "dumper", "warning")
-      end
+      if showPersistentNotification then showPersistentNotification("Dumper is already running.", "dumper", "warning") end
     end
   end
-  local indeedY = 4
-  local indeedPage = UIConfig.pages.indeed
+  local indeedY = 4; local indeedPage = UIConfig.pages.indeed
   if type(indeedPage) == "table" and type(indeedPage.components) == "table" then
     for _, definition in ipairs(indeedPage.components) do
-      if definition.kind == "click" and definition.action == "dumper" then
-        indeedY = createClickCard(definition, indeedY, indeedContent, runDumper)
-      end
+      if definition.kind == "click" and definition.action == "dumper" then indeedY = createClickCard(definition, indeedY, indeedContent, runDumper) end
     end
   end
   indeedContent.CanvasSize = UDim2.fromOffset(0, indeedY + CARD_GAP)
-
   local darkYPos, darkCard = createStatusToggleCard("Auto Dark", 4, autosLeft, {
     configKey = "AutoDark",
     shortcutKey = UIState.desktop and "DarkKeybind" or nil,
@@ -2102,7 +2031,8 @@ function ExodusUI.setup(deps)
   else
     upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", upDashYPos, autosRight, showUpDashBall)
   end
-  local _, autoUpDashCard = createStatusToggleCard("Auto Dash (clash)", upDashYPos, autosRight, { configKey = "AutoClashUpDash", toastLabel = "Auto Dash (clash)" })
+  local _, autoUpDashCard =
+    createStatusToggleCard("Auto Dash (clash)", upDashYPos, autosRight, { configKey = "AutoClashUpDash", toastLabel = "Auto Dash (clash)" })
   local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft)
   local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 4, settingsRight)
   local gateYPos = createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight); createToggleCard("AutoSpam Gates", "ClashGateInfoVisible", gateYPos, settingsRight)
@@ -2187,8 +2117,7 @@ function ExodusUI.setup(deps)
     spinButtons[crate] = setSpinVisual
   end
   utilities.CanvasSize = UDim2.fromOffset(0, utilitiesY + CARD_GAP); utilities.CanvasPosition = Vector2.zero
-  local CONFIG_PAGE = 6
-  local configWidth = math.min(300, PW - PAD * 2)
+  local CONFIG_PAGE = 6; local configWidth = math.min(300, PW - PAD * 2)
   local hubSettings = inst("ScrollingFrame", {
     Name = "HubSettings",
     AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -2206,30 +2135,21 @@ function ExodusUI.setup(deps)
     title = "Notifications",
     description = "Show short status messages while the hub is running.",
   }, notificationKey, 4, hubSettings)
-  local resetCard = cardFrame(hubY, CARD_H, hubSettings)
-  local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
-  resetButton.Name = "ResetSettings"
-  resetButton.Size = UDim2.new(1, -20, 0, 30)
+  local resetCard = cardFrame(hubY, CARD_H, hubSettings); local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
+  resetButton.Name = "ResetSettings"; resetButton.Size = UDim2.new(1, -20, 0, 30)
   local resetPending = false
   trackConn(resetButton.Activated:Connect(function()
     if not resetPending then
-      resetPending = true
-      resetButton.Text = "Tap again to confirm"
+      resetPending = true; resetButton.Text = "Tap again to confirm"
       task.delay(3, function()
-        if resetButton.Parent and resetPending then
-          resetPending = false
-          resetButton.Text = "Reset settings"
-        end
+        if resetButton.Parent and resetPending then resetPending = false; resetButton.Text = "Reset settings" end
       end)
       return
     end
-    resetPending = false
-    local ok, result = pcall(Utils.resetConfig)
+    resetPending = false; local ok, result = pcall(Utils.resetConfig)
     if not ok or not result then
-      showToast("Reset failed", true)
-      warn("[Exodus] Reset settings: " .. tostring(result))
-      resetButton.Text = "Reset settings"
-      return
+      showToast("Reset failed", true); warn("[Exodus] Reset settings: " .. tostring(result))
+      resetButton.Text = "Reset settings"; return
     end
     task.defer(function()
       if not screenGui or not screenGui.Parent then return end
@@ -2237,8 +2157,7 @@ function ExodusUI.setup(deps)
       if rebuilt then togglePanel() else warn("[Exodus] Reset UI: " .. tostring(detail)) end
     end)
   end))
-  hubSettings.CanvasSize = UDim2.fromOffset(0, nextCardY(hubY, CARD_H))
-  local page = 1
+  hubSettings.CanvasSize = UDim2.fromOffset(0, nextCardY(hubY, CARD_H)); local page = 1
   local settingsReturnPage = 1
   local pageInputShield = inst("TextButton", {
     Name = "PageInputShield",
@@ -2288,21 +2207,15 @@ function ExodusUI.setup(deps)
     Parent = configPanel,
   })
   corner(previous, 6); corner(nextPage, 6)
-  local pageNames = { "Main", "Settings", "Utilities", "Automatic", "Indeed", "Config" }
-  local NORMAL_PAGE_COUNT = CONFIG_PAGE - 1
+  local pageNames = { "Main", "Settings", "Utilities", "Automatic", "Indeed", "Config" }; local NORMAL_PAGE_COUNT = CONFIG_PAGE - 1
   local function updateNavigation()
     if page == CONFIG_PAGE then
-      pageLabel.Text = "Config"
-      previous.Visible = false
-      nextPage.Visible = false
-      return
+      pageLabel.Text = "Config"; previous.Visible = false
+      nextPage.Visible = false; return
     end
-    pageLabel.Text = tostring(page) .. "/" .. tostring(NORMAL_PAGE_COUNT) .. " " .. pageNames[page]
-    previous.Visible = true
-    nextPage.Visible = true
-    previous.TextTransparency = page == 1 and 0.7 or 0
-    nextPage.TextTransparency = page == NORMAL_PAGE_COUNT and 0.7 or 0
-    previous.AutoButtonColor = page > 1
+    pageLabel.Text = tostring(page) .. "/" .. tostring(NORMAL_PAGE_COUNT) .. " " .. pageNames[page]; previous.Visible = true
+    nextPage.Visible = true; previous.TextTransparency = page == 1 and 0.7 or 0
+    nextPage.TextTransparency = page == NORMAL_PAGE_COUNT and 0.7 or 0; previous.AutoButtonColor = page > 1
     nextPage.AutoButtonColor = page < NORMAL_PAGE_COUNT
   end
   updateNavigation()
@@ -2310,63 +2223,48 @@ function ExodusUI.setup(deps)
     if page == CONFIG_PAGE then return end
     local target = math.clamp(page + direction, 1, NORMAL_PAGE_COUNT)
     if target == page then return end
-    page = target
-    UIState.pageGeneration += 1
+    page = target; UIState.pageGeneration += 1
     local generation = UIState.pageGeneration
     if page == 3 then utilities.CanvasPosition = Vector2.zero end
-    for _, tween in ipairs(UIState.pageTweens) do safeCancel(tween) end
-    UIState.pageTweens = {}
-    pageInputShield.Visible = true
-    updateNavigation()
-    local tweens = {}
+    for _, tween in ipairs(UIState.pageTweens) do
+      safeCancel(tween)
+    end
+    UIState.pageTweens = {}; pageInputShield.Visible = true
+    updateNavigation(); local tweens = {}
     for index, group in ipairs(pageGroups) do
       if index == page then
         if not group.Visible then
-          group.Position = UDim2.new(0, PAD + 20 * direction, 0, TITLE_H + PAD)
-          group.GroupTransparency = 1
+          group.Position = UDim2.new(0, PAD + 20 * direction, 0, TITLE_H + PAD); group.GroupTransparency = 1
           group.Visible = true
         end
         local incoming = twPlay(group, 0.32, {
           Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
           GroupTransparency = 0,
         }, EASE_OUT, DIR_INOUT)
-        if incoming then
-          tweens[#tweens + 1] = incoming
-          UIState.pageTweens[#UIState.pageTweens + 1] = incoming
-        end
+        if incoming then tweens[#tweens + 1] = incoming; UIState.pageTweens[#UIState.pageTweens + 1] = incoming end
       elseif group.Visible then
         local outgoing = twPlay(group, 0.32, {
           Position = UDim2.new(0, PAD - 20 * direction, 0, TITLE_H + PAD),
           GroupTransparency = 1,
         }, EASE_OUT, DIR_INOUT)
-        if outgoing then
-          tweens[#tweens + 1] = outgoing
-          UIState.pageTweens[#UIState.pageTweens + 1] = outgoing
-        end
+        if outgoing then tweens[#tweens + 1] = outgoing; UIState.pageTweens[#UIState.pageTweens + 1] = outgoing end
       end
     end
     watchTweens(tweens, function()
       if generation ~= UIState.pageGeneration or not pageInputShield.Parent then return end
       for index, group in ipairs(pageGroups) do
-        group.Visible = index == page
-        group.GroupTransparency = index == page and 0 or 1
+        group.Visible = index == page; group.GroupTransparency = index == page and 0 or 1
         group.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
       end
-      UIState.pageTweens = {}
-      pageInputShield.Visible = false
+      UIState.pageTweens = {}; pageInputShield.Visible = false
     end)
   end
   local function openConfigPage()
-    settingsReturnPage = page
-    page = CONFIG_PAGE
-    UIState.pageGeneration += 1
-    local generation = UIState.pageGeneration
-    local group = pageGroups[CONFIG_PAGE]
-    local outgoing = pageGroups[settingsReturnPage]
-    group.Position = UDim2.new(0, PAD + 18, 0, TITLE_H + PAD)
-    group.GroupTransparency = 1
-    group.Visible = true
-    local tweens = {}
+    settingsReturnPage = page; page = CONFIG_PAGE
+    UIState.pageGeneration += 1; local generation = UIState.pageGeneration
+    local group = pageGroups[CONFIG_PAGE]; local outgoing = pageGroups[settingsReturnPage]
+    group.Position = UDim2.new(0, PAD + 18, 0, TITLE_H + PAD); group.GroupTransparency = 1
+    group.Visible = true; local tweens = {}
     local incoming = twPlay(group, 0.32, {
       Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
       GroupTransparency = 0,
@@ -2379,29 +2277,22 @@ function ExodusUI.setup(deps)
       }, EASE_OUT, DIR_INOUT)
       if exit then tweens[#tweens + 1] = exit end
     end
-    pageInputShield.Visible = true
-    updateNavigation()
+    pageInputShield.Visible = true; updateNavigation()
     watchTweens(tweens, function()
       if generation ~= UIState.pageGeneration then return end
       for index, item in ipairs(pageGroups) do
-        item.Visible = index == CONFIG_PAGE
-        item.GroupTransparency = index == CONFIG_PAGE and 0 or 1
+        item.Visible = index == CONFIG_PAGE; item.GroupTransparency = index == CONFIG_PAGE and 0 or 1
         item.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
       end
       pageInputShield.Visible = false
     end)
   end
   local function closeConfigPage()
-    local target = math.clamp(settingsReturnPage, 1, NORMAL_PAGE_COUNT)
-    local incoming = pageGroups[target]
-    local outgoing = pageGroups[CONFIG_PAGE]
-    page = target
-    UIState.pageGeneration += 1
-    local generation = UIState.pageGeneration
-    incoming.Position = UDim2.new(0, PAD - 18, 0, TITLE_H + PAD)
-    incoming.GroupTransparency = 1
-    incoming.Visible = true
-    local tweens = {}
+    local target = math.clamp(settingsReturnPage, 1, NORMAL_PAGE_COUNT); local incoming = pageGroups[target]
+    local outgoing = pageGroups[CONFIG_PAGE]; page = target
+    UIState.pageGeneration += 1; local generation = UIState.pageGeneration
+    incoming.Position = UDim2.new(0, PAD - 18, 0, TITLE_H + PAD); incoming.GroupTransparency = 1
+    incoming.Visible = true; local tweens = {}
     local enter = twPlay(incoming, 0.32, {
       Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
       GroupTransparency = 0,
@@ -2412,13 +2303,11 @@ function ExodusUI.setup(deps)
       GroupTransparency = 1,
     }, EASE_OUT, DIR_INOUT)
     if exit then tweens[#tweens + 1] = exit end
-    pageInputShield.Visible = true
-    updateNavigation()
+    pageInputShield.Visible = true; updateNavigation()
     watchTweens(tweens, function()
       if generation ~= UIState.pageGeneration then return end
       for index, item in ipairs(pageGroups) do
-        item.Visible = index == page
-        item.GroupTransparency = index == page and 0 or 1
+        item.Visible = index == page; item.GroupTransparency = index == page and 0 or 1
         item.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
       end
       pageInputShield.Visible = false
