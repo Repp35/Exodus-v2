@@ -252,11 +252,9 @@ end
 
 -- deactivation
 local closeClashProtected
--- Only ambiguous timing, packet and geometry gates are protected at close range.
--- Confirmed lifecycle and explicit shutdown reasons always take precedence.
 local CLOSE_CLASH_UNCERTAIN_STOPS = {
   first_return_timeout = true,
-  frozen = true, -- stationary-ball heuristic, not confirmed server freeze
+  frozen = true,
   invalid_or_stale_ball = true,
   target_unavailable = true,
   distant_target = true,
@@ -265,6 +263,7 @@ local CLOSE_CLASH_UNCERTAIN_STOPS = {
   ball_distance = true,
   client_deflect_reset_late = true,
 }
+
 local CLOSE_CLASH_EXPLICIT_STOPS = {
   hub_inactive = true,
   disabled = true,
@@ -342,13 +341,7 @@ local function applyDeactivation(s, snapshot, time)
       if finite(opponentDistance) and opponentDistance > 16 then reason = "client_deflect_reset_late" end
     end
   end
-  if
-    reason
-    and CLOSE_CLASH_UNCERTAIN_STOPS[reason]
-    and closeClashProtected(s, time)
-  then
-    reason = nil
-  end
+  if reason and CLOSE_CLASH_UNCERTAIN_STOPS[reason] and closeClashProtected(s, time) then reason = nil end
   if not reason then return false end
   if CLOSE_CLASH_UNCERTAIN_STOPS[reason] and closeClashProtected(s, time) then return false end
   stop(s, reason); return not s.active
