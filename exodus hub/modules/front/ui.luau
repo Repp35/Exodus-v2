@@ -1080,7 +1080,7 @@ function ExodusUI.setup(deps)
     Name = "AutoSpamGateInfo",
     Size = UDim2.fromOffset(1, 1),
     AnchorPoint = Vector2.new(0, 0),
-    Position = UDim2.new(0, 12, 0, 12),
+    Position = UDim2.new(0, 0, 0, 12),
     BackgroundColor3 = C.header,
     BackgroundTransparency = 0.2,
     Text = "AutoSpam: —\nActivation: —\nDeactivation: —",
