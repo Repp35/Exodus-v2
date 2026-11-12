@@ -590,20 +590,13 @@ function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
   if not finite(activatedAt) then return false end
   local time = os.clock()
   if time < activatedAt then localCooldownObservation = nil; return false end
-  local ability = GameInfo.getDeflectAbility()
-  local observation = localCooldownObservation
+  local ability = GameInfo.getDeflectAbility(); local observation = localCooldownObservation
   if not observation or observation.activatedAt ~= activatedAt or time < observation.sampledAt then
-    observation = { activatedAt = activatedAt, sampledAt = time }
-    localCooldownObservation = observation
+    observation = { activatedAt = activatedAt, sampledAt = time }; localCooldownObservation = observation
   end
-  local localActive = ability and finite(ability.Cooldown) and ability.Cooldown > 0 or false
-  local state = GameInfo.getDeflectCooldownState()
-  local serverActive = state and state.rawActive == true and finite(state.endsAt) and state.endsAt > time or false
-  local duration, received = GameInfo.getHeldDeflectServerCooldown()
-  local heldActive = finite(duration) and finite(received) and received <= time and time < received + duration
-  local active = localActive or serverActive or heldActive
-  -- Never permanently suppress the detector after a parry event.
-  -- A new positive cooldown starts a new uninterrupted observation.
+  local localActive = ability and finite(ability.Cooldown) and ability.Cooldown > 0 or false; local state = GameInfo.getDeflectCooldownState()
+  local serverActive = state and state.rawActive == true and finite(state.endsAt) and state.endsAt > time or false; local duration, received = GameInfo.getHeldDeflectServerCooldown()
+  local heldActive = finite(duration) and finite(received) and received <= time and time < received + duration; local active = localActive or serverActive or heldActive
   if active then
     if not observation.startedAt then observation.startedAt = time end
   else
@@ -611,11 +604,8 @@ function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
   end
   observation.sampledAt = time
   if not observation.startedAt then return false end
-  local low, high = GameInfo.getBallSpeedLimits()
-  local progress = 0
-  if finite(speed) and speed > 0 and finite(low) and finite(high) and high > low then
-    progress = math.clamp((speed - low) / (high - low), 0, 1)
-  end
+  local low, high = GameInfo.getBallSpeedLimits(); local progress = 0
+  if finite(speed) and speed > 0 and finite(low) and finite(high) and high > low then progress = math.clamp((speed - low) / (high - low), 0, 1) end
   local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress
   if finite(multiplier) then budget *= math.max(1, multiplier) end
   return time - observation.startedAt >= budget
