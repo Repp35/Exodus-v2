@@ -10,7 +10,7 @@ local clashStats
 local CONFIG = {
   ACTIVATION = {
     RETURN = 0.15,
-    OWN_BALL_CLOSE_RADIUS = 4.5,
+    OWN_BALL_CLOSE_RADIUS = 6,
     OWN_BALL_OPPONENT_RADIUS = 16,
     EXCHANGE_MAX_INTERVAL = 2,
     EXCHANGE_READY_TIME = 0.5,
@@ -304,6 +304,14 @@ local function inspectTarget(s, target, time, snapshot, serverTime)
   end
   if previous and (previous == me or target == me) then s.exchangeFrom, s.exchangeTo, s.exchangeAt = previous, target, time else s.exchangeFrom, s.exchangeTo, s.exchangeAt = nil, nil, nil end
   s.exchangePartner, s.exchangeReadyAt = completedPartner, completedPartner and time or nil
+  -- A close incoming target switch identifies the previous target as the opponent
+  -- even before a completed exchange has been recorded.
+  if target == me and previous and previous ~= me and snapshot and typeof(snapshot.position) == "Vector3" and s.root and s.root.Parent
+    and (snapshot.position - s.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS
+    and playerIsAlive(previous)
+  then
+    s.exchangePartner = previous
+  end
   if
     s.stoppedPartner
     and previous
