@@ -11,6 +11,7 @@ local CONFIG = {
   ACTIVATION = {
     RETURN = 0.15,
     OWN_BALL_CLOSE_RADIUS = 4.5,
+    OWN_BALL_OPPONENT_RADIUS = 16,
     EXCHANGE_MAX_INTERVAL = 2,
     EXCHANGE_READY_TIME = 0.5,
     REACTIVATION_COOLDOWN = 0.04,
@@ -213,6 +214,11 @@ local function shouldActivate(s, snapshot, time)
   return true
 end
 local function ownBallClose(s, snapshot)
+  local partner = s.active and s.partner or (s.pending and s.pending.partner or s.exchangePartner)
+  if not partner or partner == localPlayer.UserId then return false end
+  local opponentPosition = gameInfo.getPlayerMotion(partner)
+  if typeof(opponentPosition) ~= "Vector3" or not s.root or not s.root.Parent then return false end
+  if (opponentPosition - s.root.Position).Magnitude > CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS then return false end
   if not s.root or not s.root.Parent or not snapshot or snapshot.targetUncertain == true then return false end
   if snapshot.targetId ~= localPlayer.UserId or snapshot.locked == true or snapshot.teleported then return false end
   if not gameInfo.isSnapshotValid(snapshot) or gameInfo.getBallFrozen() == true then return false end
