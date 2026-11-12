@@ -189,7 +189,6 @@ end
 
 -- dump
 local function run(token, callbacks)
-  log("Starting dump.")
   if type(writefile) ~= "function" or type(makefolder) ~= "function" then return nil, "writefile and makefolder are required" end
   local base = nextFolder()
   for _, path in ipairs({ base, base .. "/scripts", base .. "/remotes" }) do
@@ -204,7 +203,7 @@ local function run(token, callbacks)
     local ok, err = ensureFolder(base .. "/disassembly")
     if not ok then return nil, "cannot create disassembly folder: " .. tostring(err) end
   end
-  emit(callbacks, "onStatus", "Collecting instances..."); log("Collecting instances...")
+  emit(callbacks, "onStatus", "Collecting instances...")
   local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
   local function add(object, origin, detached)
     if not allowed(object, detached) or seen[object] then return end
@@ -218,7 +217,6 @@ local function run(token, callbacks)
     for index, object in ipairs(descendants) do
       if token.cancelled then return nil, "Dump canceled" end
       add(object, "game:GetDescendants", false)
-      if index % 1000 == 0 then log(("Scanned %d instances."):format(index)) end
     end
   else
     discoveryErrors[#discoveryErrors + 1] = "game:GetDescendants: " .. errorText(descendants)
@@ -227,8 +225,8 @@ local function run(token, callbacks)
     local api = lookup(name)
     if api then addDiscovery(api, catalog, candidates, seen, discoveryErrors, token) end
   end
-  status.total = #candidates; log(("Found %d instances and %d scripts."):format(#catalog, #candidates))
-  emit(callbacks, "onProgress", 0, #candidates); log("Writing instance metadata...")
+  status.total = #candidates
+  emit(callbacks, "onProgress", 0, #candidates)
   local collection
   pcall(function() collection = game:GetService("CollectionService") end)
   local tree = { "SrcDump - instances", "total=" .. #catalog, "" }; local remotes = { "SrcDump - remotes and bindables", "" }
@@ -245,7 +243,6 @@ local function run(token, callbacks)
     )
     tree[#tree + 1] = detail
     if REMOTE_CLASSES[objectClass(object)] then remoteCount += 1; remotes[#remotes + 1] = detail end
-    if index % 1000 == 0 then log(("Writing metadata: %d/%d."):format(index, #catalog)) end
   end
   remotes[2] = "total=" .. remoteCount; local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
   if not treeOk then return nil, "cannot save tree.txt: " .. tostring(treeError) end
@@ -357,7 +354,6 @@ local function run(token, callbacks)
     end
     status.processed, status.saved, status.failed, status.bytecode = index, saved, failed, bytecodes
     if index == 1 or index % CONFIG.PROGRESS_EVERY == 0 then
-      local progress = ("Dumping scripts: %d/%d"):format(index, #candidates); log(progress)
       emit(callbacks, "onProgress", index, #candidates, item.path)
     end
   end
@@ -409,7 +405,7 @@ function Dumper.start(callbacks)
     status.running = false
     if token.cancelled then emit(callbacks, "onCanceled"); return end
     if not ok or not result then
-      local message = not ok and result or reason or "Dump failed"; log("Fatal error: " .. tostring(message))
+      local message = not ok and result or reason or "Dump failed"
       emit(callbacks, "onError", message); return
     end
     status.folder = result.folder; status.total, status.saved, status.failed, status.bytecode = result.total, result.saved, result.failed, result.bytecode
@@ -436,3 +432,4 @@ Dumper.__contract = {
 }
 
 return Dumper
+

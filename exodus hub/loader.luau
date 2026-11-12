@@ -103,7 +103,12 @@ local CONFIG = {
     { name = "movement", path = "modules/logic/movement.luau" },
     { name = "autojump", path = "modules/logic/extras/autojump.luau" },
     { name = "camera", path = "modules/logic/extras/camera.luau" },
-    { name = "universal", path = "modules/logic/universal.luau" },
+    { name = "infinitejump", path = "modules/logic/extras/infinitejump.luau" },
+    { name = "noclip", path = "modules/logic/extras/noclip.luau" },
+    { name = "fly", path = "modules/logic/extras/fly.luau" },
+    { name = "invisicam", path = "modules/logic/extras/invisicam.luau" },
+    { name = "speed", path = "modules/logic/extras/speed.luau" },
+    { name = "gravity", path = "modules/logic/extras/gravity.luau" },
     { name = "remote", path = "modules/logic/remote.luau" },
     { name = "autofierce", path = "modules/logic/extras/autofierce.luau" },
     { name = "autoparry", path = "modules/logic/autoparry.luau" },
@@ -112,7 +117,7 @@ local CONFIG = {
     { name = "autodash", path = "modules/logic/extras/autodash.luau" },
     { name = "spam", path = "modules/logic/spam.luau" },
     { name = "character", path = "modules/logic/character.luau" },
-    { name = "dumper", path = "modules/logic/dumper.luau" },
+    { name = "dumper", path = "modules/logic/extras/dumper.luau" },
     { name = "ui", path = "modules/front/ui.luau" },
   },
 }
@@ -282,6 +287,12 @@ local function stopPreviousRuntime()
   if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then attempt("gameinfo", Modules.gameinfo.stopMaintenance) end
   for _, name in ipairs({
     "universal",
+    "infinitejump",
+    "noclip",
+    "fly",
+    "invisicam",
+    "speed",
+    "gravity",
     "dumper",
     "character",
     "spam",
@@ -734,11 +745,15 @@ local function startInternal()
       if not ok then utils.recordError("UpDash", err or "Dash indisponível") end
     end,
     onUniversalToggle = function(feature, enabled)
-      local ok, err = loaded.universal.setEnabled(feature, enabled)
+      local module = loaded[feature:lower()]
+      if not module then return end
+      local ok, err = module.setEnabled(enabled)
       if not ok then utils.recordError("Universal." .. tostring(feature), err or "falha ao alterar recurso") end
     end,
     onUniversalValue = function(feature, value)
-      local ok, err = loaded.universal.setValue(feature, value)
+      local module = loaded[feature:lower()]
+      if not module or type(module.setValue) ~= "function" then return end
+      local ok, err = module.setValue(value)
       if not ok then utils.recordError("Universal." .. tostring(feature), err or "falha ao alterar valor") end
     end,
     onPanic = function()
@@ -856,3 +871,4 @@ Exodus.Started = started == true
 if started and startupPerformed then startUpdateChannel() end
 
 return Loader
+

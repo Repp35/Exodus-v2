@@ -7,7 +7,6 @@ local UIConfig
 local GameInfo
 local AutoSpam
 local Dumper
-local Universal
 local Controls = {}
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -1453,15 +1452,12 @@ function ExodusUI.setup(deps)
     or type(deps.Dumper) ~= "table"
     or type(deps.Dumper.start) ~= "function"
     or type(deps.Dumper.isRunning) ~= "function"
-    or type(deps.Universal) ~= "table"
-    or type(deps.Universal.setEnabled) ~= "function"
-    or type(deps.Universal.setValue) ~= "function"
   then
     return false, "missing dependency: Utils, Controls, UIConfig, GameInfo, AutoSpam or Dumper"
   end
   Utils = deps.Utils; UIConfig = deps.UIConfig
   GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam
-  Dumper = deps.Dumper; Universal = deps.Universal
+  Dumper = deps.Dumper
   Controls = type(deps.Controls) == "table" and deps.Controls or {}
   local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
   if type(_G.ExodusUICleanup) == "function" then
@@ -2612,7 +2608,6 @@ ExodusUI.__contract = {
     GameInfo = "gameinfo",
     AutoSpam = "autospam",
     Dumper = "dumper",
-    Universal = "universal",
   },
   requiresMethods = {
     Utils = {
@@ -2643,10 +2638,10 @@ ExodusUI.__contract = {
     },
     AutoSpam = { "getStatus" },
     Dumper = { "start", "isRunning" },
-    Universal = { "setEnabled", "setValue" },
   },
   requiresData = { UIConfig = { "panelToggles", "panelComponents", "pages" } },
   provides = { "setup" },
 }
 
 return ExodusUI
+
