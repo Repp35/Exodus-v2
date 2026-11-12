@@ -1,1 +1,1 @@
-# Lá vem o kiddie
+# Lá vem o skiddie
