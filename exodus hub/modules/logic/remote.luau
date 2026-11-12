@@ -51,6 +51,7 @@ function Remote.fireParry(_flag, guard)
   local ability = gameInfo.getDeflectAbility()
   if not ability then return false, "Deflect indisponível" end
   if not allowed(guard) then return false, "Deflect cancelado" end
+  if _flag == "manual" then return send(ability, CONFIG.PARRY_METHOD) end
   local sent, detail = fireDeflect(ability); return sent, detail
 end
 function Remote.fireDark(eventId, cameraFrame)
