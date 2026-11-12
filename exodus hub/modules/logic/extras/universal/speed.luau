@@ -9,6 +9,7 @@ local CONFIG = {
   defaults = { UniversalSpeedEnabled = false, UniversalSpeed = 16 },
 }
 
+local RunService = game:GetService("RunService")
 local states = { Speed = false }
 local speedDefault, speedValue
 
@@ -22,29 +23,31 @@ local function connect(name, signal, callback)
   if Utils then Utils.trackGlobal(connection) end; return connection
 end
 
-local function applySpeed()
+local speedHumanoid, speedRestore
+local function currentHumanoid()
   local player = Utils.getLocalPlayer(); local character = player and player.Character
-  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-  if humanoid then humanoid.WalkSpeed = speedValue end
+  return character and character:FindFirstChildOfClass("Humanoid")
+end
+local function applySpeed()
+  local humanoid = currentHumanoid()
+  if humanoid ~= speedHumanoid then
+    speedHumanoid = humanoid; speedRestore = humanoid and humanoid.WalkSpeed or nil
+  end
+  if humanoid and humanoid.Health > 0 then
+    if humanoid.WalkSpeed ~= speedValue then speedRestore = humanoid.WalkSpeed; humanoid.WalkSpeed = speedValue end
+  end
   return true
 end
 local function startSpeed()
-  local player = Utils.getLocalPlayer()
-  if player then
-    connect("SpeedCharacter", player.CharacterAdded, function(character)
-      task.defer(function()
-        local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
-        if states.Speed and humanoid then humanoid.WalkSpeed = speedValue end
-      end)
-    end)
-  end
+  connect("SpeedStep", RunService.Stepped, applySpeed)
   return applySpeed()
 end
 local function stopSpeed()
-  disconnect("SpeedCharacter"); local player = Utils.getLocalPlayer(); local character = player and player.Character
-  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-  if humanoid then humanoid.WalkSpeed = speedDefault end
-  return true
+  disconnect("SpeedStep")
+  if speedHumanoid and speedHumanoid.Parent and speedHumanoid.WalkSpeed == speedValue and speedRestore ~= nil then
+    speedHumanoid.WalkSpeed = speedRestore
+  end
+  speedHumanoid, speedRestore = nil, nil; return true
 end
 
 function Speed.setEnabled(enabled)
@@ -63,7 +66,9 @@ end
 function Speed.setValue(value)
   if not Utils then return false, "controle inválido" end
   local number = tonumber(value); if not number or number ~= number then return false, "valor inválido" end
+  local previous = speedValue
   speedValue = math.clamp(number, 0, 200)
+  if states.Speed and speedHumanoid and speedHumanoid.WalkSpeed == previous then speedHumanoid.WalkSpeed = speedValue end
   if not Utils.setConfig({ UniversalSpeed = speedValue, UniversalSpeedEnabled = true }) then return false end
   if not states.Speed then return Speed.setEnabled(true) end
   return applySpeed()

@@ -961,6 +961,7 @@ local function createToggleCard(option, configKey, yPos, parent, onAfter, shortc
   local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, UIState.desktop and shortcutKey and -148 or -78)
   local config = Utils.getConfig(); local initial = configKey and config[configKey] == true
   local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -15)
+  if configKey == "UniversalSpeedEnabled" or configKey == "UniversalGravityEnabled" then statusToggleVisuals[configKey] = setVisual end
   if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey, false, height) end
   if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
   if configKey == "AutoParry" then autoParrySetVisual = setVisual end

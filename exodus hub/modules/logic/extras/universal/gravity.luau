@@ -34,9 +34,9 @@ function Gravity.setValue(value)
   if not Utils then return false, "controle inválido" end
   local number = tonumber(value); if not number or number ~= number then return false, "valor inválido" end
   gravityValue = math.clamp(number, 0, 400)
-  local saved = Utils.setConfig({ UniversalGravity = gravityValue })
-  if enabledState then Workspace.Gravity = gravityValue end
-  return saved
+  if not Utils.setConfig({ UniversalGravity = gravityValue }) then return false end
+  if not enabledState then return Gravity.setEnabled(true) end
+  Workspace.Gravity = gravityValue; return true
 end
 function Gravity.teardown()
   if enabledState then stopGravity() end

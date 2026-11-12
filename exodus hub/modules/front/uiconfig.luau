@@ -69,7 +69,9 @@ local CONFIG = {
           components = {
             { kind = "toggle", title = "Infinite Jump", description = "Permite pular no ar.", key = "UniversalInfiniteJump", feature = "InfiniteJump" },
             { kind = "toggle", title = "Fly", description = "Permite voar livremente.", key = "UniversalFly", feature = "Fly" },
+            { kind = "toggle", title = "Speed", description = "Ativa a velocidade personalizada.", key = "UniversalSpeedEnabled", feature = "Speed" },
             { kind = "scroll", title = "Speed", description = "Ajusta a velocidade do personagem.", key = "UniversalSpeed", feature = "Speed", min = 0, max = 200, increment = 1, valueName = "WalkSpeed" },
+            { kind = "toggle", title = "Gravity", description = "Ativa a gravidade personalizada.", key = "UniversalGravityEnabled", feature = "Gravity" },
             { kind = "scroll", title = "Gravity", description = "Ajusta a gravidade do personagem.", key = "UniversalGravity", feature = "Gravity", min = 0, max = 400, increment = 1, valueName = "studs/s²" },
             { kind = "toggle", title = "Invisicam", description = "Remove o personagem da visão da câmera.", key = "UniversalInvisicam", feature = "Invisicam" },
             { kind = "toggle", title = "Noclip", description = "Permite atravessar objetos.", key = "UniversalNoclip", feature = "Noclip" },
@@ -180,3 +182,4 @@ UIConfig.__contract = {
 }
 
 return UIConfig
+
