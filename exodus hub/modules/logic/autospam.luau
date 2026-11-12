@@ -193,11 +193,11 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   if distanceReason then return end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
-  s.deflectCooldownSince = nil
-  s.activatedAt, s.firstReturnSeen = time, false; s.lastClosePartner, s.lastCloseAt, s.lastCloseDistance = nil, nil, nil
-  gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot)); s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
-  s.diversionSince, s.diversionSyncAt = nil, nil; s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
-  utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
+  s.deflectCooldownSince = nil; s.activatedAt, s.firstReturnSeen = time, false
+  s.lastClosePartner, s.lastCloseAt, s.lastCloseDistance = nil, nil, nil; gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot))
+  s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil; s.diversionSince, s.diversionSyncAt = nil, nil
+  s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason; utils.setAutoSpamActive(true)
+  utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function activationGeometry(s, snapshot, partner, time)
   local factor = CONFIG.ACTIVATION.RADIUS_FACTOR
@@ -335,15 +335,15 @@ local function shouldDeactivate(s, snapshot, time)
 end
 local function applyDeactivation(s, snapshot, time)
   if not s.active then return false end
-  -- Hard stop: a continuously active Deflect cooldown for over 150ms
-  -- overrides all close-range and uncertain-snapshot protections.
   local cooldownState = gameInfo.getDeflectCooldownState()
   if cooldownState and cooldownState.blocking == true then
     s.deflectCooldownSince = s.deflectCooldownSince or time
-    if s.activatedAt and time - s.activatedAt >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
-      and time - s.deflectCooldownSince > CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT then
-      stop(s, "deflect_cooldown_timeout")
-      return not s.active
+    if
+      s.activatedAt
+      and time - s.activatedAt >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
+      and time - s.deflectCooldownSince > CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
+    then
+      stop(s, "deflect_cooldown_timeout"); return not s.active
     end
   else
     s.deflectCooldownSince = nil
