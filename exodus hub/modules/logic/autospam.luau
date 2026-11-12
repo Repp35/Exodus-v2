@@ -36,6 +36,7 @@ local CONFIG = {
     STATIONARY_TIMEOUT = 0.1,
     FIRST_RETURN_TIMEOUT = 0.15,
     CLOSE_OPPONENT_PROTECTION_RADIUS = 10,
+    CLOSE_OPPONENT_MEMORY_SECONDS = 1.0,
     STATIONARY_POSITION_EPSILON = 0.01,
   },
   SHARED = {
@@ -261,6 +262,21 @@ local function stop(s, reason)
   s.reason, s.pending, s.partner, s.activatedAt, s.firstReturnSeen, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil
   s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil; resetExchange(s)
 end
+local function closeClashProtected(s, time)
+  if not s.partner or not s.root or not s.root.Parent then return false end
+  local opponent = gameInfo.getPlayerMotion(s.partner)
+  if typeof(opponent) == "Vector3" then
+    local distance = (opponent - s.root.Position).Magnitude
+    if distance <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS then
+      s.lastClosePartner, s.lastCloseAt = s.partner, time
+      return true
+    end
+    if s.lastClosePartner == s.partner then s.lastCloseAt = nil end
+    return false
+  end
+  return s.lastClosePartner == s.partner and finite(s.lastCloseAt)
+    and time - s.lastCloseAt <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_MEMORY_SECONDS
+end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
@@ -298,12 +314,9 @@ local function applyDeactivation(s, snapshot, time)
   if
     reason
     and (reason == "first_return_timeout" or reason == "frozen" or reason == "invalid_or_stale_ball" or reason == "target_unavailable" or reason == "distant_target" or reason == "proximity_gate_lost" or reason == "opponent_distance" or reason == "ball_distance" or reason == "client_deflect_reset_late")
-    and playerIsAlive(s.partner)
-    and s.root
-    and s.root.Parent
+    and closeClashProtected(s, time)
   then
-    local opponent = gameInfo.getPlayerMotion(s.partner)
-    if typeof(opponent) == "Vector3" and (opponent - s.root.Position).Magnitude <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS then reason = nil end
+    reason = nil
   end
   if not reason then return false end
   stop(s, reason); return true
@@ -491,6 +504,8 @@ function AutoSpam.bindCharacter(character)
     dashStart = nil,
     dashSwitchPartner = nil,
     pendingReset = false,
+    lastClosePartner = nil,
+    lastCloseAt = nil,
   }
 
   current = s; local haunterConnection, haunterRemote, nextHaunterCheck = nil, nil, 0
@@ -614,7 +629,7 @@ function AutoSpam.bindCharacter(character)
     local liveSnapshot
     if not s.lobbyCheckAt or time - s.lobbyCheckAt >= 0.25 then s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time); s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot) end
     if not s.lobbySnapshotValid then
-      if s.active then stop(s, "match_not_ready") end
+      -- Invalid snapshots may reflect packet delay, not a finished match.
       s.lobbySince = s.lobbySince or time
       if time - s.lobbySince >= 1 and not s.active then s.stoppedPartner, s.pending, s.dashSwitchPartner, s.pendingReset = nil, nil, nil, false end
     else
