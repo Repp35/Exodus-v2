@@ -117,7 +117,7 @@ local CONFIG = {
     { name = "autodash", path = "modules/logic/extras/autodash.luau" },
     { name = "spam", path = "modules/logic/spam.luau" },
     { name = "character", path = "modules/logic/character.luau" },
-    { name = "dumper", path = "modules/logic/extras/dumper.luau" },
+    { name = "dumper", path = "modules/logic/extras/universal/dumper.luau" },
     { name = "ui", path = "modules/front/ui.luau" },
   },
 }
