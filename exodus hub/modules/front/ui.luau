@@ -932,9 +932,9 @@ local function restoreAfterReloadFailure(message)
 end
 local function fadeOutForReplacement()
   if not screenGui or not screenGui.Parent or UIState.closing then return end
-  _G.ExodusUIReturnAfterUpdate = true
-  UIState.closing = true; safeCancel(UIState.panelTween)
-  safeCancel(UIState.btnTween); local duration = 0.3
+  _G.ExodusUIReturnAfterUpdate = true; UIState.closing = true
+  safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
+  local duration = 0.3
   if configPanel and configPanel.Parent and configPanel.Visible then twPlay(configPanel, duration, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.96, PH * 0.96) }, EASE_OUT, DIR_IN) end
   if floatingButton and floatingButton.Parent then twPlay(floatingButton, duration, { BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN) end
   for _, element in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall, miniGui }) do
@@ -1957,9 +1957,7 @@ function ExodusUI.setup(deps)
   if _G.ExodusUIReturnAfterUpdate == true then
     _G.ExodusUIReturnAfterUpdate = nil
     task.defer(function()
-      if screenGui == currentGui and currentGui.Parent and not UIState.closing and not UIState.panelOpen then
-        togglePanel()
-      end
+      if screenGui == currentGui and currentGui.Parent and not UIState.closing and not UIState.panelOpen then togglePanel() end
     end)
   end
   return true
