@@ -740,8 +740,7 @@ local function snapshot(time)
   end
   local currentBall = getBall()
   if not currentBall then return nil end
-  local provider = getReplicator()
-  local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData(provider or false)
+  local provider = getReplicator(); local position, velocity, sync = currentBall.Position, currentBall.AssemblyLinearVelocity, syncData(provider or false)
   if sampledBall ~= currentBall or (sync and sync.Teleported == true) then
     sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = currentBall, position, time, Vector3.zero, nil
   elseif sampledPosition and sampledAt and time - sampledAt >= CONFIG.SAMPLE_INTERVAL then

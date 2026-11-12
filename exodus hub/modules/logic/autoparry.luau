@@ -140,8 +140,7 @@ local function activeWindowFactor(at)
 end
 local function recordAutoParryRequest()
   local now, previous = clock(), state.lastAutoParryClickAt; local interval = previous and now - previous or nil
-  state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0
-  state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(configuredFactor(), 0, CONFIG.MAX_WINDOW_FACTOR)
+  state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(configuredFactor(), 0, CONFIG.MAX_WINDOW_FACTOR)
 end
 local function trainingGeometry(speed, factor)
   speed = finite(speed) and math.max(speed, CONFIG.TRAINING_BASE_SPEED) or CONFIG.TRAINING_BASE_SPEED; local span = CONFIG.TRAINING_MAX_SPEED - CONFIG.TRAINING_BASE_SPEED

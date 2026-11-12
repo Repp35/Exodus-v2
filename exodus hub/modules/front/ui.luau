@@ -1693,8 +1693,7 @@ function ExodusUI.setup(deps)
   else
     upDashYPos, upDashCard = createToggleCard("Mini Up Dash", "UpDashBallVisible", upDashYPos, autosRight, showUpDashBall)
   end
-  local _, autoUpDashCard =
-    createOffOnCard("Auto Dash (clash)", upDashYPos, autosRight, { configKey = "AutoClashUpDash", toastLabel = "Auto Dash (clash)" })
+  local _, autoUpDashCard = createOffOnCard("Auto Dash (clash)", upDashYPos, autosRight, { configKey = "AutoClashUpDash", toastLabel = "Auto Dash (clash)" })
   local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft)
   local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 4, settingsRight)
   local gateYPos = createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight); createToggleCard("AutoSpam Gates", "ClashGateInfoVisible", gateYPos, settingsRight)

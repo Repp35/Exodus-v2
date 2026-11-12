@@ -650,12 +650,9 @@ function AutoSpam.bindCharacter(character)
     local time = now()
     if (not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent) and time >= nextHaunterCheck then nextHaunterCheck = time + 0.25; connectHaunter() end
     local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
-    local manualEnabled = utils.isManualSpamActive()
-    clashStats = clashStatsModule.get()
+    local manualEnabled = utils.isManualSpamActive(); clashStats = clashStatsModule.get()
     local clashContext
-    if autoEnabled or upDashEnabled or manualEnabled or s.active or (clashStats and not clashStats.frozen) or s.pendingReset or s.haunterPartner then
-      clashContext = gameInfo.getClashContext()
-    end
+    if autoEnabled or upDashEnabled or manualEnabled or s.active or (clashStats and not clashStats.frozen) or s.pendingReset or s.haunterPartner then clashContext = gameInfo.getClashContext() end
     if
       not autoEnabled
       and not upDashEnabled

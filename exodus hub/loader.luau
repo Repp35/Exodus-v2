@@ -616,13 +616,11 @@ local function startInternal()
   local authorized, authorizationError = authorizeRevision(version)
   if not authorized then return false, "Authorization", authorizationError end
   if not requestedRevision and Exodus.Started == true and Exodus.UIReady == true and validRevision(version) and Exodus.Revision == version then return true end
-  startupPerformed = true
-  printStartup("Exodus: iniciando")
+  startupPerformed = true; printStartup("Exodus: iniciando")
   if not stopPreviousRuntime() then return false, "Loader", "falha ao encerrar a sessão anterior" end
   clearRegistry(); local playerReady, playerError = waitForLocalPlayer(10)
   if not playerReady then return false, "Loader", playerError end
-  local urls = buildURLs(version)
-  local loaded, moduleName, loadError = loadModules(urls)
+  local urls = buildURLs(version); local loaded, moduleName, loadError = loadModules(urls)
   if not loaded then return false, moduleName, loadError end
   activeLoaded = loaded; local utils = loaded.utils
   if type(utils.start) ~= "function" or type(utils.setLifecyclePhase) ~= "function" then return false, "Utils", "contrato de inicialização incompleto" end
