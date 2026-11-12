@@ -196,7 +196,7 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   s.deflectCooldownSince = nil; s.activatedAt, s.firstReturnSeen = time, false
   s.lastClosePartner, s.lastCloseAt, s.lastCloseDistance = nil, nil, nil; gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot))
   s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil; s.diversionSince, s.diversionSyncAt = nil, nil
-  s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason; utils.setAutoSpamActive(true)
+  s.lastSwitchAt, s.lastSwitchServerAt, s.reason, s.lastActivationReason, s.lastActivationAt = time, serverTime, reason, reason, time; utils.setAutoSpamActive(true)
   utils.recordTransition("AutoSpam", "idle", "active", reason)
 end
 local function activationGeometry(s, snapshot, partner, time)
@@ -811,6 +811,8 @@ function AutoSpam.getStatus()
     phase = s and (s.active and "active" or "idle") or "detached",
     active = s ~= nil and s.active,
     lastGate = s and s.reason or "detached",
+    lastActivationReason = s and s.lastActivationReason or nil,
+    lastActivationAt = s and s.lastActivationAt or nil,
     lastStopReason = s and s.lastStopReason or nil,
     lastStopAt = s and s.lastStopAt or nil,
     clashPartnerId = s and s.partner or -1,
