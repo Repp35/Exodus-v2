@@ -263,21 +263,11 @@ end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
-  -- Uncertain/locked/teleported ball data is not evidence that the clash ended.
-  -- Keep the current activation until reliable data or an explicit stop arrives.
   if snapshot and (snapshot.teleported == true or snapshot.locked == true or snapshot.targetUncertain == true) then return nil end
   if s.activatedAt and not s.firstReturnSeen and time - s.activatedAt >= CONFIG.DEACTIVATION.FIRST_RETURN_TIMEOUT then return "first_return_timeout" end
   if gameInfo.getBallFrozen() == true or ballStationaryTooLong(s, time) then return "frozen" end
   local age = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt
-  if
-    not snapshot
-    or not gameInfo.isSnapshotValid(snapshot)
-    or not age
-    or age < 0
-    or age > CONFIG.SHARED.SNAPSHOT_MAX_AGE
-  then
-    return "invalid_or_stale_ball"
-  end
+  if not snapshot or not gameInfo.isSnapshotValid(snapshot) or not age or age < 0 or age > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return "invalid_or_stale_ball" end
   local target = userId(snapshot.targetId)
   if not target then return "target_unavailable" end
   if target ~= localPlayer.UserId and target ~= s.partner then
