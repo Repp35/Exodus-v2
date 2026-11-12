@@ -1095,24 +1095,17 @@ function ExodusUI.setup(deps)
   compactInformation(gateLabel); corner(gateLabel, 8)
   local nextGateUpdate = 0
   local function validGate(value)
-    return type(value) == "string" and value ~= "" and value ~= "null"
-      and value ~= "nil" and value ~= "inactive" and value ~= "detached"
+    return type(value) == "string" and value ~= "" and value ~= "null" and value ~= "nil" and value ~= "inactive" and value ~= "detached"
   end
   trackConn(RunService.Heartbeat:Connect(function()
     if not gateLabel.Parent then return end
-    local enabled = Utils.getConfigValue("ClashGateInfoVisible") == true
-    local time = os.clock()
+    local enabled = Utils.getConfigValue("ClashGateInfoVisible") == true; local time = os.clock()
     if enabled and time >= nextGateUpdate then
-      nextGateUpdate = time + 0.1
-      local status = AutoSpam.getStatus()
+      nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
       local lines = {}
       if status and status.active == true then table.insert(lines, "AutoSpam: ACTIVE") end
-      if status and validGate(status.lastActivationReason) then
-        table.insert(lines, "Activation: " .. status.lastActivationReason)
-      end
-      if status and validGate(status.lastStopReason) then
-        table.insert(lines, "Deactivation: " .. status.lastStopReason)
-      end
+      if status and validGate(status.lastActivationReason) then table.insert(lines, "Activation: " .. status.lastActivationReason) end
+      if status and validGate(status.lastStopReason) then table.insert(lines, "Deactivation: " .. status.lastStopReason) end
       setTextIfChanged(gateLabel, table.concat(lines, "\n"))
     end
     local visible = enabled and gateLabel.Text ~= ""
