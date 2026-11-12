@@ -36,6 +36,7 @@ local CONFIG = {
     STATIONARY_TIMEOUT = 0.1,
     FIRST_RETURN_TIMEOUT = 0.15,
     CLOSE_OPPONENT_PROTECTION_RADIUS = 10,
+    SYNC_PROTECTION_RADIUS = 16,
     CLOSE_OPPONENT_MEMORY_SECONDS = 0.1,
     STATIONARY_POSITION_EPSILON = 0.01,
   },
@@ -191,7 +192,7 @@ local function start(s, reason, partner, time, serverTime, snapshot)
   if distanceReason then return end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   s.active, s.partner, s.pending, s.stoppedPartner, s.stoppedAt = true, partner, nil, nil, nil; s.dashSwitchPartner, s.dashSwitchAt = nil, nil
-  s.activatedAt, s.firstReturnSeen = time, false; s.lastClosePartner, s.lastCloseAt = nil, nil
+  s.activatedAt, s.firstReturnSeen = time, false; s.lastClosePartner, s.lastCloseAt, s.lastCloseDistance = nil, nil, nil
   gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot)); s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil
   s.diversionSince, s.diversionSyncAt = nil, nil; s.lastSwitchAt, s.lastSwitchServerAt, s.reason = time, serverTime, reason
   utils.setAutoSpamActive(true); utils.recordTransition("AutoSpam", "idle", "active", reason)
@@ -252,16 +253,16 @@ end
 
 -- deactivation
 local closeClashProtected
-local CLOSE_CLASH_UNCERTAIN_STOPS = {
-  first_return_timeout = true,
-  frozen = true,
-  invalid_or_stale_ball = true,
-  target_unavailable = true,
-  distant_target = true,
-  proximity_gate_lost = true,
-  opponent_distance = true,
-  ball_distance = true,
-  client_deflect_reset_late = true,
+local CLOSE_CLASH_PROTECTION_RADII = {
+  first_return_timeout = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
+  invalid_or_stale_ball = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
+  target_unavailable = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
+  frozen = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
+  proximity_gate_lost = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
+  opponent_distance = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
+  ball_distance = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
+  client_deflect_reset_late = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
+  -- distant_target: no protection when a different distant target is confirmed.
 }
 
 local CLOSE_CLASH_EXPLICIT_STOPS = {
@@ -280,7 +281,7 @@ local CLOSE_CLASH_EXPLICIT_STOPS = {
 
 local function stop(s, reason)
   if current ~= s then return end
-  if s.active and CLOSE_CLASH_UNCERTAIN_STOPS[reason] and closeClashProtected(s, now()) then return end
+  if s.active and CLOSE_CLASH_PROTECTION_RADII[reason] and closeClashProtected(s, now(), CLOSE_CLASH_PROTECTION_RADII[reason]) then return end
   if s.active then
     local stoppedAt = now(); s.stoppedPartner, s.stoppedAt = s.partner, stoppedAt
     s.active = false; s.lastDeactivatedAt = stoppedAt
@@ -290,7 +291,7 @@ local function stop(s, reason)
   s.reason, s.pending, s.partner, s.activatedAt, s.firstReturnSeen, s.diversionSince, s.diversionSyncAt = reason, nil, nil, nil, nil, nil, nil
   s.stationaryBall, s.stationaryPosition, s.stationarySince = nil, nil, nil; resetExchange(s)
 end
-closeClashProtected = function(s, time)
+closeClashProtected = function(s, time, radius)
   if not s.partner or not s.root or not s.root.Parent then return false end
   local opponent = gameInfo.getPlayerMotion(s.partner)
   if typeof(opponent) ~= "Vector3" then
@@ -300,11 +301,11 @@ closeClashProtected = function(s, time)
   end
   if typeof(opponent) == "Vector3" then
     local distance = (opponent - s.root.Position).Magnitude
-    if distance <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS then s.lastClosePartner, s.lastCloseAt = s.partner, time; return true end
+    if distance <= radius then s.lastClosePartner, s.lastCloseAt, s.lastCloseDistance = s.partner, time, distance; return true end
     if s.lastClosePartner == s.partner then s.lastCloseAt = nil end
     return false
   end
-  return s.lastClosePartner == s.partner and finite(s.lastCloseAt)
+  return s.lastClosePartner == s.partner and finite(s.lastCloseAt) and finite(s.lastCloseDistance) and s.lastCloseDistance <= radius
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
@@ -341,9 +342,9 @@ local function applyDeactivation(s, snapshot, time)
       if finite(opponentDistance) and opponentDistance > 16 then reason = "client_deflect_reset_late" end
     end
   end
-  if reason and CLOSE_CLASH_UNCERTAIN_STOPS[reason] and closeClashProtected(s, time) then reason = nil end
+  if reason and CLOSE_CLASH_PROTECTION_RADII[reason] and closeClashProtected(s, time, CLOSE_CLASH_PROTECTION_RADII[reason]) then reason = nil end
   if not reason then return false end
-  if CLOSE_CLASH_UNCERTAIN_STOPS[reason] and closeClashProtected(s, time) then return false end
+  if CLOSE_CLASH_PROTECTION_RADII[reason] and closeClashProtected(s, time, CLOSE_CLASH_PROTECTION_RADII[reason]) then return false end
   stop(s, reason); return not s.active
 end
 
@@ -531,6 +532,7 @@ function AutoSpam.bindCharacter(character)
     pendingReset = false,
     lastClosePartner = nil,
     lastCloseAt = nil,
+    lastCloseDistance = nil,
   }
 
   current = s; local haunterConnection, haunterRemote, nextHaunterCheck = nil, nil, 0
