@@ -1083,26 +1083,40 @@ function ExodusUI.setup(deps)
     Position = UDim2.new(0, 0, 0.5, 0),
     BackgroundColor3 = C.header,
     BackgroundTransparency = 0.2,
-    Text = "AutoSpam: —\nActivation: —\nDeactivation: —",
+    Text = "",
     TextColor3 = C.text,
     TextSize = 14,
     Font = Enum.Font.GothamSemibold,
-    Visible = Utils.getConfigValue("ClashGateInfoVisible") == true,
+    Visible = false,
     ZIndex = 20,
     Parent = informationGui,
   })
   compactInformation(distanceLabel); compactInformation(travelLabel)
   compactInformation(gateLabel); corner(gateLabel, 8)
   local nextGateUpdate = 0
+  local function validGate(value)
+    return type(value) == "string" and value ~= "" and value ~= "null"
+      and value ~= "nil" and value ~= "inactive" and value ~= "detached"
+  end
   trackConn(RunService.Heartbeat:Connect(function()
     if not gateLabel.Parent then return end
-    local visible = Utils.getConfigValue("ClashGateInfoVisible") == true
-    if gateLabel.Visible ~= visible then gateLabel.Visible = visible end
+    local enabled = Utils.getConfigValue("ClashGateInfoVisible") == true
     local time = os.clock()
-    if not visible or time < nextGateUpdate then return end
-    nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
-    local phase = status.active and "ACTIVE" or "INACTIVE"; local activation = status.lastActivationReason or "—"
-    local deactivation = status.lastStopReason or "—"; setTextIfChanged(gateLabel, "AutoSpam: " .. phase .. "\nActivation: " .. activation .. "\nDeactivation: " .. deactivation)
+    if enabled and time >= nextGateUpdate then
+      nextGateUpdate = time + 0.1
+      local status = AutoSpam.getStatus()
+      local lines = {}
+      if status and status.active == true then table.insert(lines, "AutoSpam: ACTIVE") end
+      if status and validGate(status.lastActivationReason) then
+        table.insert(lines, "Activation: " .. status.lastActivationReason)
+      end
+      if status and validGate(status.lastStopReason) then
+        table.insert(lines, "Deactivation: " .. status.lastStopReason)
+      end
+      setTextIfChanged(gateLabel, table.concat(lines, "\n"))
+    end
+    local visible = enabled and gateLabel.Text ~= ""
+    if gateLabel.Visible ~= visible then gateLabel.Visible = visible end
   end))
   corner(travelLabel, 8); local nextTravelUpdate = 0
   local telemetryAt, telemetryStatus, telemetrySnapshot = -math.huge, nil, nil
