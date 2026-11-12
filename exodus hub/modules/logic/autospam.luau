@@ -9,8 +9,9 @@ local clashStats
 -- configuration
 local CONFIG = {
   ACTIVATION = {
-    RETURN = 0.15,
+    RETURN = 0.18,
     OWN_BALL_CLOSE_RADIUS = 6,
+    INSTANT_TARGET_SWITCH_RADIUS = 10,
     OWN_BALL_CANDIDATE_MAX_AGE = 0.8,
     OWN_BALL_OPPONENT_RADIUS = 16,
     EXCHANGE_MAX_INTERVAL = 2,
@@ -33,7 +34,7 @@ local CONFIG = {
     MAX_DISTANCE_REFERENCE = 51,
     MIN_ACTIVE_TIME = 0.05,
     STATIONARY_TIMEOUT = 0.1,
-    FIRST_RETURN_TIMEOUT = 0.1,
+    FIRST_RETURN_TIMEOUT = 0.18,
     STATIONARY_POSITION_EPSILON = 0.01,
   },
   SHARED = {
@@ -177,7 +178,7 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
   if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN) then return end
-  local proximity = reason == "own_ball_proximity"; local haunter = proximity or reason == "haunter" or reason == "haunter_self"
+  local proximity = reason == "own_ball_proximity" or reason == "close_target_switch"; local haunter = proximity or reason == "haunter" or reason == "haunter_self"
   if
     not haunter
     and (not s.exchangeReadyAt or s.exchangePartner ~= partner or time < s.exchangeReadyAt or time - s.exchangeReadyAt > CONFIG.ACTIVATION.EXCHANGE_READY_TIME)
@@ -309,6 +310,23 @@ end
 local function inspectTarget(s, target, time, snapshot, serverTime)
   if not target or target == s.target then return end
   local previous, me = s.target, localPlayer.UserId
+  -- An incoming target switch inside 10 studs is an immediate clash signal.
+  -- Only use the opponent identified by this exact switch, not cached exchange state.
+  if not s.active and utils.isActive() and utils.getConfigValue("AutoSpam") == true
+    and previous and previous ~= me and target == me and snapshot
+    and gameInfo.isSnapshotValid(snapshot) and snapshot.targetUncertain ~= true
+    and snapshot.locked ~= true and not snapshot.teleported and gameInfo.getBallFrozen() ~= true
+    and s.root and s.root.Parent and typeof(snapshot.position) == "Vector3"
+    and (snapshot.position - s.root.Position).Magnitude <= CONFIG.ACTIVATION.INSTANT_TARGET_SWITCH_RADIUS
+    and playerIsAlive(previous)
+  then
+    local opponent = gameInfo.getPlayerMotion(previous)
+    if typeof(opponent) == "Vector3"
+      and (opponent - s.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS
+    then
+      start(s, "close_target_switch", previous, time, serverTime, snapshot)
+    end
+  end
   if s.active and not s.firstReturnSeen and s.activatedAt and time >= s.activatedAt and target == me and previous ~= me then s.firstReturnSeen = true end
   local completedPartner
   if
