@@ -340,7 +340,8 @@ local function applyDeactivation(s, snapshot, time)
   local cooldownState = gameInfo.getDeflectCooldownState()
   if cooldownState and cooldownState.blocking == true then
     s.deflectCooldownSince = s.deflectCooldownSince or time
-    if time - s.deflectCooldownSince > CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT then
+    if s.activatedAt and time - s.activatedAt >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
+      and time - s.deflectCooldownSince > CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT then
       stop(s, "deflect_cooldown_timeout")
       return not s.active
     end
