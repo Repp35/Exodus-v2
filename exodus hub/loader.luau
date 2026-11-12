@@ -9,7 +9,7 @@ end
 local function printStartup(message)
   if type(print) == "function" then print(message) end
 end
-local function fallbackNotification(message, key, kind)
+local function fallbackNotification(message, key, kind, duration)
   local players = game:GetService("Players"); local player = players.LocalPlayer
   local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
   if not playerGui then return end
@@ -44,14 +44,19 @@ local function fallbackNotification(message, key, kind)
   local label = card:FindFirstChild("Message")
   if label then label.Text = tostring(message) end
   card.GroupTransparency = 0; card.Visible = true
+  if duration and duration > 0 then
+    task.delay(duration, function()
+      if card.Parent then card:Destroy() end
+    end)
+  end
 end
-local function notifyPersistent(message, key, kind)
+local function notifyPersistent(message, key, kind, duration)
   local show = _G.ExodusShowPersistentNotification
   if type(show) == "function" then
-    local ok = pcall(show, message, key, kind)
+    local ok = pcall(show, message, key, kind, duration)
     if ok then return end
   end
-  fallbackNotification(message, key, kind)
+  fallbackNotification(message, key, kind, duration)
 end
 local function clearPersistent(key)
   local clear = _G.ExodusClearPersistentNotification
@@ -827,7 +832,6 @@ local function startUpdateChannel()
     closeConnection = closeSignal:Connect(function()
       if _G.ExodusUpdateToken == token then
         _G.ExodusUpdateSocket = nil; _G.ExodusUpdateToken = nil
-        notifyPersistent("Live update channel closed.", "critical", "critical")
       end
     end)
   end

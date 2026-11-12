@@ -757,6 +757,7 @@ showPersistentNotification = function(message, key, kind, duration)
   if cardStroke then cardStroke.Color = border end
   local label = card:FindFirstChild("Message")
   if label then label.Text = tostring(message) end
+  if duration == nil and safeKey ~= "dumper" then duration = 2.5 end
   persistentGeneration += 1; local generation = persistentGeneration
   card:SetAttribute("ExodusNotificationGeneration", generation); reflowPersistentNotifications(true)
   if duration and duration > 0 then
@@ -2092,12 +2093,12 @@ function ExodusUI.setup(deps)
       end,
       onError = function(message)
         warn("[Exodus Dumper] " .. tostring(message))
-        if showPersistentNotification then showPersistentNotification("Dumper failed. Check the console.", "dumper", "critical") end
+        if showPersistentNotification then showPersistentNotification("Dumper failed. Check the console.", "dumper", "critical", 2.5) end
       end,
     })
     if not accepted then
       warn("[Exodus Dumper] " .. tostring(reason))
-      if showPersistentNotification then showPersistentNotification("Dumper is already running.", "dumper", "warning") end
+      if showPersistentNotification then showPersistentNotification("Dumper is already running.", "dumper", "warning", 2.0) end
     end
   end
   cardLabel("ACTIONS", indeedContent); local indeedY = 26
