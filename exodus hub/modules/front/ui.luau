@@ -932,7 +932,7 @@ local function restoreAfterReloadFailure(message)
 end
 local function fadeOutForReplacement()
   if not screenGui or not screenGui.Parent or UIState.closing then return end
-  _G.ExodusUIReturnAfterUpdate = true; UIState.closing = true
+  UIState.closing = true
   safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
   local duration = 0.3
   if configPanel and configPanel.Parent and configPanel.Visible then twPlay(configPanel, duration, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.96, PH * 0.96) }, EASE_OUT, DIR_IN) end
@@ -1954,12 +1954,7 @@ function ExodusUI.setup(deps)
     trackConn(UIS:GetPropertyChangedSignal(property):Connect(refreshDevice))
   end
   setSpam(Utils.isManualSpamActive(), true)
-  if _G.ExodusUIReturnAfterUpdate == true then
-    _G.ExodusUIReturnAfterUpdate = nil
-    task.defer(function()
-      if screenGui == currentGui and currentGui.Parent and not UIState.closing and not UIState.panelOpen then togglePanel() end
-    end)
-  end
+  _G.ExodusUIReturnAfterUpdate = nil
   return true
 end
 
