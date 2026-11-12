@@ -262,7 +262,6 @@ local CLOSE_CLASH_PROTECTION_RADII = {
   opponent_distance = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
   ball_distance = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
   client_deflect_reset_late = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
-  -- distant_target: no protection when a different distant target is confirmed.
 }
 
 local CLOSE_CLASH_EXPLICIT_STOPS = {
