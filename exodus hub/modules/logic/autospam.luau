@@ -263,6 +263,9 @@ end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
+  -- A missing ball is a definite end condition, even if the last snapshot is uncertain.
+  local ball = gameInfo.getBall()
+  if not ball or not ball:IsA("BasePart") or not ball.Parent then return "ball_missing" end
   if snapshot and (snapshot.teleported == true or snapshot.locked == true or snapshot.targetUncertain == true) then return nil end
   if s.activatedAt and not s.firstReturnSeen and time - s.activatedAt >= CONFIG.DEACTIVATION.FIRST_RETURN_TIMEOUT then return "first_return_timeout" end
   if gameInfo.getBallFrozen() == true or ballStationaryTooLong(s, time) then return "frozen" end
