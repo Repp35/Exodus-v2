@@ -153,24 +153,17 @@ local function findCompleteLocalRoot()
   return nil
 end
 local function validRevision(value) return type(value) == "string" and #value == 40 and value:match("^[%x]+$") ~= nil end
-
--- Verified incremental delivery (Adler-32 fingerprints)
 local SIGNATURE_ROOT = "Exodus Hub/Signatures"
 local releaseSignatures
 local function fingerprint(source)
   local a, b = 1, 0
   for i = 1, #source do
-    a = (a + string.byte(source, i)) % 65521
-    b = (b + a) % 65521
+    a = (a + string.byte(source, i)) % 65521; b = (b + a) % 65521
   end
   return string.format("%04x%04x", b, a)
 end
-local function signatureFor(path)
-  return type(releaseSignatures) == "table" and releaseSignatures["exodus hub/" .. path] or nil
-end
-local function signatureValid(value)
-  return type(value) == "string" and #value == 8 and value:match("^[%x]+$") ~= nil
-end
+local function signatureFor(path) return type(releaseSignatures) == "table" and releaseSignatures["exodus hub/" .. path] or nil end
+local function signatureValid(value) return type(value) == "string" and #value == 8 and value:match("^[%x]+$") ~= nil end
 local function storedSource(signature, relativePath)
   if not signatureValid(signature) or type(isfile) ~= "function" or type(readfile) ~= "function" then return nil end
   local path = SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath
@@ -181,8 +174,7 @@ local function storeSource(signature, relativePath, source)
   if type(writefile) ~= "function" or type(makefolder) ~= "function" or type(isfolder) ~= "function" then return end
   if fingerprint(source) ~= signature then return end
   pcall(function()
-    local root = ""
-    local fullPath = SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath
+    local root = ""; local fullPath = SIGNATURE_ROOT .. "/" .. signature .. "/" .. relativePath
     local directory = fullPath:match("^(.*)/[^/]+$")
     for part in directory:gmatch("[^/]+") do
       root = root == "" and part or (root .. "/" .. part)
@@ -306,10 +298,7 @@ local function loadModule(name, relativePath, url, sourceRoot)
   end
   if source then
     local chunk, compileError = compile(name, source)
-    if chunk and fingerprint(source) == signature then
-      storeSource(signature, relativePath, source)
-      return chunk, nil, sourceKind
-    end
+    if chunk and fingerprint(source) == signature then storeSource(signature, relativePath, source); return chunk, nil, sourceKind end
     if chunk then return nil, "assinatura divergente: " .. relativePath end
     fetchError = compileError
   end
