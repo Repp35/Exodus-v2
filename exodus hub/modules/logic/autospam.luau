@@ -513,6 +513,14 @@ function AutoSpam.bindCharacter(character)
   track(s, runService.Heartbeat, function()
     if current ~= s then return end
     local time = now()
+    -- Evaluate persistent cooldown on every heartbeat, independently of ball packets or lobby state.
+    if s.active and s.activatedAt then
+      local cooldownSnapshot = gameInfo.getSnapshotAt(time)
+      local cooldownSpeed = cooldownSnapshot and snapshotSpeed(cooldownSnapshot)
+      if gameInfo.isClientDeflectResetLate(s.activatedAt, cooldownSpeed) then
+        stop(s, "client_deflect_reset_late", cooldownSnapshot, time)
+      end
+    end
     if (not haunterConnection or not haunterConnection.Connected or not haunterRemote.Parent) and time >= nextHaunterCheck then nextHaunterCheck = time + 0.25; connectHaunter() end
     local autoEnabled = utils.getConfigValue("AutoSpam") == true; local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true
     local manualEnabled = utils.isManualSpamActive(); clashStats = clashStatsModule.get()
