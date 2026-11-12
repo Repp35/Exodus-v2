@@ -41,6 +41,7 @@ local showToast
 local showPersistentNotification
 local clearPersistentNotification
 local screenGui
+local informationGui
 local floatingButton
 local floatingButtonStroke
 local clashBall
@@ -507,6 +508,7 @@ local function cleanupUI()
     local oldOverlay = overlay:FindFirstChild("ExodusInformationOverlay")
     if oldOverlay then oldOverlay:Destroy() end
   end
+  informationGui = nil
   clearPersistentNotification("closing"); screenGui = nil
   floatingButton = nil; floatingButtonStroke = nil
   clashBall = nil; parryBall = nil
@@ -1323,33 +1325,65 @@ local function restoreAfterReloadFailure(message)
   if showToast then showToast("Reload failed", true) end
   warn("[Exodus Reload] " .. tostring(message))
 end
-local function fadeOutForReplacement()
-  if not screenGui or not screenGui.Parent or UIState.closing then return end
-  UIState.closing = true; safeCancel(UIState.panelTween)
-  safeCancel(UIState.btnTween); local tweens = {}
-  if configPanel and configPanel.Parent and configPanel.Visible then
-    local tween = twPlay(configPanel, 0.26, { GroupTransparency = 1, Size = UDim2.fromOffset(PW * 0.97, PH * 0.97) }, EASE_OUT, DIR_IN)
-    if tween then tweens[#tweens + 1] = tween end
+local function fadeGuiTree(root, tweens, duration)
+  if not root or not root.Parent then return end
+  local objects = { root }
+  for _, object in ipairs(root:GetDescendants()) do
+    objects[#objects + 1] = object
   end
-  if floatingButton and floatingButton.Parent then
-    local tween = twPlay(floatingButton, 0.26, { BackgroundTransparency = 1, TextTransparency = 1 }, EASE_OUT, DIR_IN)
-    if tween then tweens[#tweens + 1] = tween end
-  end
-  if floatingButtonStroke and floatingButtonStroke.Parent then
-    local tween = twPlay(floatingButtonStroke, 0.26, { Transparency = 1 }, EASE_OUT, DIR_IN)
-    if tween then tweens[#tweens + 1] = tween end
-  end
-  for _, element in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall }) do
-    if element and element.Parent then
-      local tween = twPlay(element, 0.22, {
-        Position = UDim2.new(0, OFFSCREEN_X, element.Position.Y.Scale, element.Position.Y.Offset),
-      }, EASE_OUT, DIR_IN)
+  for _, object in ipairs(objects) do
+    local props = {}
+    if object:IsA("CanvasGroup") then
+      props.GroupTransparency = 1
+    elseif object:IsA("UIStroke") then
+      props.Transparency = 1
+    elseif object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+      props.TextTransparency = 1
+      props.BackgroundTransparency = 1
+    elseif object:IsA("ImageLabel") or object:IsA("ImageButton") then
+      props.ImageTransparency = 1
+      props.BackgroundTransparency = 1
+    elseif object:IsA("ScrollingFrame") then
+      props.BackgroundTransparency = 1
+      props.ScrollBarImageTransparency = 1
+    elseif object:IsA("Frame") or object:IsA("ViewportFrame") then
+      props.BackgroundTransparency = 1
+    end
+    if next(props) then
+      local tween = twPlay(object, duration, props, EASE_OUT, DIR_IN)
       if tween then tweens[#tweens + 1] = tween end
     end
   end
-  local miniTween = showMini(false)
-  if miniTween then tweens[#tweens + 1] = miniTween end
+end
+
+local function fadeOutForReplacement()
+  if not screenGui or not screenGui.Parent or UIState.closing then return end
+  UIState.closing = true
+  safeCancel(UIState.panelTween)
+  safeCancel(UIState.btnTween)
+  local tweens = {}
+
+  fadeGuiTree(screenGui, tweens, 0.26)
+  fadeGuiTree(informationGui, tweens, 0.26)
+
+  if persistentLayer and persistentLayer.Parent then
+    for _, card in ipairs(persistentLayer:GetChildren()) do
+      local key = card:GetAttribute("ExodusNotificationKey")
+      if key ~= "update" then
+        fadeGuiTree(card, tweens, 0.26)
+      end
+    end
+  end
+
   awaitTweens(tweens)
+
+  local oldKeys = {}
+  for _, key in ipairs(persistentOrder) do
+    if key ~= "update" then oldKeys[#oldKeys + 1] = key end
+  end
+  for _, key in ipairs(oldKeys) do
+    clearPersistentNotification(key)
+  end
 end
 local function animateClose(action)
   if UIState.closing then return end
@@ -1459,7 +1493,7 @@ function ExodusUI.setup(deps)
   end
   updateResponsiveScale(); local currentCamera = workspace.CurrentCamera or Camera
   if currentCamera then trackConn(currentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale)) end
-  local informationGui = inst("ScreenGui", {
+  informationGui = inst("ScreenGui", {
     Name = "ExodusInformationOverlay",
     DisplayOrder = 2147483647,
     ResetOnSpawn = false,
