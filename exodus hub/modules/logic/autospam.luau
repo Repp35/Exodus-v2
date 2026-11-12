@@ -795,6 +795,7 @@ AutoSpam.__contract = {
       "getPlayerRawRadius",
       "getBallFrozen",
       "getBall",
+      "getAveragePing",
       "getTargetId",
       "getBallSpeedLimits",
       "getClashContext",
