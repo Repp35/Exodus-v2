@@ -2,6 +2,8 @@
 
 Este documento descreve as interfaces atuais do hub. Os contratos de cada módulo são a fonte única das permissões. O resolvedor fica em `exodus hub/modules/logic/permissions.luau`; o manifesto de arquivos fica em `exodus hub/loader.luau`, que determina a ordem de inicialização automaticamente pelas dependências.
 
+As decisões de composição, estados, animações, acessibilidade e performance da interface ficam em [`docs/UI.md`](UI.md). O `README.md` não é destino de documentação e permanece imutável.
+
 ## Responsabilidades
 
 | Módulo | Responsabilidade |

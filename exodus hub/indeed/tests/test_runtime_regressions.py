@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+REPO = ROOT.parent
 
 
 def read(relative: str) -> str:
@@ -51,6 +52,20 @@ class RuntimeRegressionTests(unittest.TestCase):
         self.assertIn("waitForCompletion()", close)
         self.assertNotIn("task.delay(0.32", close)
         self.assertIn("tween.Completed:Connect", ui)
+
+    def test_ui_uses_shared_motion_and_atomic_page_transitions(self):
+        ui = read("modules/front/ui.luau")
+        self.assertIn("reducedMotion = false", ui)
+        self.assertIn("local PAGE_HEAD_H = CONFIG.PAGE_HEAD_H", ui)
+        self.assertIn("local playTween, _, onComplete = createTweenGroup()", ui)
+        self.assertNotIn("task.delay(0.5, finish)", ui)
+        self.assertNotIn("task.delay(0.3, function()", ui)
+
+    def test_readme_is_the_immutable_original_and_release_doc_is_gone(self):
+        self.assertEqual((REPO / "README.md").read_text(encoding="utf-8"), "# Lá vem o kiddie")
+        self.assertFalse((REPO / "docs" / "PROTECTED_RELEASE.md").exists())
+        self.assertIn("README.md", (REPO / "AGENTS.md").read_text(encoding="utf-8"))
+        self.assertIn("README.md", (REPO / "docs" / "UI.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
