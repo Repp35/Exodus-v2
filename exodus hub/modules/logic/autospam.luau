@@ -267,15 +267,11 @@ local function closeClashProtected(s, time)
   local opponent = gameInfo.getPlayerMotion(s.partner)
   if typeof(opponent) == "Vector3" then
     local distance = (opponent - s.root.Position).Magnitude
-    if distance <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS then
-      s.lastClosePartner, s.lastCloseAt = s.partner, time
-      return true
-    end
+    if distance <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS then s.lastClosePartner, s.lastCloseAt = s.partner, time; return true end
     if s.lastClosePartner == s.partner then s.lastCloseAt = nil end
     return false
   end
-  return s.lastClosePartner == s.partner and finite(s.lastCloseAt)
-    and time - s.lastCloseAt <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_MEMORY_SECONDS
+  return s.lastClosePartner == s.partner and finite(s.lastCloseAt) and time - s.lastCloseAt <= CONFIG.DEACTIVATION.CLOSE_OPPONENT_MEMORY_SECONDS
 end
 local function shouldDeactivate(s, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
@@ -629,7 +625,6 @@ function AutoSpam.bindCharacter(character)
     local liveSnapshot
     if not s.lobbyCheckAt or time - s.lobbyCheckAt >= 0.25 then s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time); s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot) end
     if not s.lobbySnapshotValid then
-      -- Invalid snapshots may reflect packet delay, not a finished match.
       s.lobbySince = s.lobbySince or time
       if time - s.lobbySince >= 1 and not s.active then s.stoppedPartner, s.pending, s.dashSwitchPartner, s.pendingReset = nil, nil, nil, false end
     else
