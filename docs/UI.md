@@ -99,7 +99,10 @@ para serem removidas durante o cleanup.
 - A telemetria de distância e viagem compartilha um único `Heartbeat` e um
   cache de snapshot/status limitado a 50 ms.
 - Quando ambos os indicadores estão ocultos, o Heartbeat retorna sem acessar
-  o jogo ou formatar texto.
+  o jogo ou formatar texto, desde que o indicador de gates também esteja oculto.
+- A opção `Auto Spam gates` exibe os motivos da última ativação e da última
+  desativação efetivas. Os valores começam vazios e são reiniciados ao trocar
+  de personagem; não representam tentativas bloqueadas nem gates protegidos.
 - Partículas e gradientes infinitos não são criados com movimento reduzido.
 - Resize observa somente mudanças de viewport/câmera; a escala é aplicada
   aos três layers da UI.

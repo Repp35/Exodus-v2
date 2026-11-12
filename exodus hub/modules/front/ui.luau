@@ -37,6 +37,7 @@ local UIState = {
   keyCapture = false,
   distanceVisible = false,
   travelVisible = false,
+  gatesVisible = false,
 }
 
 local setSpam
@@ -1251,6 +1252,7 @@ function ExodusUI.setup(deps)
     resize()
   end
   UIState.distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true; UIState.travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true
+  UIState.gatesVisible = Utils.getConfigValue("AutoSpamGatesVisible") == true
   local distanceLabel = inst("TextLabel", {
     Name = "ClashDistance",
     Size = UDim2.fromOffset(1, 1),
@@ -1281,9 +1283,25 @@ function ExodusUI.setup(deps)
     ZIndex = 20,
     Parent = informationGui,
   })
+  local gatesLabel = inst("TextLabel", {
+    Name = "AutoSpamGates",
+    Size = UDim2.fromOffset(1, 1),
+    AnchorPoint = Vector2.new(0, 0.5),
+    Position = UDim2.new(0, CONFIG.VIEWPORT_MARGIN, 0.5, 0),
+    BackgroundColor3 = C.header,
+    BackgroundTransparency = 0.2,
+    Text = "Auto Spam\nActivation: —\nDeactivation: —",
+    TextColor3 = C.text,
+    TextSize = 14,
+    Font = Enum.Font.GothamSemibold,
+    Visible = UIState.gatesVisible,
+    ZIndex = 20,
+    Parent = informationGui,
+  })
   compactInformation(distanceLabel); compactInformation(travelLabel)
-  corner(distanceLabel, 8); corner(travelLabel, 8)
-  local nextTravelUpdate, nextDistanceUpdate = 0, 0; local telemetryAt, telemetryStatus, telemetrySnapshot = -math.huge, nil, nil
+  compactInformation(gatesLabel); corner(distanceLabel, 8)
+  corner(travelLabel, 8); corner(gatesLabel, 8)
+  local nextTravelUpdate, nextDistanceUpdate, nextGatesUpdate = 0, 0, 0; local telemetryAt, telemetryStatus, telemetrySnapshot = -math.huge, nil, nil
   local function validNumber(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
   local function milliseconds(value, fallback) return validNumber(value) and string.format("%.0f ms", math.max(0, value) * 1000) or fallback end
   local function getTelemetry(time)
@@ -1360,7 +1378,7 @@ function ExodusUI.setup(deps)
     if not informationGui.Parent then return end
     if distanceLabel.Visible ~= UIState.distanceVisible then distanceLabel.Visible = UIState.distanceVisible end
     if travelLabel.Visible ~= UIState.travelVisible then travelLabel.Visible = UIState.travelVisible end
-    if not UIState.distanceVisible and not UIState.travelVisible then return end
+    if not UIState.distanceVisible and not UIState.travelVisible and not UIState.gatesVisible then return end
     local time = os.clock()
     local status, snapshot
     if UIState.travelVisible and time >= nextTravelUpdate then
@@ -1371,6 +1389,12 @@ function ExodusUI.setup(deps)
       nextDistanceUpdate = time + 0.1
       if not status then status, snapshot = getTelemetry(time) end
       renderDistance(status, snapshot)
+    end
+    if UIState.gatesVisible and time >= nextGatesUpdate then
+      nextGatesUpdate = time + 0.2
+      if not status then local ok, result = pcall(AutoSpam.getStatus); status = ok and result or nil end
+      local activation = type(status) == "table" and status.lastActivationReason or nil; local deactivation = type(status) == "table" and status.lastStopReason or nil
+      setTextIfChanged(gatesLabel, "Auto Spam\nActivation: " .. tostring(activation or "—") .. "\nDeactivation: " .. tostring(deactivation or "—"))
     end
   end))
   bindInput()
@@ -1982,7 +2006,8 @@ function ExodusUI.setup(deps)
   local autoDashYPos, autoUpDashCard =
     createOffOnCard("Auto Dash (clash)", upDashYPos, autosRight, { configKey = "AutoClashUpDash", toastLabel = "Auto Dash (clash)" })
   local parryYPos = createParryTimingCard(4, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft)
-  local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 4, settingsRight); createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight)
+  local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 4, settingsRight)
+  local gatesYPos = createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight); createToggleCard("Auto Spam gates", "AutoSpamGatesVisible", gatesYPos, settingsRight)
   local function updateAbilityVisibility(enabled)
     for _, card in ipairs({ darkCard, miniDarkCard, jumpCard, miniJumpCard, upDashCard, fierceCard, autoUpDashCard }) do
       if card then card.Visible = enabled end
@@ -2336,6 +2361,7 @@ function ExodusUI.setup(deps)
       if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
       if changes.ClashDistanceVisible ~= nil then UIState.distanceVisible = changes.ClashDistanceVisible == true; distanceLabel.Visible = UIState.distanceVisible end
       if changes.ClashTravelTimeVisible ~= nil then UIState.travelVisible = changes.ClashTravelTimeVisible == true; travelLabel.Visible = UIState.travelVisible end
+      if changes.AutoSpamGatesVisible ~= nil then UIState.gatesVisible = changes.AutoSpamGatesVisible == true; gatesLabel.Visible = UIState.gatesVisible end
       if changes.ManualSpamEnabled ~= nil and UIState.desktop then
         if not changes.ManualSpamEnabled then setSpam(false) end
       end

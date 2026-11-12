@@ -118,6 +118,12 @@ class InternalAPIContracts(unittest.TestCase):
         methods = self.contracts["autodash"]["methods"]["Utils"]
         self.assertTrue({"trackGlobal", "untrackGlobal"}.issubset(methods))
 
+    def test_autospam_status_keeps_activation_and_deactivation_reasons(self):
+        source = self.contracts["autospam"]["source"]
+        self.assertIn("s.lastActivationReason = reason", source)
+        self.assertIn("lastActivationReason = s and s.lastActivationReason or nil", source)
+        self.assertIn("lastStopReason = s and s.lastStopReason or nil", source)
+
     def test_module_dependency_graph_is_acyclic(self):
         visiting, visited = set(), set()
 
