@@ -31,10 +31,7 @@ local CONFIG = {
     MIN_DISTANCE = 20,
     MAX_DISTANCE_REFERENCE = 51,
     MIN_ACTIVE_TIME = 0.1,
-    NEAR_PARTNER_COOLDOWN_MULTIPLIER = 1.3,
     TARGET_RETURN_TIMEOUT = 0.05,
-    PARTNER_RETURN_FALLBACK = 0.1,
-    PARTNER_RETURN_MAX = 0.25,
   },
   SHARED = {
     MIN_RETURN = 1 / 25,
@@ -77,7 +74,6 @@ local function resetExchange(s)
   s.opponentWindow = nil; s.exchangeFrom, s.exchangeTo, s.exchangeAt, s.exchangePartner, s.exchangeReadyAt = nil, nil, nil, nil, nil
   s.pending, s.departedAt, s.departedServerAt, s.departedTo = nil, nil, nil, nil
 end
-local function distanceToPlayer(id) return id and gameInfo.getPlayerDistance(id) or nil end
 local function distanceLimit(snapshot, partner)
   local speed = snapshotSpeed(snapshot)
   if not finite(speed) or speed <= 0 then return nil end
@@ -267,21 +263,7 @@ local function applyDeactivation(s, snapshot, time)
   if not s.active then return false end
   local reason = shouldDeactivate(s, snapshot, time)
   if not reason and s.activatedAt then
-    local speed = snapshot and snapshotSpeed(snapshot); local multiplier = 1
-    if
-      s.partner
-      and snapshot
-      and gameInfo.isSnapshotValid(snapshot)
-      and snapshot.targetUncertain ~= true
-      and not snapshot.teleported
-      and finite(snapshot.syncAt)
-      and time >= snapshot.syncAt
-      and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
-    then
-      local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true); local distance = distanceToPlayer(s.partner)
-      if finite(radius) and finite(distance) and distance <= radius then multiplier = CONFIG.DEACTIVATION.NEAR_PARTNER_COOLDOWN_MULTIPLIER end
-    end
-    local resetLate = gameInfo.isClientDeflectResetLate(s.activatedAt, speed, multiplier)
+    local speed = snapshot and snapshotSpeed(snapshot); local resetLate = gameInfo.isClientDeflectResetLate(s.activatedAt, speed)
     if resetLate and time - s.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then reason = "client_deflect_reset_late" end
   end
   if not reason then return false end
@@ -294,24 +276,7 @@ end
 local function enforceTargetReturnTimeout(s, snapshot, time)
   if not s.active or not s.activatedAt or not s.targetAwaySince then return false end
   if time - s.activatedAt < CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then return false end
-  local timeout = CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT
-  if
-    s.partner
-    and snapshot
-    and snapshot.targetId == s.partner
-    and snapshot.targetUncertain ~= true
-    and not snapshot.teleported
-    and finite(snapshot.syncAt)
-    and time >= snapshot.syncAt
-    and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE
-  then
-    local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, snapshotSpeed(snapshot), true); local distance = distanceToPlayer(s.partner)
-    if finite(radius) and finite(distance) and distance <= radius then
-      local interval = clashStats and not clashStats.frozen and clashStats.partnerId == s.partner and clashStats.cycleInterval
-      timeout = finite(interval) and math.clamp(interval, timeout, CONFIG.DEACTIVATION.PARTNER_RETURN_MAX) or CONFIG.DEACTIVATION.PARTNER_RETURN_FALLBACK
-    end
-  end
-  if time - s.targetAwaySince < timeout then return false end
+  if time - s.targetAwaySince < CONFIG.DEACTIVATION.TARGET_RETURN_TIMEOUT then return false end
   return stop(s, "target_return_timeout", snapshot, time)
 end
 
@@ -787,7 +752,6 @@ AutoSpam.__contract = {
       "areAbilitiesEnabled",
       "getSnapshotAt",
       "isSnapshotValid",
-      "getPlayerDistance",
       "getPlayerMotion",
       "getHaunterEvent",
       "getDeflectGeometry",
