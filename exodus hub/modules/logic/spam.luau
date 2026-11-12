@@ -42,7 +42,7 @@ end
 local function request(boundUtils, boundRemote, token, guard, minimum)
   if inFlight then return end
   inFlight = true; status.lastRequestAt = os.clock()
-  local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard); nextAllowedAt = os.clock() + minimum
+  local ok, result, detail = xpcall(boundRemote.fireParry, traceback, boundUtils.isManualSpamActive() and "manual" or 1, guard); nextAllowedAt = os.clock() + minimum
   inFlight = false
   if not ok then error(result, 0) end
   if token ~= generation or utils ~= boundUtils then return end
@@ -75,7 +75,8 @@ local function sync()
         local time = os.clock(); local minimum = boundGameInfo.getMinimumSpamInterval()
         local interval = mode ~= "Auto" and math.max(1 / (mode == "CPF" and rate * 60 or rate), minimum) or nil
         if interval then due = math.max(due, time - CONFIG.MAX_DELAY_DEBT) end
-        local gameDelay = boundGameInfo.getAutoSpamDelay()
+        local manualOnly = boundUtils.isManualSpamActive()
+        local gameDelay = manualOnly and 0 or boundGameInfo.getAutoSpamDelay()
         if inFlight or (mode == "Auto" and gameDelay == nil) then
           task.wait(CONFIG.POLL_INTERVAL)
         else
