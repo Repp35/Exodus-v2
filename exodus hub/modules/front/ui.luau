@@ -496,16 +496,22 @@ local function showMini(v)
   end)
   if not tween then miniGui.Visible = false end
 end
-setSpam = function(v)
-  UIState.spamOn = v; Utils.setManualSpamActive(v)
+local function paintManualSpam()
   local spamButton = miniGui and miniGui:FindFirstChild("SpamButton")
-  if spamButton then
-    spamButton.Text = v and "ON" or "OFF"; twPlay(spamButton, CONFIG.MOTION.STANDARD, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT)
-    twPlay(spamButton, CONFIG.MOTION.FAST, { Size = UDim2.new(1, -22, 0, 44) }, EASE_SINE, DIR_OUT, function()
-      if spamButton.Parent then twPlay(spamButton, CONFIG.MOTION.STANDARD, { Size = UDim2.new(1, -16, 0, 48) }, EASE_BACK, DIR_OUT) end
-    end)
-  end
+  if not spamButton then return end
+  local active = UIState.spamOn == true
+  spamButton.Text = active and "ON" or "OFF"
+  -- Set the state color directly so overlapping tweens cannot leave the wrong color.
+  spamButton.BackgroundColor3 = active and C.green or C.red
 end
+setSpam = function(v)
+  v = v == true
+  UIState.spamOn = v
+  Utils.setManualSpamActive(v)
+  UIState.spamOn = Utils.isManualSpamActive()
+  paintManualSpam()
+end
+
 local PW, PH = CONFIG.PANEL_W, CONFIG.PANEL_H
 local TITLE_H, PAD, GAP, CARD_GAP = CONFIG.TITLE_H, CONFIG.PAD, CONFIG.GAP, CONFIG.CARD_GAP
 local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = CONFIG.INNER_PAD, CONFIG.CARD_H, CONFIG.RATE_CARD_H, CONFIG.SPAM_CARD_H
@@ -2335,7 +2341,8 @@ function ExodusUI.setup(deps)
   if type(Utils.observeSpam) == "function" then
     trackConn(Utils.observeSpam(function()
       local manual = Utils.isManualSpamActive()
-      if UIState.spamOn ~= manual then setSpam(manual) end
+      UIState.spamOn = manual
+      paintManualSpam()
     end))
   end
   if type(Utils.observeConfig) == "function" then
