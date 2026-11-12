@@ -103,6 +103,7 @@ local CONFIG = {
     { name = "movement", path = "modules/logic/movement.luau" },
     { name = "autojump", path = "modules/logic/extras/autojump.luau" },
     { name = "camera", path = "modules/logic/extras/camera.luau" },
+    { name = "universal", path = "modules/logic/universal.luau" },
     { name = "remote", path = "modules/logic/remote.luau" },
     { name = "autofierce", path = "modules/logic/extras/autofierce.luau" },
     { name = "autoparry", path = "modules/logic/autoparry.luau" },
@@ -280,6 +281,7 @@ local function stopPreviousRuntime()
   end
   if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then attempt("gameinfo", Modules.gameinfo.stopMaintenance) end
   for _, name in ipairs({
+    "universal",
     "dumper",
     "character",
     "spam",
@@ -730,6 +732,18 @@ local function startInternal()
     onUpDash = function()
       local ok, err = loaded.movement.upDash()
       if not ok then utils.recordError("UpDash", err or "Dash indisponível") end
+    end,
+    onUniversalToggle = function(feature, enabled)
+      local ok, err = loaded.universal.setEnabled(feature, enabled)
+      if not ok then utils.recordError("Universal." .. tostring(feature), err or "falha ao alterar recurso") end
+    end,
+    onUniversalValue = function(feature, value)
+      local ok, err = loaded.universal.setValue(feature, value)
+      if not ok then utils.recordError("Universal." .. tostring(feature), err or "falha ao alterar valor") end
+    end,
+    onUniversalAction = function(feature)
+      local ok, err = loaded.universal.activate(feature)
+      if not ok then utils.recordError("Universal." .. tostring(feature), err or "falha ao executar ação") end
     end,
     onPanic = function()
       loaded.autoparry.resetState(); loaded.autospam.stopSpam()

@@ -7,6 +7,7 @@ local UIConfig
 local GameInfo
 local AutoSpam
 local Dumper
+local Universal
 local Controls = {}
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -601,10 +602,10 @@ local function addCardHitbox(card, height, callback)
   end))
   return button
 end
-local function cardLabel(text, parent)
+local function cardLabel(text, parent, yPos)
   inst("TextLabel", {
     Size = UDim2.new(1, -10, 0, 16),
-    Position = UDim2.new(0, 10, 0, 5),
+    Position = UDim2.new(0, 10, 0, yPos or 5),
     BackgroundTransparency = 1,
     Text = text,
     TextColor3 = C.accent,
@@ -1050,6 +1051,56 @@ local function createClickCard(option, yPos, parent, onActivate)
   end)
   return nextCardY(yPos, height), f
 end
+local function createScrollCard(option, yPos, parent, onChange)
+  local _, description = optionInfo(option); local height = description and 88 or 68
+  local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, -112)
+  local minValue, maxValue = tonumber(option.min) or 0, tonumber(option.max) or 100
+  local increment = tonumber(option.increment) or 1
+  local current = tonumber(Utils.getConfigValue(option.key)) or minValue
+  local valueLabel = inst("TextLabel", {
+    Size = UDim2.fromOffset(92, 18), Position = UDim2.new(1, -106, 0, 7),
+    BackgroundTransparency = 1, TextColor3 = C.text, TextSize = 10,
+    Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 9, Parent = f,
+  })
+  local track = inst("Frame", {
+    Size = UDim2.new(1, -28, 0, 6), Position = UDim2.new(0, 14, 1, -17),
+    BackgroundColor3 = C.inputBg, BorderSizePixel = 0, ZIndex = 8, Parent = f,
+  })
+  corner(track, 999); stroke(track, C.border, 1)
+  local fill = inst("Frame", { Size = UDim2.new(), BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 9, Parent = track }); corner(fill)
+  local knob = inst("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = C.text, BorderSizePixel = 0, ZIndex = 10, Parent = track }); corner(knob, 999); stroke(knob, C.accent, 1)
+  local hitbox = inst("TextButton", {
+    Name = "ScrollHitbox", Size = UDim2.new(1, 0, 0, 26), Position = UDim2.new(0, 0, 1, -27),
+    BackgroundTransparency = 1, BorderSizePixel = 0, AutoButtonColor = false, Text = "", ZIndex = 11, Parent = f,
+  })
+  local dragInput
+  local function applyValue(value, notify)
+    local range = math.max(0, maxValue - minValue)
+    local stepped = range > 0 and minValue + math.clamp(math.floor((value - minValue) / increment + 0.5) * increment, 0, range) or minValue
+    stepped = math.clamp(stepped, minValue, maxValue); local alpha = range > 0 and (stepped - minValue) / range or 0
+    fill.Size = UDim2.new(alpha, 0, 1, 0); knob.Position = UDim2.new(alpha, 0, 0.5, 0)
+    local rounded = math.floor(stepped * 100 + 0.5) / 100; local suffix = tostring(option.valueName or "")
+    valueLabel.Text = tostring(rounded) .. (suffix ~= "" and " " .. suffix or ""); setConfigValue(option.key, stepped)
+    if notify and onChange then onChange(stepped) end
+  end
+  local function applyInput(input)
+    local width = math.max(1, track.AbsoluteSize.X)
+    applyValue(minValue + (maxValue - minValue) * math.clamp((input.Position.X - track.AbsolutePosition.X) / width, 0, 1), true)
+  end
+  local dragInput
+  trackConn(hitbox.InputBegan:Connect(function(input)
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    dragInput = input; applyInput(input)
+  end))
+  trackConn(UIS.InputChanged:Connect(function(input)
+    if not dragInput then return end
+    local mouseDrag = dragInput.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseMovement
+    local touchDrag = dragInput.UserInputType == Enum.UserInputType.Touch and input == dragInput
+    if mouseDrag or touchDrag then applyInput(input) end
+  end))
+  trackConn(UIS.InputEnded:Connect(function(input) if input == dragInput then dragInput = nil end end))
+  applyValue(current, false); return nextCardY(yPos, height), f
+end
 local function createActionShortcutCard(option, yPos, parent, configKey, onActivate)
   local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
   local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, -148)
@@ -1369,12 +1420,17 @@ function ExodusUI.setup(deps)
     or type(deps.Dumper) ~= "table"
     or type(deps.Dumper.start) ~= "function"
     or type(deps.Dumper.isRunning) ~= "function"
+    or type(deps.Universal) ~= "table"
+    or type(deps.Universal.setEnabled) ~= "function"
+    or type(deps.Universal.setValue) ~= "function"
+    or type(deps.Universal.activate) ~= "function"
   then
     return false, "missing dependency: Utils, Controls, UIConfig, GameInfo, AutoSpam or Dumper"
   end
   Utils = deps.Utils; UIConfig = deps.UIConfig
   GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam
-  Dumper = deps.Dumper; Controls = type(deps.Controls) == "table" and deps.Controls or {}
+  Dumper = deps.Dumper; Universal = deps.Universal
+  Controls = type(deps.Controls) == "table" and deps.Controls or {}
   local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
   if type(_G.ExodusUICleanup) == "function" then
     if type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
@@ -2101,11 +2157,30 @@ function ExodusUI.setup(deps)
       if showPersistentNotification then showPersistentNotification("Dumper is already running.", "dumper", "warning", 2.0) end
     end
   end
-  cardLabel("Developer Tools", indeedContent); local indeedY = 26
+  local indeedY = 5
   local indeedPage = UIConfig.pages.indeed
-  if type(indeedPage) == "table" and type(indeedPage.components) == "table" then
-    for _, definition in ipairs(indeedPage.components) do
-      if definition.kind == "click" and definition.action == "dumper" then indeedY = createClickCard(definition, indeedY, indeedContent, runDumper) end
+  local function renderIndeedComponent(definition, yPos)
+    if definition.kind == "click" then
+      local action = definition.action == "dumper" and runDumper or function()
+        if type(Controls.onUniversalAction) == "function" then Controls.onUniversalAction(definition.action) end
+      end
+      return createClickCard(definition, yPos, indeedContent, action)
+    elseif definition.kind == "toggle" then
+      return createToggleCard(definition, definition.key, yPos, indeedContent, function(enabled)
+        if type(Controls.onUniversalToggle) == "function" then Controls.onUniversalToggle(definition.feature, enabled) end
+      end)
+    elseif definition.kind == "scroll" then
+      return createScrollCard(definition, yPos, indeedContent, function(value)
+        if type(Controls.onUniversalValue) == "function" then Controls.onUniversalValue(definition.feature, value) end
+      end)
+    end
+    return yPos
+  end
+  if type(indeedPage) == "table" and type(indeedPage.sections) == "table" then
+    for _, section in ipairs(indeedPage.sections) do
+      cardLabel(section.title or "Controls", indeedContent, indeedY); indeedY += 24
+      for _, definition in ipairs(section.components or {}) do indeedY = renderIndeedComponent(definition, indeedY) end
+      indeedY += CARD_GAP
     end
   end
   indeedContent.CanvasSize = UDim2.fromOffset(0, indeedY + CARD_GAP); cardLabel("Automatic Abilities", autosLeft)
@@ -2507,6 +2582,7 @@ ExodusUI.__contract = {
     GameInfo = "gameinfo",
     AutoSpam = "autospam",
     Dumper = "dumper",
+    Universal = "universal",
   },
   requiresMethods = {
     Utils = {
@@ -2537,6 +2613,7 @@ ExodusUI.__contract = {
     },
     AutoSpam = { "getStatus" },
     Dumper = { "start", "isRunning" },
+    Universal = { "setEnabled", "setValue", "activate" },
   },
   requiresData = { UIConfig = { "panelToggles", "panelComponents", "pages" } },
   provides = { "setup" },

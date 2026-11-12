@@ -52,12 +52,28 @@ local CONFIG = {
   PAGES = {
     indeed = {
       title = "Indeed",
-      components = {
+      sections = {
         {
-          kind = "click",
-          title = "Dumper",
-          description = "Salva scripts e informações acessíveis do jogo.",
-          action = "dumper",
+          title = "Developer Tools",
+          components = {
+            {
+              kind = "click",
+              title = "Dumper",
+              description = "Salva scripts e informações acessíveis do jogo.",
+              action = "dumper",
+            },
+          },
+        },
+        {
+          title = "Universal Controls",
+          components = {
+            { kind = "click", title = "Lay", description = "Deita o personagem.", action = "Lay" },
+            { kind = "toggle", title = "Infinite Jump", description = "Permite pular no ar.", key = "UniversalInfiniteJump", feature = "InfiniteJump" },
+            { kind = "toggle", title = "Fly", description = "Permite voar livremente.", key = "UniversalFly", feature = "Fly" },
+            { kind = "scroll", title = "Gravity", description = "Ajusta a gravidade do personagem.", key = "UniversalGravity", feature = "Gravity", min = 0, max = 400, increment = 1, valueName = "studs/s²" },
+            { kind = "toggle", title = "Invisicam", description = "Remove o personagem da visão da câmera.", key = "UniversalInvisicam", feature = "Invisicam" },
+            { kind = "toggle", title = "Noclip", description = "Permite atravessar objetos.", key = "UniversalNoclip", feature = "Noclip" },
+          },
         },
       },
     },
@@ -83,6 +99,13 @@ local CONFIG = {
       ClashDistanceVisible = "boolean",
       ClashTravelTimeVisible = "boolean",
       ClashGateInfoVisible = "boolean",
+      UniversalInfiniteJump = "boolean",
+      UniversalFly = "boolean",
+      UniversalFlySpeed = "rate",
+      UniversalInvisicam = "boolean",
+      UniversalNoclip = "boolean",
+      UniversalGravityEnabled = "boolean",
+      UniversalGravity = "rate",
       MiniSpamVisible = "boolean",
       DarkBallVisible = "boolean",
       JumpBallVisible = "boolean",
@@ -131,6 +154,13 @@ local CONFIG = {
       ClashDistanceVisible = false,
       ClashTravelTimeVisible = false,
       ClashGateInfoVisible = false,
+      UniversalInfiniteJump = false,
+      UniversalFly = false,
+      UniversalFlySpeed = 1,
+      UniversalInvisicam = false,
+      UniversalNoclip = false,
+      UniversalGravityEnabled = false,
+      UniversalGravity = 196.2,
       MiniSpamVisible = false,
       DarkBallVisible = false,
       JumpBallVisible = false,
