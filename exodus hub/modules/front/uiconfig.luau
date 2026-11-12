@@ -8,23 +8,27 @@ local CONFIG = {
   PANEL_TOGGLES = {
     {
       kind = "toggle",
-      label = "Auto Parry",
+      title = "Auto Parry",
+      description = "Automatically deflect incoming attacks.",
       key = "AutoParry",
     },
     {
       kind = "toggle",
-      label = "Mini Parry UI",
+      title = "Mini Parry UI",
+      description = "Show the compact Auto Parry control.",
       key = "ParryBallVisible",
       mobileOnly = true,
     },
     {
       kind = "toggle",
-      label = "Auto Spam",
+      title = "Auto Spam",
+      description = "Enable automatic clash spam.",
       key = "AutoSpam",
     },
     {
       kind = "toggle",
-      label = "Mini Clash UI",
+      title = "Mini Clash UI",
+      description = "Show the compact Auto Spam control.",
       key = "ClashBallVisible",
       mobileOnly = true,
     },
@@ -32,17 +36,37 @@ local CONFIG = {
   PANEL_COMPONENTS = {
     {
       kind = "rate_selector",
+      title = "Spam Rate",
+      description = "Choose the spam rate mode and value.",
     },
     {
       kind = "keybind_selector",
+      title = "Stop Functions",
+      description = "Assign a shortcut that stops active functions.",
     },
     {
-      kind = "off_on",
-      label = "Manual Spam",
+      kind = "toggle",
+      control = "status",
+      title = "Manual Spam",
+      description = "Show or enable the manual spam control.",
       mobileKey = "MiniSpamVisible",
       desktopKey = "ManualSpamEnabled",
       shortcutKey = "SpamKeybind",
       mobileToast = "Manual Spam UI",
+    },
+  },
+  PAGES = {
+    indeed = {
+      title = "Indeed",
+      components = {
+        {
+          kind = "click",
+          title = "Dumper",
+          description = "Capture accessible client scripts, remotes and metadata.",
+          action = "dumper",
+          actionText = "Run",
+        },
+      },
     },
   },
   SETTINGS = {
@@ -136,12 +160,13 @@ local CONFIG = {
 -- public-api
 UIConfig.panelToggles = CONFIG.PANEL_TOGGLES
 UIConfig.panelComponents = CONFIG.PANEL_COMPONENTS
+UIConfig.pages = CONFIG.PAGES
 UIConfig.__config = CONFIG.SETTINGS
 
 -- contract
 UIConfig.__contract = {
   provides = {},
-  data = { "panelToggles", "panelComponents" },
+  data = { "panelToggles", "panelComponents", "pages" },
   requires = {},
 }
 

@@ -2,7 +2,7 @@
 
 -- module
 local AutoDash = {}
-local utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService
+local utils, gameInfo, dash, movement, autoSpam, localPlayer, runService
 local root, heartbeat
 local inFlight, handledSignals = nil, {}
 
@@ -90,8 +90,8 @@ end
 function AutoDash.setup(deps)
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.Dash or not deps.Movement or not deps.AutoSpam then return false, "dependências ausentes" end
   AutoDash.teardown(); utils, gameInfo, dash, movement, autoSpam = deps.Utils, deps.GameInfo, deps.Dash, deps.Movement, deps.AutoSpam
-  players, localPlayer, runService = utils.getPlayers(), utils.getLocalPlayer(), utils.getRunService()
-  if not players or not localPlayer or not runService then return false, "serviços indisponíveis" end
+  localPlayer, runService = utils.getLocalPlayer(), utils.getRunService()
+  if not localPlayer or not runService then return false, "serviços indisponíveis" end
   dash.setHandler(onDash); return true
 end
 
@@ -117,7 +117,7 @@ end
 function AutoDash.teardown()
   AutoDash.detachCharacter()
   if dash then dash.setHandler(nil) end
-  utils, gameInfo, dash, movement, autoSpam, players, localPlayer, runService = nil, nil, nil, nil, nil, nil, nil, nil
+  utils, gameInfo, dash, movement, autoSpam, localPlayer, runService = nil, nil, nil, nil, nil, nil, nil
 end
 
 -- contract
@@ -131,7 +131,6 @@ AutoDash.__contract = {
   },
   requiresMethods = {
     Utils = {
-      "getPlayers",
       "getLocalPlayer",
       "getRunService",
       "getConfigValue",

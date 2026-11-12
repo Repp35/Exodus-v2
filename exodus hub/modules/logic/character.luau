@@ -73,9 +73,8 @@ local function startWorker()
   if workerRunning then return end
   workerRunning = true
   task.spawn(function()
-    while currentLife and not currentLife.attempted do
-      bindLife(currentLife)
-    end
+    local life = currentLife
+    if life then bindLife(life) end
     workerRunning = false
     if currentLife and not currentLife.attempted then startWorker() end
   end)

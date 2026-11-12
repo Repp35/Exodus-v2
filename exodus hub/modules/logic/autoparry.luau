@@ -3,6 +3,7 @@
 -- module
 local AutoParry = {}
 local utils, gameInfo, remote
+local cooldownSnapshot, cooldownSnapshotAt = nil, -math.huge
 local state = {
   phase = "detached",
   reason = "initial",
@@ -72,6 +73,7 @@ local CONFIG = {
   TRAINING_MIN_CLOSING_SPEED = 1,
   TRAINING_WINDOW_SLOW = 0.85,
   TRAINING_WINDOW_FAST = 0.2,
+  COOLDOWN_CACHE_INTERVAL = 1 / 240,
 }
 
 -- helpers
@@ -102,8 +104,8 @@ local function resetTracking()
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.trainingRound, state.trainingBall = nil, nil; state.nextAttemptAt = 0
-  state.lastPosition, state.lastSampleAt = nil, 0; table.clear(state.clicks)
-  table.clear(state.returns)
+  state.lastPosition, state.lastSampleAt = nil, 0; cooldownSnapshot, cooldownSnapshotAt = nil, -math.huge
+  table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -131,18 +133,15 @@ end
 local function configuredFactor()
   local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, CONFIG.MAX_WINDOW_FACTOR) or CONFIG.DEFAULT_WINDOW_FACTOR
 end
-local function factorForCps(_) return configuredFactor() end
 local function activeWindowFactor(at)
   local cps = state.autoParryCps
   if state.lastAutoParryClickAt and finite(at) and at > state.lastAutoParryClickAt then local interval = at - state.lastAutoParryClickAt; cps = interval > 0 and 1 / interval or math.huge end
-  state.windowFactor = math.clamp(factorForCps(cps), 0, CONFIG.MAX_WINDOW_FACTOR); return state.windowFactor
+  state.windowFactor = math.clamp(configuredFactor(), 0, CONFIG.MAX_WINDOW_FACTOR); return state.windowFactor
 end
 local function recordAutoParryRequest()
   local now, previous = clock(), state.lastAutoParryClickAt; local interval = previous and now - previous or nil
-  state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0
-  state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(factorForCps(state.autoParryCps), 0, CONFIG.MAX_WINDOW_FACTOR)
+  state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt, state.windowFactor = now, math.clamp(configuredFactor(), 0, CONFIG.MAX_WINDOW_FACTOR)
 end
-local function minimumBallSpeed() return CONFIG.MIN_PARRY_SPEED end
 local function trainingGeometry(speed, factor)
   speed = finite(speed) and math.max(speed, CONFIG.TRAINING_BASE_SPEED) or CONFIG.TRAINING_BASE_SPEED; local span = CONFIG.TRAINING_MAX_SPEED - CONFIG.TRAINING_BASE_SPEED
   local progress = span > 0 and math.clamp((speed - CONFIG.TRAINING_BASE_SPEED) / span, 0, 1) or 1
@@ -243,7 +242,11 @@ end
 -- parry
 local function safeCooldown()
   if not gameInfo or type(gameInfo.getDeflectCooldownState) ~= "function" then return nil end
-  local ok, value = pcall(gameInfo.getDeflectCooldownState); return ok and type(value) == "table" and value or nil
+  local time = clock()
+  if cooldownSnapshot and time >= cooldownSnapshotAt and time - cooldownSnapshotAt < CONFIG.COOLDOWN_CACHE_INTERVAL then return cooldownSnapshot end
+  local ok, value = pcall(gameInfo.getDeflectCooldownState)
+  if ok and type(value) == "table" then cooldownSnapshot, cooldownSnapshotAt = value, time; return value end
+  cooldownSnapshot, cooldownSnapshotAt = nil, time; return nil
 end
 local function request(reason)
   local now = clock(); local redirectReturn = reason == "redirect_return"
@@ -538,7 +541,7 @@ function AutoParry.getTiming(value, time, root, factor, baseWindow)
     timeToRange = timeToRange,
     timeToTrigger = timeToTrigger,
     tti = timeToTrigger,
-    approaching = closing > 0 and speed >= minimumBallSpeed(),
+    approaching = closing > 0 and speed >= CONFIG.MIN_PARRY_SPEED,
     targeted = value.targeted == true,
   }
 end
@@ -660,7 +663,7 @@ function AutoParry.getStatus()
       baseWindow = geometry.deflectWindow,
       defaultWindowFactor = CONFIG.DEFAULT_WINDOW_FACTOR,
       windowFactorRange = { min = 0, max = CONFIG.MAX_WINDOW_FACTOR },
-      minBallSpeed = minimumBallSpeed(),
+      minBallSpeed = CONFIG.MIN_PARRY_SPEED,
     },
     timestamp = clock(),
   }

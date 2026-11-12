@@ -143,3 +143,17 @@ jobs:
       - name: Deploy protected distribution
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Notify live clients
+        env:
+          REVISION: \${{ github.sha }}
+          UPDATE_TOPIC: exodus-v2-live-9f36c3d1e8b24a7c
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            -X POST \
+            -H "Title: Exodus update" \
+            -H "Content-Type: text/plain" \
+            --data "\${REVISION}" \
+            "https://ntfy.sh/\${UPDATE_TOPIC}"
