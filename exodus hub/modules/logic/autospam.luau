@@ -250,10 +250,10 @@ local function shouldDeactivate(s, snapshot, time)
     or age < 0
     or age > CONFIG.SHARED.SNAPSHOT_MAX_AGE
   then
-    return nil
+    return "invalid_or_stale_ball"
   end
   local target = userId(snapshot.targetId)
-  if not target then return nil end
+  if not target then return "target_unavailable" end
   if target ~= localPlayer.UserId and target ~= s.partner then
     local position = gameInfo.getPlayerMotion(target); local limit = distanceLimit(snapshot, target)
     if limit and s.root and s.root.Parent and typeof(position) == "Vector3" and (position - s.root.Position).Magnitude > limit then return "distant_target" end
@@ -543,6 +543,7 @@ function AutoSpam.bindCharacter(character)
     local liveSnapshot
     if not s.lobbyCheckAt or time - s.lobbyCheckAt >= 0.25 then s.lobbyCheckAt, liveSnapshot = time, gameInfo.getSnapshotAt(time); s.lobbySnapshotValid = gameInfo.isSnapshotValid(liveSnapshot) end
     if not s.lobbySnapshotValid then
+      if s.active then stop(s, "match_not_ready") end
       s.lobbySince = s.lobbySince or time
       if time - s.lobbySince >= 1 and not s.active then s.stoppedPartner, s.pending, s.dashSwitchPartner, s.pendingReset = nil, nil, nil, false end
     else
