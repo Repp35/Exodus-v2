@@ -263,7 +263,7 @@ local function applyDeactivation(s, snapshot, time)
   local reason = shouldDeactivate(s, snapshot, time)
   if not reason and s.activatedAt then
     local speed = snapshot and snapshotSpeed(snapshot); local resetLate = gameInfo.isClientDeflectResetLate(s.activatedAt, speed)
-    if resetLate and time - s.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME then reason = "client_deflect_reset_late" end
+    if resetLate then reason = "client_deflect_reset_late" end
   end
   if not reason then return false end
   return stop(s, reason, snapshot, time)
