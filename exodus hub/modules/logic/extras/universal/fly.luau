@@ -15,7 +15,6 @@ local RunService = game:GetService("RunService")
 local states = { Fly = false }
 local flyCharacter, flyHumanoid, flyRoot, flyVelocity, flyGyro
 local flyPlatformStand, flyAutoRotate
-local playerControls, flyGui
 local controls = { Forward = 0, Backward = 0, Left = 0, Right = 0, Up = 0, Down = 0 }
 local bindings = {
   [Enum.KeyCode.W] = { "Forward", 1 }, [Enum.KeyCode.S] = { "Backward", -1 },
@@ -63,55 +62,14 @@ local function flyCharacterReady()
   end
   return humanoid
 end
-local function getPlayerControls()
-  if playerControls then return playerControls end
-  local player = Utils.getLocalPlayer(); local scripts = player and player:FindFirstChild("PlayerScripts")
-  local module = scripts and scripts:FindFirstChild("PlayerModule")
-  if not module then return nil end
-  local ok, value = pcall(require, module)
-  if ok and type(value) == "table" and type(value.GetControls) == "function" then
-    local ready, result = pcall(value.GetControls, value)
-    if ready and result and type(result.GetMoveVector) == "function" then playerControls = result end
-  end
-  return playerControls
-end
-local function makeFlyButtons()
-  if not UIS.TouchEnabled then return end
-  local player = Utils.getLocalPlayer(); local playerGui = player and player:FindFirstChildOfClass("PlayerGui")
-  if not playerGui then return end
-  flyGui = Instance.new("ScreenGui"); flyGui.Name = "ExodusFlyControls"; flyGui.ResetOnSpawn = false; flyGui.Parent = playerGui
-  for index, entry in ipairs({ { "Up", "▲", 1 }, { "Down", "▼", -1 } }) do
-    local button = Instance.new("TextButton"); button.Name = entry[1]; button.Text = entry[2]
-    button.Size = UDim2.fromOffset(48, 48); button.Position = UDim2.new(1, -115, 0.5, (index - 1) * 54 - 55)
-    button.BackgroundColor3 = Color3.fromRGB(38, 38, 50); button.BackgroundTransparency = 0.2
-    button.TextColor3 = Color3.new(1, 1, 1); button.TextScaled = true; button.Parent = flyGui
-    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(1, 0); corner.Parent = button
-    connect("FlyButtonBegan" .. entry[1], button.InputBegan, function(input)
-      if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then controls[entry[1]] = entry[3] end
-    end)
-    connect("FlyButtonEnded" .. entry[1], button.InputEnded, function(input)
-      if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then controls[entry[1]] = 0 end
-    end)
-  end
-end
 local function updateFly()
   if not states.Fly then return end
   local humanoid = flyCharacterReady(); local camera = Workspace.CurrentCamera
   if not humanoid or not camera then return end
-  local controller = getPlayerControls()
-  local movement = controller and controller:GetMoveVector() or Vector3.zero
-  local direction
-  if movement.Magnitude > 0 then
-    local forward = Vector3.new(camera.CFrame.LookVector.X, 0, camera.CFrame.LookVector.Z)
-    local right = Vector3.new(camera.CFrame.RightVector.X, 0, camera.CFrame.RightVector.Z)
-    if forward.Magnitude > 0 then forward = forward.Unit end
-    if right.Magnitude > 0 then right = right.Unit end
-    direction = right * movement.X - forward * movement.Z
-  else
-    direction = camera.CFrame.LookVector * (controls.Forward + controls.Backward)
+  local direction = UIS.TouchEnabled and camera.CFrame.LookVector
+    or camera.CFrame.LookVector * (controls.Forward + controls.Backward)
       + camera.CFrame.RightVector * (controls.Left + controls.Right)
-  end
-  direction += Vector3.new(0, controls.Up + controls.Down, 0)
+      + Vector3.new(0, controls.Up + controls.Down, 0)
   if direction.Magnitude > 1 then direction = direction.Unit end
   flyVelocity.Velocity = direction * (tonumber(Utils.getConfigValue("UniversalFlySpeed")) or 1) * 50
   flyGyro.CFrame = camera.CFrame; humanoid.PlatformStand = true; humanoid.AutoRotate = false
@@ -123,11 +81,11 @@ local function startFly()
   connect("FlyEnded", UIS.InputEnded, function(input)
     local binding = bindings[input.KeyCode]; if binding then controls[binding[1]] = 0 end
   end)
-  makeFlyButtons(); connect("FlyFocus", UIS.WindowFocusReleased, clearControls)
+  connect("FlyFocus", UIS.WindowFocusReleased, clearControls)
   connect("FlyStep", RunService.RenderStepped, updateFly); return true
 end
 local function stopFly()
-  disconnectPrefix("Fly"); clearControls(); detachFly(); destroy(flyGui); flyGui = nil; playerControls = nil; return true
+  disconnectPrefix("Fly"); clearControls(); detachFly(); return true
 end
 
 
