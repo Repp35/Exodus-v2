@@ -311,8 +311,8 @@ function Utils.stop()
   local previous = state.lifecycle.phase; local wasActive = state.active
   local shutdownReason = _G.ExodusShutdownReason
   if type(_G.ExodusUpdateStop) == "function" then pcall(_G.ExodusUpdateStop) end
-  state.lifecycle.generation += 1
-  state.active, state.manualSpam, state.autoSpam = false, false, false; local notified, notifyError = pcall(notify, spamObservers)
+  state.lifecycle.generation += 1; state.active, state.manualSpam, state.autoSpam = false, false, false
+  local notified, notifyError = pcall(notify, spamObservers)
   if not notified then warn("Failed to notify observers: " .. tostring(notifyError)) end
   local saved, saveError = pcall(flushSave)
   if not saved then warn("Failed to save configuration: " .. tostring(saveError)) end
