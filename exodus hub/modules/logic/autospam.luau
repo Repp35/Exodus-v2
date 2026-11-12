@@ -874,6 +874,7 @@ AutoSpam.__contract = {
       "isPlayerDashing",
       "getLocalDashState",
       "isClientDeflectResetLate",
+      "getDeflectCooldownState",
       "getPlayerDeflectRange",
       "getPlayerRawRadius",
       "getBallFrozen",
