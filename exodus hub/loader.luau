@@ -741,10 +741,6 @@ local function startInternal()
       local ok, err = loaded.universal.setValue(feature, value)
       if not ok then utils.recordError("Universal." .. tostring(feature), err or "falha ao alterar valor") end
     end,
-    onUniversalAction = function(feature)
-      local ok, err = loaded.universal.activate(feature)
-      if not ok then utils.recordError("Universal." .. tostring(feature), err or "falha ao executar ação") end
-    end,
     onPanic = function()
       loaded.autoparry.resetState(); loaded.autospam.stopSpam()
     end,

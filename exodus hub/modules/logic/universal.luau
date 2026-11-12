@@ -19,7 +19,6 @@ local savedCollision = setmetatable({}, { __mode = "k" })
 local noclipCharacter
 local flyCharacter, flyHumanoid, flyRoot, flyVelocity, flyGyro
 local flyPlatformStand, flyAutoRotate
-local layCharacter, layHumanoid, layRotation, layAutoRotate
 local controls = { Forward = 0, Backward = 0, Left = 0, Right = 0, Up = 0, Down = 0 }
 local bindings = {
   [Enum.KeyCode.W] = { "Forward", 1 }, [Enum.KeyCode.S] = { "Backward", -1 },
@@ -155,40 +154,6 @@ local function stopSpeed()
 end
 local function startGravity() Workspace.Gravity = gravityValue; return true end
 local function stopGravity() Workspace.Gravity = gravityDefault; return true end
-local function stopLay()
-  disconnect("Lay")
-  if layHumanoid and layHumanoid.Parent then
-    pcall(function() layHumanoid.AutoRotate = layAutoRotate; layHumanoid.Sit = false end)
-  end
-  layCharacter, layHumanoid, layRotation, layAutoRotate = nil, nil, nil, nil
-end
-local function maintainLay()
-  if not layCharacter or not layCharacter.Parent or not layHumanoid or layHumanoid.Health <= 0 then stopLay(); return end
-  local player = Utils.getLocalPlayer()
-  if not player or player.Character ~= layCharacter then stopLay(); return end
-  local root = layHumanoid.RootPart or layCharacter:FindFirstChild("HumanoidRootPart")
-  if not root then return end
-  layHumanoid.Sit = true; layHumanoid.AutoRotate = false
-  for _, track in ipairs(layHumanoid:GetPlayingAnimationTracks()) do pcall(track.Stop, track) end
-  pcall(function()
-    root.AssemblyLinearVelocity = Vector3.zero
-    root.AssemblyAngularVelocity = Vector3.zero
-    root.CFrame = CFrame.new(root.Position) * layRotation
-  end)
-end
-local function lay()
-  local player = Utils.getLocalPlayer(); local character = player and player.Character
-  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-  local root = humanoid and (humanoid.RootPart or character:FindFirstChild("HumanoidRootPart"))
-  if not humanoid or not root then return false, "Humanoid indisponível" end
-  stopLay()
-  layCharacter, layHumanoid, layAutoRotate = character, humanoid, humanoid.AutoRotate
-  layRotation = root.CFrame.Rotation * CFrame.Angles(math.pi * 0.5, 0, 0)
-  maintainLay()
-  connect("Lay", RunService.Heartbeat, maintainLay)
-  return true
-end
-
 local starters = { InfiniteJump = startInfiniteJump, Fly = startFly, Invisicam = startInvisicam, Noclip = startNoclip, Gravity = startGravity, Speed = startSpeed }
 local stoppers = { InfiniteJump = stopInfiniteJump, Fly = stopFly, Invisicam = stopInvisicam, Noclip = stopNoclip, Gravity = stopGravity, Speed = stopSpeed }
 
@@ -222,9 +187,7 @@ function Universal.setValue(feature, value)
   end
   return false, "controle inválido"
 end
-function Universal.activate(feature) if feature == "Lay" then return lay() end; return false, "ação inválida" end
 function Universal.teardown()
-  stopLay()
   for feature, enabled in pairs(states) do if enabled and stoppers[feature] then pcall(stoppers[feature]) end; states[feature] = false end
   restoreCollision(); Utils = nil; return true
 end
@@ -253,6 +216,6 @@ Universal.__config = {
 Universal.__contract = {
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
-  provides = { "setup", "teardown", "setEnabled", "setValue", "activate" },
+  provides = { "setup", "teardown", "setEnabled", "setValue" },
 }
 return Universal

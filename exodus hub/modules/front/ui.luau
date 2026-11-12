@@ -1456,7 +1456,6 @@ function ExodusUI.setup(deps)
     or type(deps.Universal) ~= "table"
     or type(deps.Universal.setEnabled) ~= "function"
     or type(deps.Universal.setValue) ~= "function"
-    or type(deps.Universal.activate) ~= "function"
   then
     return false, "missing dependency: Utils, Controls, UIConfig, GameInfo, AutoSpam or Dumper"
   end
@@ -2195,10 +2194,7 @@ function ExodusUI.setup(deps)
   local indeedPage = UIConfig.pages.indeed
   local function renderIndeedComponent(definition, yPos)
     if definition.kind == "click" then
-      local action = definition.action == "dumper" and runDumper or function()
-        if type(Controls.onUniversalAction) == "function" then Controls.onUniversalAction(definition.action) end
-      end
-      return createClickCard(definition, yPos, indeedContent, action, indeedCardWidth)
+      return createClickCard(definition, yPos, indeedContent, runDumper, indeedCardWidth)
     elseif definition.kind == "toggle" then
       return createToggleCard(definition, definition.key, yPos, indeedContent, function(enabled)
         if type(Controls.onUniversalToggle) == "function" then Controls.onUniversalToggle(definition.feature, enabled) end
@@ -2647,7 +2643,7 @@ ExodusUI.__contract = {
     },
     AutoSpam = { "getStatus" },
     Dumper = { "start", "isRunning" },
-    Universal = { "setEnabled", "setValue", "activate" },
+    Universal = { "setEnabled", "setValue" },
   },
   requiresData = { UIConfig = { "panelToggles", "panelComponents", "pages" } },
   provides = { "setup" },
