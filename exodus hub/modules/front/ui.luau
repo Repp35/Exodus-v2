@@ -556,10 +556,10 @@ local function spawnParticle()
 end
 
 -- card-primitives
-local function cardFrame(yPos, h, parent)
+local function cardFrame(yPos, h, parent, fixedWidth)
   local f = inst("Frame", {
-    Size = UDim2.new(1, -22, 0, cardHeight(h)),
-    Position = UDim2.new(0, 2, 0, yPos),
+    Size = fixedWidth and UDim2.fromOffset(fixedWidth, cardHeight(h)) or UDim2.new(1, -22, 0, cardHeight(h)),
+    Position = fixedWidth and UDim2.new(0.5, -fixedWidth / 2, 0, yPos) or UDim2.new(0, 2, 0, yPos),
     BackgroundColor3 = C.card,
     BackgroundTransparency = 0.1,
     ZIndex = 6,
@@ -955,9 +955,9 @@ local function addOptionText(parent, value, height, widthOffset)
   end
   return title, description
 end
-local function createToggleCard(option, configKey, yPos, parent, onAfter, shortcutKey)
+local function createToggleCard(option, configKey, yPos, parent, onAfter, shortcutKey, fixedWidth)
   local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
-  local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, UIState.desktop and shortcutKey and -148 or -78)
+  local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, UIState.desktop and shortcutKey and -148 or -78)
   local config = Utils.getConfig(); local initial = configKey and config[configKey] == true
   local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -15)
   if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey, false, height) end
@@ -1043,17 +1043,17 @@ local function createStatusToggleCard(option, yPos, parent, options)
   end)
   return nextCardY(yPos, height), f, setVisual
 end
-local function createClickCard(option, yPos, parent, onActivate)
+local function createClickCard(option, yPos, parent, onActivate, fixedWidth)
   local _, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
-  local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, -28)
+  local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, -28)
   addCardHitbox(f, height, function()
     if onActivate then onActivate() end
   end)
   return nextCardY(yPos, height), f
 end
-local function createScrollCard(option, yPos, parent, onChange)
+local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
   local _, description = optionInfo(option); local height = description and 88 or 68
-  local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, -112)
+  local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, -112)
   local minValue, maxValue = tonumber(option.min) or 0, tonumber(option.max) or 100
   local increment = tonumber(option.increment) or 1
   local current = tonumber(Utils.getConfigValue(option.key)) or minValue
@@ -2114,7 +2114,8 @@ function ExodusUI.setup(deps)
     ZIndex = 6,
     Parent = pageGroups[4],
   })
-  local indeedWidth = math.min(460, PW - PAD * 2)
+  local indeedWidth = math.min(360, PW - PAD * 2)
+  local indeedCardWidth = 298
   local indeedContent = inst("ScrollingFrame", {
     Name = "IndeedContent",
     AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -2163,15 +2164,15 @@ function ExodusUI.setup(deps)
       local action = definition.action == "dumper" and runDumper or function()
         if type(Controls.onUniversalAction) == "function" then Controls.onUniversalAction(definition.action) end
       end
-      return createClickCard(definition, yPos, indeedContent, action)
+      return createClickCard(definition, yPos, indeedContent, action, indeedCardWidth)
     elseif definition.kind == "toggle" then
       return createToggleCard(definition, definition.key, yPos, indeedContent, function(enabled)
         if type(Controls.onUniversalToggle) == "function" then Controls.onUniversalToggle(definition.feature, enabled) end
-      end)
+      end, nil, indeedCardWidth)
     elseif definition.kind == "scroll" then
       return createScrollCard(definition, yPos, indeedContent, function(value)
         if type(Controls.onUniversalValue) == "function" then Controls.onUniversalValue(definition.feature, value) end
-      end)
+      end, indeedCardWidth)
     end
     return yPos
   end
