@@ -7,13 +7,13 @@ local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
 local connections = {}
-local states = { InfiniteJump = false, Fly = false, Invisicam = false, Noclip = false, Gravity = false }
+local states = { InfiniteJump = false, Fly = false, Invisicam = false, Noclip = false, Gravity = false, Speed = false }
 local keys = {
   InfiniteJump = "UniversalInfiniteJump", Fly = "UniversalFly",
   Invisicam = "UniversalInvisicam", Noclip = "UniversalNoclip",
-  Gravity = "UniversalGravityEnabled",
+  Gravity = "UniversalGravityEnabled", Speed = "UniversalSpeedEnabled",
 }
-local gravityDefault, gravityValue
+local gravityDefault, gravityValue, speedDefault, speedValue
 local savedOcclusion, savedOcclusionMode = nil, false
 local savedCollision = setmetatable({}, { __mode = "k" })
 local noclipCharacter
@@ -128,6 +128,30 @@ local function stopInvisicam()
   local player = Utils.getLocalPlayer(); if player and savedOcclusionMode then pcall(function() player.DevCameraOcclusionMode = savedOcclusion end) end
   savedOcclusion, savedOcclusionMode = nil, false; return true
 end
+local function applySpeed()
+  local player = Utils.getLocalPlayer(); local character = player and player.Character
+  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+  if humanoid then humanoid.WalkSpeed = speedValue end
+  return true
+end
+local function startSpeed()
+  local player = Utils.getLocalPlayer()
+  if player then
+    connect("SpeedCharacter", player.CharacterAdded, function(character)
+      task.defer(function()
+        local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
+        if states.Speed and humanoid then humanoid.WalkSpeed = speedValue end
+      end)
+    end)
+  end
+  return applySpeed()
+end
+local function stopSpeed()
+  disconnect("SpeedCharacter"); local player = Utils.getLocalPlayer(); local character = player and player.Character
+  local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+  if humanoid then humanoid.WalkSpeed = speedDefault end
+  return true
+end
 local function startGravity() Workspace.Gravity = gravityValue; return true end
 local function stopGravity() Workspace.Gravity = gravityDefault; return true end
 local function lay()
@@ -142,22 +166,38 @@ local function lay()
   return true
 end
 
-local starters = { InfiniteJump = startInfiniteJump, Fly = startFly, Invisicam = startInvisicam, Noclip = startNoclip, Gravity = startGravity }
-local stoppers = { InfiniteJump = stopInfiniteJump, Fly = stopFly, Invisicam = stopInvisicam, Noclip = stopNoclip, Gravity = stopGravity }
+local starters = { InfiniteJump = startInfiniteJump, Fly = startFly, Invisicam = startInvisicam, Noclip = startNoclip, Gravity = startGravity, Speed = startSpeed }
+local stoppers = { InfiniteJump = stopInfiniteJump, Fly = stopFly, Invisicam = stopInvisicam, Noclip = stopNoclip, Gravity = stopGravity, Speed = stopSpeed }
 
 function Universal.setEnabled(feature, enabled)
   if not Utils or not starters[feature] then return false, "recurso inválido" end
   local value = enabled == true; if not Utils.setConfig({ [keys[feature]] = value }) then return false, "configuração rejeitada" end
-  if states[feature] == value then if value and feature == "Gravity" then Workspace.Gravity = gravityValue end; return true end
+  if states[feature] == value then
+    if value and feature == "Gravity" then Workspace.Gravity = gravityValue end
+    if value and feature == "Speed" then applySpeed() end
+    return true
+  end
   states[feature] = value
   local ok, result = pcall((value and starters or stoppers)[feature])
   if not ok or result == false then states[feature] = not value; Utils.setConfig({ [keys[feature]] = not value }); return false, tostring(result) end
   return true
 end
 function Universal.setValue(feature, value)
-  if feature ~= "Gravity" or not Utils then return false, "controle inválido" end
+  if not Utils then return false, "controle inválido" end
   local number = tonumber(value); if not number or number ~= number then return false, "valor inválido" end
-  gravityValue = math.clamp(number, 0, 400); local saved = Utils.setConfig({ UniversalGravity = gravityValue }); if states.Gravity then Workspace.Gravity = gravityValue end; return saved
+  if feature == "Gravity" then
+    gravityValue = math.clamp(number, 0, 400)
+    local saved = Utils.setConfig({ UniversalGravity = gravityValue })
+    if states.Gravity then Workspace.Gravity = gravityValue end
+    return saved
+  end
+  if feature == "Speed" then
+    speedValue = math.clamp(number, 0, 200)
+    if not Utils.setConfig({ UniversalSpeed = speedValue, UniversalSpeedEnabled = true }) then return false end
+    if not states.Speed then return Universal.setEnabled("Speed", true) end
+    return applySpeed()
+  end
+  return false, "controle inválido"
 end
 function Universal.activate(feature) if feature == "Lay" then return lay() end; return false, "ação inválida" end
 function Universal.teardown()
@@ -166,15 +206,25 @@ function Universal.teardown()
 end
 function Universal.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
-  Universal.teardown(); Utils = deps.Utils; gravityDefault = Workspace.Gravity; gravityValue = tonumber(Utils.getConfigValue("UniversalGravity")) or gravityDefault
-  for feature, key in pairs(keys) do states[feature] = Utils.getConfigValue(key) == true end
-  for feature, enabled in pairs(states) do if enabled then local ok, errorMessage = Universal.setEnabled(feature, true); if not ok then states[feature] = false; warn("[Exodus Universal] " .. feature .. ": " .. tostring(errorMessage)) end end end
+  Universal.teardown(); Utils = deps.Utils; gravityDefault = Workspace.Gravity
+  local player = Utils.getLocalPlayer(); local character = player and player.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+  speedDefault = humanoid and humanoid.WalkSpeed or 16
+  gravityValue = tonumber(Utils.getConfigValue("UniversalGravity")) or gravityDefault
+  speedValue = tonumber(Utils.getConfigValue("UniversalSpeed")) or speedDefault
+  local enabled = {}
+  for feature, key in pairs(keys) do enabled[feature] = Utils.getConfigValue(key) == true; states[feature] = false end
+  for feature, active in pairs(enabled) do
+    if active then
+      local ok, errorMessage = Universal.setEnabled(feature, true)
+      if not ok then warn("[Exodus Universal] " .. feature .. ": " .. tostring(errorMessage)) end
+    end
+  end
   return true
 end
 
 Universal.__config = {
-  schema = { UniversalInfiniteJump = "boolean", UniversalFly = "boolean", UniversalFlySpeed = "rate", UniversalInvisicam = "boolean", UniversalNoclip = "boolean", UniversalGravityEnabled = "boolean", UniversalGravity = "rate" },
-  defaults = { UniversalInfiniteJump = false, UniversalFly = false, UniversalFlySpeed = 1, UniversalInvisicam = false, UniversalNoclip = false, UniversalGravityEnabled = false, UniversalGravity = 196.2 },
+  schema = { UniversalInfiniteJump = "boolean", UniversalFly = "boolean", UniversalFlySpeed = "rate", UniversalInvisicam = "boolean", UniversalNoclip = "boolean", UniversalGravityEnabled = "boolean", UniversalGravity = "rate", UniversalSpeedEnabled = "boolean", UniversalSpeed = "rate" },
+  defaults = { UniversalInfiniteJump = false, UniversalFly = false, UniversalFlySpeed = 1, UniversalInvisicam = false, UniversalNoclip = false, UniversalGravityEnabled = false, UniversalGravity = 196.2, UniversalSpeedEnabled = false, UniversalSpeed = 16 },
 }
 Universal.__contract = {
   requires = { Utils = "utils" },
