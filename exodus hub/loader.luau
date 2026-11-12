@@ -776,4 +776,5 @@ local function startSafely()
 end
 local started = startSafely()
 Exodus.Started = started == true
+
 return Loader

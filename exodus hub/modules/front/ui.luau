@@ -586,8 +586,7 @@ local function reflowPersistentNotifications(animated)
   for index, key in ipairs(persistentOrder) do
     local card = layer:FindFirstChild("Notification_" .. key)
     if card then
-      safeCancel(persistentTweens[key])
-      local target = UDim2.new(0.5, 0, 1, -24 - (index - 1) * 46)
+      safeCancel(persistentTweens[key]); local target = UDim2.new(0.5, 0, 1, -24 - (index - 1) * 46)
       persistentTweens[key] = twPlay(card, animated and 0.22 or 0, { Position = target, GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
     end
   end
@@ -603,7 +602,10 @@ clearPersistentNotification = function(key)
   for index = #persistentOrder, 1, -1 do
     if persistentOrder[index] == safeKey then table.remove(persistentOrder, index) end
   end
-  if not card then persistentTweens[safeKey] = nil; reflowPersistentNotifications(true); return end
+  if not card then
+    persistentTweens[safeKey] = nil; reflowPersistentNotifications(true)
+    return
+  end
   safeCancel(persistentTweens[safeKey])
   local fade = twPlay(card, 0.18, {
     Position = UDim2.new(card.Position.X.Scale, card.Position.X.Offset, card.Position.Y.Scale, card.Position.Y.Offset + 18),

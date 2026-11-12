@@ -419,13 +419,9 @@ function Dumper.start(callbacks)
       function(errorValue) return debug and type(debug.traceback) == "function" and debug.traceback(tostring(errorValue), 2) or tostring(errorValue) end
     )
     if activeToken ~= token then return end
-    local callbacks = activeCallbacks
-    activeToken, activeCallbacks = nil, nil
+    local callbacks = activeCallbacks; activeToken, activeCallbacks = nil, nil
     status.running = false
-    if token.cancelled then
-      emit(callbacks, "onCanceled")
-      return
-    end
+    if token.cancelled then emit(callbacks, "onCanceled"); return end
     if not ok or not result then emit(callbacks, "onError", not ok and result or reason or "Dump failed"); return end
     status.folder = result.folder; status.total, status.saved, status.failed, status.bytecode = result.total, result.saved, result.failed, result.bytecode
     emit(callbacks, "onComplete", table.clone(result))
@@ -434,13 +430,10 @@ function Dumper.start(callbacks)
 end
 function Dumper.stop()
   if activeToken then
-    local callbacks = activeCallbacks
-    activeToken.cancelled = true
-    activeToken, activeCallbacks = nil, nil
-    emit(callbacks, "onCanceled")
+    local callbacks = activeCallbacks; activeToken.cancelled = true
+    activeToken, activeCallbacks = nil, nil; emit(callbacks, "onCanceled")
   end
-  status.running = false
-  return true
+  status.running = false; return true
 end
 function Dumper.isRunning() return activeToken ~= nil end
 function Dumper.getStatus() return table.clone(status) end
