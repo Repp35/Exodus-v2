@@ -1073,7 +1073,6 @@ local function createScrollCard(option, yPos, parent, onChange)
     Name = "ScrollHitbox", Size = UDim2.new(1, 0, 0, 26), Position = UDim2.new(0, 0, 1, -27),
     BackgroundTransparency = 1, BorderSizePixel = 0, AutoButtonColor = false, Text = "", ZIndex = 11, Parent = f,
   })
-  local dragInput
   local function applyValue(value, notify)
     local range = math.max(0, maxValue - minValue)
     local stepped = range > 0 and minValue + math.clamp(math.floor((value - minValue) / increment + 0.5) * increment, 0, range) or minValue
