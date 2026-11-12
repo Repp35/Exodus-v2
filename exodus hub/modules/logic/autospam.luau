@@ -173,8 +173,7 @@ end
 -- activation
 local function start(s, reason, partner, time, serverTime, snapshot)
   if s.active or (s.lastDeactivatedAt and time - s.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN) then return end
-  local proximity = reason == "own_ball_proximity"
-  local haunter = proximity or reason == "haunter" or reason == "haunter_self"
+  local proximity = reason == "own_ball_proximity"; local haunter = proximity or reason == "haunter" or reason == "haunter_self"
   if
     not haunter
     and (not s.exchangeReadyAt or s.exchangePartner ~= partner or time < s.exchangeReadyAt or time - s.exchangeReadyAt > CONFIG.ACTIVATION.EXCHANGE_READY_TIME)
@@ -213,10 +212,11 @@ local function shouldActivate(s, snapshot, time)
   end
   return true
 end
-
 local function ownBallClose(s, snapshot)
-  return s.root and s.root.Parent
-    and snapshot and snapshot.targetUncertain ~= true
+  return s.root
+    and s.root.Parent
+    and snapshot
+    and snapshot.targetUncertain ~= true
     and snapshot.targetId == localPlayer.UserId
     and typeof(snapshot.position) == "Vector3"
     and (snapshot.position - s.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_CLOSE_RADIUS
