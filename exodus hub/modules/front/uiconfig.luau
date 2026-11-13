@@ -37,8 +37,14 @@ local CONFIG = {
       title = "Spam Rate",
     },
     {
-      kind = "click_method_selector",
+      kind = "dropdown",
       title = "Método de clique",
+      key = "ClickMethod",
+      options = {
+        { value = "Deflect", label = "Deflect()" },
+        { value = "Direct", label = "Remote direta" },
+        { value = "Input", label = "Entrada configurada" },
+      },
     },
     {
       kind = "off_on",

@@ -71,14 +71,58 @@ local function fireDirect()
   remote:FireServer(packet); return true
 end
 
+local keybindObject
+local function configuredInput()
+  if not keybindObject then
+    local storage = game:GetService("ReplicatedStorage")
+    local shared = storage:FindFirstChild("Shared") or storage:FindFirstChild("TS")
+    local core = shared and shared:FindFirstChild("Core")
+    local module = core and core:FindFirstChild("KeybindObject")
+    if module then
+      local ok, value = pcall(require, module)
+      if ok and type(value) == "table" and type(value.KeybindObject) == "table" then keybindObject = value.KeybindObject end
+    end
+  end
+  if keybindObject then
+    local binding = keybindObject:Get("Blocking")
+    if binding then
+      for _, value in ipairs({ binding.Key, binding.AlternateKey }) do
+        if typeof(value) == "EnumItem" and value ~= Enum.KeyCode.Unknown then
+          if value.EnumType == Enum.KeyCode then return value end
+          if value == Enum.UserInputType.MouseButton2 or value == Enum.UserInputType.MouseButton3 then return value end
+        end
+      end
+    end
+  end
+  return Enum.UserInputType.MouseButton1
+end
+local function fireInput()
+  local input = configuredInput()
+  local vim = game:GetService("VirtualInputManager")
+  if input.EnumType == Enum.KeyCode then
+    vim:SendKeyEvent(true, input, false, game)
+    vim:SendKeyEvent(false, input, false, game)
+  else
+    local mouse = game:GetService("UserInputService"):GetMouseLocation()
+    local button = input == Enum.UserInputType.MouseButton2 and 1 or (input == Enum.UserInputType.MouseButton3 and 2 or 0)
+    vim:SendMouseButtonEvent(mouse.X, mouse.Y, button, true, game, 0)
+    vim:SendMouseButtonEvent(mouse.X, mouse.Y, button, false, game, 0)
+  end
+  return true
+end
+
 -- public-api
 function Remote.fireParry(_flag, guard)
   if not gameInfo then return false, "Remote não inicializado" end
+  local method = utils.getConfigValue("ClickMethod")
+  if method == "Input" then
+    if not allowed(guard) then return false, "Deflect cancelado" end
+    return fireInput()
+  end
   if gameInfo.isTrainingArea() then
     if not allowed(guard) then return false, "Deflect cancelado" end
     local sent, detail = gameInfo.fireTrainingParry(); return sent, detail
   end
-  local method = utils.getConfigValue("ClickMethod")
   if not allowed(guard) then return false, "Deflect cancelado" end
   if method == "Direct" then return fireDirect() end
   local ability = gameInfo.getDeflectAbility()

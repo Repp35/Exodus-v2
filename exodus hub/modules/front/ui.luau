@@ -1341,45 +1341,93 @@ local function createCameraSensitivityCard(yPos, parent)
   end))
   return nextCardY(yPos, CARD_H)
 end
-local function createClickMethodSelector(yPos, parent, definition)
-  local f = cardFrame(yPos, RATE_CARD_H, parent); cardLabel(optionInfo(definition), f)
-  local modes = { "Deflect", "Direct" }; local labels = { Deflect = "Deflect()", Direct = "Remote direta" }
-  local current = Utils.getConfigValue("ClickMethod")
-  local track = inst("Frame", {
-    Size = UDim2.new(1, -20, 0, 28),
-    Position = UDim2.new(0, 10, 0, 29),
-    BackgroundColor3 = C.inputBg,
-    BackgroundTransparency = 0.05,
-    BorderSizePixel = 0,
-    ZIndex = 7,
-    Parent = f,
+local function createDropdown(yPos, parent, definition)
+  local options = definition.options or {}
+  local f = cardFrame(yPos, RATE_CARD_H, parent); f.ClipsDescendants = true
+  cardLabel(optionInfo(definition), f)
+  local current = Utils.getConfigValue(definition.key)
+  local function labelFor(value)
+    for _, option in ipairs(options) do
+      if option.value == value then return option.label end
+    end
+    return tostring(value or "Selecionar")
+  end
+  local button = inst("TextButton", {
+    Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 29),
+    BackgroundColor3 = C.inputBg, BorderSizePixel = 0, Text = "",
+    AutoButtonColor = false, ZIndex = 7, Parent = f,
   })
-  corner(track, 999); stroke(track, C.border, 1)
-  local buttons = {}
-  for index, mode in ipairs(modes) do
-    local button = inst("TextButton", {
-      Size = UDim2.new(1 / 2, -4, 1, -4),
-      Position = UDim2.new((index - 1) / 2, 2, 0, 2),
-      BackgroundColor3 = C.accent,
-      BackgroundTransparency = mode == current and 0 or 1,
-      BorderSizePixel = 0,
-      Text = labels[mode],
-      TextColor3 = mode == current and C.text or C.subtext,
-      TextSize = 12,
-      Font = Enum.Font.GothamBold,
-      ZIndex = 8,
-      Parent = track,
-    })
-    corner(button, 999); buttons[mode] = button
-    trackConn(button.Activated:Connect(function()
-      if mode == current or not setConfigValue("ClickMethod", mode) then return end
-      current = mode
-      for name, item in pairs(buttons) do
-        item.BackgroundTransparency = name == current and 0 or 1; item.TextColor3 = name == current and C.text or C.subtext
+  corner(button, 8); local border = stroke(button, C.border, 1)
+  local selected = inst("TextLabel", {
+    Size = UDim2.new(1, -38, 1, 0), Position = UDim2.fromOffset(10, 0),
+    BackgroundTransparency = 1, Text = labelFor(current), TextColor3 = C.text,
+    TextSize = 12, Font = Enum.Font.GothamSemibold, TextXAlignment = Enum.TextXAlignment.Left,
+    TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 8, Parent = button,
+  })
+  local arrow = inst("TextLabel", {
+    Size = UDim2.fromOffset(24, 24), Position = UDim2.new(1, -26, 0.5, -12),
+    BackgroundTransparency = 1, Text = "⌄", TextColor3 = C.subtext,
+    TextSize = 20, Font = Enum.Font.GothamBold, ZIndex = 8, Parent = button,
+  })
+  local rowHeight, gap = 32, 3
+  local listHeight = math.min(#options, definition.maxVisible or 4) * (rowHeight + gap) + 6
+  local list = inst("ScrollingFrame", {
+    Size = UDim2.new(1, -20, 0, 0), Position = UDim2.fromOffset(10, 62),
+    BackgroundColor3 = C.inputBg, BackgroundTransparency = 0.04, BorderSizePixel = 0,
+    CanvasSize = UDim2.fromOffset(0, #options * (rowHeight + gap) + 6),
+    ScrollBarThickness = 3, ScrollBarImageColor3 = C.accent,
+    ClipsDescendants = true, ZIndex = 8, Parent = f,
+  })
+  corner(list, 8); stroke(list, C.border, 1)
+  local rows = {}
+  local function paint()
+    selected.Text = labelFor(current)
+    for value, row in pairs(rows) do
+      twPlay(row, 0.16, { BackgroundTransparency = value == current and 0.25 or 1,
+        TextColor3 = value == current and C.text or C.subtext }, EASE_SINE, DIR_INOUT)
+    end
+  end
+  local open = false
+  local extra = listHeight + 7
+  local function setOpen(value)
+    if open == value then return end
+    open = value
+    local delta = (open and extra or -extra) * CARD_SCALE
+    for _, child in ipairs(parent:GetChildren()) do
+      if child ~= f and child:IsA("Frame") and child:FindFirstChild("CardScale") then
+        local target = child:GetAttribute("DropdownTargetY") or child.Position.Y.Offset
+        if target > f.Position.Y.Offset then
+          target += delta; child:SetAttribute("DropdownTargetY", target)
+          twPlay(child, 0.22, { Position = UDim2.new(child.Position.X.Scale, child.Position.X.Offset, child.Position.Y.Scale, target) }, EASE_OUT, DIR_OUT)
+        end
       end
+    end
+    twPlay(f, 0.22, { Size = UDim2.new(f.Size.X.Scale, f.Size.X.Offset, 0, cardHeight(RATE_CARD_H) + (open and extra or 0)) }, EASE_OUT, DIR_OUT)
+    twPlay(list, 0.2, { Size = UDim2.new(1, -20, 0, open and listHeight or 0) }, EASE_OUT, DIR_OUT)
+    twPlay(arrow, 0.2, { Rotation = open and 180 or 0, TextColor3 = open and C.accent or C.subtext }, EASE_OUT, DIR_OUT)
+    twPlay(border, 0.2, { Color = open and C.accent or C.border }, EASE_OUT, DIR_OUT)
+  end
+  for index, option in ipairs(options) do
+    local row = inst("TextButton", {
+      Size = UDim2.new(1, -8, 0, rowHeight), Position = UDim2.fromOffset(4, 3 + (index - 1) * (rowHeight + gap)),
+      BackgroundColor3 = C.accent, BackgroundTransparency = 1, BorderSizePixel = 0,
+      Text = option.label, TextColor3 = C.subtext, TextSize = 12, Font = Enum.Font.GothamSemibold,
+      AutoButtonColor = false, ZIndex = 9, Parent = list,
+    })
+    corner(row, 7); rows[option.value] = row
+    trackConn(row.MouseEnter:Connect(function()
+      if current ~= option.value then twPlay(row, 0.15, { BackgroundTransparency = 0.7 }, EASE_SINE, DIR_OUT) end
+    end))
+    trackConn(row.MouseLeave:Connect(function()
+      if current ~= option.value then twPlay(row, 0.15, { BackgroundTransparency = 1 }, EASE_SINE, DIR_OUT) end
+    end))
+    trackConn(row.Activated:Connect(function()
+      if current ~= option.value and setConfigValue(definition.key, option.value) then current = option.value; paint() end
+      setOpen(false)
     end))
   end
-  return nextCardY(yPos, RATE_CARD_H)
+  trackConn(button.Activated:Connect(function() setOpen(not open) end))
+  paint(); return nextCardY(yPos, RATE_CARD_H)
 end
 local function createRateSelector(yPos, parent, definition)
   local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig()
@@ -2248,6 +2296,7 @@ function ExodusUI.setup(deps)
     BorderSizePixel = 0,
     ScrollBarThickness = 2,
     CanvasSize = UDim2.new(0, 0, 0, 0),
+    AutomaticCanvasSize = Enum.AutomaticSize.Y,
     ZIndex = 6,
     Parent = pageGroups[1],
   })
@@ -2298,7 +2347,7 @@ function ExodusUI.setup(deps)
   local yR = 26
   local components = {
     rate_selector = createRateSelector,
-    click_method_selector = createClickMethodSelector,
+    dropdown = createDropdown,
     keybind_selector = createKeybindSelector,
     toggle = function(yPos, parent, definition)
       return createToggleCard(definition, definition.key, yPos, parent, toggleCallbacks[definition.key], definition.shortcutKey)
