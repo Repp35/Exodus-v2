@@ -240,9 +240,7 @@ local function deactivate(state, reason, time)
   time = time or now()
   if state.active then
     state.stoppedPartner, state.stoppedAt = state.partner, time; state.active, state.lastDeactivatedAt = false, time
-    if reason == "deflect_cooldown_timeout" or reason == "deflect_window_expiring" or reason == "deflect_miss" then
-      state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target
-    end
+    if reason == "deflect_cooldown_timeout" or reason == "deflect_window_expiring" or reason == "deflect_miss" then state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target end
     lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
@@ -819,4 +817,3 @@ AutoSpam.__contract = {
 }
 
 return AutoSpam
-
