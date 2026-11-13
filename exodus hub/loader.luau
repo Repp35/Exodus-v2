@@ -690,6 +690,7 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
   local function fail(message)
     warn("[Exodus Reload] " .. tostring(message))
     if automatic then clearPersistent("update"); notifyPersistent("Update failed. Check the console.", "critical", "critical") end
+    if automatic and type(_G.ExodusUIRestore) == "function" then pcall(_G.ExodusUIRestore, message) end
     if type(onFailure) == "function" then task.defer(onFailure, message) end
     reloadInFlight = false
   end
