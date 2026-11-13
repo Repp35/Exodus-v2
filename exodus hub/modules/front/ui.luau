@@ -1680,7 +1680,9 @@ function ExodusUI.setup(deps)
     local paddingX, paddingY = 8, 5; label.TextSize = 14
     label.TextWrapped = false; label.TextXAlignment = Enum.TextXAlignment.Left
     label.TextYAlignment = Enum.TextYAlignment.Top; label.BorderSizePixel = 0
-    label.ZIndex = 100
+    label.ZIndex = 100; label.BackgroundTransparency = 1
+    label.TextTransparency = 1; label.Visible = false
+    corner(label, 8)
     inst("UIPadding", {
       PaddingLeft = UDim.new(0, paddingX),
       PaddingRight = UDim.new(0, paddingX),
@@ -1693,6 +1695,24 @@ function ExodusUI.setup(deps)
       label.Size = UDim2.fromOffset(math.ceil(bounds.X) + paddingX * 2, math.ceil(bounds.Y) + paddingY * 2)
     end
     trackConn(label:GetPropertyChangedSignal("Text"):Connect(resize)); resize()
+    local shown, activeTween = false, nil
+    return function(visible)
+      if shown == visible then return end
+      shown = visible
+      if activeTween then activeTween:Cancel() end
+      if visible then label.Visible = true end
+      local transition = TweenService:Create(label, TweenInfo.new(0.2, EASE_OUT, DIR_OUT), {
+        BackgroundTransparency = visible and 0.2 or 1,
+        TextTransparency = visible and 0 or 1,
+      })
+      activeTween = transition
+      transition.Completed:Connect(function(playbackState)
+        if activeTween ~= transition then return end
+        activeTween = nil
+        if playbackState == Enum.PlaybackState.Completed and not shown then label.Visible = false end
+      end)
+      transition:Play()
+    end
   end
   local distanceLabel = inst("TextLabel", {
     Name = "ClashDistance",
@@ -1740,27 +1760,8 @@ function ExodusUI.setup(deps)
     ZIndex = 20,
     Parent = informationGui,
   })
-  compactInformation(distanceLabel); compactInformation(travelLabel)
-  compactInformation(gateLabel); corner(gateLabel, 8)
-  local gateShown, gateTween = false, nil
-  local function setGateVisible(visible)
-    if gateShown == visible then return end
-    gateShown = visible
-    if gateTween then gateTween:Cancel() end
-    if visible then gateLabel.Visible = true end
-    local transition = TweenService:Create(gateLabel, TweenInfo.new(0.2, EASE_OUT, DIR_OUT), {
-      BackgroundTransparency = visible and 0.2 or 1,
-      TextTransparency = visible and 0 or 1,
-    })
-    gateTween = transition
-    transition.Completed:Connect(function(playbackState)
-      if gateTween ~= transition then return end
-      gateTween = nil
-      if playbackState == Enum.PlaybackState.Completed and not gateShown then gateLabel.Visible = false end
-    end)
-    transition:Play()
-  end
-  local nextGateUpdate, nextTravelUpdate, nextDistanceUpdate = 0, 0, 0
+  local setDistanceVisible = compactInformation(distanceLabel); local setTravelVisible = compactInformation(travelLabel)
+  local setGateVisible = compactInformation(gateLabel); local nextGateUpdate, nextTravelUpdate, nextDistanceUpdate = 0, 0, 0
   local function validGate(value)
     return type(value) == "string" and value ~= "" and value ~= "null" and value ~= "nil" and value ~= "inactive" and value ~= "detached"
   end
@@ -1780,8 +1781,8 @@ function ExodusUI.setup(deps)
     local time = os.clock(); local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
     local travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true; local distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true
     if not gateEnabled and not travelVisible and not distanceVisible then
-      setGateVisible(false); travelLabel.Visible, distanceLabel.Visible = false, false
-      return
+      setGateVisible(false); setTravelVisible(false)
+      setDistanceVisible(false); return
     end
     if gateEnabled and time >= nextGateUpdate then
       nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
@@ -1792,7 +1793,7 @@ function ExodusUI.setup(deps)
       setTextIfChanged(gateLabel, table.concat(lines, "\n"))
     end
     local gateVisible = gateEnabled and gateLabel.Text ~= ""; setGateVisible(gateVisible)
-    if travelLabel.Visible ~= travelVisible then travelLabel.Visible = travelVisible end
+    setTravelVisible(travelVisible)
     if travelVisible and time >= nextTravelUpdate then
       nextTravelUpdate = time + 0.05; local status, snapshot = getTelemetry(time)
       local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
@@ -1820,7 +1821,7 @@ function ExodusUI.setup(deps)
         setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\n" .. text)
       end
     end
-    if distanceLabel.Visible ~= distanceVisible then distanceLabel.Visible = distanceVisible end
+    setDistanceVisible(distanceVisible)
     if not distanceVisible or time < nextDistanceUpdate then return end
     nextDistanceUpdate = time + 0.1; local status, snapshot = getTelemetry(time)
     local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
