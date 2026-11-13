@@ -52,11 +52,15 @@ local CONFIG={TARGET_CONFIRM_INTERVAL=1/60,TARGET_HOLD_TIME=0.1}
 '''+target+'''
 local ball={}
 attr=42
-assert(targetId({TargetPlayerID=99,HighlightTargetPlayerID=42},ball)==99)
+assert(targetId({TargetPlayerID=99,HighlightTargetPlayerID=42},ball)==-1 and targetEvidence.uncertain)
+targetFrame=targetFrame+1
+assert(targetId({TargetPlayerID=99,HighlightTargetPlayerID=42},ball)==99 and not targetEvidence.uncertain)
 assert(targetId({TargetPlayerID=-1,HighlightTargetPlayerID=42},ball)==-1)
 assert(targetEvidence.uncertain)
 assert(targetId({HighlightTargetPlayerID=42},ball)==42)
 assert(targetEvidence.source=='highlight_attribute')
+assert(targetId({TargetPlayerID=99,HighlightTargetPlayerID=42},ball)==42 and targetEvidence.uncertain)
+assert(targetId({TargetPlayerID=42,HighlightTargetPlayerID=42},ball)==42 and not targetEvidence.uncertain)
 attr=99; visual.Enabled=false
 assert(targetId({HighlightTargetPlayerID=42},ball)==-1 and targetEvidence.uncertain) -- conflicting signals
 assert(targetId({HighlightTargetPlayerID=99},ball)==99) -- two matching fields

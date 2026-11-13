@@ -248,7 +248,6 @@ local function observeSnapshot(snapshot, time)
   end
   local order = sequenceOrder(snapshot.syncSequence)
   if order == "old" then return false end
-  if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then return false end
   if order == "new" then state.sequence = snapshot.syncSequence end
   observeTarget(snapshot.targetId, time); return true
 end
@@ -539,15 +538,8 @@ function AutoParry.onBallSync(data)
     local current = gameInfo.getSyncSequence()
     if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
   end
-  state.teleported, state.teleportSequence = false, nil; local rawTarget = tonumber(data.TargetPlayerID)
-  local target = finite(rawTarget) and rawTarget > 0 and rawTarget or gameInfo.getTargetId()
-  if order == nil and state.sequence ~= nil and state.targetKnown and target ~= state.target then return true end
-  if not finite(target) then return true end
-  observeTarget(target, clock())
-  if target <= 0 then
-    if target == -1 then state.lastBall = nil end
-  end
-  if state.player and (target == state.player.UserId or data.Grace == true) and state.character and state.root and not state.fired then tick(state.character, state.root, state.generation) end
+  state.teleported, state.teleportSequence = false, nil
+  if state.character and state.root then tick(state.character, state.root, state.generation) end
   return true
 end
 

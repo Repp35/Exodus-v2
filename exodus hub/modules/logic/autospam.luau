@@ -751,13 +751,12 @@ function AutoSpam.onBallSync(data)
   if not finite(serverTime) then serverTime = nil end
   local speed = tonumber(data.Speed); local snapshot = gameInfo.getSnapshotAt(time)
   if snapshot and data.Source == "packet" then
-    snapshot = table.clone(snapshot); local target = userId(data.TargetPlayerID)
-    if target then snapshot.targetId, snapshot.targeted, snapshot.targetUncertain = target, target == localPlayer.UserId, false end
+    snapshot = table.clone(snapshot)
     snapshot.syncAt, snapshot.serverTime, snapshot.syncSequence, snapshot.teleported = time, serverTime, sequence, false
     if type(data.Locked) == "boolean" then snapshot.locked = data.Locked end
     if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
   end
-  local target = userId(data.TargetPlayerID); local blocked = state.active and checkDeactivation(state, snapshot, time) or false
+  local target = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil; local blocked = state.active and checkDeactivation(state, snapshot, time) or false
   if target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then targetChanged(state, target, time, snapshot, serverTime) end
   evaluate(state, time, true, serverTime, snapshot, blocked, autoEnabled)
 end

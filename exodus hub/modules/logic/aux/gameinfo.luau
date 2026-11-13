@@ -216,9 +216,18 @@ local function targetId(data, currentBall)
   end
   local strong = primary
   if strong then
-    targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt =
-      strong, nil, nil, nil, time
-    targetEvidence.source, targetEvidence.uncertain = "target", false; return strong
+    if strong == targetEvidence.stable or strong == attribute then
+      targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = strong, nil, nil, nil, time
+      targetEvidence.source, targetEvidence.uncertain = strong == attribute and "target_attribute" or "target", false; return strong
+    end
+    if targetEvidence.pending ~= strong then
+      targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = strong, time, targetFrame
+    elseif (targetFrameConnection and targetEvidence.pendingFrame ~= targetFrame)
+      or (not targetFrameConnection and time - targetEvidence.pendingAt >= CONFIG.TARGET_CONFIRM_INTERVAL) then
+      targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = strong, nil, nil, nil, time
+      targetEvidence.source, targetEvidence.uncertain = "target_confirmed", false; return strong
+    end
+    targetEvidence.source, targetEvidence.uncertain = "target_pending", true; return targetEvidence.stable or -1
   end
   local candidate = highlight or attribute; local source = highlight and "highlight" or (attribute and "attribute" or nil)
   if highlight and attribute and highlight ~= attribute then
