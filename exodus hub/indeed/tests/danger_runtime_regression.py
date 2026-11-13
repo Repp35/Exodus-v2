@@ -60,7 +60,7 @@ run('normal approach is protected until the AP trigger, not a fixed entry timer'
 local r=sample(); assert(r.phase=='watching' and r.protect and not r.urgent)
 fresh(10.3); value.position=v(35); r=sample(); assert(r.protect and not r.urgent,'ordinary AP wait activated spam')
 value.position=v(19); fresh(10.31); r=sample(); assert(r.phase=='expected' and not r.urgent)
-fresh(10.34); r=sample(); assert(r.urgent,'missed AP callback was ignored')
+fresh(10.34); r=sample(); assert(not r.urgent and r.protect,'AP lateness alone activated spam with ample margin')
 ''')
 run('critical approach bypasses the extra callback and old AP cycle lock',fixture+'''
 grace=.02; value.position=v(6); value.velocity=v(-600); value.syncSpeed=600
