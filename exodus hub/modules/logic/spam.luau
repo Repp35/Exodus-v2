@@ -73,20 +73,30 @@ local function sync()
     local function guard() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
     local function allowed() return guard() and (boundUtils.isManualSpamActive() or boundAutoSpam.canSend()) end
     local ok, err = xpcall(function()
-      local due = os.clock()
+      local credit, previous = 0, os.clock()
       while guard() do
-        local time = os.clock(); local minimum = mode == "Auto" and boundGameInfo.getMinimumSpamInterval() or 0
-        local interval = mode ~= "Auto" and 1 / (mode == "CPF" and rate * 60 or rate) or nil; local gameDelay = mode == "Auto" and boundGameInfo.getAutoSpamDelay() or 0
-        if inFlight or not allowed() or (mode == "Auto" and gameDelay == nil) then
-          task.wait(CONFIG.POLL_INTERVAL)
-        else
-          local readyAt = interval and due or math.max(nextAllowedAt, time)
-          if type(gameDelay) == "number" and gameDelay == gameDelay and gameDelay > 0 and gameDelay < math.huge then readyAt = math.max(readyAt, time + gameDelay) end
-          if time >= readyAt then
-            request(boundUtils, boundRemote, token, allowed, minimum)
-            if interval then local completedAt = os.clock(); due += (math.floor(math.max(0, completedAt - due) / interval) + 1) * interval end
+        if mode ~= "Auto" then
+          task.wait(); local time = os.clock()
+          local delta = math.max(0, time - previous); previous = time
+          if allowed() then
+            credit += mode == "CPF" and rate or rate * delta; local count = math.floor(credit)
+            credit = credit - count
+            for _ = 1, count do
+              if not allowed() then break end
+              request(boundUtils, boundRemote, token, allowed, 0)
+            end
           else
-            task.wait(math.min(readyAt - time, CONFIG.POLL_INTERVAL))
+            credit = 0
+          end
+        else
+          local time = os.clock(); local minimum = boundGameInfo.getMinimumSpamInterval()
+          local gameDelay = boundGameInfo.getAutoSpamDelay()
+          if inFlight or not allowed() or gameDelay == nil then
+            task.wait(CONFIG.POLL_INTERVAL)
+          else
+            local readyAt = math.max(nextAllowedAt, time)
+            if type(gameDelay) == "number" and gameDelay == gameDelay and gameDelay > 0 and gameDelay < math.huge then readyAt = math.max(readyAt, time + gameDelay) end
+            if time >= readyAt then request(boundUtils, boundRemote, token, allowed, minimum) else task.wait(math.min(readyAt - time, CONFIG.POLL_INTERVAL)) end
           end
         end
       end
