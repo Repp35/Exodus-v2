@@ -53,7 +53,7 @@ local CONFIG = {
 
 local PROTECTED_REASONS = {
   first_return_timeout = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
-  invalid_or_stale_ball = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
+  deflect_cooldown_timeout = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
   target_unavailable = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
   frozen = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
   proximity_gate_lost = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
@@ -220,14 +220,21 @@ local function closeClashProtected(state, time, radius)
     and finite(state.lastCloseDistance)
     and state.lastCloseDistance <= radius
 end
-local function stationaryTooLong(state, time, ball)
+local function stationaryTooLong(state, time, ball, snapshot)
   if not state.active then state.stationaryBall, state.stationaryPosition, state.stationarySince = nil, nil, nil; return false end
   local position = ball.Position
-  if state.stationaryBall ~= ball or typeof(state.stationaryPosition) ~= "Vector3" then state.stationaryBall, state.stationaryPosition, state.stationarySince = ball, position, time; return false end
-  if (position - state.stationaryPosition).Magnitude > CONFIG.DEACTIVATION.STATIONARY_POSITION_EPSILON then state.stationaryPosition, state.stationarySince = position, time; return false end
-  local ping = gameInfo.getAveragePing()
-  if not finite(ping) or ping < 0 then ping = 0 end
-  return time - state.stationarySince >= CONFIG.DEACTIVATION.STATIONARY_TIMEOUT + ping
+  local speed = snapshotSpeed(snapshot)
+  if not finite(speed) or speed > 1 or not finite(snapshot.syncSequence) then state.stationarySince, state.stationarySequence = nil, nil; return false end
+  if state.stationaryBall ~= ball or typeof(state.stationaryPosition) ~= "Vector3" or not state.stationarySince
+    or (position - state.stationaryPosition).Magnitude > CONFIG.DEACTIVATION.STATIONARY_POSITION_EPSILON then
+    state.stationaryBall, state.stationaryPosition, state.stationarySince, state.stationarySequence, state.stationarySampleAt = ball, position, time, snapshot.syncSequence, time; return false
+  end
+  if snapshot.syncSequence == state.stationarySequence then return false end
+  if time < state.stationarySampleAt or time - state.stationarySampleAt > CONFIG.DEACTIVATION.STATIONARY_TIMEOUT then
+    state.stationarySince = time
+  end
+  state.stationarySequence, state.stationarySampleAt = snapshot.syncSequence, time
+  return time - state.stationarySince >= CONFIG.DEACTIVATION.STATIONARY_TIMEOUT
 end
 local function activate(state, reason, partner, time, serverTime, snapshot)
   if
@@ -242,7 +249,7 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   then
     return false
   end
-  local bypassExchange = reason == "own_ball_proximity" or reason == "close_target_switch" or reason == "haunter" or reason == "haunter_self"
+  local bypassExchange = reason == "own_ball_proximity" or reason == "close_target_switch" or reason == "clash_intercept" or reason == "haunter" or reason == "haunter_self"
   if
     not bypassExchange
     and (
@@ -258,6 +265,7 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.targetUncertain == true or snapshot.targetId ~= localPlayer.UserId
     or snapshot.teleported == true or snapshot.locked == true or not state.root or not state.root.Parent
     or typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return false end
+  if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE) then return false end
   local toward = state.root.Position - snapshot.position
   if toward.Magnitude <= 0.05 or snapshot.velocity:Dot(toward) <= 0 then return false end
   if not bypassExchange and distanceGate(state, snapshot, partner) ~= nil then return false end
@@ -291,49 +299,39 @@ end
 local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
+  if gameInfo.getBallFrozen() == true then return "ball_frozen" end
+  local ball = gameInfo.getBall()
+  if not ball or not ball:IsA("BasePart") or not ball.Parent then return nil end
+  if snapshot and (snapshot.teleported or snapshot.locked or snapshot.targetUncertain) then return nil end
+  local age = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt
+  -- A missing or delayed packet is not evidence that the exchange ended.
+  if not snapshot or not gameInfo.isSnapshotValid(snapshot) or not age or age < 0 or age > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return nil end
+  if stationaryTooLong(state, time, ball, snapshot) then return "frozen" end
+  local target = userId(snapshot.targetId)
+  if not target then return nil end
+  -- Time alone cannot end a clash: require a confirmed target outside the
+  -- pair. Delayed, missing and uncertain updates never satisfy this gate.
+  local outsidePair = target ~= localPlayer.UserId and target ~= state.partner
   local cooldown = gameInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
     state.deflectCooldownSince = state.deflectCooldownSince or time
-    if
-      state.activatedAt
-      and time - state.activatedAt >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
-      and time - state.deflectCooldownSince > CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
-    then
-      return "deflect_cooldown_timeout"
-    end
   else
     state.deflectCooldownSince = nil
   end
-  local ball = gameInfo.getBall()
-  if not ball or not ball:IsA("BasePart") or not ball.Parent then return "ball_missing" end
-  if snapshot and (snapshot.teleported or snapshot.locked or snapshot.targetUncertain) then return nil end
-  if state.activatedAt and not state.firstReturnSeen and time - state.activatedAt >= CONFIG.DEACTIVATION.FIRST_RETURN_TIMEOUT then return "first_return_timeout" end
-  if gameInfo.getBallFrozen() == true then return "ball_frozen" end
-  if stationaryTooLong(state, time, ball) then return "frozen" end
-  local age = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt
-  if not snapshot or not gameInfo.isSnapshotValid(snapshot) or not age or age < 0 or age > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return "invalid_or_stale_ball" end
-  local target = userId(snapshot.targetId)
-  if not target then return "target_unavailable" end
+  if outsidePair then
+    if state.activatedAt and not state.firstReturnSeen and time - state.activatedAt >= CONFIG.DEACTIVATION.FIRST_RETURN_TIMEOUT then return "first_return_timeout" end
+    if state.deflectCooldownSince and time - state.deflectCooldownSince >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT then return "deflect_cooldown_timeout" end
+  end
   if target ~= localPlayer.UserId and target ~= state.partner then
     local position, limit = gameInfo.getPlayerMotion(target), distanceLimit(snapshot, target)
     if limit and state.root.Parent and typeof(position) == "Vector3" and (position - state.root.Position).Magnitude > limit then return "distant_target" end
   end
-  if state.reason == "own_ball_proximity" and not ownBallClose(state, snapshot, time) then return "proximity_gate_lost" end
   local reason = distanceGate(state, snapshot, state.partner)
-  if reason ~= "distance_unavailable" then return reason end
+  if reason == "opponent_distance" then return reason end
 end
 local function checkDeactivation(state, snapshot, time)
   if not state.active then return false end
   local reason = deactivationReason(state, snapshot, time)
-  if
-    not reason
-    and state.activatedAt
-    and gameInfo.isClientDeflectResetLate(state.activatedAt, snapshot and snapshotSpeed(snapshot))
-    and time - state.activatedAt >= CONFIG.DEACTIVATION.MIN_ACTIVE_TIME
-  then
-    local opponent = gameInfo.getPlayerMotion(state.partner)
-    if typeof(opponent) == "Vector3" and (opponent - state.root.Position).Magnitude > CONFIG.DEACTIVATION.LATE_RESET_DISTANCE then reason = "client_deflect_reset_late" end
-  end
   return reason ~= nil and deactivate(state, reason, time)
 end
 
@@ -520,12 +518,30 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
     return
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
+  if snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetUncertain ~= true and not snapshot.teleported and not snapshot.locked
+    and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE)) then
+    local confirmedTarget = userId(snapshot.targetId)
+    if confirmedTarget then targetChanged(state, confirmedTarget, time, snapshot, fresh and serverTime or nil) end
+  end
   if state.active and not blocked and checkDeactivation(state, snapshot, time) then blocked = true end
   sampleOwnDash(state, time)
   if not snapshot or not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(state, snapshot, time, true); clashStats = clashStatsModule.get() end
   if not autoEnabled or blocked or state.active then return end
+  -- A game-confirmed clash can be intercepted without waiting for another
+  -- target round trip. Closing speed bounds when the first click is useful.
+  local context = gameInfo.getClashContext()
+  if context and context.partnerId and snapshot.targetId == localPlayer.UserId and snapshot.targetUncertain ~= true
+    and typeof(snapshot.position) == "Vector3" and typeof(snapshot.velocity) == "Vector3" then
+    local delta = state.root.Position - snapshot.position; local distance = delta.Magnitude
+    local closing = distance > 0 and snapshot.velocity:Dot(delta) / distance or 0
+    local g = geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR)
+    if finite(closing) and closing > 0 and g and math.max(0, distance - g.noWindowParryRadius) / closing <= g.effectiveWindow
+      and distanceGate(state, snapshot, context.partnerId) == nil then
+      activate(state, "clash_intercept", context.partnerId, time, serverTime or snapshot.serverTime, snapshot)
+    end
+  end
   if ownBallClose(state, snapshot, time) then
     activate(state, "own_ball_proximity", state.pending and state.pending.partner or state.proximityPartner, time, serverTime or snapshot.serverTime, snapshot)
   end
@@ -828,6 +844,12 @@ local function clashStatus()
 end
 function AutoSpam.getStatus()
   local state = current
+  local time = utils and now() or 0; local snapshot = gameInfo and gameInfo.getSnapshotAt(time)
+  local distance, closing
+  if state and state.root and state.root.Parent and snapshot and typeof(snapshot.position) == "Vector3" then
+    local delta = state.root.Position - snapshot.position; distance = delta.Magnitude
+    if distance > 0 and typeof(snapshot.velocity) == "Vector3" then closing = snapshot.velocity:Dot(delta) / distance end
+  end
   return {
     schema = utils and utils.apiVersion() or 1,
     phase = state and (state.active and "active" or "idle") or "detached",
@@ -837,6 +859,11 @@ function AutoSpam.getStatus()
     lastActivationAt = lastActivationAt,
     lastStopReason = lastStopReason,
     lastStopAt = lastStopAt,
+    targetId = snapshot and snapshot.targetId or -1,
+    targetUncertain = snapshot and snapshot.targetUncertain == true or false,
+    ballDistance = distance,
+    closingSpeed = closing,
+    snapshotAge = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and math.max(0, time - snapshot.syncAt) or nil,
     clashPartnerId = state and state.partner or -1,
     clashStats = clashStatus(),
   }

@@ -169,3 +169,69 @@ for idx,fps in ipairs({60,30}) do
  active=false; mod.teardown()
 end
 ''')
+autospam=(root/'autospam.luau').read_text()
+deactivation=autospam[autospam.index('local function deactivationReason'):autospam.index('local function checkDeactivation')]
+run('clash remains active despite late or missing packets and cooldown', '''
+local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
+local function userId(x) return finite(x) and x>0 and x or nil end
+local function typeof(x) return type(x) end
+local frozen=false; local ball={Parent=true,IsA=function() return true end}
+local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local gameInfo={getBall=function() return ball end,getBallFrozen=function() return frozen end,isSnapshotValid=function() return true end,getDeflectCooldownState=function() return {blocking=true} end}
+local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},DEACTIVATION={FIRST_RETURN_TIMEOUT=0.15,DEFLECT_COOLDOWN_TIMEOUT=0.15}}
+local localPlayer={UserId=42}; local state={active=true,activatedAt=1,root={Parent=true},partner=99}
+local function distanceGate() return nil end
+local function stationaryTooLong() return false end
+'''+deactivation+'''
+assert(deactivationReason(state,{syncAt=1,targetId=42},10)==nil,'late packet ended clash')
+assert(deactivationReason(state,nil,10)==nil,'missing packet ended clash')
+assert(deactivationReason(state,{syncAt=9.9,targetId=42},10)==nil,'timeout ended clash')
+assert(deactivationReason(state,{syncAt=10.1,targetId=99},10.2)==nil,'cooldown ended clash')
+assert(deactivationReason(state,{syncAt=10.3,targetId=88},10.3)=='first_return_timeout','confirmed third target should permit timeout')
+frozen=true; assert(deactivationReason(state,nil,10)=='ball_frozen')
+''')
+evaluate=autospam[autospam.index('local function evaluate('):autospam.index('local function watchCharacter')]
+run('confirmed target is processed on heartbeat and clash intercept requires incoming ball', '''
+local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
+local function userId(x) return finite(x) and x>0 and x or nil end
+local V={}; V.__index=function(t,k) if k=='Magnitude' then return math.abs(t.x) end return V[k] end
+V.__sub=function(a,b) return setmetatable({x=a.x-b.x},V) end
+function V:Dot(other) return self.x*other.x end
+local function v(x) return setmetatable({x=x},V) end
+local function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
+local current={root={Parent=true,Position=v(0)},active=false}; local state=current; local localPlayer={UserId=42}
+local snapshot={targetId=42,position=v(20),velocity=v(-100),syncAt=10}; local targets,activations=0,0
+local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local gameInfo={getSnapshotAt=function() return snapshot end,isSnapshotValid=function() return true end,getBallFrozen=function() return false end,getClashContext=function() return {partnerId=99} end}
+local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},ACTIVATION={RADIUS_FACTOR=0.8}}
+local function targetChanged(_,target) targets=targets+1; assert(target==42) end
+local function checkDeactivation() return false end
+local function sampleOwnDash() end
+local function geometry() return {noWindowParryRadius=8,effectiveWindow=0.15} end
+local function distanceGate() return nil end
+local function activate(_,reason) assert(reason=='clash_intercept'); activations=activations+1; state.active=true end
+local function ownBallClose() return false end
+local function canActivateReturn() return false end
+'''+evaluate+'''
+evaluate(state,10,false,nil,snapshot,nil,true); assert(targets==1 and activations==1)
+state.active=false; snapshot.velocity=v(100); evaluate(state,10,false,nil,snapshot,nil,true); assert(activations==1,'activated for outgoing ball')
+snapshot.velocity=v(-100); snapshot.targetUncertain=true; evaluate(state,10,false,nil,snapshot,nil,true); assert(activations==1,'activated for uncertain target')
+''')
+stationary=autospam[autospam.index('local function stationaryTooLong'):autospam.index('local function activate(')]
+run('stationary timeout requires fresh independent samples', '''
+local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
+local V={}; V.__index=function(t,k) if k=='Magnitude' then return math.abs(t.x) end end
+V.__sub=function(a,b) return setmetatable({x=a.x-b.x},V) end
+local function v(x) return setmetatable({x=x},V) end
+local function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
+local function snapshotSpeed(x) return x.syncSpeed end
+local CONFIG={DEACTIVATION={STATIONARY_POSITION_EPSILON=0.01,STATIONARY_TIMEOUT=0.1}}
+local state={active=true}; local ball={Position=v(4)}; local snapshot={syncSequence=1,syncSpeed=0}
+'''+stationary+'''
+assert(not stationaryTooLong(state,10,ball,snapshot))
+assert(not stationaryTooLong(state,11,ball,snapshot),'single old sample stopped clash')
+snapshot.syncSequence=2; assert(not stationaryTooLong(state,11,ball,snapshot),'packet gap treated as stationary')
+snapshot.syncSequence=3; assert(not stationaryTooLong(state,11.06,ball,snapshot))
+snapshot.syncSequence=4; assert(stationaryTooLong(state,11.12,ball,snapshot),'continuous stationary samples not detected')
+snapshot.syncSpeed=20; assert(not stationaryTooLong(state,12,ball,snapshot),'moving ball marked stationary')
+''')
