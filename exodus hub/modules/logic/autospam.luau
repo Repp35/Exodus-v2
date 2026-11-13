@@ -28,6 +28,7 @@ local CONFIG = {
     DEFLECT_COOLDOWN_TIMEOUT_BASE = 0.225,
     DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED = 0.15,
     COOLDOWN_PROTECTION_RADIUS = 16,
+    COOLDOWN_WINDOW_FRAME_MARGIN = 1 / 60,
   },
   SHARED = {
     MIN_RETURN = 1 / 25,
@@ -239,7 +240,9 @@ local function deactivate(state, reason, time)
   time = time or now()
   if state.active then
     state.stoppedPartner, state.stoppedAt = state.partner, time; state.active, state.lastDeactivatedAt = false, time
-    if reason == "deflect_cooldown_timeout" then state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target end
+    if reason == "deflect_cooldown_timeout" or reason == "deflect_window_expiring" or reason == "deflect_miss" then
+      state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target
+    end
     lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
@@ -257,6 +260,13 @@ local function deactivationReason(state, snapshot, time)
   end
   local cooldown = cooldownInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
+    if cooldown.miss == true then return "deflect_miss" end
+    if cooldown.phase == "reversible" and finite(cooldown.missDeadline) then
+      local ping = gameInfo.getAveragePing()
+      if not finite(ping) or ping < 0 then ping = 0 end
+      local margin = ping + CONFIG.DEACTIVATION.COOLDOWN_WINDOW_FRAME_MARGIN
+      if cooldown.missDeadline - time <= margin then return "deflect_window_expiring" end
+    end
     local observedStart = finite(cooldown.blockingSince) and cooldown.blockingSince <= time and cooldown.blockingSince or time
     state.deflectCooldownSince = math.max(state.activatedAt or time, observedStart)
   else
@@ -320,7 +330,6 @@ local function armReturn(state, previous, time, snapshot, serverTime)
 end
 local function targetChanged(state, target, time, snapshot, serverTime)
   if not target or target == state.target then return end
-  if state.timeoutBlocked and target ~= state.timeoutBlockedTarget then state.timeoutBlocked, state.timeoutBlockedTarget = false, nil end
   local previous, ownId = state.target, localPlayer.UserId; local switchedToMe = target == ownId and previous and previous ~= ownId
   local exchangeReady
   if
@@ -810,3 +819,4 @@ AutoSpam.__contract = {
 }
 
 return AutoSpam
+

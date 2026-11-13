@@ -67,7 +67,8 @@ autospam = (Path(__file__).resolve().parents[2] / 'modules/logic/autospam.luau')
 policy = autospam[autospam.index('local function deactivationReason('):autospam.index('local function checkDeactivation(')]
 run('AutoSpam follows local cooldown appearance and disappearance', '''
 local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
-local cd={blocking=false}; local gameInfo={getBallFrozen=function() return false end}; local cooldownInfo={getDeflectCooldownState=function() return cd end}
+local cd={blocking=false}; local gameInfo={getBallFrozen=function() return false end,getAveragePing=function() return 0 end}; local cooldownInfo={getDeflectCooldownState=function() return cd end}
+local CONFIG={DEACTIVATION={COOLDOWN_WINDOW_FRAME_MARGIN=1/60}}
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
 local function returnTimeout() return 1 end
 local function cooldownTimeout() return 0.2 end
@@ -103,4 +104,40 @@ eventCallbacks.training('Lockout',0.4); assert(mod.getTrainingCooldownState().bl
 eventCallbacks.training('Parry',99); assert(mod.getTrainingCooldownState().blocking)
 eventCallbacks.training('Parry',42); assert(not mod.getTrainingCooldownState().blocking)
 mod.teardown(); assert(tracked==0); for _,c in ipairs(connections) do assert(not c.Connected) end
+''')
+
+
+run('AutoSpam stops before window closes with ping compensation', \
+'''
+local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
+local ping=0.1; local cd={blocking=true,phase='reversible',missDeadline=11,blockingSince=10.8}
+local gameInfo={getBallFrozen=function() return false end,getAveragePing=function() return ping end}
+local cooldownInfo={getDeflectCooldownState=function() return cd end}
+local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local CONFIG={DEACTIVATION={COOLDOWN_WINDOW_FRAME_MARGIN=1/60}}
+local function returnTimeout() return 1 end
+local function cooldownTimeout() return 5 end
+local function cooldownOpponentOutside() return false end
+local state={activatedAt=10}
+'''+policy+'''
+assert(deactivationReason(state,nil,10.88)==nil, 'stopped outside compensated margin')
+assert(deactivationReason(state,nil,10.89)=='deflect_window_expiring', 'ping margin ignored or proximity protection blocked gate')
+ping=0; assert(deactivationReason(state,nil,10.97)==nil, 'zero ping stopped too early')
+assert(deactivationReason(state,nil,10.99)=='deflect_window_expiring')
+cd.blocking=false; assert(deactivationReason(state,nil,10.99)==nil, 'stopped after successful reset')
+cd.blocking=true; cd.phase='predicted_reset'; cd.missDeadline=nil; assert(deactivationReason(state,nil,11)==nil, 'unknown deadline treated as expiring')
+cd.miss=true; assert(deactivationReason(state,nil,11)=='deflect_miss', 'miss was not caught')
+''')
+stop = autospam[autospam.index('local function deactivate('):autospam.index('local function deactivationReason(')]
+run('window safety gate blocks immediate reactivation', '''
+local current={active=true,partner=99,target=42}; local state=current
+local watchOpponent,lastStopReason,lastStopAt
+local utils={setAutoSpamActive=function(active) assert(active==false) end,recordTransition=function() end}
+local function now() return 10 end
+local function resetExchange() end
+'''+stop+'''
+assert(deactivate(state,'deflect_window_expiring',10))
+assert(not state.active and state.timeoutBlocked and state.timeoutBlockedTarget==42)
+state.active=true; state.partner=99; state.timeoutBlocked=false
+assert(deactivate(state,'deflect_miss',11)); assert(state.timeoutBlocked)
 ''')
