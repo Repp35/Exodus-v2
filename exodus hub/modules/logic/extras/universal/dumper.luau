@@ -243,6 +243,7 @@ local function run(token, callbacks)
     )
     tree[#tree + 1] = detail
     if REMOTE_CLASSES[objectClass(object)] then remoteCount += 1; remotes[#remotes + 1] = detail end
+    if index % 1000 == 0 then task.wait() end
   end
   remotes[2] = "total=" .. remoteCount; local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
   if not treeOk then return nil, "cannot save tree.txt: " .. tostring(treeError) end
@@ -275,7 +276,8 @@ local function run(token, callbacks)
     local fn = lookup(name)
     if fn then readers[#readers + 1] = { name = name, fn = fn } end
   end
-  local manifest, errors = {}, discoveryErrors; local saved, failed, bytecodes = 0, 0, 0
+  local manifest, errors = {}, discoveryErrors; local saved, failed, bytecodes, cacheHits = 0, 0, 0, 0
+  local sourceCache, unresolved = {}, {}
   for index, item in ipairs(candidates) do
     if token.cancelled then return nil, "Dump canceled" end
     local object, attempts = item.instance, {}
@@ -293,15 +295,18 @@ local function run(token, callbacks)
     local sourceOk, directSource = pcall(function() return object.Source end)
     if sourceOk and type(directSource) == "string" and directSource:match("%S") then source, method = directSource, "Source"; attempts[#attempts + 1] = "Source: available"
     else attempts[#attempts + 1] = "Source: " .. (sourceOk and "empty or unavailable" or errorText(directSource)) end
-    if not source and decompiler then
-      source = attempt("decompile(instance)", decompiler, object, true)
-      if source then method = "decompile(instance)" end
-    end
-    if (not source or CONFIG.SAVE_BYTECODE) and #readers > 0 then
+    if #readers > 0 then
       for _, reader in ipairs(readers) do
         bytecode = attempt(reader.name .. "(instance)", reader.fn, object, false)
         if bytecode then break end
       end
+    end
+    if not source and bytecode and sourceCache[bytecode] then
+      source, method = sourceCache[bytecode], "cached bytecode"; cacheHits += 1
+    end
+    if not source and decompiler then
+      source = attempt("decompile(instance)", decompiler, object, true)
+      if source then method = "decompile(instance)" end
     end
     if not source and bytecode and decompiler then
       source = attempt("decompile(bytecode)", decompiler, bytecode, true)
@@ -319,6 +324,7 @@ local function run(token, callbacks)
         end
       end
     end
+    if source and bytecode and not sourceCache[bytecode] then sourceCache[bytecode] = source end
     if not decompiler then attempts[#attempts + 1] = "decompile: unavailable" end
     if #readers == 0 then attempts[#attempts + 1] = "bytecode readers unavailable" end
     local stem = ("%04d_%s_%s"):format(index, objectClass(object), safeFilename(item.path))
@@ -349,14 +355,40 @@ local function run(token, callbacks)
       if savedOk then manifest[#manifest + 1] = "[OK] " .. line(item.path) .. " | " .. method .. " | scripts/" .. stem .. ".lua"
       else manifest[#manifest + 1] = "[ERROR] " .. line(item.path) .. " | write failed" end
     else
-      failed += 1; errors[#errors + 1] = "[SOURCE_ERROR] " .. line(item.path) .. " | " .. objectClass(object) .. "\n  " .. table.concat(attempts, "\n  ")
-      manifest[#manifest + 1] = "[ERROR] " .. line(item.path) .. " | source unavailable"
+      unresolved[#unresolved + 1] = { item = item, stem = stem, index = index, bytecode = bytecode, attempts = attempts, context = context }
+      manifest[index] = "[PENDING] " .. line(item.path)
+      failed += 1
     end
     status.processed, status.saved, status.failed, status.bytecode = index, saved, failed, bytecodes
     if index == 1 or index % CONFIG.PROGRESS_EVERY == 0 then
       emit(callbacks, "onProgress", index, #candidates, item.path)
     end
+    if index % 50 == 0 then task.wait() end
   end
+  for _, entry in ipairs(unresolved) do
+    if token.cancelled then return nil, "Dump canceled" end
+    local recovered = entry.bytecode and sourceCache[entry.bytecode]
+    if recovered then
+      local header = table.concat({
+        "-- SrcDump", "-- index: " .. entry.index, "-- class: " .. objectClass(entry.item.instance),
+        "-- path: " .. line(entry.item.path), "-- discovered_by: " .. entry.item.origin,
+        "-- run_context: " .. entry.context, "-- method: cached bytecode (later match)", "",
+      }, "\n")
+      local ok, err = saveFile(base .. "/scripts/" .. entry.stem .. ".lua", header .. recovered .. "\n")
+      if ok then
+        saved += 1; failed -= 1; cacheHits += 1
+        manifest[entry.index] = "[OK] " .. line(entry.item.path) .. " | cached bytecode (later match) | scripts/" .. entry.stem .. ".lua"
+      else
+        errors[#errors + 1] = "[WRITE_ERROR] " .. line(entry.item.path) .. " | " .. tostring(err)
+        manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | write failed"
+      end
+    else
+      local category = entry.bytecode and "bytecode available; source unavailable" or "bytecode unavailable to client"
+      errors[#errors + 1] = "[SOURCE_ERROR] " .. line(entry.item.path) .. " | " .. objectClass(entry.item.instance) .. " | " .. category .. "\n  " .. table.concat(entry.attempts, "\n  ")
+      manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | " .. category
+    end
+  end
+  status.saved, status.failed = saved, failed
   saveFile(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n"); saveFile(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
   saveFile(
     base .. "/summary.txt",
@@ -367,6 +399,7 @@ local function run(token, callbacks)
       "decompiled_and_saved=" .. saved,
       "failed=" .. failed,
       "bytecode_saved=" .. bytecodes,
+      "source_cache_hits=" .. cacheHits,
       "instances=" .. #catalog,
       "remotes=" .. remoteCount,
       "note=Only content accessible to the client environment can be captured.",
