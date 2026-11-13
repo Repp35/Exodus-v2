@@ -118,7 +118,8 @@ local CONFIG = {
     { name = "spam", path = "modules/logic/spam.luau" },
     { name = "character", path = "modules/logic/aux/character.luau" },
     { name = "dumper", path = "modules/logic/extras/universal/dumper.luau" },
-    { name = "ui", path = "modules/front/ui.luau" },
+    { name = "uilib", path = "modules/front/ui.luau" },
+    { name = "ui", path = "modules/front/exodusui.luau" },
   },
 }
 
