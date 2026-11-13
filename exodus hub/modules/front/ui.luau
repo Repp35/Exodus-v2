@@ -1344,10 +1344,8 @@ local function createCameraSensitivityCard(yPos, parent)
   return nextCardY(yPos, CARD_H)
 end
 local function createDropdown(yPos, parent, definition)
-  local options = definition.options or {}
-  local f = cardFrame(yPos, RATE_CARD_H, parent)
-  cardLabel(optionInfo(definition), f)
-  local current = Utils.getConfigValue(definition.key)
+  local options = definition.options or {}; local f = cardFrame(yPos, RATE_CARD_H, parent)
+  cardLabel(optionInfo(definition), f); local current = Utils.getConfigValue(definition.key)
   local function labelFor(value)
     for _, option in ipairs(options) do
       if option.value == value then return option.label end
@@ -1355,27 +1353,46 @@ local function createDropdown(yPos, parent, definition)
     return tostring(value or "Selecionar")
   end
   local button = inst("TextButton", {
-    Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 29),
-    BackgroundColor3 = C.inputBg, BorderSizePixel = 0, Text = "",
-    AutoButtonColor = false, ZIndex = 7, Parent = f,
+    Size = UDim2.new(1, -20, 0, 28),
+    Position = UDim2.fromOffset(10, 29),
+    BackgroundColor3 = C.inputBg,
+    BorderSizePixel = 0,
+    Text = "",
+    AutoButtonColor = false,
+    ZIndex = 7,
+    Parent = f,
   })
   corner(button, 8); local border = stroke(button, C.border, 1)
   local selected = inst("TextLabel", {
-    Size = UDim2.new(1, -38, 1, 0), Position = UDim2.fromOffset(10, 0),
-    BackgroundTransparency = 1, Text = labelFor(current), TextColor3 = C.text,
-    TextSize = 12, Font = Enum.Font.GothamSemibold,
-    TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
-    ZIndex = 8, Parent = button,
+    Size = UDim2.new(1, -38, 1, 0),
+    Position = UDim2.fromOffset(10, 0),
+    BackgroundTransparency = 1,
+    Text = labelFor(current),
+    TextColor3 = C.text,
+    TextSize = 12,
+    Font = Enum.Font.GothamSemibold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    ZIndex = 8,
+    Parent = button,
   })
   local arrow = inst("Frame", {
-    Size = UDim2.fromOffset(16, 16), Position = UDim2.new(1, -24, 0.5, -8),
-    BackgroundTransparency = 1, ZIndex = 8, Parent = button,
+    Size = UDim2.fromOffset(16, 16),
+    Position = UDim2.new(1, -24, 0.5, -8),
+    BackgroundTransparency = 1,
+    ZIndex = 8,
+    Parent = button,
   })
   for index, angle in ipairs({ 45, -45 }) do
     local line = inst("Frame", {
-      AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromOffset(index == 1 and 5 or 10, 8),
-      Size = UDim2.fromOffset(7, 2), Rotation = angle, BackgroundColor3 = C.subtext,
-      BorderSizePixel = 0, ZIndex = 9, Parent = arrow,
+      AnchorPoint = Vector2.new(0.5, 0.5),
+      Position = UDim2.fromOffset(index == 1 and 5 or 10, 8),
+      Size = UDim2.fromOffset(7, 2),
+      Rotation = angle,
+      BackgroundColor3 = C.subtext,
+      BorderSizePixel = 0,
+      ZIndex = 9,
+      Parent = arrow,
     })
     corner(line, 1)
   end
@@ -1384,7 +1401,8 @@ local function createDropdown(yPos, parent, definition)
   close = function()
     if closeActiveDropdown == close then closeActiveDropdown = nil end
     if followConnection then
-      safeDisconnect(followConnection); untrackConn(followConnection); followConnection = nil
+      safeDisconnect(followConnection); untrackConn(followConnection)
+      followConnection = nil
     end
     if popup then popup:Destroy(); popup = nil end
     if arrow.Parent then twPlay(arrow, 0.18, { Rotation = 0 }, EASE_OUT, DIR_OUT) end
@@ -1393,36 +1411,55 @@ local function createDropdown(yPos, parent, definition)
   local function open()
     if closeActiveDropdown then closeActiveDropdown() end
     if not screenGui or not screenGui.Parent or not button.Parent or #options == 0 then return end
-    local scale = math.max(button.AbsoluteSize.Y / 28, 0.1)
-    local rowHeight, gap, padding = 32 * scale, 3 * scale, 4 * scale
-    local contentHeight = #options * (rowHeight + gap) + padding * 2
-    local desiredHeight = math.min(#options, definition.maxVisible or 4) * (rowHeight + gap) + padding * 2
+    local scale = math.max(button.AbsoluteSize.Y / 28, 0.1); local rowHeight, gap, padding = 32 * scale, 3 * scale, 4 * scale
+    local contentHeight = #options * (rowHeight + gap) + padding * 2; local desiredHeight = math.min(#options, definition.maxVisible or 4) * (rowHeight + gap) + padding * 2
     popup = inst("ScreenGui", {
-      Name = "ExodusDropdown", ResetOnSpawn = false, IgnoreGuiInset = true,
-      DisplayOrder = screenGui.DisplayOrder + 1, ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+      Name = "ExodusDropdown",
+      ResetOnSpawn = false,
+      IgnoreGuiInset = true,
+      DisplayOrder = screenGui.DisplayOrder + 1,
+      ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
       Parent = screenGui.Parent,
     })
     local dismiss = inst("TextButton", {
-      Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Text = "",
-      AutoButtonColor = false, ZIndex = 1, Parent = popup,
+      Size = UDim2.fromScale(1, 1),
+      BackgroundTransparency = 1,
+      Text = "",
+      AutoButtonColor = false,
+      ZIndex = 1,
+      Parent = popup,
     })
     dismiss.Activated:Connect(close)
     local list = inst("ScrollingFrame", {
-      Size = UDim2.fromOffset(button.AbsoluteSize.X, 0), BackgroundColor3 = C.card,
-      BackgroundTransparency = 0.02, BorderSizePixel = 0, Active = true,
-      CanvasSize = UDim2.fromOffset(0, contentHeight), ScrollBarThickness = 5,
-      ScrollBarImageColor3 = C.accent, ScrollingDirection = Enum.ScrollingDirection.Y,
-      ClipsDescendants = true, ZIndex = 2, Parent = popup,
+      Size = UDim2.fromOffset(button.AbsoluteSize.X, 0),
+      BackgroundColor3 = C.card,
+      BackgroundTransparency = 0.02,
+      BorderSizePixel = 0,
+      Active = true,
+      CanvasSize = UDim2.fromOffset(0, contentHeight),
+      ScrollBarThickness = 5,
+      ScrollBarImageColor3 = C.accent,
+      ScrollingDirection = Enum.ScrollingDirection.Y,
+      ClipsDescendants = true,
+      ZIndex = 2,
+      Parent = popup,
     })
     corner(list, 9 * scale); stroke(list, C.border, 1)
     for index, option in ipairs(options) do
       local row = inst("TextButton", {
         Size = UDim2.new(1, -2 * padding - 5, 0, rowHeight),
         Position = UDim2.fromOffset(padding, padding + (index - 1) * (rowHeight + gap)),
-        BackgroundColor3 = C.accent, BackgroundTransparency = option.value == current and 0.25 or 1,
-        BorderSizePixel = 0, Text = option.label, TextColor3 = option.value == current and C.text or C.subtext,
-        TextSize = math.max(10, 12 * scale), Font = Enum.Font.GothamSemibold,
-        TextTruncate = Enum.TextTruncate.AtEnd, AutoButtonColor = false, ZIndex = 3, Parent = list,
+        BackgroundColor3 = C.accent,
+        BackgroundTransparency = option.value == current and 0.25 or 1,
+        BorderSizePixel = 0,
+        Text = option.label,
+        TextColor3 = option.value == current and C.text or C.subtext,
+        TextSize = math.max(10, 12 * scale),
+        Font = Enum.Font.GothamSemibold,
+        TextTruncate = Enum.TextTruncate.AtEnd,
+        AutoButtonColor = false,
+        ZIndex = 3,
+        Parent = list,
       })
       corner(row, 7 * scale)
       row.MouseEnter:Connect(function()
@@ -1432,9 +1469,7 @@ local function createDropdown(yPos, parent, definition)
         if current ~= option.value then twPlay(row, 0.15, { BackgroundTransparency = 1 }, EASE_SINE, DIR_OUT) end
       end)
       row.Activated:Connect(function()
-        if current ~= option.value and setConfigValue(definition.key, option.value) then
-          current = option.value; selected.Text = labelFor(current)
-        end
+        if current ~= option.value and setConfigValue(definition.key, option.value) then current = option.value; selected.Text = labelFor(current) end
         close()
       end)
     end
@@ -1446,32 +1481,23 @@ local function createDropdown(yPos, parent, definition)
         ancestor = ancestor.Parent
       end
       if ancestor ~= screenGui then close(); return end
-      local pos, size = button.AbsolutePosition, button.AbsoluteSize
-      local parentPos, parentSize = parent.AbsolutePosition, parent.AbsoluteSize
+      local pos, size = button.AbsolutePosition, button.AbsoluteSize; local parentPos, parentSize = parent.AbsolutePosition, parent.AbsoluteSize
       if pos.Y + size.Y <= parentPos.Y or pos.Y >= parentPos.Y + parentSize.Y then close(); return end
-      local screen = workspace.CurrentCamera
-      local view = screen and screen.ViewportSize or Vector2.new(1920, 1080)
-      local margin, space = 6 * scale, 4 * scale
-      local below = math.max(0, view.Y - pos.Y - size.Y - margin - space)
-      local above = math.max(0, pos.Y - margin - space)
-      local upward = below < desiredHeight and above > below
-      local height = math.max(0, math.min(desiredHeight, upward and above or below))
-      local x = math.clamp(pos.X, margin, math.max(margin, view.X - size.X - margin))
-      list.AnchorPoint = upward and Vector2.new(0, 1) or Vector2.new(0, 0)
-      list.Position = UDim2.fromOffset(x, upward and (pos.Y - space) or (pos.Y + size.Y + space))
+      local screen = workspace.CurrentCamera; local view = screen and screen.ViewportSize or Vector2.new(1920, 1080)
+      local margin, space = 6 * scale, 4 * scale; local below = math.max(0, view.Y - pos.Y - size.Y - margin - space)
+      local above = math.max(0, pos.Y - margin - space); local upward = below < desiredHeight and above > below
+      local height = math.max(0, math.min(desiredHeight, upward and above or below)); local x = math.clamp(pos.X, margin, math.max(margin, view.X - size.X - margin))
+      list.AnchorPoint = upward and Vector2.new(0, 1) or Vector2.new(0, 0); list.Position = UDim2.fromOffset(x, upward and (pos.Y - space) or (pos.Y + size.Y + space))
       return height, size.X
     end
-    closeActiveDropdown = close
-    local height, width = updatePosition()
+    closeActiveDropdown = close; local height, width = updatePosition()
     if not popup then return end
-    twPlay(list, 0.2, { Size = UDim2.fromOffset(width, height) }, EASE_OUT, DIR_OUT)
-    twPlay(arrow, 0.2, { Rotation = 180 }, EASE_OUT, DIR_OUT)
+    twPlay(list, 0.2, { Size = UDim2.fromOffset(width, height) }, EASE_OUT, DIR_OUT); twPlay(arrow, 0.2, { Rotation = 180 }, EASE_OUT, DIR_OUT)
     twPlay(border, 0.2, { Color = C.accent }, EASE_OUT, DIR_OUT)
     followConnection = trackConn(RunService.Heartbeat:Connect(function()
       local nextHeight, nextWidth = updatePosition()
       if popup and nextHeight then
-        local oldHeight = list:GetAttribute("TargetHeight")
-        local oldWidth = list:GetAttribute("TargetWidth")
+        local oldHeight = list:GetAttribute("TargetHeight"); local oldWidth = list:GetAttribute("TargetWidth")
         if oldHeight ~= nextHeight or oldWidth ~= nextWidth then
           list:SetAttribute("TargetHeight", nextHeight); list:SetAttribute("TargetWidth", nextWidth)
           twPlay(list, 0.15, { Size = UDim2.fromOffset(nextWidth, nextHeight) }, EASE_OUT, DIR_OUT)
