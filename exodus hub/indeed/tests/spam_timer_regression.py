@@ -52,7 +52,7 @@ local count=0; local active=true
 local u={apiVersion=function() return 1 end,getConfigValue=function(k) return ({SpamRateMode='CPS',CPS=40})[k] end,isActive=function() return active end,isManualSpamActive=function() return true end,isAutoSpamActive=function() return false end,observeSpam=function() return {Disconnect=function() end} end,observeConfig=function() return {Disconnect=function() end} end,trackGlobal=function() end,untrackGlobal=function() end,recordTransition=function() end,recordError=function(_,err) error(err) end}
 local g={getMinimumSpamInterval=function() return 0.4 end,getAutoSpamDelay=function() return 1 end}
 local r={fireParry=function(_,guard) assert(guard()); count=count+1; return true end}
-assert(module.setup({Utils=u,GameInfo=g,Remote=r}))
+assert(module.setup({Utils=u,GameInfo=g,Remote=r,AutoSpam={canSend=function() return true end}}))
 for frame=1,2400 do now=frame/240; if wake and now+1e-8>=wake then local ok,delay=coroutine.resume(thread); assert(ok,delay); wake=now+(delay or 0) end end
 print(string.format('SIMULATED 240 FPS: %.1f attempts/s',count/10)); assert(count>=399 and count<=402)
 assert(module.getStatus().attemptsLastSecond>=39); active=false; module.teardown()
