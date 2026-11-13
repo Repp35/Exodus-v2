@@ -52,6 +52,10 @@ local state = {
   nextAttemptAt = 0,
   lastPosition = nil,
   lastSampleAt = 0,
+  resetPending = false,
+  retryPending = false,
+  retryCooldownSeen = false,
+  trainingRetryAt = 0,
 }
 
 -- configuration
@@ -109,6 +113,8 @@ local function resetTracking()
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
   state.lastPosition, state.lastSampleAt = nil, 0; cooldownSnapshot, cooldownSnapshotAt = nil, -math.huge
+  state.resetPending = false
+  state.retryPending, state.retryCooldownSeen, state.trainingRetryAt = false, false, 0
   table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
@@ -218,6 +224,7 @@ local function observeTarget(target, time)
   elseif target == me and previous ~= me and state.awaySeen then
     if state.awayAt and state.awayTarget == previous and time >= state.awayAt then appendRecent(state.returns, { at = time, interval = time - state.awayAt }) end
     state.fired, state.awaySeen = false, false; state.nextAttemptAt = 0
+    state.retryPending, state.retryCooldownSeen = false, false
     state.cycle += 1; state.awayAt, state.awayTarget = nil, nil
   end
   state.target, state.targetKnown = target, true
@@ -226,7 +233,8 @@ local function observeSnapshot(snapshot, time)
   if snapshot.targetUncertain == true then return false end
   local mode = snapshot.mode == "training" and "training" or "match"
   local newTrainingBall = mode == "training" and (snapshot.trainingRound ~= state.trainingRound or snapshot.ball ~= state.trainingBall)
-  if state.mode ~= mode or newTrainingBall then
+  local newMatchBall = mode == "match" and state.lastBall ~= nil and state.lastBall ~= snapshot.ball
+  if state.mode ~= mode or newTrainingBall or newMatchBall then
     state.cycle += 1; state.trainingRound, state.trainingBall = nil, nil
     if mode == "training" then
       state.trainingRound, state.trainingBall = snapshot.trainingRound, snapshot.ball; state.lastBall = nil
@@ -235,10 +243,11 @@ local function observeSnapshot(snapshot, time)
     state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false; state.fired, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, nil
     state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime, state.trainingConfirmedAt = 0, nil, nil
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
+    state.resetPending = newMatchBall
+    state.retryPending, state.retryCooldownSeen, state.trainingRetryAt = false, false, 0
   end
   local order = sequenceOrder(snapshot.syncSequence)
   if order == "old" then return false end
-  if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then return false end
   if order == "new" then state.sequence = snapshot.syncSequence end
   observeTarget(snapshot.targetId, time); return true
 end
@@ -264,6 +273,7 @@ local function request(reason)
   end
   local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote
   local firedAt, speed, distance = now, state.speed, state.distance; state.fired, state.lastFireAt = true, firedAt
+  state.retryPending, state.retryCooldownSeen = false, false
   local function sameCycle()
     return state.generation == generation
       and state.cycle == cycle
@@ -306,6 +316,11 @@ local function request(reason)
     return false
   end
   state.nextAttemptAt = 0; recordAutoParryRequest()
+  if state.mode == "training" then
+    state.trainingRetryAt = firedAt + gameInfo.getTrainingMissCooldown()
+  else
+    state.retryPending = true
+  end
   local factor = activeWindowFactor(firedAt)
   if factor > 0 then
     local geometry = radius(speed, factor)
@@ -342,8 +357,14 @@ local function tickTraining(value, root, time)
     state.fired, state.awaySeen, state.trainingConfirmedAt = false, false, confirmed
     state.cycle += 1; state.nextAttemptAt = 0
   end
+  if state.fired and time >= state.trainingRetryAt and (not finite(value.trainingLockoutUntil) or time >= value.trainingLockoutUntil)
+    and (not finite(confirmed) or confirmed == state.trainingConfirmedAt)
+    and value.targetId == state.player.UserId and closing >= CONFIG.TRAINING_MIN_CLOSING_SPEED then
+    state.fired, state.nextAttemptAt = false, 0
+  end
   if state.fired then phase("waiting", "training_awaiting_return"); return end
   if finite(confirmed) then state.trainingConfirmedAt = confirmed end
+  if finite(value.trainingLockoutUntil) and time < value.trainingLockoutUntil then phase("waiting", "training_lockout"); return end
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "training_not_target"); return end
   if closing < CONFIG.TRAINING_MIN_CLOSING_SPEED then phase("waiting", "training_not_approaching"); return end
   if distance > threshold then phase("waiting", "training_outside_window"); return end
@@ -376,6 +397,15 @@ local function tick(character, root, generation)
   end
   if value.mode == "training" then tickTraining(value, root, time); return end
   local cooldown = safeCooldown()
+  if state.fired and state.retryPending and cooldown then
+    if finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= state.lastFireAt then
+      state.retryPending = false
+    elseif cooldown.blocking == true then
+      state.retryCooldownSeen = true
+    elseif cooldown.predictedReset ~= true and (state.retryCooldownSeen or (finite(cooldown.lastStartedAt) and cooldown.lastStartedAt >= state.lastFireAt)) then
+      state.fired, state.retryPending, state.retryCooldownSeen, state.nextAttemptAt = false, false, false, 0
+    end
+  end
   if state.fired then phase("waiting", "target_already_parried"); return end
   if cooldown and cooldown.blocking == true then phase("waiting", "deflect_cooldown"); return end
   if value.locked == true then
@@ -386,6 +416,16 @@ local function tick(character, root, generation)
   if not vector(position) or not vector(rootPosition) then return end
   if not value.ball.Parent then return end
   local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or tonumber(value.speed) or 0
+  -- A fresh packet can precede the render update after a teleport. Never use
+  -- the previous flight's rendered position as the new ball position.
+  if state.resetPending then
+    local real = value.realPosition
+    local tolerance = math.max(6, math.max(speed, 0) * 0.15)
+    if not vector(real) or (position - real).Magnitude > tolerance then
+      state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "reset_position_pending"); return
+    end
+    state.resetPending = false
+  end
   local velocity = resolveVelocity(value, position, speed, time); state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
   if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
@@ -485,6 +525,9 @@ function AutoParry.onBallSync(data)
   if order == "new" then state.sequence = sequence end
   if data.Teleported == true then
     state.teleported, state.teleportSequence = true, sequence; state.lastBall = nil
+    state.cycle += 1; state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1
+    state.retryPending, state.retryCooldownSeen, state.trainingRetryAt = false, false, 0
+    state.resetPending = true
     state.speed, state.distance, state.approaching = 0, 0, false; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
     state.awayAt, state.awayTarget = nil, nil; table.clear(state.clicks)
@@ -495,15 +538,8 @@ function AutoParry.onBallSync(data)
     local current = gameInfo.getSyncSequence()
     if type(current) ~= "number" or (current - state.teleportSequence) % 65536 >= 32768 then return true end
   end
-  state.teleported, state.teleportSequence = false, nil; local rawTarget = tonumber(data.TargetPlayerID)
-  local target = finite(rawTarget) and rawTarget > 0 and rawTarget or gameInfo.getTargetId()
-  if order == nil and state.sequence ~= nil and state.targetKnown and target ~= state.target then return true end
-  if not finite(target) then return true end
-  observeTarget(target, clock())
-  if target <= 0 then
-    if target == -1 then state.lastBall = nil end
-  end
-  if state.player and (target == state.player.UserId or data.Grace == true) and state.character and state.root and not state.fired then tick(state.character, state.root, state.generation) end
+  state.teleported, state.teleportSequence = false, nil
+  if state.character and state.root then tick(state.character, state.root, state.generation) end
   return true
 end
 
@@ -698,6 +734,7 @@ AutoParry.__contract = {
     Remote = { "fireParry" },
     GameInfo = {
       "isTrainingArea",
+      "getTrainingMissCooldown",
       "observeTraining",
       "getSnapshotAt",
       "isSnapshotValid",
