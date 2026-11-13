@@ -400,6 +400,12 @@ local function deactivationReason(state, snapshot, time)
   if gameInfo.getBallFrozen() == true then return "ball_frozen" end
   local ball = gameInfo.getBall()
   if not ball or not ball:IsA("BasePart") or not ball.Parent then return nil end
+  if snapshot and not snapshot.teleported and gameInfo.isSnapshotValid(snapshot) and state.root and state.root.Parent
+    and typeof(snapshot.position) == "Vector3" and finite(snapshot.syncAt) and snapshot.syncAt > 0
+    and time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE then
+    local range = geometry(snapshot, 1)
+    if range and (snapshot.position - state.root.Position).Magnitude > range.fullRadius then return "ball_outside_window" end
+  end
   if snapshot and (snapshot.teleported or snapshot.locked or snapshot.targetUncertain) then return nil end
   local age = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt
   -- A missing or delayed packet is not evidence that the exchange ended.
