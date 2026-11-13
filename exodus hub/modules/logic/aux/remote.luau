@@ -49,16 +49,6 @@ local function fireDeflect(ability)
   if not finite(after) or (finite(before) and after <= before + 0.001) or (not finite(before) and after <= 0) then return false, "Deflect não aceito pelo cliente" end
   return true, detail
 end
-local function trimClicks(ability)
-  local clicks = ability and ability.ClickInstances
-  if type(clicks) == "table" and #clicks > 20 then
-    local keep = {}
-    for i = #clicks - 19, #clicks do
-      keep[#keep + 1] = clicks[i]
-    end
-    ability.ClickInstances = keep
-  end
-end
 local function directRemote()
   local env = type(getrenv) == "function" and getrenv() or nil; local globals = type(env) == "table" and rawget(env, "_G")
   local remote = type(globals) == "table" and rawget(globals, "did2") or nil
@@ -93,7 +83,6 @@ function Remote.fireParry(_flag, guard)
   if method == "Direct" then return fireDirect() end
   local ability = gameInfo.getDeflectAbility()
   if not ability then return false, "Deflect indisponível" end
-  if method == "Game" then trimClicks(ability) end
   return fireDeflect(ability)
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end

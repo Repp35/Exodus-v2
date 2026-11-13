@@ -263,6 +263,7 @@ local function migrateConfig(data)
     if tonumber(data.AutoParryWindowFactor) == 0.25 then data.AutoParryWindowFactor = 0.3 end
     data.AutoParryFactor03Applied, migrated = true, true
   end
+  if data.ClickMethod == "Game" then data.ClickMethod, migrated = "Deflect", true end
   local patch = {}
   for key, value in pairs(data) do
     if key ~= "AutoClash" and key ~= "AutoClashActivationMs" and key ~= "AutoClashDeactivationMs" then

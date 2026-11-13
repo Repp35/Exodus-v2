@@ -1343,7 +1343,8 @@ local function createCameraSensitivityCard(yPos, parent)
 end
 local function createClickMethodSelector(yPos, parent, definition)
   local f = cardFrame(yPos, RATE_CARD_H, parent); cardLabel(optionInfo(definition), f)
-  local modes = { "Deflect", "Game", "Direct" }; local current = Utils.getConfigValue("ClickMethod")
+  local modes = { "Deflect", "Direct" }; local labels = { Deflect = "Deflect()", Direct = "Remote direta" }
+  local current = Utils.getConfigValue("ClickMethod")
   local track = inst("Frame", {
     Size = UDim2.new(1, -20, 0, 28),
     Position = UDim2.new(0, 10, 0, 29),
@@ -1357,12 +1358,12 @@ local function createClickMethodSelector(yPos, parent, definition)
   local buttons = {}
   for index, mode in ipairs(modes) do
     local button = inst("TextButton", {
-      Size = UDim2.new(1 / 3, -4, 1, -4),
-      Position = UDim2.new((index - 1) / 3, 2, 0, 2),
+      Size = UDim2.new(1 / 2, -4, 1, -4),
+      Position = UDim2.new((index - 1) / 2, 2, 0, 2),
       BackgroundColor3 = C.accent,
       BackgroundTransparency = mode == current and 0 or 1,
       BorderSizePixel = 0,
-      Text = mode,
+      Text = labels[mode],
       TextColor3 = mode == current and C.text or C.subtext,
       TextSize = 12,
       Font = Enum.Font.GothamBold,

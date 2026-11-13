@@ -38,7 +38,7 @@ local CONFIG = {
     },
     {
       kind = "click_method_selector",
-      title = "Click Method",
+      title = "Método de clique",
     },
     {
       kind = "off_on",
