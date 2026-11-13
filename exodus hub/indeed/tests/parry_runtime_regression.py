@@ -162,7 +162,7 @@ local g={getMinimumSpamInterval=function() return 0.0301 end,getAutoSpamDelay=fu
 local r={fireParry=function(_,guard) assert(guard()); count=count+1; last=now; return true end}
 for idx,fps in ipairs({60,30}) do
  local origin=(idx-1)*20; now=origin; count=0; last=-math.huge; active=true
- assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoSpam={canSend=function() return true end}}))
+ assert(mod.setup({Utils=u,GameInfo=g,Remote=r}))
  for frame=0,10*fps-1 do now=origin+frame/fps; local ok,err=coroutine.resume(thread); assert(ok,err) end
  local metrics=mod.getStatus(); assert(metrics.acceptedLastSecond>=16 and metrics.acceptedLastSecond<=25); assert(metrics.attemptsLastSecond==metrics.acceptedLastSecond)
  local cps=count/10; print(string.format('SIMULATED %d FPS: %.1f requests/s (%d requests)',fps,cps,count)); assert(cps>=16 and cps<=25)
@@ -219,7 +219,7 @@ local function distanceGate() return nil end
 local function activate(_,reason) assert(reason=='clash_intercept'); activations=activations+1; state.active=true end
 local function ownBallClose() return false end
 local function canActivateReturn() return false end
-local danger={sample=function() return {} end}\n'''+evaluate+'''
+'''+evaluate+'''
 evaluate(state,10,false,nil,snapshot,nil,true); assert(targets==1 and activations==1)
 state.active=false; snapshot.position=v(20); snapshot.velocity=v(-600); evaluate(state,10,false,nil,snapshot,nil,true); assert(activations==1,'speed enlarged activation radius')
 snapshot.position=v(9); snapshot.velocity=v(100); evaluate(state,10,false,nil,snapshot,nil,true); assert(activations==1,'activated for outgoing ball')
@@ -266,7 +266,7 @@ local function sampleOwnDash() end
 local function distanceGate() return nil end
 local function ownBallClose() return false end
 local function canActivateReturn() return false end
-local danger={sample=function() return {} end}\n'''+activate+evaluate+'''
+'''+activate+evaluate+'''
 evaluate(state,10.02,false,nil,snapshot,nil,true); assert(activations==0,'activated during cooldown')
 evaluate(state,10.05,false,nil,snapshot,nil,true); assert(activations==1,'did not retry confirmed close switch')
 ''')

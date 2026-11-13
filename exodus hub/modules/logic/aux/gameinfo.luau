@@ -742,8 +742,6 @@ local function decodeBallPacketFallback(value)
     position = Vector3.new(x, y, z),
     direction = Vector3.new(dx, dy, dz),
     speed = speed,
-    accel = accel,
-    maxSpeed = maximum,
     targetId = target,
     highlightId = highlight,
     possessorId = possessor,
@@ -778,8 +776,6 @@ function GameInfo.decodeBallPacket(value)
     RealPosition = decoded.position,
     ForcedDirection = decoded.direction,
     Speed = decoded.speed,
-    Accel = decoded.accel,
-    MaxSpeed = decoded.maxSpeed,
   }
 end
 function GameInfo.getTargetId() return targetId(syncData(), getBall()) end
@@ -846,8 +842,6 @@ local function snapshot(time)
     syncSpeed = sync and sync.Speed or nil,
     realPosition = sync and sync.RealPosition or nil,
     syncDirection = sync and sync.ForcedDirection or nil,
-    syncAcceleration = sync and sync.Accel or nil,
-    syncMaxSpeed = sync and sync.MaxSpeed or nil,
     targetId = target,
     targeted = players.LocalPlayer ~= nil and target == players.LocalPlayer.UserId,
     targetSource = targetEvidence.source,
@@ -935,26 +929,11 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
     local range = GameInfo.getDeflectRange()
     if finite(range) then window += math.clamp((range - CONFIG.RANGE_BASE) / CONFIG.RANGE_BONUS_SPAN, 0, 1) * CONFIG.RANGE_WINDOW_BONUS end
   end
-  if inClash and type(gameBall.ApplyClashPressure) == "function" then
-    window = gameBall:ApplyClashPressure(window, player)
-  elseif inClash and type(gameBall.GetClashWindowScale) == "function" then
+  if inClash and type(gameBall.GetClashWindowScale) == "function" then
     local scale = gameBall:GetClashWindowScale()
     if finite(scale) and scale > 0 then window *= scale end
   end
   return window
-end
-function GameInfo.getDefensePhysics()
-  GameInfo.getBallSpeedLimits()
-  local player = players.LocalPlayer; local ping = GameInfo.getAveragePing()
-  if not finite(ping) or ping < 0 then ping = 0 end
-  local grace, cap = ping + 0.075, 0.35
-  local press = player and player:GetAttribute("PressDelay")
-  if finite(press) then grace = math.max(grace, press + 0.05); cap = math.clamp(press + 0.05, 0.35, 0.45) end
-  grace = math.clamp(grace, 0.075, cap)
-  local inClash = gameBall and player and type(gameBall.IsInClash) == "function" and gameBall:IsInClash(player) == true
-  if inClash and type(gameBall.ApplyClashPressureGrace) == "function" then grace = gameBall:ApplyClashPressureGrace(grace, player) end
-  local kill = gameBall and type(gameBall.GetKillDistance) == "function" and gameBall:GetKillDistance() or 4
-  return { killRadius = kill, grace = grace, ping = ping, uplink = ping * 0.5, serverNow = world:GetServerTimeNow(), inClash = inClash == true }
 end
 function GameInfo.getBallFrozen()
   if not ballData or not ballData.Parent then ballData = child(world, "BallData") end
@@ -979,7 +958,7 @@ function GameInfo.getDeflectGeometry(speed, window, factor, _scaleBase, latencyO
     )
   elseif not finite(window) then
     window = GameInfo.getDeflectWindow(speed, includeResilience)
-    if finite(window) then local minimum = finite(options.minimumWindow) and math.max(0, options.minimumWindow) or 0; window = math.max(window, minimum) end
+    if finite(window) then local minimum = finite(options.minimumWindow) and math.max(0, options.minimumWindow) or CONFIG.AP_WINDOW_HIGH_SPEED; window = math.max(window, minimum) end
   end
   if not finite(window) or window < 0 then return nil end
   local latency = options.ping == false and 0 or (finite(latencyOverride) and latencyOverride or GameInfo.getAveragePing())
@@ -1091,7 +1070,6 @@ GameInfo.__contract = {
     },
   },
   provides = {
-    "getDefensePhysics",
     "setup",
     "applyPacket",
     "isTrainingArea",

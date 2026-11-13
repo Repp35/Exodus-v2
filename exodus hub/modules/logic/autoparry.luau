@@ -556,24 +556,6 @@ function AutoParry.getTargetStatus()
     cooldown = gameInfo and gameInfo.getDeflectCooldownState() or nil,
   }
 end
-function AutoParry.getDefenseState(value)
-  samplePing()
-  local cooldown = safeCooldown(); local time = clock()
-  local speed = value and (tonumber(value.syncSpeed) or tonumber(value.speed))
-  local geometry = finite(speed) and radius(speed, activeWindowFactor(time)) or nil
-  local distance, closing, trigger
-  if geometry and value and vector(value.position) and vector(value.velocity) and state.root and state.root.Parent then
-    distance, closing, trigger = trajectory(value.position, value.velocity, gameInfo.getRootPosition(state.root), speed, geometry)
-  end
-  return {
-    enabled = state.alive and state.bound and utils.getConfigValue("AutoParry") ~= false,
-    armed = not state.fired, fired = state.fired, cycle = state.cycle,
-    lastRequestAt = state.lastFireAt, retryAt = state.nextAttemptAt,
-    lastParriedAt = cooldown and cooldown.lastParriedAt or 0,
-    blocking = cooldown and cooldown.blocking == true or false,
-    reason = state.reason, triggerDistance = trigger, distance = distance, closingSpeed = closing,
-  }
-end
 local function rootPosition()
   if state.root and state.root.Parent then return gameInfo.getRootPosition(state.root) end
   local character = state.player and state.player.Character; local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -784,7 +766,6 @@ AutoParry.__contract = {
     },
   },
   provides = {
-    "getDefenseState",
     "setup",
     "bindCharacter",
     "detachCharacter",
