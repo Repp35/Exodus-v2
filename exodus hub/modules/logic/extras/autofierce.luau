@@ -24,8 +24,6 @@ local function track(connection)
 end
 local function enabled() return utils and utils.isActive() and utils.getConfigValue("AutoFierce") == true and gameInfo.areAbilitiesEnabled() end
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
--- The game calls ActivateAndBlock for the UI and keybind as well as the hub.
--- Wrap the current ability instance so AutoParry is held before its Deflect call.
 local function unhookManualFierce()
   local ability, wrapper, raw = hookedAbility, hookedWrapper, hookedRaw
   if ability and wrapper then
@@ -42,7 +40,8 @@ local function bindManualFierce()
   if type(ability) ~= "table" or type(ability.ActivateAndBlock) ~= "function" then return end
   local original, raw = ability.ActivateAndBlock, rawget(ability, "ActivateAndBlock")
   local wrapper = function(self, ...)
-    local token; local wasHandled = graceState and graceState.handled
+    local token
+    local wasHandled = graceState and graceState.handled
     if not finite(self.Cooldown) or self.Cooldown <= 0 then
       local ok, value = pcall(autoParry.beginFierce)
       if ok then token = value end
@@ -67,8 +66,7 @@ local function validTargetSnapshot(now)
   return snapshot
 end
 local function incomingInWindow(snapshot, now)
-  local timing = autoParry.getTiming(snapshot, now, nil, CONFIG.WINDOW_FACTOR)
-  return timing and timing.approaching and timing.distance <= timing.triggerDistance
+  local timing = autoParry.getTiming(snapshot, now, nil, CONFIG.WINDOW_FACTOR); return timing and timing.approaching and timing.distance <= timing.triggerDistance
 end
 local function fierceReady()
   local ability = gameInfo.getFierceDeflectAbility()
@@ -78,48 +76,40 @@ end
 local function observeGrace(snapshot)
   if not snapshot or snapshot.mode == "training" then return end
   local state = graceState
-  if state.ball ~= snapshot.ball then
-    state.ball, state.active, state.handled, state.lastSafeServer, state.startedAfter = snapshot.ball, false, false, nil, nil
-  end
+  if state.ball ~= snapshot.ball then state.ball, state.active, state.handled, state.lastSafeServer, state.startedAfter = snapshot.ball, false, false, nil, nil end
   if snapshot.grace ~= true then
     state.active, state.handled, state.startedAfter = false, false, nil
     if finite(snapshot.serverTime) and (not state.lastSafeServer or snapshot.serverTime > state.lastSafeServer) then state.lastSafeServer = snapshot.serverTime end
     return
   end
   if not state.active then
-    state.active, state.handled = true, false
-    local stamp, previous = snapshot.serverTime, state.lastSafeServer
-    if finite(stamp) and finite(previous) and stamp >= previous and stamp - previous <= CONFIG.GRACE_MAX_PACKET_GAP then
-      state.startedAfter = previous
-    else
-      state.startedAfter = nil
-    end
+    state.active, state.handled = true, false; local stamp, previous = snapshot.serverTime, state.lastSafeServer
+    if finite(stamp) and finite(previous) and stamp >= previous and stamp - previous <= CONFIG.GRACE_MAX_PACKET_GAP then state.startedAfter = previous else state.startedAfter = nil end
   end
 end
 local function graceEmergency(snapshot, now, cooldown)
   local state = graceState
   if not snapshot or snapshot.mode == "training" or snapshot.grace ~= true or not state.active or state.handled then return false end
   local timing = autoParry.getTiming(snapshot, now, nil, 0)
-  if not timing or not finite(timing.distance) or not finite(timing.noWindowParryRadius)
-    or timing.distance > timing.noWindowParryRadius + CONFIG.GRACE_RANGE_TOLERANCE then return false end
+  if
+    not timing
+    or not finite(timing.distance)
+    or not finite(timing.noWindowParryRadius)
+    or timing.distance > timing.noWindowParryRadius + CONFIG.GRACE_RANGE_TOLERANCE
+  then
+    return false
+  end
   if cooldown and cooldown.predictedReset == true then return false end
-  local ok, physics = pcall(gameInfo.getDefensePhysics)
-  local known = ok and type(physics) == "table" and finite(physics.grace) and physics.grace > 0 and finite(physics.serverNow)
-  local ping = known and finite(physics.ping) and math.max(0, physics.ping) or 0
-  local margin = ping + CONFIG.GRACE_FRAME_MARGIN
+  local ok, physics = pcall(gameInfo.getDefensePhysics); local known = ok and type(physics) == "table" and finite(physics.grace) and physics.grace > 0 and finite(physics.serverNow)
+  local ping = known and finite(physics.ping) and math.max(0, physics.ping) or 0; local margin = ping + CONFIG.GRACE_FRAME_MARGIN
   local remaining = known and state.startedAfter and (state.startedAfter + physics.grace - physics.serverNow) or 0
-  -- A valid normal deflect that lasts until the grace deadline is already protection.
-  if cooldown and cooldown.phase == "reversible" and finite(cooldown.missDeadline)
-    and cooldown.missDeadline - now >= math.max(0, remaining) + margin then return false end
+  if cooldown and cooldown.phase == "reversible" and finite(cooldown.missDeadline) and cooldown.missDeadline - now >= math.max(0, remaining) + margin then return false end
   return remaining <= margin
 end
 
 -- detection
 local function update()
-  if not enabled() then
-    graceState.ball, graceState.active, graceState.handled, graceState.lastSafeServer, graceState.startedAfter = nil, false, false, nil, nil
-    return
-  end
+  if not enabled() then graceState.ball, graceState.active, graceState.handled, graceState.lastSafeServer, graceState.startedAfter = nil, false, false, nil, nil; return end
   local now = os.clock(); local observed = gameInfo.getSnapshotAt(now)
   if gameInfo.isSnapshotValid(observed) and observed.targetUncertain ~= true and observed.targetId ~= localUserId then
     graceState.ball, graceState.active, graceState.handled, graceState.lastSafeServer, graceState.startedAfter = nil, false, false, nil, nil
@@ -128,10 +118,13 @@ local function update()
   if not snapshot then return end
   observeGrace(snapshot)
   if not fierceReady() then return end
-  local cooldown = cooldownInfo.getDeflectCooldownState()
-  local emergency = graceEmergency(snapshot, now, cooldown)
-  local miss = cooldown and cooldown.miss == true and cooldown.blocking == true and cooldown.episode
-    and cooldown.episode > lastFierceEpisode and incomingInWindow(snapshot, now)
+  local cooldown = cooldownInfo.getDeflectCooldownState(); local emergency = graceEmergency(snapshot, now, cooldown)
+  local miss = cooldown
+    and cooldown.miss == true
+    and cooldown.blocking == true
+    and cooldown.episode
+    and cooldown.episode > lastFierceEpisode
+    and incomingInWindow(snapshot, now)
   if not emergency and not miss then return end
   local episode, ball, token = cooldown and cooldown.episode, snapshot.ball, nil
   local ok, sent = pcall(function()
@@ -142,7 +135,13 @@ local function update()
       local current = cooldownInfo.getDeflectCooldownState()
       if emergency then
         if not graceEmergency(currentSnapshot, os.clock(), current) then return false end
-      elseif not current or current.episode ~= episode or current.miss ~= true or current.blocking ~= true or not incomingInWindow(currentSnapshot, os.clock()) then
+      elseif
+        not current
+        or current.episode ~= episode
+        or current.miss ~= true
+        or current.blocking ~= true
+        or not incomingInWindow(currentSnapshot, os.clock())
+      then
         return false
       end
       token = autoParry.beginFierce(); return true
@@ -170,11 +169,15 @@ function AutoFierce.setup(deps)
     return false, "dependências ausentes: Utils, GameInfo ou Remote"
   end
   AutoFierce.teardown(); utils, gameInfo, remote, autoParry, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.AutoParry, deps.Cooldown
-  lastFierceEpisode = 0; graceState = { active = false, handled = false }; local player = utils.getLocalPlayer()
-  localUserId = player and player.UserId; local runService = utils.getRunService()
+  lastFierceEpisode = 0; graceState = { active = false, handled = false }
+  local player = utils.getLocalPlayer(); localUserId = player and player.UserId
+  local runService = utils.getRunService()
   if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
   bindManualFierce()
-  track(runService.Heartbeat:Connect(function() bindManualFierce(); update() end)); return true
+  track(runService.Heartbeat:Connect(function()
+    bindManualFierce(); update()
+  end))
+  return true
 end
 function AutoFierce.teardown()
   unhookManualFierce()
@@ -221,4 +224,3 @@ AutoFierce.__contract = {
 }
 
 return AutoFierce
-
