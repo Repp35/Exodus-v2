@@ -321,14 +321,9 @@ local function bindTrainingSync()
   end
   if event and not trainingEventConnection then
     trainingEventConnection = event.OnClientEvent:Connect(function(kind, playerId)
-      if kind == "BallSpawn" then
-        resetTrainingBall(false)
-      elseif kind == "BallDespawn" or kind == "Kill" then
-        resetTrainingBall(true)
-      elseif kind == "Parry" and players.LocalPlayer and playerId == players.LocalPlayer.UserId then
-        trainingParryAt = world:GetServerTimeNow()
-        invalidateSnapshotCache()
-      end
+      if kind == "BallSpawn" then resetTrainingBall(false)
+      elseif kind == "BallDespawn" or kind == "Kill" then resetTrainingBall(true)
+      elseif kind == "Parry" and players.LocalPlayer and playerId == players.LocalPlayer.UserId then trainingParryAt = world:GetServerTimeNow(); invalidateSnapshotCache() end
     end)
     utils.trackGlobal(trainingEventConnection)
   end
@@ -412,17 +407,17 @@ function GameInfo.stopMaintenance()
 end
 function GameInfo.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
-  GameInfo.stopMaintenance()
-  utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
+  GameInfo.stopMaintenance(); utils = deps.Utils
+  players, world = utils.getPlayers(), utils.getWorkspace()
   if not players or not world then return false, "dependência ausente: Players ou Workspace" end
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
   sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
-  trainingZone, targetHighlight, targetHighlightCharacter = nil, nil, nil
-  snapshotCache, snapshotCacheAt = nil, -math.huge; table.clear(dashStateCache)
-  minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}
-  pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
-  targetFrame = 0; local service = utils.getRunService()
+  trainingZone, targetHighlight, targetHighlightCharacter = nil, nil, nil; snapshotCache, snapshotCacheAt = nil, -math.huge
+  table.clear(dashStateCache); minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
+  errors = {}; pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
+  targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }; targetFrame = 0
+  local service = utils.getRunService()
   if service and service.Heartbeat then
     targetFrameConnection = service.Heartbeat:Connect(function()
       targetFrame += 1
@@ -453,30 +448,45 @@ function GameInfo.getAveragePing()
   end
   return #pingSamples > 0 and pingSum / #pingSamples or 0, pingRaw, #pingSamples
 end
--- A missing PlaceId or replicated attribute stays unknown until the game supplies it.
 function GameInfo.getGameContext()
-  local player = players and players.LocalPlayer
-  local placeId = game.PlaceId
-  local matchStatus = world and world:GetAttribute("MatchStatus")
-  local modeId = world and world:GetAttribute("CurGamemode")
-  local lives = player and player:GetAttribute("Lives")
-  local playing = player and player:GetAttribute("Playing")
+  local player = players and players.LocalPlayer; local placeId = game.PlaceId
+  local matchStatus = world and world:GetAttribute("MatchStatus"); local modeId = world and world:GetAttribute("CurGamemode")
+  local lives = player and player:GetAttribute("Lives"); local playing = player and player:GetAttribute("Playing")
   local afk = player and player:GetAttribute("AFK")
-  local statuses = { [-1] = "None", [0] = "WaitingForPlayers", [1] = "Intermission", [2] = "VoteGamemode", [3] = "VoteMap", [4] = "VoteLives", [5] = "Starting", [6] = "InGame" }
+  local statuses = {
+    [-1] = "None",
+    [0] = "WaitingForPlayers",
+    [1] = "Intermission",
+    [2] = "VoteGamemode",
+    [3] = "VoteMap",
+    [4] = "VoteLives",
+    [5] = "Starting",
+    [6] = "InGame",
+  }
+
   local modes = { [0] = "Phantom Ball", [1] = "2 Teams", [2] = "4 Teams", [3] = "Zero Abilities", [5] = "Ball Bounce", [6] = "No Movement", [7] = "3 Lives" }
   local roundActive
   if finite(matchStatus) then roundActive = matchStatus == 6 end
   local inMatch
-  if finite(matchStatus) and matchStatus ~= 6 then inMatch = false
-  elseif roundActive and finite(lives) then inMatch = lives > 0 and playing ~= false end
-  local training = inTrainingArea()
-  local area = "unknown"
+  if finite(matchStatus) and matchStatus ~= 6 then inMatch = false elseif roundActive and finite(lives) then inMatch = lives > 0 and playing ~= false end
+  local training = inTrainingArea(); local area = "unknown"
   if placeId == 12979690461 then
     if inMatch then area = "match" elseif training then area = "training" elseif player and finite(lives) then area = "lobby" end
   end
-  return { area = area, placeId = placeId, inMatch = inMatch, roundActive = roundActive, training = training,
-    playing = playing, lives = lives, afkEnabled = afk == true, matchStatus = matchStatus,
-    matchStatusName = statuses[matchStatus], modeId = modeId, modeName = modes[modeId] }
+  return {
+    area = area,
+    placeId = placeId,
+    inMatch = inMatch,
+    roundActive = roundActive,
+    training = training,
+    playing = playing,
+    lives = lives,
+    afkEnabled = afk == true,
+    matchStatus = matchStatus,
+    matchStatusName = statuses[matchStatus],
+    modeId = modeId,
+    modeName = modes[modeId],
+  }
 end
 function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode") ~= 3 end
 function GameInfo.observeAbilityMode(callback)
@@ -1059,4 +1069,3 @@ GameInfo.__contract = {
 }
 
 return GameInfo
-

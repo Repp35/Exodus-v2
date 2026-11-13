@@ -257,7 +257,6 @@ local function deactivationReason(state, snapshot, time)
   end
   local cooldown = cooldownInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
-    -- This timeout is an AutoSpam policy; it is not proof of a final miss.
     local observedStart = finite(cooldown.blockingSince) and cooldown.blockingSince <= time and cooldown.blockingSince or time
     state.deflectCooldownSince = math.max(state.activatedAt or time, observedStart)
   else
@@ -532,7 +531,8 @@ end
 function AutoSpam.setup(deps)
   if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule, cooldownInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
+  utils, gameInfo, clashStatsModule, cooldownInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown
+  players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then
     utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo = nil, nil, nil, nil, nil, nil, nil; return false, "serviços indisponíveis"
   end
@@ -810,4 +810,3 @@ AutoSpam.__contract = {
 }
 
 return AutoSpam
-
