@@ -362,7 +362,7 @@ local function loadModule(name, relativePath, url)
     if cachedChunk then return cachedChunk, nil, "verified" end
   end
   local source, fetchError
-  if url then source, fetchError = request(url .. "?exodus_cache=" .. cacheBuster()) end
+  if url then source, fetchError = request(url) end
   local sourceKind = "delivery"
   if not source then
     local fallbackURL = buildCDNURL(url)
@@ -379,7 +379,7 @@ local function loadModule(name, relativePath, url)
   end
   return nil, fetchError or "origem remota indisponível"
 end
-local function authorizationURL(revision) return BASE_URL .. revision .. "/" .. AUTHORIZATION_PATH .. "?exodus_cache=" .. cacheBuster() end
+local function authorizationURL(revision) return BASE_URL .. revision .. "/" .. AUTHORIZATION_PATH end
 local function setContains(set, value)
   if type(set) ~= "table" then return false end
   if set[value] == true or set[tostring(value)] == true then return true end
@@ -701,7 +701,7 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
     local revisionError
     if not revision then revision, revisionError = resolveLatestRevision() end
     if not revision then fail(revisionError or "Version manifest unavailable"); return end
-    local source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau?exodus_cache=" .. cacheBuster())
+    local source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau")
     if not source then fail(fetchError); return end
     if automatic and type(_G.ExodusUIFadeOut) == "function" then
       local faded, fadeError = pcall(_G.ExodusUIFadeOut)
@@ -838,44 +838,59 @@ local function startSafely()
   Exodus.StartError = nil; Exodus.StartErrorModule = nil
   return true
 end
-local function handleUpdateMessage(sessionToken, raw)
-  if _G.ExodusLoaderSessionToken ~= sessionToken or not Exodus.Started then return end
-  local ok, event = pcall(HttpService.JSONDecode, HttpService, tostring(raw))
-  if not ok or type(event) ~= "table" or event.event ~= "message" then return end
-  local revision = tostring(event.message or "")
-  if not validRevision(revision) or revision == (_G.ExodusLastLoadedRevision or Exodus.Revision) then return end
-  reloadLatest(nil, revision, true)
-end
 local function startUpdateChannel()
   closeUpdateChannel(); local sessionToken = _G.ExodusLoaderSessionToken
   local token = {}; _G.ExodusUpdateToken = token
-  if type(WebSocket) ~= "table" or type(WebSocket.connect) ~= "function" then
-    _G.ExodusUpdateToken = nil; notifyPersistent("Live update channel unavailable.", "critical", "critical")
-    warn("[Exodus Update] WebSocket.connect is unavailable"); return false
+  local messageConnection, closeConnection, socket, connecting, checking = nil, nil, nil, false, false
+  local function active() return _G.ExodusUpdateToken == token and _G.ExodusLoaderSessionToken == sessionToken and Exodus.Started == true end
+  local function disconnectSocket()
+    if messageConnection then pcall(messageConnection.Disconnect, messageConnection); messageConnection = nil end
+    if closeConnection then pcall(closeConnection.Disconnect, closeConnection); closeConnection = nil end
+    local old = socket; socket = nil
+    if _G.ExodusUpdateSocket == old then _G.ExodusUpdateSocket = nil end
+    if old then pcall(function() old:Close() end) end
   end
-  local socketOk, socket = pcall(WebSocket.connect, UPDATE_WS_URL)
-  if not socketOk or socket == nil then
-    _G.ExodusUpdateToken = nil; notifyPersistent("Live update channel unavailable.", "critical", "critical")
-    warn("[Exodus Update] WebSocket connection failed: " .. tostring(socket)); return false
+  local function checkRevision()
+    if not active() or checking or reloadInFlight then return end
+    checking = true
+    task.spawn(function()
+      local ok, revision = pcall(resolveLatestRevision)
+      checking = false
+      if ok and active() and validRevision(revision) and revision ~= (_G.ExodusLastLoadedRevision or Exodus.Revision) then
+        reloadLatest(nil, revision, true)
+      end
+    end)
   end
-  _G.ExodusUpdateSocket = socket; local messageSignal = socket.OnMessage
-  local closeSignal = socket.OnClose
-  if not messageSignal or type(messageSignal.Connect) ~= "function" then
-    closeUpdateChannel(); notifyPersistent("Live update channel is incompatible.", "critical", "critical")
-    return false
-  end
-  local messageConnection = messageSignal:Connect(function(raw) handleUpdateMessage(sessionToken, raw) end)
-  local closeConnection
-  if closeSignal and type(closeSignal.Connect) == "function" then
-    closeConnection = closeSignal:Connect(function()
-      if _G.ExodusUpdateToken == token then _G.ExodusUpdateSocket = nil; _G.ExodusUpdateToken = nil end
+  local function connectSocket()
+    if not active() or socket or connecting or type(WebSocket) ~= "table" or type(WebSocket.connect) ~= "function" then return end
+    connecting = true
+    task.spawn(function()
+      local ok, candidate = pcall(WebSocket.connect, UPDATE_WS_URL); connecting = false
+      if not active() then if candidate then pcall(function() candidate:Close() end) end; return end
+      if not ok or not candidate or not candidate.OnMessage or type(candidate.OnMessage.Connect) ~= "function" then
+        if candidate then pcall(function() candidate:Close() end) end; return
+      end
+      socket, _G.ExodusUpdateSocket = candidate, candidate
+      messageConnection = candidate.OnMessage:Connect(function(raw)
+        local decoded, event = pcall(HttpService.JSONDecode, HttpService, tostring(raw))
+        if decoded and type(event) == "table" and event.event == "message" and validRevision(tostring(event.message or "")) then checkRevision() end
+      end)
+      if candidate.OnClose and type(candidate.OnClose.Connect) == "function" then
+        closeConnection = candidate.OnClose:Connect(function() if socket == candidate then disconnectSocket() end end)
+      end
+      checkRevision()
     end)
   end
   _G.ExodusUpdateStop = function()
-    if messageConnection then pcall(messageConnection.Disconnect, messageConnection) end
-    if closeConnection then pcall(closeConnection.Disconnect, closeConnection) end
-    if _G.ExodusUpdateToken == token then closeUpdateChannel() end
+    if _G.ExodusUpdateToken == token then _G.ExodusUpdateToken = nil end
+    disconnectSocket()
   end
+  task.spawn(function()
+    while active() do
+      connectSocket(); checkRevision()
+      task.wait(5)
+    end
+  end)
   return true
 end
 local started = startSafely()
