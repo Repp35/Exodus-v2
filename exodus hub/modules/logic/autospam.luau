@@ -321,6 +321,7 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
   state.dashSwitchPartner, state.dashSwitchAt = nil, nil; state.deflectCooldownSince, state.cooldownSpeed = nil, snapshotSpeed(snapshot)
   state.activatedAt = time; state.lastClosePartner, state.lastCloseAt, state.lastCloseDistance = nil, nil, nil
+  state.clashTargetCount, state.clashLastTarget = 1, localPlayer.UserId
   state.stationaryBall, state.stationaryPosition, state.stationarySince = nil, nil, nil; state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime
   state.reason = reason
   lastActivationReason, lastActivationAt = reason, time
@@ -331,6 +332,13 @@ end
 local function deactivate(state, reason, time)
   if current ~= state then return false end
   time = time or now()
+  if state.active and reason == "exchange_unconfirmed" then
+    state.active, state.reason = false, reason
+    state.activatedAt, state.deflectCooldownSince, state.lastDeactivatedAt = nil, nil, nil
+    lastStopReason, lastStopAt = reason, time
+    utils.setAutoSpamActive(false); utils.recordTransition("AutoSpam", "active", "idle", reason)
+    return true
+  end
   if state.active then
     local radius = PROTECTED_REASONS[reason]
     if radius and closeClashProtected(state, time, radius) then return false end
@@ -350,6 +358,7 @@ end
 local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
+  if state.activatedAt and (state.clashTargetCount or 1) < 3 and time - state.activatedAt >= 0.15 then return "exchange_unconfirmed" end
   -- The cooldown gate scales with speed and requires the opponent to be
   -- outside the fixed 16-stud radius.
   local cooldown = gameInfo.getDeflectCooldownState()
@@ -470,6 +479,9 @@ local function armReturn(state, previous, time, snapshot, serverTime)
 end
 local function targetChanged(state, target, time, snapshot, serverTime)
   if not target or target == state.target then return end
+  if state.active and (target == localPlayer.UserId or target == state.partner) and target ~= state.clashLastTarget then
+    state.clashLastTarget = target; state.clashTargetCount = (state.clashTargetCount or 1) + 1
+  end
   if state.timeoutBlocked and target ~= state.timeoutBlockedTarget then state.timeoutBlocked, state.timeoutBlockedTarget = false, nil end
   local previous, ownId = state.target, localPlayer.UserId; local switchedToMe = target == ownId and previous and previous ~= ownId
   local exchangeReady
