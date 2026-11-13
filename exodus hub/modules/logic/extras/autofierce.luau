@@ -18,7 +18,6 @@ local function track(connection)
   return connection
 end
 local function enabled() return utils and utils.isActive() and utils.getConfigValue("AutoFierce") == true and gameInfo.areAbilitiesEnabled() end
-
 local function incomingInWindow(now)
   local snapshot = gameInfo.getSnapshotAt(now)
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported or snapshot.locked or snapshot.targetUncertain then return false end
@@ -26,11 +25,21 @@ local function incomingInWindow(now)
   if type(snapshot.syncAt) ~= "number" or snapshot.syncAt <= 0 or now < snapshot.syncAt or now - snapshot.syncAt > CONFIG.SYNC_MAX_AGE then return false end
   local timing = autoParry.getTiming(snapshot, now, nil, CONFIG.WINDOW_FACTOR); return timing and timing.approaching and timing.distance <= timing.triggerDistance
 end
+
 -- detection
 local function update()
   if not enabled() then return end
   local now = os.clock(); local cooldown = gameInfo.getDeflectCooldownState()
-  if not cooldown or cooldown.miss ~= true or cooldown.blocking ~= true or not cooldown.episode or cooldown.episode <= lastFierceEpisode or not incomingInWindow(now) then return end
+  if
+    not cooldown
+    or cooldown.miss ~= true
+    or cooldown.blocking ~= true
+    or not cooldown.episode
+    or cooldown.episode <= lastFierceEpisode
+    or not incomingInWindow(now)
+  then
+    return
+  end
   local episode, token = cooldown.episode, nil
   local ok, sent = pcall(function()
     return remote.fireFierce(function()
@@ -102,4 +111,3 @@ AutoFierce.__contract = {
 }
 
 return AutoFierce
-

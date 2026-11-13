@@ -111,9 +111,9 @@ local function resetTracking()
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
-  state.lastPosition, state.lastSampleAt = nil, 0
-  state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
-  table.clear(state.clicks); table.clear(state.returns)
+  state.lastPosition, state.lastSampleAt = nil, 0; state.resetPending = false
+  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; table.clear(state.clicks)
+  table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -249,8 +249,7 @@ end
 
 -- parry
 local function safeCooldown()
-  local ok, value = pcall(gameInfo.getDeflectCooldownState)
-  return ok and type(value) == "table" and value or nil
+  local ok, value = pcall(gameInfo.getDeflectCooldownState); return ok and type(value) == "table" and value or nil
 end
 local function request(reason)
   local now = clock(); local redirectReturn = reason == "redirect_return"
@@ -307,11 +306,7 @@ local function request(reason)
     return false
   end
   state.nextAttemptAt = 0; recordAutoParryRequest()
-  if state.mode == "training" then
-    gameInfo.recordTrainingDeflectAttempt(firedAt)
-  else
-    state.retryPending = true; gameInfo.recordDeflectAttempt(firedAt, speed)
-  end
+  if state.mode == "training" then gameInfo.recordTrainingDeflectAttempt(firedAt) else state.retryPending = true; gameInfo.recordDeflectAttempt(firedAt, speed) end
   local factor = activeWindowFactor(firedAt)
   if factor > 0 then
     local geometry = radius(speed, factor)
@@ -401,8 +396,7 @@ local function tick(character, root, generation)
   if state.fired and state.retryPending and cooldown then
     if finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= state.lastFireAt then
       state.retryPending = false
-    elseif cooldown.miss == true and finite(cooldown.pressAt) and cooldown.pressAt >= state.lastFireAt - 0.05
-      and cooldown.blocking ~= true then
+    elseif cooldown.miss == true and finite(cooldown.pressAt) and cooldown.pressAt >= state.lastFireAt - 0.05 and cooldown.blocking ~= true then
       state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady, state.nextAttemptAt = false, false, false, true, 0
     end
   end
@@ -813,4 +807,3 @@ AutoParry.__contract = {
 }
 
 return AutoParry
-
