@@ -8,10 +8,10 @@ local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
 local nextAllowedAt = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
+local samples, sampleIndex = {}, 0
 
 -- configuration
 local CONFIG = {
-  MAX_DELAY_DEBT = 0.2,
   POLL_INTERVAL = 0.01,
   ERROR_RETRY_INTERVAL = 0.03,
 }
@@ -44,6 +44,7 @@ local function request(boundUtils, boundRemote, token, guard, minimum)
   inFlight = true; status.lastRequestAt = os.clock()
   local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard); nextAllowedAt = os.clock() + minimum
   inFlight = false
+  sampleIndex = sampleIndex % 256 + 1; samples[sampleIndex] = { at = status.lastRequestAt, accepted = ok and result == true }
   if not ok then error(result, 0) end
   if token ~= generation or utils ~= boundUtils then return end
   if result == true then status.lastError = nil; return end
@@ -72,20 +73,22 @@ local function sync()
     local ok, err = xpcall(function()
       local due = os.clock()
       while guard() do
-        local time = os.clock(); local minimum = boundGameInfo.getMinimumSpamInterval()
-        local interval = mode ~= "Auto" and math.max(1 / (mode == "CPF" and rate * 60 or rate), minimum) or nil
-        if interval then due = math.max(due, time - CONFIG.MAX_DELAY_DEBT) end
-        local gameDelay = boundGameInfo.getAutoSpamDelay()
+        local time = os.clock(); local minimum = mode == "Auto" and boundGameInfo.getMinimumSpamInterval() or 0
+        local interval = mode ~= "Auto" and 1 / (mode == "CPF" and rate * 60 or rate) or nil
+        local gameDelay = mode == "Auto" and boundGameInfo.getAutoSpamDelay() or 0
         if inFlight or (mode == "Auto" and gameDelay == nil) then
           task.wait(CONFIG.POLL_INTERVAL)
         else
-          local readyAt = math.max(nextAllowedAt, interval and due or time)
+          local readyAt = interval and due or math.max(nextAllowedAt, time)
           if type(gameDelay) == "number" and gameDelay == gameDelay and gameDelay > 0 and gameDelay < math.huge then readyAt = math.max(readyAt, time + gameDelay) end
           if time >= readyAt then
             request(boundUtils, boundRemote, token, guard, minimum)
-            if interval then due += interval end
+            if interval then
+              local completedAt = os.clock()
+              due += (math.floor(math.max(0, completedAt - due) / interval) + 1) * interval
+            end
           else
-            task.wait(math.clamp(readyAt - time, 1 / 240, CONFIG.POLL_INTERVAL))
+            task.wait(math.min(readyAt - time, CONFIG.POLL_INTERVAL))
           end
         end
       end
@@ -135,6 +138,7 @@ function Spam.setup(deps)
 end
 function Spam.resetState()
   cancel("reset"); status.lastError, status.lastErrorAt = nil, -math.huge
+  table.clear(samples); sampleIndex = 0
   local token = generation
   task.defer(function()
     if token == generation then sync() end
@@ -142,6 +146,7 @@ function Spam.resetState()
 end
 function Spam.teardown()
   cancel("teardown")
+  table.clear(samples); sampleIndex = 0
   if utils then
     if spamObserver then utils.untrackGlobal(spamObserver); spamObserver:Disconnect() end
     if configObserver then utils.untrackGlobal(configObserver); configObserver:Disconnect() end
@@ -151,11 +156,19 @@ end
 
 -- public-api
 function Spam.getStatus()
+  local now, attempts, accepted = os.clock(), 0, 0
+  for _, sample in pairs(samples) do
+    if now >= sample.at and now - sample.at < 1 then
+      attempts += 1; if sample.accepted then accepted += 1 end
+    end
+  end
   return {
     schema = utils and utils.apiVersion() or 1,
     phase = status.phase,
     lastRequestAt = status.lastRequestAt,
     lastError = status.lastError,
+    attemptsLastSecond = attempts,
+    acceptedLastSecond = accepted,
     cpfFps = 0,
     cpfClicks = 0,
     cpfCompensation = false,
