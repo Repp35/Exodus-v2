@@ -354,6 +354,7 @@ local function confirmExchange(state, data, time)
   local target = userId(data.TargetPlayerID)
   if not target or data.Source ~= "packet" or data.Teleported or data.Locked then return false end
   if target ~= localPlayer.UserId and target ~= state.partner then return deactivate(state, "target_changed", time) end
+  if time - confirmation.startedAt > 0.2 then return deactivate(state, "exchange_unconfirmed", time) end
   if target ~= confirmation.target then
     confirmation.target = target; confirmation.switches = confirmation.switches + 1
   end
