@@ -1342,9 +1342,8 @@ local function createCameraSensitivityCard(yPos, parent)
   return nextCardY(yPos, CARD_H)
 end
 local function createDropdown(yPos, parent, definition)
-  local options = definition.options or {}
-  local f = cardFrame(yPos, RATE_CARD_H, parent); f.ClipsDescendants = true
-  cardLabel(optionInfo(definition), f)
+  local options = definition.options or {}; local f = cardFrame(yPos, RATE_CARD_H, parent)
+  f.ClipsDescendants = true; cardLabel(optionInfo(definition), f)
   local current = Utils.getConfigValue(definition.key)
   local function labelFor(value)
     for _, option in ipairs(options) do
@@ -1353,46 +1352,72 @@ local function createDropdown(yPos, parent, definition)
     return tostring(value or "Selecionar")
   end
   local button = inst("TextButton", {
-    Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 29),
-    BackgroundColor3 = C.inputBg, BorderSizePixel = 0, Text = "",
-    AutoButtonColor = false, ZIndex = 7, Parent = f,
+    Size = UDim2.new(1, -20, 0, 28),
+    Position = UDim2.fromOffset(10, 29),
+    BackgroundColor3 = C.inputBg,
+    BorderSizePixel = 0,
+    Text = "",
+    AutoButtonColor = false,
+    ZIndex = 7,
+    Parent = f,
   })
   corner(button, 8); local border = stroke(button, C.border, 1)
   local selected = inst("TextLabel", {
-    Size = UDim2.new(1, -38, 1, 0), Position = UDim2.fromOffset(10, 0),
-    BackgroundTransparency = 1, Text = labelFor(current), TextColor3 = C.text,
-    TextSize = 12, Font = Enum.Font.GothamSemibold, TextXAlignment = Enum.TextXAlignment.Left,
-    TextTruncate = Enum.TextTruncate.AtEnd, ZIndex = 8, Parent = button,
+    Size = UDim2.new(1, -38, 1, 0),
+    Position = UDim2.fromOffset(10, 0),
+    BackgroundTransparency = 1,
+    Text = labelFor(current),
+    TextColor3 = C.text,
+    TextSize = 12,
+    Font = Enum.Font.GothamSemibold,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextTruncate = Enum.TextTruncate.AtEnd,
+    ZIndex = 8,
+    Parent = button,
   })
   local arrow = inst("TextLabel", {
-    Size = UDim2.fromOffset(24, 24), Position = UDim2.new(1, -26, 0.5, -12),
-    BackgroundTransparency = 1, Text = "⌄", TextColor3 = C.subtext,
-    TextSize = 20, Font = Enum.Font.GothamBold, ZIndex = 8, Parent = button,
+    Size = UDim2.fromOffset(24, 24),
+    Position = UDim2.new(1, -26, 0.5, -12),
+    BackgroundTransparency = 1,
+    Text = "⌄",
+    TextColor3 = C.subtext,
+    TextSize = 20,
+    Font = Enum.Font.GothamBold,
+    ZIndex = 8,
+    Parent = button,
   })
-  local rowHeight, gap = 32, 3
-  local listHeight = math.min(#options, definition.maxVisible or 4) * (rowHeight + gap) + 6
+  local rowHeight, gap = 32, 3; local listHeight = math.min(#options, definition.maxVisible or 4) * (rowHeight + gap) + 6
   local list = inst("ScrollingFrame", {
-    Size = UDim2.new(1, -20, 0, 0), Position = UDim2.fromOffset(10, 62),
-    BackgroundColor3 = C.inputBg, BackgroundTransparency = 0.04, BorderSizePixel = 0,
+    Size = UDim2.new(1, -20, 0, 0),
+    Position = UDim2.fromOffset(10, 62),
+    BackgroundColor3 = C.inputBg,
+    BackgroundTransparency = 0.04,
+    BorderSizePixel = 0,
     CanvasSize = UDim2.fromOffset(0, #options * (rowHeight + gap) + 6),
-    ScrollBarThickness = 3, ScrollBarImageColor3 = C.accent,
-    ClipsDescendants = true, ZIndex = 8, Parent = f,
+    ScrollBarThickness = 3,
+    ScrollBarImageColor3 = C.accent,
+    ClipsDescendants = true,
+    ZIndex = 8,
+    Parent = f,
   })
   corner(list, 8); stroke(list, C.border, 1)
   local rows = {}
   local function paint()
     selected.Text = labelFor(current)
     for value, row in pairs(rows) do
-      twPlay(row, 0.16, { BackgroundTransparency = value == current and 0.25 or 1,
-        TextColor3 = value == current and C.text or C.subtext }, EASE_SINE, DIR_INOUT)
+      twPlay(
+        row,
+        0.16,
+        { BackgroundTransparency = value == current and 0.25 or 1, TextColor3 = value == current and C.text or C.subtext },
+        EASE_SINE,
+        DIR_INOUT
+      )
     end
   end
-  local open = false
-  local extra = listHeight + 7
+  local open = false; local extra = listHeight + 7
   local function setOpen(value)
     if open == value then return end
-    open = value
-    local delta = (open and extra or -extra) * CARD_SCALE
+    open = value; local delta = (open and extra or -extra) * CARD_SCALE
     for _, child in ipairs(parent:GetChildren()) do
       if child ~= f and child:IsA("Frame") and child:FindFirstChild("CardScale") then
         local target = child:GetAttribute("DropdownTargetY") or child.Position.Y.Offset
@@ -1409,10 +1434,18 @@ local function createDropdown(yPos, parent, definition)
   end
   for index, option in ipairs(options) do
     local row = inst("TextButton", {
-      Size = UDim2.new(1, -8, 0, rowHeight), Position = UDim2.fromOffset(4, 3 + (index - 1) * (rowHeight + gap)),
-      BackgroundColor3 = C.accent, BackgroundTransparency = 1, BorderSizePixel = 0,
-      Text = option.label, TextColor3 = C.subtext, TextSize = 12, Font = Enum.Font.GothamSemibold,
-      AutoButtonColor = false, ZIndex = 9, Parent = list,
+      Size = UDim2.new(1, -8, 0, rowHeight),
+      Position = UDim2.fromOffset(4, 3 + (index - 1) * (rowHeight + gap)),
+      BackgroundColor3 = C.accent,
+      BackgroundTransparency = 1,
+      BorderSizePixel = 0,
+      Text = option.label,
+      TextColor3 = C.subtext,
+      TextSize = 12,
+      Font = Enum.Font.GothamSemibold,
+      AutoButtonColor = false,
+      ZIndex = 9,
+      Parent = list,
     })
     corner(row, 7); rows[option.value] = row
     trackConn(row.MouseEnter:Connect(function()
