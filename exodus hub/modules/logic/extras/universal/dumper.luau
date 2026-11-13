@@ -19,6 +19,10 @@ local status = {
 local CONFIG = {
   PREFIX = "SrcDump",
   PROGRESS_EVERY = 25,
+  MAX_SOURCE_ATTEMPTS = 5,
+  INSTANCE_BATCH = 100,
+  SCRIPT_PAUSE = 0.05,
+  RETRY_PAUSE = 0.2,
   SAVE_BYTECODE = true,
   SAVE_DISASSEMBLY = true,
   INCLUDE_NIL_INSTANCES = true,
@@ -192,8 +196,11 @@ end
 local function addDiscovery(api, catalog, candidates, seen, errors, token)
   local ok, values = pcall(api)
   if not ok or type(values) ~= "table" then errors[#errors + 1] = "discovery failed: " .. errorText(values); return end
+  local processed = 0
   for _, object in pairs(values) do
     if token.cancelled then return end
+    processed += 1
+    if processed % CONFIG.INSTANCE_BATCH == 0 then task.wait() end
     if allowed(object, CONFIG.INCLUDE_NIL_INSTANCES) and not seen[object] then
       seen[object] = true; local item = { instance = object, path = objectPath(object), origin = "executor" }
       catalog[#catalog + 1] = item
@@ -234,6 +241,7 @@ local function run(token, callbacks)
     for index, object in ipairs(descendants) do
       if token.cancelled then return nil, "Dump canceled" end
       add(object, "game:GetDescendants", false)
+      if index % CONFIG.INSTANCE_BATCH == 0 then task.wait() end
     end
   else
     discoveryErrors[#discoveryErrors + 1] = "game:GetDescendants: " .. errorText(descendants)
@@ -259,7 +267,7 @@ local function run(token, callbacks)
     )
     tree[#tree + 1] = detail
     if REMOTE_CLASSES[objectClass(object)] then remoteCount += 1; remotes[#remotes + 1] = detail end
-    if index % 1000 == 0 then task.wait() end
+    if index % CONFIG.INSTANCE_BATCH == 0 then task.wait() end
   end
   remotes[2] = "total=" .. remoteCount; local treeOk, treeError = saveFile(base .. "/tree.txt", table.concat(tree, "\n") .. "\n")
   if not treeOk then return nil, "cannot save tree.txt: " .. tostring(treeError) end
@@ -318,6 +326,9 @@ local function run(token, callbacks)
     local object, attempts = item.instance, {}
     local source, method, bytecode, closure
     local function attempt(label, fn, argument, validateSource)
+      if token.cancelled then return nil end
+      task.wait()
+      if token.cancelled then return nil end
       local success, value = pcall(fn, argument)
       if not success then attempts[#attempts + 1] = label .. ": error: " .. errorText(value); return nil end
       if type(value) ~= "string" or #value == 0 then attempts[#attempts + 1] = label .. ": empty or invalid return (" .. type(value) .. ")"; return nil end
@@ -327,10 +338,13 @@ local function run(token, callbacks)
       end
       attempts[#attempts + 1] = label .. ": returned " .. #value .. " bytes"; return value
     end
+    for round = 1, CONFIG.MAX_SOURCE_ATTEMPTS do
+    if token.cancelled then return nil, "Dump canceled" end
+    attempts[#attempts + 1] = "source attempt " .. round .. "/" .. CONFIG.MAX_SOURCE_ATTEMPTS
     local sourceOk, directSource = pcall(function() return object.Source end)
     if sourceOk and type(directSource) == "string" and directSource:match("%S") then source, method = directSource, "Source"; attempts[#attempts + 1] = "Source: available"
     else attempts[#attempts + 1] = "Source: " .. (sourceOk and "empty or unavailable" or errorText(directSource)) end
-    if #readers > 0 then
+    if not bytecode and #readers > 0 then
       for _, reader in ipairs(readers) do
         bytecode = attempt(reader.name .. "(instance)", reader.fn, object, false)
         if bytecode then break end
@@ -356,6 +370,9 @@ local function run(token, callbacks)
           attempts[#attempts + 1] = reader.name .. ": " .. (success and ("returned " .. type(value)) or errorText(value))
         end
       end
+    end
+    if source then break end
+    if round < CONFIG.MAX_SOURCE_ATTEMPTS then task.wait(CONFIG.RETRY_PAUSE) end
     end
     if source and bytecode and not sourceCache[bytecode] then sourceCache[bytecode] = source end
     if not decompiler then attempts[#attempts + 1] = "decompile: unavailable" end
@@ -394,10 +411,11 @@ local function run(token, callbacks)
     end
     status.processed, status.saved, status.failed, status.bytecode = index, saved, failed, bytecodes
     if index == 1 or index % CONFIG.PROGRESS_EVERY == 0 then emit(callbacks, "onProgress", index, #candidates, item.path) end
-    if index % 50 == 0 then task.wait() end
+    task.wait(CONFIG.SCRIPT_PAUSE)
   end
   for _, entry in ipairs(unresolved) do
     if token.cancelled then return nil, "Dump canceled" end
+    task.wait(CONFIG.SCRIPT_PAUSE)
     local recovered = entry.bytecode and sourceCache[entry.bytecode]
     if recovered then
       local header = table.concat({
