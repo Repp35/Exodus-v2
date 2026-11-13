@@ -206,8 +206,8 @@ end
 local connectionIndexes = {}
 local function trackConn(c)
   if c and type(c.Disconnect) == "function" and not connectionIndexes[c] then
-    local index = #UIState.connections + 1
-    UIState.connections[index] = c; connectionIndexes[c] = index
+    local index = #UIState.connections + 1; UIState.connections[index] = c
+    connectionIndexes[c] = index
   end
   return c
 end
@@ -238,8 +238,8 @@ pulseButton = function(button)
 end
 local function disconnectUIConnections()
   for i = #UIState.connections, 1, -1 do
-    local connection = UIState.connections[i]
-    safeDisconnect(connection); connectionIndexes[connection] = nil; UIState.connections[i] = nil
+    local connection = UIState.connections[i]; safeDisconnect(connection)
+    connectionIndexes[connection] = nil; UIState.connections[i] = nil
   end
 end
 local function watchTweens(tweens, callback)
@@ -496,7 +496,8 @@ local function cleanupUI()
   safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
   safeCancel(UIState.miniTween); UIState.miniTween = nil
   UIState.miniGeneration += 1; disconnectUIConnections()
-  UIState.connections = {}; table.clear(connectionIndexes); UIState.pageGeneration += 1
+  UIState.connections = {}; table.clear(connectionIndexes)
+  UIState.pageGeneration += 1
   for _, tween in ipairs(UIState.pageTweens) do
     safeCancel(tween)
   end
@@ -516,24 +517,26 @@ local function cleanupUI()
     local oldOverlay = overlay:FindFirstChild("ExodusInformationOverlay")
     if oldOverlay then oldOverlay:Destroy() end
   end
-  informationGui = nil
-  clearPersistentNotification("closing"); screenGui = nil
-  floatingButton = nil; floatingButtonStroke = nil
-  clashBall = nil; parryBall = nil
-  darkBall = nil; jumpBall = nil
-  upDashBall = nil; miniGui = nil
-  configPanel = nil; toastCard = nil
-  toastLabel = nil; particleLayer = nil
-  titleBar = nil; minimizeButton = nil
-  reloadButton = nil; colLeft = nil
-  colRight = nil; killBtn = nil
-  toastLayer = nil; responsiveScale = nil
-  shortcutLabels = {}; statusToggleVisuals = {}
-  fadeRestore, fadeEvent, fadeDone = {}, nil, false
+  informationGui = nil; clearPersistentNotification("closing")
+  screenGui = nil; floatingButton = nil
+  floatingButtonStroke = nil; clashBall = nil
+  parryBall = nil; darkBall = nil
+  jumpBall = nil; upDashBall = nil
+  miniGui = nil; configPanel = nil
+  toastCard = nil; toastLabel = nil
+  particleLayer = nil; titleBar = nil
+  minimizeButton = nil; reloadButton = nil
+  colLeft = nil; colRight = nil
+  killBtn = nil; toastLayer = nil
+  responsiveScale = nil; shortcutLabels = {}
+  statusToggleVisuals = {}; fadeRestore, fadeEvent, fadeDone = {}, nil, false
   autoClashTrack = nil; autoClashThumb = nil
   autoParrySetVisual = nil; autoDarkSetVisual = nil
   autoJumpSetVisual = nil
-  if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil; _G.ExodusUIFadeOut = nil; _G.ExodusUIRestore = nil end
+  if _G.ExodusUICleanup == cleanupUI then
+    _G.ExodusUICleanup = nil; _G.ExodusUIFadeOut = nil
+    _G.ExodusUIRestore = nil
+  end
   if _G.ExodusShowPersistentNotification == showPersistentNotification then _G.ExodusShowPersistentNotification = nil end
   if _G.ExodusClearPersistentNotification == clearPersistentNotification then _G.ExodusClearPersistentNotification = nil end
 end
@@ -855,17 +858,19 @@ local function makeToggle(trackParent, initial)
   end
   return track, thumb, setVisual
 end
-
--- Reusable primitives for future pages. Each constructor returns a handle
--- with a Root instance and setters; callbacks run only for user input.
 local Components = {}
 local function componentText(parent, class, options)
   options = options or {}
   return inst(class, {
-    Name = options.name or class, Size = options.size or UDim2.new(1, 0, 0, 34),
-    BackgroundColor3 = options.backgroundColor or C.card, BackgroundTransparency = options.backgroundTransparency or 0,
-    Text = options.text or "", TextColor3 = options.textColor or C.text,
-    TextSize = options.textSize or 13, Font = Enum.Font.Gotham, Parent = parent,
+    Name = options.name or class,
+    Size = options.size or UDim2.new(1, 0, 0, 34),
+    BackgroundColor3 = options.backgroundColor or C.card,
+    BackgroundTransparency = options.backgroundTransparency or 0,
+    Text = options.text or "",
+    TextColor3 = options.textColor or C.text,
+    TextSize = options.textSize or 13,
+    Font = Enum.Font.Gotham,
+    Parent = parent,
   })
 end
 function Components.label(parent, options)
@@ -874,63 +879,104 @@ function Components.label(parent, options)
   return { Root = label, setText = function(text) label.Text = tostring(text) end }
 end
 function Components.button(parent, options)
-  options = options or {}; local button = componentText(parent, "TextButton", options); corner(button, 8)
-  trackConn(button.Activated:Connect(function() if type(options.onClick) == "function" then options.onClick() end end))
+  options = options or {}; local button = componentText(parent, "TextButton", options)
+  corner(button, 8)
+  trackConn(button.Activated:Connect(function()
+    if type(options.onClick) == "function" then options.onClick() end
+  end))
   return { Root = button, setText = function(text) button.Text = tostring(text) end }
 end
 function Components.textInput(parent, options)
-  options = options or {}; local input = componentText(parent, "TextBox", options); corner(input, 8)
-  input.PlaceholderText = options.placeholder or ""; input.ClearTextOnFocus = false
+  options = options or {}; local input = componentText(parent, "TextBox", options)
+  corner(input, 8); input.PlaceholderText = options.placeholder or ""
+  input.ClearTextOnFocus = false
   trackConn(input.FocusLost:Connect(function(enterPressed)
     if type(options.onSubmit) == "function" then options.onSubmit(input.Text, enterPressed) end
   end))
   return { Root = input, setText = function(text) input.Text = tostring(text) end, getText = function() return input.Text end }
 end
 function Components.toggle(parent, options)
-  options = options or {}; local button = componentText(parent, "TextButton", options); corner(button, 8)
-  button.TextXAlignment = Enum.TextXAlignment.Left
+  options = options or {}; local button = componentText(parent, "TextButton", options)
+  corner(button, 8); button.TextXAlignment = Enum.TextXAlignment.Left
   local _, _, setVisual = makeToggle(button, options.value == true); local value = options.value == true
-  local function setValue(nextValue) value = nextValue == true; setVisual(value) end
-  trackConn(button.Activated:Connect(function() setValue(not value); if type(options.onChange) == "function" then options.onChange(value) end end))
+  local function setValue(nextValue)
+    value = nextValue == true; setVisual(value)
+  end
+  trackConn(button.Activated:Connect(function()
+    setValue(not value)
+    if type(options.onChange) == "function" then options.onChange(value) end
+  end))
   return { Root = button, setValue = setValue, getValue = function() return value end }
 end
 function Components.divider(parent, options)
   options = options or {}
-  local line = inst("Frame", { Name = options.name or "Divider", Size = options.size or UDim2.new(1, 0, 0, 1), BackgroundColor3 = options.color or C.border, BorderSizePixel = 0, Parent = parent })
+  local line = inst("Frame", {
+    Name = options.name or "Divider",
+    Size = options.size or UDim2.new(1, 0, 0, 1),
+    BackgroundColor3 = options.color or C.border,
+    BorderSizePixel = 0,
+    Parent = parent,
+  })
   return { Root = line }
 end
 function Components.progressBar(parent, options)
   options = options or {}
-  local track = inst("Frame", { Name = options.name or "ProgressBar", Size = options.size or UDim2.new(1, 0, 0, 8), BackgroundColor3 = C.border, BorderSizePixel = 0, ClipsDescendants = true, Parent = parent }); corner(track, 4)
-  local fill = inst("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = options.color or C.accent, BorderSizePixel = 0, Parent = track }); corner(fill, 4)
+  local track = inst("Frame", {
+    Name = options.name or "ProgressBar",
+    Size = options.size or UDim2.new(1, 0, 0, 8),
+    BackgroundColor3 = C.border,
+    BorderSizePixel = 0,
+    ClipsDescendants = true,
+    Parent = parent,
+  })
+  corner(track, 4); local fill = inst("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = options.color or C.accent, BorderSizePixel = 0, Parent = track })
+  corner(fill, 4)
   local function setValue(value) fill.Size = UDim2.fromScale(math.clamp(tonumber(value) or 0, 0, 1), 1) end
-  setValue(options.value)
-  return { Root = track, setValue = setValue }
+  setValue(options.value); return { Root = track, setValue = setValue }
 end
 function Components.dropdown(parent, options)
-  options = options or {}; local choices = options.choices or {}; local value = options.value
-  local root = inst("Frame", { Name = options.name or "Dropdown", Size = options.size or UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, Parent = parent })
+  options = options or {}; local choices = options.choices or {}
+  local value = options.value; local root = inst("Frame", { Name = options.name or "Dropdown", Size = options.size or UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, Parent = parent })
   local button = componentText(root, "TextButton", { size = UDim2.fromScale(1, 1), text = "" }); corner(button, 8)
-  local list = inst("Frame", { Name = "Options", Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, #choices * 30), BackgroundColor3 = C.card, Visible = false, ZIndex = 20, Parent = root }); corner(list, 8)
-  inst("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, list)
-  local function setValue(nextValue) value = nextValue; button.Text = tostring(value or options.placeholder or "Select") .. " ▾" end
-  for index, choice in ipairs(choices) do
-    local item = componentText(list, "TextButton", { size = UDim2.new(1, 0, 0, 30), text = tostring(choice) }); item.LayoutOrder = index; item.ZIndex = 21
-    trackConn(item.Activated:Connect(function() setValue(choice); list.Visible = false; if type(options.onChange) == "function" then options.onChange(choice) end end))
+  local list = inst("Frame", {
+    Name = "Options",
+    Position = UDim2.fromScale(0, 1),
+    Size = UDim2.new(1, 0, 0, #choices * 30),
+    BackgroundColor3 = C.card,
+    Visible = false,
+    ZIndex = 20,
+    Parent = root,
+  })
+  corner(list, 8); inst("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, list)
+  local function setValue(nextValue)
+    value = nextValue; button.Text = tostring(value or options.placeholder or "Select") .. " ▾"
   end
-  trackConn(button.Activated:Connect(function() list.Visible = not list.Visible end)); setValue(value)
+  for index, choice in ipairs(choices) do
+    local item = componentText(list, "TextButton", { size = UDim2.new(1, 0, 0, 30), text = tostring(choice) }); item.LayoutOrder = index
+    item.ZIndex = 21
+    trackConn(item.Activated:Connect(function()
+      setValue(choice); list.Visible = false
+      if type(options.onChange) == "function" then options.onChange(choice) end
+    end))
+  end
+  trackConn(button.Activated:Connect(function() list.Visible = not list.Visible end))
+  setValue(value)
   return { Root = root, setValue = setValue, getValue = function() return value end }
 end
 function Components.slider(parent, options)
   options = options or {}; local minimum, maximum = tonumber(options.min) or 0, tonumber(options.max) or 100
-  assert(maximum > minimum, "slider max must exceed min")
-  local root = componentText(parent, "TextButton", { name = options.name or "Slider", size = options.size, text = "" }); corner(root, 8)
-  local fill = inst("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.accent, BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = root }); corner(fill, 8)
-  local label = componentText(root, "TextLabel", { size = UDim2.fromScale(1, 1), text = "" }); label.BackgroundTransparency = 1; label.ZIndex = root.ZIndex + 1
+  assert(maximum > minimum, "slider max must exceed min"); local root = componentText(parent, "TextButton", { name = options.name or "Slider", size = options.size, text = "" })
+  corner(root, 8)
+  local fill = inst(
+    "Frame",
+    { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.accent, BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = root }
+  )
+  corner(fill, 8); local label = componentText(root, "TextLabel", { size = UDim2.fromScale(1, 1), text = "" })
+  label.BackgroundTransparency = 1; label.ZIndex = root.ZIndex + 1
   local value, dragging = minimum, false
   local function setValue(nextValue)
-    value = math.clamp(tonumber(nextValue) or minimum, minimum, maximum)
-    fill.Size = UDim2.fromScale((value - minimum) / (maximum - minimum), 1); label.Text = tostring(options.text or "") .. " " .. string.format("%.2f", value)
+    value = math.clamp(tonumber(nextValue) or minimum, minimum, maximum); fill.Size = UDim2.fromScale((value - minimum) / (maximum - minimum), 1)
+    label.Text = tostring(options.text or "") .. " " .. string.format("%.2f", value)
   end
   local function update(input)
     if root.AbsoluteSize.X <= 0 then return end
@@ -945,7 +991,8 @@ function Components.slider(parent, options)
   end))
   trackConn(UIS.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
-  end)); setValue(options.value)
+  end))
+  setValue(options.value)
   return { Root = root, setValue = setValue, getValue = function() return value end }
 end
 ExodusUI.Components = Components
@@ -1160,28 +1207,47 @@ end
 local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
   local _, description = optionInfo(option); local height = description and 88 or 68
   local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, -112)
-  local minValue, maxValue = tonumber(option.min) or 0, tonumber(option.max) or 100
-  local increment = tonumber(option.increment) or 1
+  local minValue, maxValue = tonumber(option.min) or 0, tonumber(option.max) or 100; local increment = tonumber(option.increment) or 1
   local current = tonumber(Utils.getConfigValue(option.key)) or minValue
   local valueLabel = inst("TextLabel", {
-    Size = UDim2.fromOffset(92, 18), Position = UDim2.new(1, -106, 0, 7),
-    BackgroundTransparency = 1, TextColor3 = C.text, TextSize = 10,
-    Font = Enum.Font.GothamBold, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 9, Parent = f,
+    Size = UDim2.fromOffset(92, 18),
+    Position = UDim2.new(1, -106, 0, 7),
+    BackgroundTransparency = 1,
+    TextColor3 = C.text,
+    TextSize = 10,
+    Font = Enum.Font.GothamBold,
+    TextXAlignment = Enum.TextXAlignment.Right,
+    ZIndex = 9,
+    Parent = f,
   })
   local track = inst("Frame", {
-    Size = UDim2.new(1, -28, 0, 6), Position = UDim2.new(0, 14, 1, -17),
-    BackgroundColor3 = C.inputBg, BorderSizePixel = 0, ZIndex = 8, Parent = f,
+    Size = UDim2.new(1, -28, 0, 6),
+    Position = UDim2.new(0, 14, 1, -17),
+    BackgroundColor3 = C.inputBg,
+    BorderSizePixel = 0,
+    ZIndex = 8,
+    Parent = f,
   })
   corner(track, 999); stroke(track, C.border, 1)
   local fill = inst("Frame", { Size = UDim2.new(), BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 9, Parent = track }); corner(fill)
-  local knob = inst("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = C.text, BorderSizePixel = 0, ZIndex = 10, Parent = track }); corner(knob, 999); stroke(knob, C.accent, 1)
+  local knob = inst(
+    "Frame",
+    { AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = C.text, BorderSizePixel = 0, ZIndex = 10, Parent = track }
+  )
+  corner(knob, 999); stroke(knob, C.accent, 1)
   local hitbox = inst("TextButton", {
-    Name = "ScrollHitbox", Size = UDim2.new(1, 0, 0, 26), Position = UDim2.new(0, 0, 1, -27),
-    BackgroundTransparency = 1, BorderSizePixel = 0, AutoButtonColor = false, Text = "", ZIndex = 11, Parent = f,
+    Name = "ScrollHitbox",
+    Size = UDim2.new(1, 0, 0, 26),
+    Position = UDim2.new(0, 0, 1, -27),
+    BackgroundTransparency = 1,
+    BorderSizePixel = 0,
+    AutoButtonColor = false,
+    Text = "",
+    ZIndex = 11,
+    Parent = f,
   })
   local function applyValue(value, notify)
-    local range = math.max(0, maxValue - minValue)
-    local stepped = range > 0 and minValue + math.clamp(math.floor((value - minValue) / increment + 0.5) * increment, 0, range) or minValue
+    local range = math.max(0, maxValue - minValue); local stepped = range > 0 and minValue + math.clamp(math.floor((value - minValue) / increment + 0.5) * increment, 0, range) or minValue
     stepped = math.clamp(stepped, minValue, maxValue); local alpha = range > 0 and (stepped - minValue) / range or 0
     fill.Size = UDim2.new(alpha, 0, 1, 0); knob.Position = UDim2.new(alpha, 0, 0.5, 0)
     local rounded = math.floor(stepped * 100 + 0.5) / 100; local suffix = tostring(option.valueName or "")
@@ -1189,8 +1255,7 @@ local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
     if notify and onChange then onChange(stepped) end
   end
   local function applyInput(input)
-    local width = math.max(1, track.AbsoluteSize.X)
-    applyValue(minValue + (maxValue - minValue) * math.clamp((input.Position.X - track.AbsolutePosition.X) / width, 0, 1), true)
+    local width = math.max(1, track.AbsoluteSize.X); applyValue(minValue + (maxValue - minValue) * math.clamp((input.Position.X - track.AbsolutePosition.X) / width, 0, 1), true)
   end
   local dragInput
   trackConn(hitbox.InputBegan:Connect(function(input)
@@ -1204,7 +1269,9 @@ local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
     local touchDrag = dragInput.UserInputType == Enum.UserInputType.Touch and input == dragInput
     if mouseDrag or touchDrag then applyInput(input) end
   end))
-  trackConn(UIS.InputEnded:Connect(function(input) if input == dragInput then dragInput = nil end end))
+  trackConn(UIS.InputEnded:Connect(function(input)
+    if input == dragInput then dragInput = nil end
+  end))
   applyValue(current, false); return nextCardY(yPos, height), f
 end
 local function createActionShortcutCard(option, yPos, parent, configKey, onActivate)
@@ -1411,12 +1478,15 @@ end
 local function restoreAfterReloadFailure(message)
   if not configPanel or not configPanel.Parent then return end
   for object, properties in pairs(fadeRestore) do
-    if object.Parent then for key, value in pairs(properties) do pcall(function() object[key] = value end) end end
+    if object.Parent then
+      for key, value in pairs(properties) do
+        pcall(function() object[key] = value end)
+      end
+    end
   end
-  fadeRestore, fadeEvent, fadeDone = {}, nil, false
-  UIState.closing = false; UIState.panelOpen = true
-  configPanel.Visible = true; configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97)
-  configPanel.GroupTransparency = 1
+  fadeRestore, fadeEvent, fadeDone = {}, nil, false; UIState.closing = false
+  UIState.panelOpen = true; configPanel.Visible = true
+  configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97); configPanel.GroupTransparency = 1
   if floatingButton and floatingButton.Parent then
     floatingButton.Size = UDim2.new(0, 42, 0, 42); floatingButton.BackgroundTransparency = 1
     floatingButton.TextTransparency = 1
@@ -1447,21 +1517,21 @@ local function fadeGuiTree(root, tweens, duration)
     elseif object:IsA("UIStroke") then
       props.Transparency = 1
     elseif object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
-      props.TextTransparency = 1
-      props.TextStrokeTransparency = 1
+      props.TextTransparency = 1; props.TextStrokeTransparency = 1
       props.BackgroundTransparency = 1
     elseif object:IsA("ImageLabel") or object:IsA("ImageButton") then
-      props.ImageTransparency = 1
-      props.BackgroundTransparency = 1
+      props.ImageTransparency = 1; props.BackgroundTransparency = 1
     elseif object:IsA("ScrollingFrame") then
-      props.BackgroundTransparency = 1
-      props.ScrollBarImageTransparency = 1
+      props.BackgroundTransparency = 1; props.ScrollBarImageTransparency = 1
     elseif object:IsA("Frame") or object:IsA("ViewportFrame") then
       props.BackgroundTransparency = 1
     end
     if next(props) then
       if not fadeRestore[object] then
-        local original = {}; for key in pairs(props) do original[key] = object[key] end
+        local original = {}
+        for key in pairs(props) do
+          original[key] = object[key]
+        end
         fadeRestore[object] = original
       end
       local tween = twPlay(object, duration, props, EASE_OUT, DIR_IN)
@@ -1469,25 +1539,24 @@ local function fadeGuiTree(root, tweens, duration)
     end
   end
 end
-
 local function fadeOutForReplacement(preserveUpdate)
   if UIState.closing then
     if fadeEvent and not fadeDone then fadeEvent.Event:Wait() end
     return
   end
   if not screenGui or not screenGui.Parent then return end
-  UIState.closing = true
-  fadeDone = false; fadeEvent = Instance.new("BindableEvent")
-  safeCancel(UIState.panelTween)
-  safeCancel(UIState.btnTween)
-  safeCancel(UIState.miniTween); safeCancel(UIState.toastTween)
-  for _, tween in ipairs(UIState.pageTweens) do safeCancel(tween) end
-  for _, tween in ipairs(flowingTweens) do safeCancel(tween) end
-  local tweens = {}
-
-  fadeGuiTree(screenGui, tweens, 0.26)
+  UIState.closing = true; fadeDone = false
+  fadeEvent = Instance.new("BindableEvent"); safeCancel(UIState.panelTween)
+  safeCancel(UIState.btnTween); safeCancel(UIState.miniTween)
+  safeCancel(UIState.toastTween)
+  for _, tween in ipairs(UIState.pageTweens) do
+    safeCancel(tween)
+  end
+  for _, tween in ipairs(flowingTweens) do
+    safeCancel(tween)
+  end
+  local tweens = {}; fadeGuiTree(screenGui, tweens, 0.26)
   fadeGuiTree(informationGui, tweens, 0.26)
-
   if persistentLayer and persistentLayer.Parent then
     for _, card in ipairs(persistentLayer:GetChildren()) do
       local key = card:GetAttribute("ExodusNotificationKey")
@@ -1497,25 +1566,26 @@ local function fadeOutForReplacement(preserveUpdate)
       end
     end
   end
-
-  awaitTweens(tweens)
-
-  local oldKeys = {}
+  awaitTweens(tweens); local oldKeys = {}
   for _, key in ipairs(persistentOrder) do
     if key ~= "update" or preserveUpdate == false then oldKeys[#oldKeys + 1] = key end
   end
   for _, key in ipairs(oldKeys) do
     local card = persistentLayer and persistentLayer:FindFirstChild("Notification_" .. key)
     if card then card:Destroy() end
-    local index = table.find(persistentOrder, key); if index then table.remove(persistentOrder, index) end
+    local index = table.find(persistentOrder, key)
+    if index then table.remove(persistentOrder, index) end
   end
   if persistentLayer and persistentLayer.Parent then
     for _, card in ipairs(persistentLayer:GetChildren()) do
       if card:GetAttribute("ExodusNotificationKey") ~= "update" or preserveUpdate == false then card:Destroy() end
     end
   end
-  fadeDone = true; local completed = fadeEvent; completed:Fire()
-  _spawn(function() _wait(); completed:Destroy() end)
+  fadeDone = true; local completed = fadeEvent
+  completed:Fire()
+  _spawn(function()
+    _wait(); completed:Destroy()
+  end)
 end
 local function animateClose(action)
   if UIState.closing then return end
@@ -1558,8 +1628,7 @@ function ExodusUI.setup(deps)
   end
   Utils = deps.Utils; UIConfig = deps.UIConfig
   GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam
-  Dumper = deps.Dumper
-  Controls = type(deps.Controls) == "table" and deps.Controls or {}
+  Dumper = deps.Dumper; Controls = type(deps.Controls) == "table" and deps.Controls or {}
   local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
   if type(_G.ExodusUICleanup) == "function" then
     if type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
@@ -1571,10 +1640,10 @@ function ExodusUI.setup(deps)
   UIState.panelOpen = false; UIState.spamOn = false
   UIState.clashBallOn = false; UIState.closing = false
   UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil
-  UIState.btnTween = nil; shortcutLabels = {}; _G.ExodusUIRestore = restoreAfterReloadFailure
-  persistentLayerForPlayer(); _G.ExodusUICleanup = cleanupUI
-  _G.ExodusUIFadeOut = fadeOutForReplacement; _G.ExodusShowPersistentNotification = showPersistentNotification
-  _G.ExodusClearPersistentNotification = clearPersistentNotification
+  UIState.btnTween = nil; shortcutLabels = {}
+  _G.ExodusUIRestore = restoreAfterReloadFailure; persistentLayerForPlayer()
+  _G.ExodusUICleanup = cleanupUI; _G.ExodusUIFadeOut = fadeOutForReplacement
+  _G.ExodusShowPersistentNotification = showPersistentNotification; _G.ExodusClearPersistentNotification = clearPersistentNotification
   screenGui = inst("ScreenGui", {
     Name = "ExodusUISystem",
     DisplayOrder = 100,
@@ -1687,14 +1756,9 @@ function ExodusUI.setup(deps)
   end
   local function updateInformation()
     if not informationGui.Parent then return end
-    local time = os.clock()
-    local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
-    local travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true
-    local distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true
-    if not gateEnabled and not travelVisible and not distanceVisible then
-      gateLabel.Visible, travelLabel.Visible, distanceLabel.Visible = false, false, false
-      return
-    end
+    local time = os.clock(); local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
+    local travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true; local distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true
+    if not gateEnabled and not travelVisible and not distanceVisible then gateLabel.Visible, travelLabel.Visible, distanceLabel.Visible = false, false, false; return end
     if gateEnabled and time >= nextGateUpdate then
       nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
       local lines = {}
@@ -2249,8 +2313,7 @@ function ExodusUI.setup(deps)
     ZIndex = 6,
     Parent = pageGroups[4],
   })
-  local indeedWidth = math.min(360, PW - PAD * 2)
-  local indeedCardWidth = 298
+  local indeedWidth = math.min(360, PW - PAD * 2); local indeedCardWidth = 298
   local indeedContent = inst("ScrollingFrame", {
     Name = "IndeedContent",
     AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -2292,8 +2355,7 @@ function ExodusUI.setup(deps)
       if showPersistentNotification then showPersistentNotification("Dumper is already running.", "dumper", "warning", 2.0) end
     end
   end
-  local indeedY = 5
-  local indeedPage = UIConfig.pages.indeed
+  local indeedY = 5; local indeedPage = UIConfig.pages.indeed
   local indeedRows, indeedParents = {}, {}
   local function renderIndeedComponent(definition, yPos)
     if definition.kind == "click" then
@@ -2311,19 +2373,17 @@ function ExodusUI.setup(deps)
   end
   if type(indeedPage) == "table" and type(indeedPage.sections) == "table" then
     for _, section in ipairs(indeedPage.sections) do
-      local label = cardLabel(section.title or "Controls", indeedContent, indeedY)
-      indeedRows[#indeedRows + 1] = { root = label, span = 24 }; indeedY += 24
+      local label = cardLabel(section.title or "Controls", indeedContent, indeedY); indeedRows[#indeedRows + 1] = { root = label, span = 24 }
+      indeedY += 24
       for _, definition in ipairs(section.components or {}) do
         local nextY, card = renderIndeedComponent(definition, indeedY)
         if card then
-          local row = { root = card, span = nextY - indeedY, parentKey = definition.parentKey }
-          indeedRows[#indeedRows + 1] = row
+          local row = { root = card, span = nextY - indeedY, parentKey = definition.parentKey }; indeedRows[#indeedRows + 1] = row
           if definition.key then indeedParents[definition.key] = row end
         end
         indeedY = nextY
       end
-      indeedRows[#indeedRows + 1] = { span = CARD_GAP }
-      indeedY += CARD_GAP
+      indeedRows[#indeedRows + 1] = { span = CARD_GAP }; indeedY += CARD_GAP
     end
   end
   local function refreshIndeedChildren()
@@ -2332,23 +2392,20 @@ function ExodusUI.setup(deps)
       local key = row.parentKey
       if not key then return true end
       if config[key] ~= true or visiting[key] then return false end
-      visiting[key] = true
-      local parent = indeedParents[key]
+      visiting[key] = true; local parent = indeedParents[key]
       return not parent or visible(parent, visiting)
     end
     for _, row in ipairs(indeedRows) do
       local shown = visible(row, {})
       if row.root then
-        row.root.Visible = shown
-        local position = row.root.Position
+        row.root.Visible = shown; local position = row.root.Position
         row.root.Position = UDim2.new(position.X.Scale, position.X.Offset, 0, shown and y or 0)
       end
       if shown then y += row.span end
     end
     indeedContent.CanvasSize = UDim2.fromOffset(0, y + CARD_GAP)
   end
-  refreshIndeedChildren()
-  cardLabel("Automatic Abilities", autosLeft)
+  refreshIndeedChildren(); cardLabel("Automatic Abilities", autosLeft)
   cardLabel("Quick Controls", autosRight)
   local darkYPos, darkCard = createStatusToggleCard("Auto Dark", 26, autosLeft, {
     configKey = "AutoDark",
@@ -2504,9 +2561,14 @@ function ExodusUI.setup(deps)
   hubY = createClickCard({ title = "Rejoin", description = "Reconecta ao servidor atual." }, hubY, hubSettings, function()
     if type(Controls.onRejoin) == "function" then Controls.onRejoin() end
   end)
-  hubY = createClickCard({ title = "Server Hop", description = "Busca vagas com ping informado de até 100 ms; prioriza o menor." }, hubY, hubSettings, function()
-    if type(Controls.onServerHop) == "function" then Controls.onServerHop() end
-  end)
+  hubY = createClickCard(
+    { title = "Server Hop", description = "Busca vagas com ping informado de até 100 ms; prioriza o menor." },
+    hubY,
+    hubSettings,
+    function()
+      if type(Controls.onServerHop) == "function" then Controls.onServerHop() end
+    end
+  )
   local resetCard = cardFrame(hubY, CARD_H, hubSettings); local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
   resetButton.Name = "ResetSettings"; resetButton.Size = UDim2.new(1, -20, 0, 30)
   local resetPending = false
@@ -2793,4 +2855,3 @@ ExodusUI.__contract = {
 }
 
 return ExodusUI
-
