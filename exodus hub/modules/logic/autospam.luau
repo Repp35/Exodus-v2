@@ -243,7 +243,7 @@ local function deactivationReason(state, snapshot, time)
   if gameInfo.getBallFrozen() == true then return "ball_frozen" end
   if state.departedAt and time >= state.departedAt then
     local ping = gameInfo.getAveragePing(); local limit = CONFIG.DEACTIVATION.RETURN_TIMEOUT + (finite(ping) and math.max(0, ping) or 0)
-    if time - state.departedAt > limit then return "return_timeout" end
+    if time - state.departedAt > limit and cooldownOpponentOutside(state) then return "return_timeout" end
   end
   local cooldown = gameInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
@@ -340,7 +340,7 @@ local function targetChanged(state, target, time, snapshot, serverTime)
     if state.active and state.departedAt then
       local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime); local ping = gameInfo.getAveragePing()
       local limit = CONFIG.DEACTIVATION.RETURN_TIMEOUT + (finite(ping) and math.max(0, ping) or 0)
-      if duration and duration > limit then
+      if duration and duration > limit and cooldownOpponentOutside(state) then
         deactivate(state, "return_timeout", time); state.target = target
         return
       end
