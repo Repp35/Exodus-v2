@@ -21,6 +21,9 @@ local CONFIG = {
     RADIUS_FACTOR = 1,
     RETURN_RADIUS_FACTOR = 0.6,
     FAST_RETURN_INTERVAL = 1 / 3,
+    FAST_RETURN_INTERVAL_FAST = 0.1,
+    FAST_RETURN_LEAD_SLOW = 0.1,
+    FAST_RETURN_LEAD_FAST = 0.04,
     FAST_RETURN_SAMPLE_GAP = 0.2,
     FAST_RETURN_MIN_CLOSING = 8,
     FAST_RETURN_ALIGNMENT = 0.65,
@@ -252,7 +255,12 @@ local function sampleFastReturn(state, snapshot, time)
   local syncAt = snapshot.syncAt
   if not finite(syncAt) or syncAt <= 0 or time < syncAt or time - syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return nil end
   local ap = autoParry.getDefenseState(snapshot); local requestAt = ap.lastRequestAt
-  local interval = CONFIG.ACTIVATION.FAST_RETURN_INTERVAL
+  local speed = snapshotSpeed(snapshot)
+  local minimum, maximum = gameInfo.getBallSpeedLimits()
+  if not finite(speed) or not finite(minimum) or not finite(maximum) or maximum <= minimum then return nil end
+  local progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
+  local interval = CONFIG.ACTIVATION.FAST_RETURN_INTERVAL + (CONFIG.ACTIVATION.FAST_RETURN_INTERVAL_FAST - CONFIG.ACTIVATION.FAST_RETURN_INTERVAL) * progress
+  local leadLimit = CONFIG.ACTIVATION.FAST_RETURN_LEAD_SLOW + (CONFIG.ACTIVATION.FAST_RETURN_LEAD_FAST - CONFIG.ACTIVATION.FAST_RETURN_LEAD_SLOW) * progress
   if not finite(requestAt) or requestAt <= 0 or time < requestAt then state.fastFlight = nil; return nil end
   local parriedAt = finite(ap.lastParriedAt) and ap.lastParriedAt >= requestAt and ap.lastParriedAt <= time and ap.lastParriedAt or requestAt
   if time - parriedAt > interval then state.fastFlight = nil; return nil end
@@ -316,7 +324,7 @@ local function sampleFastReturn(state, snapshot, time)
   local toRange = math.max(0, distance - ownRange) / closing
   local expectedInterval = time - parriedAt + toRange
   local value = activationGeometry(state, snapshot, flight.partner, time)
-  if not value or toRange > value.effectiveWindow or expectedInterval > interval then return nil end
+  if not value or toRange > math.min(value.effectiveWindow, leadLimit) or expectedInterval > interval then return nil end
   flight.expectedInterval, flight.toRange = expectedInterval, toRange
   flight.readyAt = time
   return flight.partner
