@@ -288,7 +288,6 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
   state.dashSwitchPartner, state.dashSwitchAt = nil, nil; state.deflectCooldownSince, state.cooldownSpeed = nil, snapshotSpeed(snapshot)
   state.activatedAt = time; state.lastClosePartner, state.lastCloseAt, state.lastCloseDistance = nil, nil, nil
-  state.exchangeConfirmation = { target = localPlayer.UserId, switches = 0, startedAt = time }
   state.stationaryBall, state.stationaryPosition, state.stationarySince = nil, nil, nil; state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime
   state.reason = reason
   lastActivationReason, lastActivationAt = reason, time
@@ -347,21 +346,6 @@ local function deactivationReason(state, snapshot, time)
   local opponent = state.partner and gameInfo.getPlayerMotion(state.partner)
   local limit = state.partner and distanceLimit(snapshot, state.partner)
   if limit and typeof(opponent) == "Vector3" and (opponent - state.root.Position).Magnitude > limit then return "opponent_distance" end
-end
-local function confirmExchange(state, data, time)
-  local confirmation = state.exchangeConfirmation
-  if not state.active or not confirmation or confirmation.switches >= 3 then return false end
-  local target = userId(data.TargetPlayerID)
-  if not target or data.Source ~= "packet" or data.Teleported or data.Locked then return false end
-  if target ~= localPlayer.UserId and target ~= state.partner then return deactivate(state, "target_changed", time) end
-  if time - confirmation.startedAt > 0.2 then return deactivate(state, "exchange_unconfirmed", time) end
-  if target ~= confirmation.target then
-    confirmation.target = target; confirmation.switches = confirmation.switches + 1
-  end
-  if confirmation.switches < 3 and time - confirmation.startedAt >= 0.2 then
-    return deactivate(state, "exchange_unconfirmed", time)
-  end
-  return false
 end
 local function checkDeactivation(state, snapshot, time)
   if not state.active then return false end
@@ -823,7 +807,6 @@ function AutoSpam.onBallSync(data)
     if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
   end
   local target = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil; local blocked = state.active and checkDeactivation(state, snapshot, time) or false
-  if not blocked and state.active then blocked = confirmExchange(state, data, time) end
   if target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then targetChanged(state, target, time, snapshot, serverTime) end
   evaluate(state, time, true, serverTime, snapshot, blocked, autoEnabled)
 end
