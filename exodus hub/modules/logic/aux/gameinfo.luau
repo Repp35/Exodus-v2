@@ -761,7 +761,6 @@ local function snapshot(time)
       serverTime = sample.serverTime,
       syncSequence = sample.sequence,
       trainingRound = sample.round,
-      trainingPosition = sample.position,
       trainingParryAt = trainingParryAt,
     }
 

@@ -49,7 +49,6 @@ local state = {
   trainingLastValidAt = 0,
   trainingLastServerTime = nil,
   trainingConfirmedAt = nil,
-  trainingOrigin = nil,
   nextAttemptAt = 0,
   lastPosition = nil,
   lastSampleAt = 0,
@@ -72,8 +71,7 @@ local CONFIG = {
   TRAINING_DEFLECT_DISTANCE = 8.5,
   TRAINING_TRIGGER_PADDING = 2,
   TRAINING_MAX_PING = 0.25,
-  TRAINING_WINDOW_FACTOR = 0.5,
-  TRAINING_MIN_TRAVEL = 8,
+  TRAINING_WINDOW_FACTOR = 0.3,
   TRAINING_MAX_LEAD_FACTOR = 0.8,
   TRAINING_MIN_SPEED = 1,
   TRAINING_MIN_CLOSING_SPEED = 1,
@@ -109,7 +107,7 @@ local function resetTracking()
   state.lastBall, state.speed, state.distance, state.approaching = nil, 0, 0, false; state.closingSpeed, state.triggerDistance, state.frameAllowance = 0, 0, 0
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
-  state.trainingRound, state.trainingBall, state.trainingConfirmedAt, state.trainingOrigin = nil, nil, nil, nil; state.nextAttemptAt = 0
+  state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
   state.lastPosition, state.lastSampleAt = nil, 0; cooldownSnapshot, cooldownSnapshotAt = nil, -math.huge
   table.clear(state.clicks); table.clear(state.returns)
 end
@@ -235,16 +233,13 @@ local function observeSnapshot(snapshot, time)
       state.speed, state.distance, state.approaching = 0, 0, false; state.closingSpeed, state.triggerDistance = 0, 0
     end
     state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false; state.fired, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, nil
-    state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime, state.trainingConfirmedAt, state.trainingOrigin = 0, nil, nil, nil
+    state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime, state.trainingConfirmedAt = 0, nil, nil
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
   end
   local order = sequenceOrder(snapshot.syncSequence)
   if order == "old" then return false end
   if order ~= "new" and state.sequence ~= nil and state.targetKnown and snapshot.targetId ~= state.target then return false end
   if order == "new" then state.sequence = snapshot.syncSequence end
-  if mode == "training" and snapshot.targetId == state.player.UserId and state.target ~= state.player.UserId then
-    state.trainingOrigin = vector(snapshot.trainingPosition) and snapshot.trainingPosition or snapshot.position
-  end
   observeTarget(snapshot.targetId, time); return true
 end
 
@@ -352,9 +347,6 @@ local function tickTraining(value, root, time)
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "training_not_target"); return end
   if closing < CONFIG.TRAINING_MIN_CLOSING_SPEED then phase("waiting", "training_not_approaching"); return end
   if distance > threshold then phase("waiting", "training_outside_window"); return end
-  if vector(state.trainingOrigin) and (position - state.trainingOrigin).Magnitude + velocity.Magnitude * ping < CONFIG.TRAINING_MIN_TRAVEL then
-    phase("waiting", "training_minimum_travel"); return
-  end
   request("training_parry")
 end
 local function resolveVelocity(value, position, speed, time)
