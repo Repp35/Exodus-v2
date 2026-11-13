@@ -339,40 +339,40 @@ local function run(token, callbacks)
       attempts[#attempts + 1] = label .. ": returned " .. #value .. " bytes"; return value
     end
     for round = 1, CONFIG.MAX_SOURCE_ATTEMPTS do
-    if token.cancelled then return nil, "Dump canceled" end
-    attempts[#attempts + 1] = "source attempt " .. round .. "/" .. CONFIG.MAX_SOURCE_ATTEMPTS
-    local sourceOk, directSource = pcall(function() return object.Source end)
-    if sourceOk and type(directSource) == "string" and directSource:match("%S") then source, method = directSource, "Source"; attempts[#attempts + 1] = "Source: available"
-    else attempts[#attempts + 1] = "Source: " .. (sourceOk and "empty or unavailable" or errorText(directSource)) end
-    if not bytecode and #readers > 0 then
-      for _, reader in ipairs(readers) do
-        bytecode = attempt(reader.name .. "(instance)", reader.fn, object, false)
-        if bytecode then break end
-      end
-    end
-    if not source and bytecode and sourceCache[bytecode] then source, method = sourceCache[bytecode], "cached bytecode"; cacheHits += 1 end
-    if not source and decompiler then
-      source = attempt("decompile(instance)", decompiler, object, true)
-      if source then method = "decompile(instance)" end
-    end
-    if not source and bytecode and decompiler then
-      source = attempt("decompile(bytecode)", decompiler, bytecode, true)
-      if source then method = "decompile(bytecode)" end
-    end
-    if not source and decompiler then
-      for _, reader in ipairs(closureReaders) do
-        local success, value = pcall(reader.fn, object)
-        if success and type(value) == "function" then
-          closure = value; attempts[#attempts + 1] = reader.name .. ": function obtained"
-          source = attempt("decompile(" .. reader.name .. ")", decompiler, closure, true)
-          if source then method = "decompile(" .. reader.name .. ")"; break end
-        else
-          attempts[#attempts + 1] = reader.name .. ": " .. (success and ("returned " .. type(value)) or errorText(value))
+      if token.cancelled then return nil, "Dump canceled" end
+      attempts[#attempts + 1] = "source attempt " .. round .. "/" .. CONFIG.MAX_SOURCE_ATTEMPTS
+      local sourceOk, directSource = pcall(function() return object.Source end)
+      if sourceOk and type(directSource) == "string" and directSource:match("%S") then source, method = directSource, "Source"; attempts[#attempts + 1] = "Source: available"
+      else attempts[#attempts + 1] = "Source: " .. (sourceOk and "empty or unavailable" or errorText(directSource)) end
+      if not bytecode and #readers > 0 then
+        for _, reader in ipairs(readers) do
+          bytecode = attempt(reader.name .. "(instance)", reader.fn, object, false)
+          if bytecode then break end
         end
       end
-    end
-    if source then break end
-    if round < CONFIG.MAX_SOURCE_ATTEMPTS then task.wait(CONFIG.RETRY_PAUSE) end
+      if not source and bytecode and sourceCache[bytecode] then source, method = sourceCache[bytecode], "cached bytecode"; cacheHits += 1 end
+      if not source and decompiler then
+        source = attempt("decompile(instance)", decompiler, object, true)
+        if source then method = "decompile(instance)" end
+      end
+      if not source and bytecode and decompiler then
+        source = attempt("decompile(bytecode)", decompiler, bytecode, true)
+        if source then method = "decompile(bytecode)" end
+      end
+      if not source and decompiler then
+        for _, reader in ipairs(closureReaders) do
+          local success, value = pcall(reader.fn, object)
+          if success and type(value) == "function" then
+            closure = value; attempts[#attempts + 1] = reader.name .. ": function obtained"
+            source = attempt("decompile(" .. reader.name .. ")", decompiler, closure, true)
+            if source then method = "decompile(" .. reader.name .. ")"; break end
+          else
+            attempts[#attempts + 1] = reader.name .. ": " .. (success and ("returned " .. type(value)) or errorText(value))
+          end
+        end
+      end
+      if source then break end
+      if round < CONFIG.MAX_SOURCE_ATTEMPTS then task.wait(CONFIG.RETRY_PAUSE) end
     end
     if source and bytecode and not sourceCache[bytecode] then sourceCache[bytecode] = source end
     if not decompiler then attempts[#attempts + 1] = "decompile: unavailable" end
@@ -415,8 +415,7 @@ local function run(token, callbacks)
   end
   for _, entry in ipairs(unresolved) do
     if token.cancelled then return nil, "Dump canceled" end
-    task.wait(CONFIG.SCRIPT_PAUSE)
-    local recovered = entry.bytecode and sourceCache[entry.bytecode]
+    task.wait(CONFIG.SCRIPT_PAUSE); local recovered = entry.bytecode and sourceCache[entry.bytecode]
     if recovered then
       local header = table.concat({
         "-- SrcDump",
