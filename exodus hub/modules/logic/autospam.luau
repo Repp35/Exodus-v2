@@ -118,7 +118,7 @@ local function distanceLimit(snapshot, partner)
   if not finite(speed) or speed <= 0 then return nil end
   local minimum, maximum = gameInfo.getBallSpeedLimits(); local baseRange, resilienceMax = gameInfo.getDeflectRangeParameters()
   local ownRange, otherRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId), gameInfo.getPlayerDeflectRange(partner)
-  local ownRaw, otherRaw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true), gameInfo.getPlayerRawRadius(partner, speed, true)
+  local ownRaw, otherRaw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true), gameInfo.getPlayerRawRadius(partner, speed, false)
   if
     not finite(minimum)
     or not finite(maximum)
@@ -155,9 +155,9 @@ local function playerIsAlive(id)
   local player = id and players:GetPlayerByUserId(id); local character = player and player.Character
   local humanoid = character and character.Parent and character:FindFirstChildOfClass("Humanoid"); return humanoid ~= nil and humanoid.Health > 0
 end
-local function returnWindow(window, speed, base)
+local function returnWindow(window, speed, base, uncertainty)
   local minimum, maximum = gameInfo.getBallSpeedLimits(); local factor = maximum > minimum and math.clamp((speed - minimum) / (maximum - minimum), 0, 1) or 0
-  return math.max(CONFIG.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor), window))
+  return math.max(CONFIG.SHARED.MIN_RETURN, math.min(base * (1 - 0.9 * factor) + (finite(uncertainty) and math.max(0, uncertainty) or 0), window))
 end
 local function sampleOwnDash(state, time)
   if not gameInfo.isPlayerDashing(localPlayer) then state.dashStart, state.dashAt = nil, nil; return end
@@ -362,7 +362,7 @@ local function checkExchangeConfirmation(state, snapshot, time)
   end
   local ping = gameInfo.getAveragePing()
   if not finite(ping) or ping < 0 then ping = 0 end
-  if state.confirmSince and time - state.confirmSince >= 0.3 + 2 * ping then
+  if state.confirmSince and time - state.confirmSince >= 0.3 + ping then
     return deactivate(state, "exchange_unconfirmed", time)
   end
   return false
@@ -449,7 +449,8 @@ local function armReturn(state, previous, time, snapshot, serverTime)
   end
   local value, speed, window = activationGeometry(state, snapshot, previous, time); local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime)
   if not value or not window or not duration then return end
-  local startedNear = (snapshot.position - state.root.Position).Magnitude <= value.fullRadius; local fastReturn = duration <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN)
+  local uncertainty = finite(state.departedServerAt) and finite(serverTime) and 0 or gameInfo.getAveragePing()
+  local startedNear = (snapshot.position - state.root.Position).Magnitude <= value.fullRadius; local fastReturn = duration <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN, uncertainty)
   if startedNear and not fastReturn then return end
   state.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn }
 end
