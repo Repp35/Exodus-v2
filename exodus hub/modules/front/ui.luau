@@ -606,7 +606,7 @@ local function addCardHitbox(card, height, callback)
   return button
 end
 local function cardLabel(text, parent, yPos)
-  inst("TextLabel", {
+  return inst("TextLabel", {
     Size = UDim2.new(1, -10, 0, 16),
     Position = UDim2.new(0, 10, 0, yPos or 5),
     BackgroundTransparency = 1,
@@ -1057,7 +1057,7 @@ local function createToggleCard(option, configKey, yPos, parent, onAfter, shortc
   local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, UIState.desktop and shortcutKey and -148 or -78)
   local config = Utils.getConfig(); local initial = configKey and config[configKey] == true
   local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -15)
-  if configKey == "UniversalSpeedEnabled" or configKey == "UniversalGravityEnabled" then statusToggleVisuals[configKey] = setVisual end
+  if configKey == "UniversalFly" or configKey == "UniversalSpeedEnabled" or configKey == "UniversalGravityEnabled" then statusToggleVisuals[configKey] = setVisual end
   if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey, false, height) end
   if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
   if configKey == "AutoParry" then autoParrySetVisual = setVisual end
@@ -1191,6 +1191,7 @@ local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
   end))
   trackConn(UIS.InputChanged:Connect(function(input)
     if not dragInput then return end
+    if not f.Visible then dragInput = nil; return end
     local mouseDrag = dragInput.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseMovement
     local touchDrag = dragInput.UserInputType == Enum.UserInputType.Touch and input == dragInput
     if mouseDrag or touchDrag then applyInput(input) end
@@ -2280,6 +2281,7 @@ function ExodusUI.setup(deps)
   end
   local indeedY = 5
   local indeedPage = UIConfig.pages.indeed
+  local indeedRows, indeedParents = {}, {}
   local function renderIndeedComponent(definition, yPos)
     if definition.kind == "click" then
       return createClickCard(definition, yPos, indeedContent, runDumper, indeedCardWidth)
@@ -2296,12 +2298,44 @@ function ExodusUI.setup(deps)
   end
   if type(indeedPage) == "table" and type(indeedPage.sections) == "table" then
     for _, section in ipairs(indeedPage.sections) do
-      cardLabel(section.title or "Controls", indeedContent, indeedY); indeedY += 24
-      for _, definition in ipairs(section.components or {}) do indeedY = renderIndeedComponent(definition, indeedY) end
+      local label = cardLabel(section.title or "Controls", indeedContent, indeedY)
+      indeedRows[#indeedRows + 1] = { root = label, span = 24 }; indeedY += 24
+      for _, definition in ipairs(section.components or {}) do
+        local nextY, card = renderIndeedComponent(definition, indeedY)
+        if card then
+          local row = { root = card, span = nextY - indeedY, parentKey = definition.parentKey }
+          indeedRows[#indeedRows + 1] = row
+          if definition.key then indeedParents[definition.key] = row end
+        end
+        indeedY = nextY
+      end
+      indeedRows[#indeedRows + 1] = { span = CARD_GAP }
       indeedY += CARD_GAP
     end
   end
-  indeedContent.CanvasSize = UDim2.fromOffset(0, indeedY + CARD_GAP); cardLabel("Automatic Abilities", autosLeft)
+  local function refreshIndeedChildren()
+    local config = Utils.getConfig(); local y = 5
+    local function visible(row, visiting)
+      local key = row.parentKey
+      if not key then return true end
+      if config[key] ~= true or visiting[key] then return false end
+      visiting[key] = true
+      local parent = indeedParents[key]
+      return not parent or visible(parent, visiting)
+    end
+    for _, row in ipairs(indeedRows) do
+      local shown = visible(row, {})
+      if row.root then
+        row.root.Visible = shown
+        local position = row.root.Position
+        row.root.Position = UDim2.new(position.X.Scale, position.X.Offset, 0, shown and y or 0)
+      end
+      if shown then y += row.span end
+    end
+    indeedContent.CanvasSize = UDim2.fromOffset(0, y + CARD_GAP)
+  end
+  refreshIndeedChildren()
+  cardLabel("Automatic Abilities", autosLeft)
   cardLabel("Quick Controls", autosRight)
   local darkYPos, darkCard = createStatusToggleCard("Auto Dark", 26, autosLeft, {
     configKey = "AutoDark",
@@ -2657,6 +2691,9 @@ function ExodusUI.setup(deps)
   end
   if type(Utils.observeConfig) == "function" then
     trackConn(Utils.observeConfig(function(changes)
+      for key in pairs(changes) do
+        if indeedParents[key] then refreshIndeedChildren(); break end
+      end
       for key, label in pairs(shortcutLabels) do
         if changes[key] ~= nil then label.Text = keyName(changes[key]) end
       end

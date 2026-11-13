@@ -120,6 +120,12 @@ function Fly.setEnabled(enabled)
   if not ok or result == false then states.Fly = not value; Utils.setConfig({ UniversalFly = not value }); return false, tostring(result) end
   return true
 end
+function Fly.setValue(value)
+  if not Utils then return false, "recurso indisponível" end
+  value = tonumber(value)
+  if not value or value ~= value or value == math.huge or value == -math.huge then return false, "velocidade inválida" end
+  return Utils.setConfig({ UniversalFlySpeed = math.clamp(value, 0.1, 10) })
+end
 function Fly.teardown()
   if states.Fly then stopFly() end
   states.Fly = false; Utils = nil; return true
@@ -135,6 +141,6 @@ Fly.__config = CONFIG
 Fly.__contract = {
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
-  provides = { "setup", "teardown", "setEnabled" },
+  provides = { "setup", "teardown", "setEnabled", "setValue" },
 }
 return Fly
