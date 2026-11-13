@@ -18,7 +18,6 @@ local function track(connection)
   return connection
 end
 local function enabled() return utils and utils.isActive() and utils.getConfigValue("AutoFierce") == true and gameInfo.areAbilitiesEnabled() end
-
 local function incomingInWindow(now)
   local snapshot = gameInfo.getSnapshotAt(now)
   if not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported or snapshot.locked or snapshot.targetUncertain then return false end
@@ -26,16 +25,35 @@ local function incomingInWindow(now)
   if type(snapshot.syncAt) ~= "number" or snapshot.syncAt <= 0 or now < snapshot.syncAt or now - snapshot.syncAt > CONFIG.SYNC_MAX_AGE then return false end
   local timing = autoParry.getTiming(snapshot, now, nil, CONFIG.WINDOW_FACTOR); return timing and timing.approaching and timing.distance <= timing.triggerDistance
 end
+
 -- detection
 local function update()
   if not enabled() then return end
   local now = os.clock(); local cooldown = gameInfo.getDeflectCooldownState()
-  if not cooldown or cooldown.missEstimated ~= true or cooldown.blocking ~= true or not cooldown.pressAt or cooldown.pressAt <= lastFiercePressAt or not incomingInWindow(now) then return end
+  if
+    not cooldown
+    or cooldown.missEstimated ~= true
+    or cooldown.blocking ~= true
+    or not cooldown.pressAt
+    or cooldown.pressAt <= lastFiercePressAt
+    or not incomingInWindow(now)
+  then
+    return
+  end
   local pressedAt, token = cooldown.pressAt, nil
   local ok, sent = pcall(function()
     return remote.fireFierce(function()
       local current = gameInfo.getDeflectCooldownState()
-      if not enabled() or not current or current.pressAt ~= pressedAt or current.missEstimated ~= true or current.blocking ~= true or not incomingInWindow(os.clock()) then return false end
+      if
+        not enabled()
+        or not current
+        or current.pressAt ~= pressedAt
+        or current.missEstimated ~= true
+        or current.blocking ~= true
+        or not incomingInWindow(os.clock())
+      then
+        return false
+      end
       token = autoParry.beginFierce(); return true
     end)
   end)
@@ -102,4 +120,3 @@ AutoFierce.__contract = {
 }
 
 return AutoFierce
-
