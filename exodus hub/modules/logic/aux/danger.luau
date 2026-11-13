@@ -110,8 +110,9 @@ function Danger.sample(owner, value, time, ownId, sendDelay)
   if missed and not blocked then m.missedAt = m.missedAt or time else m.missedAt = nil end
   local overdue = m.missedAt and time - m.missedAt >= frame
   local critical = remaining <= delivery
-  m.urgent = not pending and fresh and (critical or overdue or missed and blocked)
-  m.protect = ap.enabled and not blocked and not missed and not critical or pending and not critical
+  local shortMargin = remaining <= delivery + frame
+  m.urgent = not pending and fresh and (critical or shortMargin and (overdue or missed and blocked))
+  m.protect = ap.enabled and not m.urgent
   m.phase = critical and "critical" or m.urgent and "danger" or pending and "pending" or missed and "expected" or "watching"
   m.remaining, m.delivery, m.toKill, m.distance, m.closing = remaining, delivery, toKill, modelDistance, modelClosing
   m.grace, m.sampleAge, m.pending = physics.grace, age, pending
