@@ -255,6 +255,11 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
     return false
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
+  if not gameInfo.isSnapshotValid(snapshot) or snapshot.targetUncertain == true or snapshot.targetId ~= localPlayer.UserId
+    or snapshot.teleported == true or snapshot.locked == true or not state.root or not state.root.Parent
+    or typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return false end
+  local toward = state.root.Position - snapshot.position
+  if toward.Magnitude <= 0.05 or snapshot.velocity:Dot(toward) <= 0 then return false end
   if not bypassExchange and distanceGate(state, snapshot, partner) ~= nil then return false end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
