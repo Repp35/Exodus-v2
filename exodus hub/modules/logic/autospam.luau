@@ -36,7 +36,7 @@ local CONFIG = {
     STATIONARY_TIMEOUT = 0.1,
     DEFLECT_COOLDOWN_TIMEOUT_BASE = 0.15,
     DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED = 0.10,
-    CLOSE_OPPONENT_PROTECTION_RADIUS = 10,
+    CLOSE_OPPONENT_PROTECTION_RADIUS = 16,
     SYNC_PROTECTION_RADIUS = 16,
     CLOSE_OPPONENT_MEMORY_SECONDS = 0.1,
     STATIONARY_POSITION_EPSILON = 0.01,
@@ -52,6 +52,8 @@ local CONFIG = {
 local PROTECTED_REASONS = {
   frozen = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
   opponent_distance = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
+  exchange_unconfirmed = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
+  deflect_cooldown_timeout = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
 }
 
 -- helpers
@@ -332,6 +334,8 @@ end
 local function deactivate(state, reason, time)
   if current ~= state then return false end
   time = time or now()
+  local protectionRadius = state.active and PROTECTED_REASONS[reason]
+  if protectionRadius and closeClashProtected(state, time, protectionRadius) then return false end
   if state.active and reason == "exchange_unconfirmed" then
     state.active, state.reason = false, reason
     state.activatedAt, state.deflectCooldownSince, state.lastDeactivatedAt = nil, nil, nil
@@ -340,8 +344,6 @@ local function deactivate(state, reason, time)
     return true
   end
   if state.active then
-    local radius = PROTECTED_REASONS[reason]
-    if radius and closeClashProtected(state, time, radius) then return false end
     state.stoppedPartner, state.stoppedAt = state.partner, time; state.active, state.lastDeactivatedAt = false, time
     if reason == "deflect_cooldown_timeout" then
       state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target
@@ -358,7 +360,8 @@ end
 local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
-  if state.activatedAt and (state.clashTargetCount or 1) < 3 and time - state.activatedAt >= 0.15 then return "exchange_unconfirmed" end
+  if state.activatedAt and (state.clashTargetCount or 1) < 3 and time - state.activatedAt >= 0.15
+    and not closeClashProtected(state, time, CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS) then return "exchange_unconfirmed" end
   -- The cooldown gate scales with speed and requires the opponent to be
   -- outside the fixed 16-stud radius.
   local cooldown = gameInfo.getDeflectCooldownState()
@@ -379,7 +382,8 @@ local function deactivationReason(state, snapshot, time)
   local age = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt
   -- A missing or delayed packet is not evidence that the exchange ended.
   if not snapshot or not gameInfo.isSnapshotValid(snapshot) or not age or age < 0 or age > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return nil end
-  if stationaryTooLong(state, time, ball, snapshot) then return "frozen" end
+  if stationaryTooLong(state, time, ball, snapshot)
+    and not closeClashProtected(state, time, CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS) then return "frozen" end
   local target = userId(snapshot.targetId)
   if not target then return nil end
   if target ~= localPlayer.UserId and target ~= state.partner then
