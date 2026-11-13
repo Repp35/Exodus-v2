@@ -171,24 +171,24 @@ end
 ''')
 autospam=(root/'autospam.luau').read_text()
 deactivation=autospam[autospam.index('local function deactivationReason'):autospam.index('local function checkDeactivation')]
-run('clash remains active despite late or missing packets and cooldown', '''
+run('150ms safety timeouts take priority over missing and uncertain snapshots', '''
 local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
 local function userId(x) return finite(x) and x>0 and x or nil end
 local function typeof(x) return type(x) end
-local frozen=false; local ball={Parent=true,IsA=function() return true end}
+local frozen=false; local blocking=false; local ball={Parent=true,IsA=function() return true end}
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
-local gameInfo={getBall=function() return ball end,getBallFrozen=function() return frozen end,isSnapshotValid=function() return true end,getDeflectCooldownState=function() return {blocking=true} end}
+local gameInfo={getBall=function() return ball end,getBallFrozen=function() return frozen end,isSnapshotValid=function() return true end,getDeflectCooldownState=function() return {blocking=blocking} end}
 local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},DEACTIVATION={FIRST_RETURN_TIMEOUT=0.15,DEFLECT_COOLDOWN_TIMEOUT=0.15}}
 local localPlayer={UserId=42}; local state={active=true,activatedAt=1,root={Parent=true},partner=99}
 local function distanceGate() return nil end
 local function stationaryTooLong() return false end
 '''+deactivation+'''
-assert(deactivationReason(state,{syncAt=1,targetId=42},10)==nil,'late packet ended clash')
-assert(deactivationReason(state,nil,10)==nil,'missing packet ended clash')
-assert(deactivationReason(state,{syncAt=9.9,targetId=42},10)==nil,'timeout ended clash')
-assert(deactivationReason(state,{syncAt=10.1,targetId=99},10.2)==nil,'cooldown ended clash')
-assert(deactivationReason(state,{syncAt=10.3,targetId=88},10.3)=='first_return_timeout','confirmed third target should permit timeout')
-frozen=true; assert(deactivationReason(state,nil,10)=='ball_frozen')
+assert(deactivationReason(state,nil,1.149)==nil,'timeout triggered early')
+assert(deactivationReason(state,nil,1.151)=='first_return_timeout','first return timeout was blocked')
+state.firstReturnSeen=true; blocking=true
+assert(deactivationReason(state,{targetUncertain=true},2)==nil,'cooldown timeout triggered early')
+assert(deactivationReason(state,{targetUncertain=true},2.151)=='deflect_cooldown_timeout','cooldown timeout was blocked')
+blocking=false; state.deflectCooldownSince=nil; frozen=true; assert(deactivationReason(state,nil,2.2)=='ball_frozen')
 ''')
 evaluate=autospam[autospam.index('local function evaluate('):autospam.index('local function watchCharacter')]
 run('confirmed target is processed on heartbeat and clash intercept requires incoming ball', '''
@@ -262,4 +262,22 @@ local function canActivateReturn() return false end
 '''+activate+evaluate+'''
 evaluate(state,10.02,false,nil,snapshot,nil,true); assert(activations==0,'activated during cooldown')
 evaluate(state,10.05,false,nil,snapshot,nil,true); assert(activations==1,'did not retry confirmed close switch')
+''')
+reasons=autospam[autospam.index('local PROTECTED_REASONS ='):autospam.index('-- helpers')]
+stop=autospam[autospam.index('local function deactivate('):autospam.index('local function deactivationReason(')]
+run('150ms timeouts bypass close-player protection and lock reactivation', '''
+local CONFIG={DEACTIVATION={SYNC_PROTECTION_RADIUS=16,CLOSE_OPPONENT_PROTECTION_RADIUS=10}}
+'''+reasons+'''
+local current={active=true,partner=99,target=42}; local state=current
+local watchOpponent,lastStopReason,lastStopAt
+local utils={setAutoSpamActive=function(active) assert(active==false) end,recordTransition=function() end}
+local function now() return 1 end
+local function closeClashProtected() return true end
+local function resetExchange() end
+'''+stop+'''
+assert(deactivate(state,'deflect_cooldown_timeout',1))
+assert(not state.active and state.timeoutBlocked and state.timeoutBlockedTarget==42)
+state.active=true; state.partner=99
+assert(deactivate(state,'first_return_timeout',2))
+assert(not state.active and state.timeoutBlocked)
 ''')
