@@ -283,10 +283,6 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE) then return false end
   local toward = state.root.Position - snapshot.position
   if toward.Magnitude <= 0.05 or snapshot.velocity:Dot(toward) <= 0 then return false end
-  local risk = danger.sample(state, snapshot, time, localPlayer.UserId)
-  if risk.pending then return false end
-  local proximity = reason == "own_ball_proximity" or reason == "close_target_switch" or reason == "clash_intercept"
-  if proximity and risk.protect and not risk.urgent then return false end
   if not bypassExchange and distanceGate(state, snapshot, partner) ~= nil then return false end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
