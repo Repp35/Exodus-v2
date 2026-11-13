@@ -7,7 +7,7 @@ local connection
 
 -- configuration
 local CONFIG = {
-  REQUIRE_ABILITIES_ENABLED = true,
+  ENABLED_KEY = "AutoDark",
 }
 
 -- connections
@@ -20,11 +20,10 @@ end
 -- synchronization
 function AutoDark.sync()
   disconnect()
-  if not utils or not remote or not utils.getConfigValue("AutoDark") then return true end
+  if not utils or not remote or not utils.getConfigValue(CONFIG.ENABLED_KEY) then return true end
   local runService = utils.getRunService()
   if not runService or not runService.Heartbeat then return false, "Heartbeat indisponível" end
   connection = runService.Heartbeat:Connect(function()
-    if not utils.getConfigValue("AutoDark") or (CONFIG.REQUIRE_ABILITIES_ENABLED and not gameInfo.areAbilitiesEnabled()) then return end
     local camera = world.CurrentCamera
     if camera then remote.fireDark(gameInfo.getDarkSealEventId(), camera.CFrame) end
   end)
@@ -47,7 +46,7 @@ AutoDark.__contract = {
   requiresMethods = {
     Utils = { "getConfigValue", "getWorkspace", "getRunService", "trackGlobal", "untrackGlobal" },
     Remote = { "fireDark" },
-    GameInfo = { "areAbilitiesEnabled", "getDarkSealEventId" },
+    GameInfo = { "getDarkSealEventId" },
   },
   provides = { "setup", "sync", "teardown" },
 }

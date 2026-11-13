@@ -45,7 +45,9 @@ local function request(boundUtils, boundRemote, token, guard, minimum)
   inFlight = true; status.lastRequestAt = os.clock()
   local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard); nextAllowedAt = os.clock() + minimum
   inFlight = false; sampleIndex = sampleIndex % 256 + 1
-  samples[sampleIndex] = { at = status.lastRequestAt, accepted = ok and result == true }
+  local sample = samples[sampleIndex]
+  if not sample then sample = {}; samples[sampleIndex] = sample end
+  sample.at, sample.accepted = status.lastRequestAt, ok and result == true
   if not ok then error(result, 0) end
   if token ~= generation or utils ~= boundUtils then return end
   if result == true then status.lastError = nil; return end
@@ -74,13 +76,13 @@ local function sync()
     local function guard() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
     local function allowed() return guard() and (boundUtils.isManualSpamActive() or boundAutoSpam.canSend()) end
     local ok, err = xpcall(function()
-      local credit, previous = 0, os.clock()
+      local credit, previous = 0, os.clock(); local clicksPerSecond = mode == "MS" and 1000 / rate or rate
       while guard() do
         if mode ~= "Auto" then
           task.wait(); local time = os.clock()
           local delta = math.max(0, time - previous); previous = time
           if allowed() then
-            credit += mode == "CPF" and rate or (mode == "MS" and 1000 / rate or rate) * delta; local count = math.floor(credit)
+            credit += mode == "CPF" and rate or clicksPerSecond * delta; local count = math.floor(credit)
             credit = credit - count
             for _ = 1, count do
               if not allowed() then break end
