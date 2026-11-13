@@ -171,27 +171,31 @@ end
 ''')
 autospam=(root/'autospam.luau').read_text()
 deactivation=autospam[autospam.index('local function deactivationReason'):autospam.index('local function checkDeactivation')]
-run('150ms safety timeouts take priority over missing and uncertain snapshots', '''
+run('fallback requires confirmed target and cooldown works with uncertain snapshots', '''
 local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
 local function userId(x) return finite(x) and x>0 and x or nil end
 local function typeof(x) return type(x) end
 local frozen=false; local blocking=false; local ball={Parent=true,IsA=function() return true end}
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
-local gameInfo={getBall=function() return ball end,getBallFrozen=function() return frozen end,isSnapshotValid=function() return true end,getDeflectCooldownState=function() return {blocking=blocking} end}
+local gameInfo={getBall=function() return ball end,getBallFrozen=function() return frozen end,isSnapshotValid=function() return true end,getDeflectCooldownState=function() return {blocking=blocking} end,getPlayerMotion=function() return nil end}
 local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},DEACTIVATION={FIRST_RETURN_TIMEOUT=0.15,DEFLECT_COOLDOWN_TIMEOUT=0.15}}
 local localPlayer={UserId=42}; local state={active=true,activatedAt=1,root={Parent=true},partner=99}
-local function distanceGate() return nil end
+local gateReason=nil; local function distanceGate() return gateReason end; local function distanceLimit() return 20 end
 local function stationaryTooLong() return false end
 local outside=true; local function cooldownOpponentOutside() return outside end
 local function cooldownTimeout() return 0.15 end
 '''+deactivation+'''
 assert(deactivationReason(state,nil,1.149)==nil,'timeout triggered early')
-assert(deactivationReason(state,nil,1.151)=='first_return_timeout','first return timeout was blocked')
+assert(deactivationReason(state,nil,1.151)==nil,'missing packet was treated as a failure')
+assert(deactivationReason(state,{syncAt=1.151,targetId=88},1.151)=='target_changed','confirmed departure not detected')
 state.firstReturnSeen=true; blocking=true
 assert(deactivationReason(state,{targetUncertain=true},2)==nil,'cooldown timeout triggered early')
 outside=false; assert(deactivationReason(state,{targetUncertain=true},2.151)==nil,'cooldown stopped with opponent close')
 outside=true; assert(deactivationReason(state,{targetUncertain=true},2.151)=='deflect_cooldown_timeout','cooldown timeout was blocked outside range')
-blocking=false; state.deflectCooldownSince=nil; frozen=true; assert(deactivationReason(state,nil,2.2)=='ball_frozen')
+blocking=false; state.deflectCooldownSince=nil; state.reason='own_ball_proximity'; gateReason='ball_distance'
+assert(deactivationReason(state,{syncAt=2.2,targetId=99},2.2)==nil,'normal outgoing ball ended clash')
+assert(deactivationReason(state,{syncAt=2.2,targetId=88},2.2)=='target_changed','confirmed third target did not stop')
+frozen=true; assert(deactivationReason(state,nil,2.2)=='ball_frozen')
 ''')
 evaluate=autospam[autospam.index('local function evaluate('):autospam.index('local function watchCharacter')]
 run('confirmed target is processed on heartbeat and clash intercept requires incoming ball', '''
@@ -281,8 +285,8 @@ local function resetExchange() end
 assert(deactivate(state,'deflect_cooldown_timeout',1))
 assert(not state.active and state.timeoutBlocked and state.timeoutBlockedTarget==42)
 state.active=true; state.partner=99
-assert(deactivate(state,'first_return_timeout',2))
-assert(not state.active and state.timeoutBlocked)
+assert(deactivate(state,'target_changed',2))
+assert(not state.active)
 ''')
 
 cooldownDistance=autospam[autospam.index('local function cooldownOpponentOutside('):autospam.index('local function stationaryTooLong(')]
@@ -306,15 +310,16 @@ run('cooldown timeout scales from 150ms to 100ms', """
 local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
 math.clamp=function(x,a,b) return math.max(a,math.min(b,x)) end
 local function snapshotSpeed(x) return x and (x.syncSpeed or x.speed) end
-local CONFIG={DEACTIVATION={DEFLECT_COOLDOWN_TIMEOUT_BASE=0.15,DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED=0.10}}
+local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},DEACTIVATION={DEFLECT_COOLDOWN_TIMEOUT_BASE=0.15,DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED=0.10}}
 local gameInfo={getBallSpeedLimits=function() return 16,600 end}; local state={}
 """+cooldownTime+"""
 local function near(a,b) return math.abs(a-b)<1e-9 end
-assert(near(cooldownTimeout({syncSpeed=16},state),0.15))
-assert(near(cooldownTimeout({syncSpeed=308},state),0.125))
-assert(near(cooldownTimeout({syncSpeed=600},state),0.10))
-assert(near(cooldownTimeout({syncSpeed=900},state),0.10))
-assert(near(cooldownTimeout(nil,state),0.10),'missing packet lost last speed')
+assert(near(cooldownTimeout({syncSpeed=16},state,10),0.15))
+assert(near(cooldownTimeout({syncSpeed=308},state,10),0.125))
+assert(near(cooldownTimeout({syncSpeed=600},state,10),0.10))
+assert(near(cooldownTimeout({syncSpeed=900},state,10),0.10))
+assert(near(cooldownTimeout(nil,state,10),0.10),'missing packet lost last speed')
+assert(near(cooldownTimeout({syncSpeed=16,syncAt=1},state,10),0.10),'stale speed replaced current speed')
 """)
 run('maximum-speed cooldown gate fires at 100ms beyond 16 studs', '''
 local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
@@ -332,4 +337,44 @@ local snapshot={syncSpeed=600,targetUncertain=true}
 assert(deactivationReason(state,snapshot,1)==nil)
 assert(deactivationReason(state,snapshot,1.099)==nil)
 assert(deactivationReason(state,snapshot,1.101)=='deflect_cooldown_timeout')
+''')
+targetTransition=autospam[autospam.index('local function targetChanged('):autospam.index('local function safeToReset(')]
+run('activation and subsequent target transitions are tracked', '''
+local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
+local V={}; V.__index=function(t,k) if k=='Magnitude' then return math.abs(t.x) end end
+V.__sub=function(a,b) return setmetatable({x=a.x-b.x},V) end
+local function v(x) return setmetatable({x=x},V) end
+local function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
+local state={active=false,target=99,root={Position=v(0)}}; local localPlayer={UserId=42}
+local snapshot={position=v(8)}; local utils={getConfigValue=function() return true end}
+local gameInfo={getPlayerMotion=function() return v(9) end,isSnapshotValid=function() return true end,getBallFrozen=function() return false end}
+local CONFIG={ACTIVATION={EXCHANGE_MAX_INTERVAL=2,INSTANT_TARGET_SWITCH_RADIUS=10,OWN_BALL_OPPONENT_RADIUS=16,REACTIVATION_COOLDOWN=0.04}}
+local function watchOpponent() end; local function playerIsAlive() return true end
+local function activate(s) s.active=true; s.partner=99; s.firstReturnSeen=false end
+local function armReturn() end; local function elapsed() return nil end
+'''+targetTransition+'''
+targetChanged(state,42,10,snapshot,nil); assert(state.active and state.target==42)
+targetChanged(state,99,10.01,snapshot,nil); assert(state.target==99)
+targetChanged(state,42,10.02,snapshot,nil); assert(state.target==42)
+state.active=false; state.target=42; state.stoppedPartner=99; state.stoppedAt=20
+targetChanged(state,99,20.01,snapshot,nil); assert(state.stoppedPartner==nil,'confirmed switch was discarded during cooldown')
+''')
+returnGate=autospam[autospam.index('local function canActivateReturn('):autospam.index('local function armReturn(')]
+run('fast-return gate checks actual closing speed', '''
+local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
+local V={}; V.__index=function(t,k) if k=='Magnitude' then return math.abs(t.x) end return V[k] end
+V.__sub=function(a,b) return setmetatable({x=a.x-b.x},V) end
+function V:Dot(other) return self.x*other.x end
+local function v(x) return setmetatable({x=x},V) end
+local function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
+local localPlayer={UserId=42}; local state={target=42,root={Position=v(0)},pending={partner=99,fastReturn=true}}
+local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local gameInfo={getBallFrozen=function() return false end}
+local function activationGeometry() return {fullRadius=120,noWindowParryRadius=8,effectiveWindow=0.2} end
+'''+returnGate+'''
+local snapshot={targetId=42,position=v(100),velocity=v(-10)}
+assert(not canActivateReturn(state,snapshot,1),'slow closing speed wrongly treated as near impact')
+snapshot.velocity=v(-600); assert(canActivateReturn(state,snapshot,1),'fast incoming ball rejected')
+snapshot.velocity=v(600); assert(not canActivateReturn(state,snapshot,1),'outgoing ball accepted')
+snapshot.velocity=v(-600); snapshot.targetUncertain=true; assert(not canActivateReturn(state,snapshot,1),'uncertain target accepted')
 ''')
