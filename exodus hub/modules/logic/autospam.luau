@@ -2,7 +2,7 @@
 
 -- module
 local AutoSpam = {}
-local utils, gameInfo, clashStatsModule, players, runService, localPlayer
+local utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo
 local current, generation = nil, 0
 local clashStats
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
@@ -255,8 +255,9 @@ local function deactivationReason(state, snapshot, time)
   if state.departedAt and time >= state.departedAt then
     if time - state.departedAt > returnTimeout(snapshot, state, time) then return "return_timeout" end
   end
-  local cooldown = gameInfo.getDeflectCooldownState()
+  local cooldown = cooldownInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
+    -- This timeout is an AutoSpam policy; it is not proof of a final miss.
     local observedStart = finite(cooldown.blockingSince) and cooldown.blockingSince <= time and cooldown.blockingSince or time
     state.deflectCooldownSince = math.max(state.activatedAt or time, observedStart)
   else
@@ -391,7 +392,7 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   end
   if autoEnabled == nil then autoEnabled = utils.getConfigValue("AutoSpam") == true end
   if state.timeoutBlocked and not state.active then
-    local cooldown = gameInfo.getDeflectCooldownState()
+    local cooldown = cooldownInfo.getDeflectCooldownState()
     if cooldown and cooldown.blocking == false then state.timeoutBlocked, state.timeoutBlockedTarget = false, nil end
   end
   if not autoEnabled then
@@ -529,11 +530,11 @@ end
 
 -- lifecycle
 function AutoSpam.setup(deps)
-  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats then return false, "dependências ausentes" end
+  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule = deps.Utils, deps.GameInfo, deps.ClashStats; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
+  utils, gameInfo, clashStatsModule, cooldownInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then
-    utils, gameInfo, clashStatsModule, players, runService, localPlayer = nil, nil, nil, nil, nil, nil; return false, "serviços indisponíveis"
+    utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo = nil, nil, nil, nil, nil, nil, nil; return false, "serviços indisponíveis"
   end
   clashStats = clashStatsModule.get(); return true
 end
@@ -610,7 +611,7 @@ end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
   detach("teardown"); clashStatsModule = nil
-  clashStats = nil; utils, gameInfo, players, runService, localPlayer = nil, nil, nil, nil, nil
+  clashStats = nil; utils, gameInfo, players, runService, localPlayer, clashStatsModule, cooldownInfo = nil, nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
   local state = current
@@ -752,6 +753,7 @@ AutoSpam.__contract = {
     Utils = "utils",
     GameInfo = "gameinfo",
     ClashStats = "clashstats",
+    Cooldown = "cooldown",
   },
   requiresMethods = {
     Utils = {
@@ -778,7 +780,6 @@ AutoSpam.__contract = {
       "getDeflectRangeParameters",
       "isPlayerDashing",
       "getLocalDashState",
-      "getDeflectCooldownState",
       "getPlayerDeflectRange",
       "getPlayerRawRadius",
       "getBallFrozen",
@@ -787,6 +788,7 @@ AutoSpam.__contract = {
       "getBallSpeedLimits",
       "getClashContext",
     },
+    Cooldown = { "getDeflectCooldownState" },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
   },
   provides = {
@@ -808,3 +810,4 @@ AutoSpam.__contract = {
 }
 
 return AutoSpam
+

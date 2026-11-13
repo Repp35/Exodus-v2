@@ -95,7 +95,7 @@ local trainingUntil=0
 local g={recordDeflectAttempt=function(at) cd.pressAt=at; cd.seen=false end,recordTrainingDeflectAttempt=function(at) trainingUntil=at+1.45 end,getTrainingCooldownState=function() return {blocking=tm < math.max(trainingUntil,snap.trainingLockoutUntil or 0)} end,getDeflectCooldownState=function() if cd.blocking or (cd.pressAt and cd.lastStartedAt and cd.lastStartedAt >= cd.pressAt) then cd.seen=true end; cd.miss=cd.pressAt and cd.seen and tm > cd.pressAt+0.65 and not cd.predictedReset and (not cd.lastParriedAt or cd.lastParriedAt < cd.pressAt); return cd end,getDeflectWindow=function() return 0.5 end,getLocalPing=function() return 0 end,getSnapshotAt=function() return snap end,isSnapshotValid=function() return true end, getRootPosition=function() return root.Position end,isTrainingArea=function() return false end,observeTraining=function() return {Disconnect=function() end} end,getSyncSequence=function() return sequence end,getAveragePing=function() return 0,0,1 end,getAutoParryGeometry=function() return {noWindowParryRadius=8,triggerPadding=0,leadTime=0.2,effectiveWindow=0.2,deflectWindow=0.5,fullRadius=28} end,getProjectedDeflectRadius=function(g,closing) return g.noWindowParryRadius + math.max(0,closing)*g.effectiveWindow end}
 local r={fireParry=function(_,guard) assert(guard()); fires=fires+1; return true end}
 local ap=(function()\n'''+source+'''\nend)()
-assert(ap.setup({Utils=u,GameInfo=g,Remote=r})); assert(ap.bindCharacter(character))
+assert(ap.setup({Utils=u,GameInfo=g,Remote=r,Cooldown=g})); assert(ap.bindCharacter(character))
 ap.onBallSync({Sequence=1,TargetPlayerID=42}); assert(fires==0)
 snap.position=v(5); snap.realPosition=v(100); snap.syncSequence=3; sequence=2
 ap.onBallSync({Sequence=2,Teleported=true,RealPosition=v(100)})
@@ -143,7 +143,7 @@ local trainingUntil=0
 local g={recordDeflectAttempt=function(at) cd.pressAt=at; cd.seen=false end,recordTrainingDeflectAttempt=function(at) trainingUntil=at+1.45 end,getTrainingCooldownState=function() return {blocking=tm < math.max(trainingUntil,snap.trainingLockoutUntil or 0)} end,getDeflectCooldownState=function() if cd.blocking or (cd.pressAt and cd.lastStartedAt and cd.lastStartedAt >= cd.pressAt) then cd.seen=true end; cd.miss=cd.pressAt and cd.seen and tm > cd.pressAt+0.65 and not cd.predictedReset and (not cd.lastParriedAt or cd.lastParriedAt < cd.pressAt); return cd end,getDeflectWindow=function() return 0.5 end,getLocalPing=function() return 0 end,getSnapshotAt=function() return snap end,isSnapshotValid=function() return true end, getRootPosition=function() return root.Position end,isTrainingArea=function() return true end,getTrainingMissCooldown=function() return 1.45 end,observeTraining=function() return {Disconnect=function() end} end,getSyncSequence=function() return sequence end,getAveragePing=function() return 0,0,1 end,getAutoParryGeometry=function() return {noWindowParryRadius=8,triggerPadding=0,leadTime=0.2,effectiveWindow=0.2,deflectWindow=0.5,fullRadius=28} end,getProjectedDeflectRadius=function(g,closing) return g.noWindowParryRadius + math.max(0,closing)*g.effectiveWindow end}
 local r={fireParry=function(_,guard) assert(guard()); fires=fires+1; return true end}
 local ap=(function()\n'''+source+'''\nend)()
-assert(ap.setup({Utils=u,GameInfo=g,Remote=r})); assert(ap.bindCharacter(character))
+assert(ap.setup({Utils=u,GameInfo=g,Remote=r,Cooldown=g})); assert(ap.bindCharacter(character))
 frameCb(0.02); assert(fires==1,'training first request missing')
 snap.position=v(20)
 tm=tm+1.44; frameCb(0.02); assert(fires==1,'training retried before cooldown')
@@ -188,7 +188,8 @@ local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},DEACTIVATION={FIRST_RETURN_TIMEOUT=0
 local localPlayer={UserId=42}; local state={active=true,activatedAt=1,root={Parent=true},partner=99}
 local gateReason=nil; local function distanceGate() return gateReason end; local function distanceLimit() return 20 end
 local function stationaryTooLong() return false end
-local outside=true; local function cooldownOpponentOutside() return outside end
+local outside=true; local cooldownInfo=gameInfo
+local function cooldownOpponentOutside() return outside end
 local function cooldownTimeout() return 0.15 end
 '''+deactivation+'''
 assert(deactivationReason(state,nil,1.149)==nil,'timeout triggered early')
@@ -336,6 +337,7 @@ math.clamp=function(x,a,b) return math.max(a,math.min(b,x)) end
 local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},DEACTIVATION={FIRST_RETURN_TIMEOUT=0.15,DEFLECT_COOLDOWN_TIMEOUT_BASE=0.15,DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED=0.10}}
 local gameInfo={getBallSpeedLimits=function() return 16,600 end,getDeflectCooldownState=function() return {blocking=true} end,getBallFrozen=function() return false end,getBall=function() return nil end}
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local cooldownInfo=gameInfo
 local function cooldownOpponentOutside() return true end
 local state={activatedAt=1,firstReturnSeen=true}; local localPlayer={UserId=42}
 '''+cooldownTime+deactivation+'''
@@ -399,7 +401,7 @@ local u={isActive=function() return true end,getConfigValue=function() return tr
 local g={areAbilitiesEnabled=function() return true end,getDeflectServerEvents=function() return {parried=signal} end,getLastDeflectPressAt=function() return press end,getDeflectWindow=function() return 0.5 end,getLocalPing=function() return 0 end,getDeflectCooldownState=function() if press > 0 and press ~= cooldown.pressAt then cooldown.episode=cooldown.episode+1; cooldown.pressAt=press end; cooldown.miss=t > cooldown.pressAt+0.65 and not cooldown.predictedReset and not cooldown.parried; return cooldown end,getSnapshotAt=function() return {syncAt=t,targetId=target} end,isSnapshotValid=function() return true end,getBallFrozen=function() return false end}
 local a={getTiming=function() return {approaching=approaching,distance=distance,triggerDistance=20} end,beginFierce=function() return {} end,cancelFierce=function() end}
 local r={fireFierce=function(guard) if guard() then count=count+1; return true end return false end}
-local mod=(function()\n'''+fierce+'''\nend)(); assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a}))
+local mod=(function()\n'''+fierce+'''\nend)(); assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a,Cooldown=g}))
 frame(); t=10.6; distance=10; frame(); assert(count==0,'used before deadline')
 t=10.66; cooldown.predictedReset=true; frame(); assert(count==0,'used during predicted reset')
 cooldown.predictedReset=false; target=99; frame(); assert(count==0,'used against another target')

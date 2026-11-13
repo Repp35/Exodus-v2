@@ -2,7 +2,7 @@
 
 -- module
 local AutoParry = {}
-local utils, gameInfo, remote
+local utils, gameInfo, remote, cooldownInfo
 local state = {
   phase = "detached",
   reason = "initial",
@@ -111,9 +111,9 @@ local function resetTracking()
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
-  state.lastPosition, state.lastSampleAt = nil, 0; state.resetPending = false
-  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; table.clear(state.clicks)
-  table.clear(state.returns)
+  state.lastPosition, state.lastSampleAt = nil, 0
+  state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+  table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -249,7 +249,8 @@ end
 
 -- parry
 local function safeCooldown()
-  local ok, value = pcall(gameInfo.getDeflectCooldownState); return ok and type(value) == "table" and value or nil
+  local ok, value = pcall(cooldownInfo.getDeflectCooldownState)
+  return ok and type(value) == "table" and value or nil
 end
 local function request(reason)
   local now = clock(); local redirectReturn = reason == "redirect_return"
@@ -306,7 +307,11 @@ local function request(reason)
     return false
   end
   state.nextAttemptAt = 0; recordAutoParryRequest()
-  if state.mode == "training" then gameInfo.recordTrainingDeflectAttempt(firedAt) else state.retryPending = true; gameInfo.recordDeflectAttempt(firedAt, speed) end
+  if state.mode == "training" then
+    cooldownInfo.recordTrainingDeflectAttempt(firedAt)
+  else
+    state.retryPending = true; cooldownInfo.recordDeflectAttempt(firedAt, speed)
+  end
   local factor = activeWindowFactor(firedAt)
   if factor > 0 then
     local geometry = radius(speed, factor)
@@ -349,7 +354,7 @@ local function tickTraining(value, root, time)
   end
   if
     state.fired
-    and gameInfo.getTrainingCooldownState().blocking ~= true
+    and cooldownInfo.getTrainingCooldownState().blocking ~= true
     and (not finite(confirmed) or confirmed == state.trainingConfirmedAt)
     and value.targetId == state.player.UserId
     and closing >= CONFIG.TRAINING_MIN_CLOSING_SPEED
@@ -359,7 +364,7 @@ local function tickTraining(value, root, time)
   if state.retryReady then threshold = geometry.noWindowParryRadius + math.max(0, closing) * geometry.deflectWindow * CONFIG.RETRY_WINDOW_FACTOR; state.triggerDistance = threshold end
   if state.fired then phase("waiting", "training_awaiting_return"); return end
   if finite(confirmed) then state.trainingConfirmedAt = confirmed end
-  if gameInfo.getTrainingCooldownState().blocking then phase("waiting", "training_lockout"); return end
+  if cooldownInfo.getTrainingCooldownState().blocking then phase("waiting", "training_lockout"); return end
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "training_not_target"); return end
   if closing < CONFIG.TRAINING_MIN_CLOSING_SPEED then phase("waiting", "training_not_approaching"); return end
   if distance > threshold then phase("waiting", "training_outside_window"); return end
@@ -396,7 +401,8 @@ local function tick(character, root, generation)
   if state.fired and state.retryPending and cooldown then
     if finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= state.lastFireAt then
       state.retryPending = false
-    elseif cooldown.miss == true and finite(cooldown.pressAt) and cooldown.pressAt >= state.lastFireAt - 0.05 and cooldown.blocking ~= true then
+    elseif cooldown.miss == true and finite(cooldown.pressAt) and cooldown.pressAt >= state.lastFireAt - 0.05
+      and cooldown.blocking ~= true then
       state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady, state.nextAttemptAt = false, false, false, true, 0
     end
   end
@@ -431,8 +437,8 @@ end
 
 -- public-api
 function AutoParry.setup(deps)
-  if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" then return false, "dependências inválidas" end
-  detach("setup"); utils, gameInfo, remote = deps.Utils, deps.GameInfo, deps.Remote
+  if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" or type(deps.Cooldown) ~= "table" then return false, "dependências inválidas" end
+  detach("setup"); utils, gameInfo, remote, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.Cooldown
   state.player = utils.getLocalPlayer()
   if not state.player then return false, "Players.LocalPlayer indisponível" end
   resetTracking(); phase("detached", "setup_complete")
@@ -447,7 +453,7 @@ function AutoParry.bindCharacter(character)
   local service, player = utils.getRunService(), utils.getLocalPlayer(); local signal = service and (service.PostSimulation or service.Heartbeat)
   if not signal or not player then return false, "RunService ou jogador indisponível" end
   state.root, state.character, state.player, state.alive, state.bound = root, character, player, true, true; resetTracking()
-  phase("waiting", "character_bound"); gameInfo.getDeflectCooldownState()
+  phase("waiting", "character_bound"); cooldownInfo.getDeflectCooldownState()
   track(signal:Connect(function(deltaTime)
     if generation ~= state.generation then return end
     if finite(deltaTime) and deltaTime >= 0 then state.frameAllowance = math.clamp(deltaTime - CONFIG.FRAME_BASE, 0, CONFIG.MAX_FRAME_ALLOWANCE) end
@@ -503,7 +509,7 @@ end
 function AutoParry.resetState() detach("reset") end
 function AutoParry.detachCharacter() detach("detach") end
 function AutoParry.teardown()
-  detach("teardown"); utils, gameInfo, remote, state.player = nil, nil, nil, nil
+  detach("teardown"); utils, gameInfo, remote, cooldownInfo, state.player = nil, nil, nil, nil, nil
 end
 
 -- ball-sync
@@ -545,7 +551,7 @@ function AutoParry.getTargetStatus()
     approaching = state.approaching,
     targetId = state.target,
     targetKnown = state.targetKnown,
-    cooldown = gameInfo and gameInfo.getDeflectCooldownState() or nil,
+    cooldown = gameInfo and cooldownInfo.getDeflectCooldownState() or nil,
   }
 end
 function AutoParry.getDefenseState(value)
@@ -745,21 +751,18 @@ end
 
 -- contract
 AutoParry.__contract = {
-  requires = { Remote = "remote", GameInfo = "gameinfo", Utils = "utils" },
+  requires = { Remote = "remote", GameInfo = "gameinfo", Utils = "utils", Cooldown = "cooldown" },
   requiresMethods = {
     Remote = { "fireParry" },
+    Cooldown = { "getDeflectCooldownState", "recordDeflectAttempt", "recordTrainingDeflectAttempt", "getTrainingCooldownState" },
     GameInfo = {
       "isTrainingArea",
-      "recordTrainingDeflectAttempt",
-      "getTrainingCooldownState",
-      "recordDeflectAttempt",
       "observeTraining",
       "getSnapshotAt",
       "isSnapshotValid",
       "getSyncData",
       "getTargetId",
       "getSyncSequence",
-      "getDeflectCooldownState",
       "getAveragePing",
       "getBallPosition",
       "getBallVelocity",
@@ -807,3 +810,4 @@ AutoParry.__contract = {
 }
 
 return AutoParry
+
