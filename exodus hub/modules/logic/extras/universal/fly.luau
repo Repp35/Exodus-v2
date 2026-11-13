@@ -82,15 +82,19 @@ local function updateFly()
   local direction
   if UIS.TouchEnabled then
     local controller = getPlayerControls()
-    local movement = controller and controller:GetMoveVector() or Vector3.zero
-    direction = camera.CFrame.RightVector * movement.X - camera.CFrame.LookVector * movement.Z
+    if controller then
+      local movement = controller:GetMoveVector()
+      direction = camera.CFrame.RightVector * movement.X - camera.CFrame.LookVector * movement.Z
+    else direction = humanoid.MoveDirection end
   else
     direction = camera.CFrame.LookVector * (controls.Forward + controls.Backward)
       + camera.CFrame.RightVector * (controls.Left + controls.Right)
       + Vector3.new(0, controls.Up + controls.Down, 0)
   end
   if direction.Magnitude > 1 then direction = direction.Unit end
-  flyVelocity.Velocity = direction * (tonumber(Utils.getConfigValue("UniversalFlySpeed")) or 1) * 50
+  local speed = math.clamp(tonumber(Utils.getConfigValue("UniversalFlySpeed")) or 1, 0.1, 10)
+  local velocity = direction * speed * 50
+  flyVelocity.Velocity = velocity; flyRoot.AssemblyLinearVelocity = velocity
   flyGyro.CFrame = camera.CFrame; humanoid.PlatformStand = true; humanoid.AutoRotate = false
 end
 local function startFly()
@@ -101,7 +105,8 @@ local function startFly()
     local binding = bindings[input.KeyCode]; if binding then controls[binding[1]] = 0 end
   end)
   connect("FlyFocus", UIS.WindowFocusReleased, clearControls)
-  connect("FlyStep", RunService.RenderStepped, updateFly); return true
+  connect("FlyStep", RunService.PreSimulation or RunService.Stepped, updateFly)
+  connect("FlyFrame", RunService.Heartbeat, updateFly); updateFly(); return true
 end
 local function stopFly()
   disconnectPrefix("Fly"); clearControls(); detachFly(); playerControls = nil; return true
@@ -124,7 +129,9 @@ function Fly.setValue(value)
   if not Utils then return false, "recurso indisponível" end
   value = tonumber(value)
   if not value or value ~= value or value == math.huge or value == -math.huge then return false, "velocidade inválida" end
-  return Utils.setConfig({ UniversalFlySpeed = math.clamp(value, 0.1, 10) })
+  if not Utils.setConfig({ UniversalFlySpeed = math.clamp(value, 0.1, 10) }) then return false end
+  if states.Fly then updateFly() end
+  return true
 end
 function Fly.teardown()
   if states.Fly then stopFly() end
