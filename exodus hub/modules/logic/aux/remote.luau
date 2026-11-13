@@ -49,22 +49,21 @@ local function fireDeflect(ability)
   if not finite(after) or (finite(before) and after <= before + 0.001) or (not finite(before) and after <= 0) then return false, "Deflect não aceito pelo cliente" end
   return true, detail
 end
-
 local function trimClicks(ability)
   local clicks = ability and ability.ClickInstances
   if type(clicks) == "table" and #clicks > 20 then
     local keep = {}
-    for i = #clicks - 19, #clicks do keep[#keep + 1] = clicks[i] end
+    for i = #clicks - 19, #clicks do
+      keep[#keep + 1] = clicks[i]
+    end
     ability.ClickInstances = keep
   end
 end
 local function directRemote()
-  local env = type(getrenv) == "function" and getrenv() or nil
-  local globals = type(env) == "table" and rawget(env, "_G")
+  local env = type(getrenv) == "function" and getrenv() or nil; local globals = type(env) == "table" and rawget(env, "_G")
   local remote = type(globals) == "table" and rawget(globals, "did2") or nil
   if typeof(remote) == "Instance" and remote:IsA("RemoteEvent") then return remote end
-  local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
-  local player = game:GetService("Players").LocalPlayer
+  local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes"); local player = game:GetService("Players").LocalPlayer
   remote = remotes and player and (remotes:FindFirstChild("pu_" .. player.UserId) or remotes:FindFirstChild(""))
   if remote and remote:IsA("RemoteEvent") then return remote end
 end
@@ -73,11 +72,12 @@ local function fireDirect()
   if not remote then return false, "Remote de Deflect indisponível" end
   local camera = workspace.CurrentCamera
   if not camera then return false, "Câmera indisponível" end
-  local cf = camera.CFrame; local pos, look = cf.Position, cf.LookVector
-  local packet = buffer.create(25)
-  buffer.writeu8(packet, 0, 1)
-  buffer.writef32(packet, 1, pos.X); buffer.writef32(packet, 5, pos.Y); buffer.writef32(packet, 9, pos.Z)
-  buffer.writef32(packet, 13, look.X); buffer.writef32(packet, 17, look.Y); buffer.writef32(packet, 21, look.Z)
+  local cf = camera.CFrame
+  local pos, look = cf.Position, cf.LookVector
+  local packet = buffer.create(25); buffer.writeu8(packet, 0, 1)
+  buffer.writef32(packet, 1, pos.X); buffer.writef32(packet, 5, pos.Y)
+  buffer.writef32(packet, 9, pos.Z); buffer.writef32(packet, 13, look.X)
+  buffer.writef32(packet, 17, look.Y); buffer.writef32(packet, 21, look.Z)
   remote:FireServer(packet); return true
 end
 

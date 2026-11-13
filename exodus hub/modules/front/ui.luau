@@ -1342,10 +1342,8 @@ local function createCameraSensitivityCard(yPos, parent)
   return nextCardY(yPos, CARD_H)
 end
 local function createClickMethodSelector(yPos, parent, definition)
-  local f = cardFrame(yPos, RATE_CARD_H, parent)
-  cardLabel(optionInfo(definition), f)
-  local modes = { "Deflect", "Game", "Direct" }
-  local current = Utils.getConfigValue("ClickMethod")
+  local f = cardFrame(yPos, RATE_CARD_H, parent); cardLabel(optionInfo(definition), f)
+  local modes = { "Deflect", "Game", "Direct" }; local current = Utils.getConfigValue("ClickMethod")
   local track = inst("Frame", {
     Size = UDim2.new(1, -20, 0, 28),
     Position = UDim2.new(0, 10, 0, 29),
@@ -1376,8 +1374,7 @@ local function createClickMethodSelector(yPos, parent, definition)
       if mode == current or not setConfigValue("ClickMethod", mode) then return end
       current = mode
       for name, item in pairs(buttons) do
-        item.BackgroundTransparency = name == current and 0 or 1
-        item.TextColor3 = name == current and C.text or C.subtext
+        item.BackgroundTransparency = name == current and 0 or 1; item.TextColor3 = name == current and C.text or C.subtext
       end
     end))
   end
