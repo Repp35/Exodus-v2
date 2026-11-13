@@ -170,7 +170,7 @@ for idx,fps in ipairs({60,30}) do
 end
 ''')
 autospam=(root/'autospam.luau').read_text()
-deactivation=autospam[autospam.index('local function deactivationReason'):autospam.index('local function checkExchangeConfirmation')]
+deactivation=autospam[autospam.index('local function deactivationReason'):autospam.index('local function checkDeactivation')]
 run('fallback requires confirmed target and cooldown works with uncertain snapshots', '''
 local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
 local function userId(x) return finite(x) and x>0 and x or nil end
