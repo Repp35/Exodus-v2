@@ -1344,15 +1344,17 @@ end
 local function createRateSelector(yPos, parent, definition)
   local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig()
   config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.3917)
-  config.SpamRateMode = config.SpamRateMode == "Auto" and "Auto" or (config.SpamRateMode == "CPF" and "CPF" or "CPS")
+  config.MS = Utils.normalizeSpamRate(config.MS, 33)
+  config.SpamRateMode = (config.SpamRateMode == "Auto" or config.SpamRateMode == "CPF" or config.SpamRateMode == "MS") and config.SpamRateMode or "CPS"
   Utils.setConfig({
     CPS = config.CPS,
     CPF = config.CPF,
+    MS = config.MS,
     SpamRateMode = config.SpamRateMode,
   })
   cardLabel(optionInfo(definition or "Spam Rate"), f); local currentMode = config.SpamRateMode
   local modeTrack = inst("Frame", {
-    Size = UDim2.new(0, 120, 0, 28),
+    Size = UDim2.new(0, 128, 0, 28),
     Position = UDim2.new(0, 10, 0, 29),
     BackgroundColor3 = C.inputBg,
     BackgroundTransparency = 0.05,
@@ -1361,20 +1363,22 @@ local function createRateSelector(yPos, parent, definition)
     Parent = f,
   })
   corner(modeTrack, 999); stroke(modeTrack, C.border, 1)
+  local modes = { "CPS", "CPF", "MS", "Auto" }; local modeColors = { CPS = C.accent, CPF = C.accentPink, MS = Color3.fromRGB(234, 179, 8), Auto = C.autoMode }
+  local function modePosition(mode) return UDim2.new(0, (table.find(modes, mode) - 1) * 32 + 2, 0.5, -12) end
   local modeThumb = inst("Frame", {
-    Size = UDim2.new(0, 36, 0, 24),
-    Position = UDim2.new(0, currentMode == "CPS" and 2 or (currentMode == "CPF" and 42 or 82), 0.5, -12),
-    BackgroundColor3 = currentMode == "CPS" and C.accent or (currentMode == "CPF" and C.accentPink or C.autoMode),
+    Size = UDim2.new(0, 28, 0, 24),
+    Position = modePosition(currentMode),
+    BackgroundColor3 = modeColors[currentMode],
     BorderSizePixel = 0,
     ZIndex = 8,
     Parent = modeTrack,
   })
   corner(modeThumb, 999); stroke(modeThumb, C.text, 1)
   local modeButtons = {}
-  for index, mode in ipairs({ "CPS", "CPF", "Auto" }) do
+  for index, mode in ipairs(modes) do
     local button = inst("TextButton", {
-      Size = UDim2.new(0, 40, 1, 0),
-      Position = UDim2.new(0, (index - 1) * 40, 0, 0),
+      Size = UDim2.new(0, 32, 1, 0),
+      Position = UDim2.new(0, (index - 1) * 32, 0, 0),
       BackgroundTransparency = 1,
       Text = mode,
       TextColor3 = mode == currentMode and C.text or C.subtext,
@@ -1402,11 +1406,10 @@ local function createRateSelector(yPos, parent, definition)
   })
   corner(inputBox, 8); local inputStroke = stroke(inputBox, C.border, 1)
   local function paintRateMode(animated)
-    local isCPS = currentMode == "CPS"; local targetPosition = UDim2.new(0, isCPS and 2 or (currentMode == "CPF" and 42 or 82), 0.5, -12)
-    local duration = animated and 0.32 or 0
+    local targetPosition = modePosition(currentMode); local duration = animated and 0.32 or 0
     twPlay(modeThumb, duration, {
       Position = targetPosition,
-      BackgroundColor3 = isCPS and C.accent or (currentMode == "CPF" and C.accentPink or C.autoMode),
+      BackgroundColor3 = modeColors[currentMode],
     }, EASE_OUT, DIR_OUT)
     for mode, button in pairs(modeButtons) do
       twPlay(button, animated and 0.2 or 0, {
@@ -1415,7 +1418,7 @@ local function createRateSelector(yPos, parent, definition)
     end
   end
   local function selectRateMode(mode)
-    if mode ~= "CPS" and mode ~= "CPF" and mode ~= "Auto" or currentMode == mode then return end
+    if not modeColors[mode] or currentMode == mode then return end
     currentMode = mode; config.SpamRateMode = mode
     inputBox.TextEditable = mode ~= "Auto"; inputBox.Text = mode == "Auto" and "Auto" or tostring(config[mode])
     setConfigValue("SpamRateMode", mode); paintRateMode(true)
@@ -1429,7 +1432,8 @@ local function createRateSelector(yPos, parent, definition)
     if currentMode == "Auto" then inputBox.Text = "Auto"; return end
     local value = tonumber(inputBox.Text); local key = currentMode
     local fallback = config[key]; local normalized = Utils.normalizeSpamRate(value, fallback)
-    setConfigValue(key, normalized); inputBox.Text = tostring(normalized)
+    config[key] = normalized; setConfigValue(key, normalized)
+    inputBox.Text = tostring(normalized)
   end))
   return nextCardY(yPos, RATE_CARD_H)
 end

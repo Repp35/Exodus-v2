@@ -43,7 +43,7 @@ local validators = {
   delayMs = function(value) return isFiniteNumber(value) and value >= CONFIG.DELAY_MIN and value <= CONFIG.DELAY_MS_MAX end,
   position = function(value) return isFiniteNumber(value) and value >= CONFIG.POSITION_MIN and value <= CONFIG.POSITION_MAX end,
   keyCode = validKeyCode,
-  rateMode = function(value) return value == "CPS" or value == "CPF" or value == "Auto" end,
+  rateMode = function(value) return value == "CPS" or value == "CPF" or value == "MS" or value == "Auto" end,
 }
 
 local function validateValue(key, kind, value)

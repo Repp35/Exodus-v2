@@ -416,7 +416,7 @@ function Utils.setConfig(patch)
   end
   if next(changes) == nil then return true end
   notify(configObservers, changes)
-  if changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil then notify(spamObservers) end
+  if changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil or changes.MS ~= nil then notify(spamObservers) end
   refreshNamespace(); queueSave()
   return true
 end

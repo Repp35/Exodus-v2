@@ -18,10 +18,11 @@ local CONFIG = {
 
 -- helpers
 local function readRate()
-  local selected = utils.getConfigValue("SpamRateMode"); local mode = selected == "Auto" and "Auto" or (selected == "CPF" and "CPF" or "CPS")
+  local selected = utils.getConfigValue("SpamRateMode"); local mode = (selected == "Auto" or selected == "CPF" or selected == "MS") and selected or "CPS"
   if mode == "Auto" then return mode, 1 end
   local rate = tonumber(utils.getConfigValue(mode)) or 0
   if rate ~= rate or rate <= 0 or rate == math.huge then return mode, 0 end
+  if mode == "MS" and 1000 / rate == math.huge then return mode, 0 end
   if mode == "CPF" and rate * 60 == math.huge then return mode, 0 end
   return mode, rate
 end
@@ -79,7 +80,7 @@ local function sync()
           task.wait(); local time = os.clock()
           local delta = math.max(0, time - previous); previous = time
           if allowed() then
-            credit += mode == "CPF" and rate or rate * delta; local count = math.floor(credit)
+            credit += mode == "CPF" and rate or (mode == "MS" and 1000 / rate or rate) * delta; local count = math.floor(credit)
             credit = credit - count
             for _ = 1, count do
               if not allowed() then break end
@@ -141,7 +142,7 @@ function Spam.setup(deps)
   Spam.teardown(); utils, remote, gameInfo, autoSpam = deps.Utils, deps.Remote, deps.GameInfo, deps.AutoSpam
   spamObserver = utils.observeSpam(sync)
   configObserver = utils.observeConfig(function(changes)
-    if changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil then sync() end
+    if changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil or changes.MS ~= nil then sync() end
   end)
   utils.trackGlobal(spamObserver); utils.trackGlobal(configObserver)
   sync(); return true
