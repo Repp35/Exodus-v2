@@ -845,6 +845,7 @@ local function startUpdateChannel()
   closeUpdateChannel(); local sessionToken = _G.ExodusLoaderSessionToken
   local token = {}; _G.ExodusUpdateToken = token
   local messageConnection, closeConnection, socket, connecting, checking = nil, nil, nil, false, false
+  local nextSocketAttempt = 0
   local function active() return _G.ExodusUpdateToken == token and _G.ExodusLoaderSessionToken == sessionToken and Exodus.Started == true end
   local function disconnectSocket()
     if messageConnection then pcall(messageConnection.Disconnect, messageConnection); messageConnection = nil end
@@ -865,8 +866,8 @@ local function startUpdateChannel()
     end)
   end
   local function connectSocket()
-    if not active() or socket or connecting or type(WebSocket) ~= "table" or type(WebSocket.connect) ~= "function" then return end
-    connecting = true
+    if not active() or socket or connecting or type(WebSocket) ~= "table" or type(WebSocket.connect) ~= "function" or os.clock() < nextSocketAttempt then return end
+    nextSocketAttempt = os.clock() + 5; connecting = true
     task.spawn(function()
       local ok, candidate = pcall(WebSocket.connect, UPDATE_WS_URL); connecting = false
       if not active() then if candidate then pcall(function() candidate:Close() end) end; return end
@@ -891,7 +892,7 @@ local function startUpdateChannel()
   task.spawn(function()
     while active() do
       connectSocket(); checkRevision()
-      task.wait(5)
+      task.wait(0.25)
     end
   end)
   return true
