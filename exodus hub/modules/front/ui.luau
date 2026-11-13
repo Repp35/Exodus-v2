@@ -1759,8 +1759,8 @@ function ExodusUI.setup(deps)
     if not gateEnabled and not travelVisible and not distanceVisible then gateLabel.Visible, travelLabel.Visible, distanceLabel.Visible = false, false, false; return end
     if gateEnabled and time >= nextGateUpdate then
       nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
-      local lines = {}
-      if status and status.active == true then lines[#lines + 1] = "AutoSpam: ACTIVE" end
+      local lines = { "AutoSpam: " .. (status and status.active == true and "ACTIVE" or "WAITING") }
+      if status and validGate(status.lastGate) then lines[#lines + 1] = "State: " .. status.lastGate end
       if status and validGate(status.lastActivationReason) then lines[#lines + 1] = "Activation: " .. status.lastActivationReason end
       if status and validGate(status.lastStopReason) then lines[#lines + 1] = "Deactivation: " .. status.lastStopReason end
       setTextIfChanged(gateLabel, table.concat(lines, "\n"))
