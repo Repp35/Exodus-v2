@@ -10,7 +10,7 @@ local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
 -- configuration
 local CONFIG = {
   ACTIVATION = {
-    RETURN = 0.18,
+    RETURN = 0.30,
     OWN_BALL_CLOSE_RADIUS = 6,
     INSTANT_TARGET_SWITCH_RADIUS = 10,
     OWN_BALL_CANDIDATE_MAX_AGE = 0.8,
