@@ -23,7 +23,8 @@ local CONFIG = {
     DASH_WINDOW_FACTOR = 0.4,
   },
   DEACTIVATION = {
-    RETURN_TIMEOUT = 0.2,
+    RETURN_TIMEOUT_MIN_SPEED = 0.4,
+    RETURN_TIMEOUT_MAX_SPEED = 0.2,
     DEFLECT_COOLDOWN_TIMEOUT_BASE = 0.225,
     DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED = 0.15,
     COOLDOWN_PROTECTION_RADIUS = 16,
@@ -59,6 +60,16 @@ end
 local function snapshotSpeed(snapshot)
   if not snapshot then return nil end
   local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
+end
+local function returnTimeout(snapshot, state, time)
+  local fresh = snapshot
+    and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE))
+  local speed = fresh and snapshotSpeed(snapshot) or nil
+  if finite(speed) and speed > 0 then state.returnTimeoutSpeed = speed else speed = state.returnTimeoutSpeed end
+  local slow, fast = CONFIG.DEACTIVATION.RETURN_TIMEOUT_MIN_SPEED, CONFIG.DEACTIVATION.RETURN_TIMEOUT_MAX_SPEED; local minimum, maximum = gameInfo.getBallSpeedLimits()
+  local progress = 0
+  if finite(speed) and finite(minimum) and finite(maximum) and maximum > minimum then progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1) end
+  local ping = gameInfo.getAveragePing(); return slow + (fast - slow) * progress + (finite(ping) and math.max(0, ping) or 0)
 end
 local function cooldownTimeout(snapshot, state, time)
   local fresh = snapshot
@@ -242,8 +253,7 @@ local function deactivationReason(state, snapshot, time)
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if gameInfo.getBallFrozen() == true then return "ball_frozen" end
   if state.departedAt and time >= state.departedAt then
-    local ping = gameInfo.getAveragePing(); local limit = CONFIG.DEACTIVATION.RETURN_TIMEOUT + (finite(ping) and math.max(0, ping) or 0)
-    if time - state.departedAt > limit and cooldownOpponentOutside(state) then return "return_timeout" end
+    if time - state.departedAt > returnTimeout(snapshot, state, time) then return "return_timeout" end
   end
   local cooldown = gameInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
@@ -338,9 +348,8 @@ local function targetChanged(state, target, time, snapshot, serverTime)
   elseif switchedToMe then
     local matchingReturn = previous == state.departedTo and state.departedAt
     if state.active and state.departedAt then
-      local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime); local ping = gameInfo.getAveragePing()
-      local limit = CONFIG.DEACTIVATION.RETURN_TIMEOUT + (finite(ping) and math.max(0, ping) or 0)
-      if duration and duration > limit and cooldownOpponentOutside(state) then
+      local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime)
+      if duration and duration > returnTimeout(snapshot, state, time) then
         deactivate(state, "return_timeout", time); state.target = target
         return
       end
