@@ -200,10 +200,10 @@ function V:Dot(other) return self.x*other.x end
 local function v(x) return setmetatable({x=x},V) end
 local function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
 local current={root={Parent=true,Position=v(0)},active=false}; local state=current; local localPlayer={UserId=42}
-local snapshot={targetId=42,position=v(20),velocity=v(-100),syncAt=10}; local targets,activations=0,0
+local snapshot={targetId=42,position=v(9),velocity=v(-100),syncAt=10}; local targets,activations=0,0
 local utils={isActive=function() return true end,getConfigValue=function() return true end}
-local gameInfo={getSnapshotAt=function() return snapshot end,isSnapshotValid=function() return true end,getBallFrozen=function() return false end,getClashContext=function() return {partnerId=99} end}
-local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},ACTIVATION={RADIUS_FACTOR=0.8}}
+local gameInfo={getSnapshotAt=function() return snapshot end,isSnapshotValid=function() return true end,getBallFrozen=function() return false end,getClashContext=function() return {partnerId=99} end,getPlayerMotion=function() return v(10) end}
+local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},ACTIVATION={RADIUS_FACTOR=0.8,INSTANT_TARGET_SWITCH_RADIUS=10,OWN_BALL_OPPONENT_RADIUS=16,OWN_BALL_CANDIDATE_MAX_AGE=0.8}}
 local function targetChanged(_,target) targets=targets+1; assert(target==42) end
 local function checkDeactivation() return false end
 local function sampleOwnDash() end
@@ -214,7 +214,8 @@ local function ownBallClose() return false end
 local function canActivateReturn() return false end
 '''+evaluate+'''
 evaluate(state,10,false,nil,snapshot,nil,true); assert(targets==1 and activations==1)
-state.active=false; snapshot.velocity=v(100); evaluate(state,10,false,nil,snapshot,nil,true); assert(activations==1,'activated for outgoing ball')
+state.active=false; snapshot.position=v(20); snapshot.velocity=v(-600); evaluate(state,10,false,nil,snapshot,nil,true); assert(activations==1,'speed enlarged activation radius')
+snapshot.position=v(9); snapshot.velocity=v(100); evaluate(state,10,false,nil,snapshot,nil,true); assert(activations==1,'activated for outgoing ball')
 snapshot.velocity=v(-100); snapshot.targetUncertain=true; evaluate(state,10,false,nil,snapshot,nil,true); assert(activations==1,'activated for uncertain target')
 ''')
 stationary=autospam[autospam.index('local function stationaryTooLong'):autospam.index('local function activate(')]
@@ -234,4 +235,31 @@ snapshot.syncSequence=2; assert(not stationaryTooLong(state,11,ball,snapshot),'p
 snapshot.syncSequence=3; assert(not stationaryTooLong(state,11.06,ball,snapshot))
 snapshot.syncSequence=4; assert(stationaryTooLong(state,11.12,ball,snapshot),'continuous stationary samples not detected')
 snapshot.syncSpeed=20; assert(not stationaryTooLong(state,12,ball,snapshot),'moving ball marked stationary')
+''')
+activate=autospam[autospam.index('local function activate('):autospam.index('local function deactivate(')]
+run('close target switch retries immediately when reactivation cooldown ends', '''
+local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
+local function userId(x) return finite(x) and x>0 and x or nil end
+local V={}; V.__index=function(t,k) if k=='Magnitude' then return math.abs(t.x) end return V[k] end
+V.__sub=function(a,b) return setmetatable({x=a.x-b.x},V) end
+function V:Dot(other) return self.x*other.x end
+local function v(x) return setmetatable({x=x},V) end
+local function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
+local current={root={Parent=true,Position=v(0)},active=false,target=42,proximityPartner=99,proximityAt=10,lastDeactivatedAt=10}; local state=current
+local localPlayer={UserId=42}; local snapshot={targetId=42,position=v(9),velocity=v(-100),syncAt=10}; local activations=0
+local utils={isActive=function() return true end,getConfigValue=function() return true end,setAutoSpamActive=function(x) if x then activations=activations+1 end end,recordTransition=function() end}
+local gameInfo={getSnapshotAt=function() return snapshot end,isSnapshotValid=function() return true end,getBallFrozen=function() return false end,getClashContext=function() return nil end,getPlayerMotion=function() return v(10) end,isClientDeflectResetLate=function() end}
+local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},ACTIVATION={REACTIVATION_COOLDOWN=0.04,EXCHANGE_READY_TIME=0.5,INSTANT_TARGET_SWITCH_RADIUS=10,OWN_BALL_OPPONENT_RADIUS=16,OWN_BALL_CANDIDATE_MAX_AGE=0.8}}
+local clashStats,watchOpponent,lastActivationReason,lastActivationAt
+local function playerIsAlive() return true end
+local function snapshotSpeed(x) return x.speed end
+local function targetChanged() end
+local function checkDeactivation() return false end
+local function sampleOwnDash() end
+local function distanceGate() return nil end
+local function ownBallClose() return false end
+local function canActivateReturn() return false end
+'''+activate+evaluate+'''
+evaluate(state,10.02,false,nil,snapshot,nil,true); assert(activations==0,'activated during cooldown')
+evaluate(state,10.05,false,nil,snapshot,nil,true); assert(activations==1,'did not retry confirmed close switch')
 ''')

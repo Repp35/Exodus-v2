@@ -356,7 +356,6 @@ ownBallClose = function(state, snapshot, time)
     and time >= state.proximityAt
     and time - state.proximityAt <= CONFIG.ACTIVATION.OWN_BALL_CANDIDATE_MAX_AGE
     and state.target == localPlayer.UserId
-    and (state.proximitySequence == nil or state.sequence == state.proximitySequence)
   local toward, distance = state.root.Position - snapshot.position, (state.root.Position - snapshot.position).Magnitude
   if state.proximityPartner and not state.active then
     local movingAway = state.proximityLastDistance and distance > state.proximityLastDistance + 0.25
@@ -529,17 +528,28 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(state, snapshot, time, true); clashStats = clashStatsModule.get() end
   if not autoEnabled or blocked or state.active then return end
-  -- A game-confirmed clash can be intercepted without waiting for another
-  -- target round trip. Closing speed bounds when the first click is useful.
+  -- Keep the intercept within the same fixed proximity bounds as the close
+  -- target-switch gate; speed must not expand these activation distances.
   local context = gameInfo.getClashContext()
   if context and context.partnerId and snapshot.targetId == localPlayer.UserId and snapshot.targetUncertain ~= true
     and typeof(snapshot.position) == "Vector3" and typeof(snapshot.velocity) == "Vector3" then
     local delta = state.root.Position - snapshot.position; local distance = delta.Magnitude
     local closing = distance > 0 and snapshot.velocity:Dot(delta) / distance or 0
-    local g = geometry(snapshot, CONFIG.ACTIVATION.RADIUS_FACTOR)
-    if finite(closing) and closing > 0 and g and math.max(0, distance - g.noWindowParryRadius) / closing <= g.effectiveWindow
-      and distanceGate(state, snapshot, context.partnerId) == nil then
+    local opponent = gameInfo.getPlayerMotion(context.partnerId)
+    if finite(closing) and closing > 0 and distance <= CONFIG.ACTIVATION.INSTANT_TARGET_SWITCH_RADIUS
+      and typeof(opponent) == "Vector3" and (opponent - state.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS then
       activate(state, "clash_intercept", context.partnerId, time, serverTime or snapshot.serverTime, snapshot)
+    end
+  end
+  -- Retry a close confirmed switch after the reactivation cooldown instead
+  -- of losing the one packet on which the switch was first observed.
+  if not state.active and state.proximityPartner and state.target == localPlayer.UserId and finite(state.proximityAt)
+    and time >= state.proximityAt and time - state.proximityAt <= CONFIG.ACTIVATION.OWN_BALL_CANDIDATE_MAX_AGE
+    and snapshot.targetId == localPlayer.UserId and snapshot.targetUncertain ~= true and typeof(snapshot.position) == "Vector3"
+    and (snapshot.position - state.root.Position).Magnitude <= CONFIG.ACTIVATION.INSTANT_TARGET_SWITCH_RADIUS then
+    local opponent = gameInfo.getPlayerMotion(state.proximityPartner)
+    if typeof(opponent) == "Vector3" and (opponent - state.root.Position).Magnitude <= CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS then
+      activate(state, "close_target_switch", state.proximityPartner, time, serverTime or snapshot.serverTime, snapshot)
     end
   end
   if ownBallClose(state, snapshot, time) then
