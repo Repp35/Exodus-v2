@@ -310,6 +310,10 @@ end
 function Utils.stop()
   local previous = state.lifecycle.phase; local wasActive = state.active
   local shutdownReason = _G.ExodusShutdownReason; local stopUpdateChannel = _G.ExodusUpdateStop
+  if type(_G.ExodusUIFadeOut) == "function" then
+    local ok, err = pcall(_G.ExodusUIFadeOut, shutdownReason == "update" or shutdownReason == "reload")
+    if not ok then warn("Falha ao animar fechamento: " .. tostring(err)) end
+  end
   _G.ExodusUpdateStop = nil
   if type(stopUpdateChannel) == "function" then pcall(stopUpdateChannel) end
   state.lifecycle.generation += 1; state.active, state.manualSpam, state.autoSpam = false, false, false

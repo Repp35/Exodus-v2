@@ -28,7 +28,7 @@ def run(name, script):
 remote = (root/'aux/remote.luau').read_text()
 run('client click acknowledgement', '''
 local module = (function()\n'''+remote+'''\nend)()
-local ability = {ClickInstances={}}
+local ability = {ClickInstances={},did={}}
 function ability:Deflect() table.insert(self.ClickInstances, {Time=1}) end
 local info = {isTrainingArea=function() return false end, getDeflectAbility=function() return ability end, getLastDeflectPressAt=function() return 0 end}
 assert(module.setup({GameInfo=info}))

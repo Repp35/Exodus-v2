@@ -69,6 +69,7 @@ local responsiveScale
 local flowingTweens = {}
 local shortcutLabels = {}
 local statusToggleVisuals = {}
+local fadeRestore, fadeEvent, fadeDone = {}, nil, false
 
 -- configuration
 local CONFIG = {
@@ -520,10 +521,11 @@ local function cleanupUI()
   colRight = nil; killBtn = nil
   toastLayer = nil; responsiveScale = nil
   shortcutLabels = {}; statusToggleVisuals = {}
+  fadeRestore, fadeEvent, fadeDone = {}, nil, false
   autoClashTrack = nil; autoClashThumb = nil
   autoParrySetVisual = nil; autoDarkSetVisual = nil
   autoJumpSetVisual = nil
-  if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil; _G.ExodusUIFadeOut = nil end
+  if _G.ExodusUICleanup == cleanupUI then _G.ExodusUICleanup = nil; _G.ExodusUIFadeOut = nil; _G.ExodusUIRestore = nil end
   if _G.ExodusShowPersistentNotification == showPersistentNotification then _G.ExodusShowPersistentNotification = nil end
   if _G.ExodusClearPersistentNotification == clearPersistentNotification then _G.ExodusClearPersistentNotification = nil end
 end
@@ -845,6 +847,100 @@ local function makeToggle(trackParent, initial)
   end
   return track, thumb, setVisual
 end
+
+-- Reusable primitives for future pages. Each constructor returns a handle
+-- with a Root instance and setters; callbacks run only for user input.
+local Components = {}
+local function componentText(parent, class, options)
+  options = options or {}
+  return inst(class, {
+    Name = options.name or class, Size = options.size or UDim2.new(1, 0, 0, 34),
+    BackgroundColor3 = options.backgroundColor or C.card, BackgroundTransparency = options.backgroundTransparency or 0,
+    Text = options.text or "", TextColor3 = options.textColor or C.text,
+    TextSize = options.textSize or 13, Font = Enum.Font.Gotham, Parent = parent,
+  })
+end
+function Components.label(parent, options)
+  local label = componentText(parent, "TextLabel", options); label.BackgroundTransparency = 1
+  label.TextXAlignment = Enum.TextXAlignment.Left
+  return { Root = label, setText = function(text) label.Text = tostring(text) end }
+end
+function Components.button(parent, options)
+  options = options or {}; local button = componentText(parent, "TextButton", options); corner(button, 8)
+  trackConn(button.Activated:Connect(function() if type(options.onClick) == "function" then options.onClick() end end))
+  return { Root = button, setText = function(text) button.Text = tostring(text) end }
+end
+function Components.textInput(parent, options)
+  options = options or {}; local input = componentText(parent, "TextBox", options); corner(input, 8)
+  input.PlaceholderText = options.placeholder or ""; input.ClearTextOnFocus = false
+  trackConn(input.FocusLost:Connect(function(enterPressed)
+    if type(options.onSubmit) == "function" then options.onSubmit(input.Text, enterPressed) end
+  end))
+  return { Root = input, setText = function(text) input.Text = tostring(text) end, getText = function() return input.Text end }
+end
+function Components.toggle(parent, options)
+  options = options or {}; local button = componentText(parent, "TextButton", options); corner(button, 8)
+  button.TextXAlignment = Enum.TextXAlignment.Left
+  local _, _, setVisual = makeToggle(button, options.value == true); local value = options.value == true
+  local function setValue(nextValue) value = nextValue == true; setVisual(value) end
+  trackConn(button.Activated:Connect(function() setValue(not value); if type(options.onChange) == "function" then options.onChange(value) end end))
+  return { Root = button, setValue = setValue, getValue = function() return value end }
+end
+function Components.divider(parent, options)
+  options = options or {}
+  local line = inst("Frame", { Name = options.name or "Divider", Size = options.size or UDim2.new(1, 0, 0, 1), BackgroundColor3 = options.color or C.border, BorderSizePixel = 0, Parent = parent })
+  return { Root = line }
+end
+function Components.progressBar(parent, options)
+  options = options or {}
+  local track = inst("Frame", { Name = options.name or "ProgressBar", Size = options.size or UDim2.new(1, 0, 0, 8), BackgroundColor3 = C.border, BorderSizePixel = 0, ClipsDescendants = true, Parent = parent }); corner(track, 4)
+  local fill = inst("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = options.color or C.accent, BorderSizePixel = 0, Parent = track }); corner(fill, 4)
+  local function setValue(value) fill.Size = UDim2.fromScale(math.clamp(tonumber(value) or 0, 0, 1), 1) end
+  setValue(options.value)
+  return { Root = track, setValue = setValue }
+end
+function Components.dropdown(parent, options)
+  options = options or {}; local choices = options.choices or {}; local value = options.value
+  local root = inst("Frame", { Name = options.name or "Dropdown", Size = options.size or UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, Parent = parent })
+  local button = componentText(root, "TextButton", { size = UDim2.fromScale(1, 1), text = "" }); corner(button, 8)
+  local list = inst("Frame", { Name = "Options", Position = UDim2.fromScale(0, 1), Size = UDim2.new(1, 0, 0, #choices * 30), BackgroundColor3 = C.card, Visible = false, ZIndex = 20, Parent = root }); corner(list, 8)
+  inst("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, list)
+  local function setValue(nextValue) value = nextValue; button.Text = tostring(value or options.placeholder or "Select") .. " ▾" end
+  for index, choice in ipairs(choices) do
+    local item = componentText(list, "TextButton", { size = UDim2.new(1, 0, 0, 30), text = tostring(choice) }); item.LayoutOrder = index; item.ZIndex = 21
+    trackConn(item.Activated:Connect(function() setValue(choice); list.Visible = false; if type(options.onChange) == "function" then options.onChange(choice) end end))
+  end
+  trackConn(button.Activated:Connect(function() list.Visible = not list.Visible end)); setValue(value)
+  return { Root = root, setValue = setValue, getValue = function() return value end }
+end
+function Components.slider(parent, options)
+  options = options or {}; local minimum, maximum = tonumber(options.min) or 0, tonumber(options.max) or 100
+  assert(maximum > minimum, "slider max must exceed min")
+  local root = componentText(parent, "TextButton", { name = options.name or "Slider", size = options.size, text = "" }); corner(root, 8)
+  local fill = inst("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.accent, BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = root }); corner(fill, 8)
+  local label = componentText(root, "TextLabel", { size = UDim2.fromScale(1, 1), text = "" }); label.BackgroundTransparency = 1; label.ZIndex = root.ZIndex + 1
+  local value, dragging = minimum, false
+  local function setValue(nextValue)
+    value = math.clamp(tonumber(nextValue) or minimum, minimum, maximum)
+    fill.Size = UDim2.fromScale((value - minimum) / (maximum - minimum), 1); label.Text = tostring(options.text or "") .. " " .. string.format("%.2f", value)
+  end
+  local function update(input)
+    if root.AbsoluteSize.X <= 0 then return end
+    setValue(minimum + math.clamp((input.Position.X - root.AbsolutePosition.X) / root.AbsoluteSize.X, 0, 1) * (maximum - minimum))
+    if type(options.onChange) == "function" then options.onChange(value) end
+  end
+  trackConn(root.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true; update(input) end
+  end))
+  trackConn(UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then update(input) end
+  end))
+  trackConn(UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+  end)); setValue(options.value)
+  return { Root = root, setValue = setValue, getValue = function() return value end }
+end
+ExodusUI.Components = Components
 
 -- keybinds
 local function bindKeyCapture(btn, onPicked)
@@ -1305,6 +1401,10 @@ local function togglePanel()
 end
 local function restoreAfterReloadFailure(message)
   if not configPanel or not configPanel.Parent then return end
+  for object, properties in pairs(fadeRestore) do
+    if object.Parent then for key, value in pairs(properties) do pcall(function() object[key] = value end) end end
+  end
+  fadeRestore, fadeEvent, fadeDone = {}, nil, false
   UIState.closing = false; UIState.panelOpen = true
   configPanel.Visible = true; configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97)
   configPanel.GroupTransparency = 1
@@ -1339,6 +1439,7 @@ local function fadeGuiTree(root, tweens, duration)
       props.Transparency = 1
     elseif object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
       props.TextTransparency = 1
+      props.TextStrokeTransparency = 1
       props.BackgroundTransparency = 1
     elseif object:IsA("ImageLabel") or object:IsA("ImageButton") then
       props.ImageTransparency = 1
@@ -1350,17 +1451,29 @@ local function fadeGuiTree(root, tweens, duration)
       props.BackgroundTransparency = 1
     end
     if next(props) then
+      if not fadeRestore[object] then
+        local original = {}; for key in pairs(props) do original[key] = object[key] end
+        fadeRestore[object] = original
+      end
       local tween = twPlay(object, duration, props, EASE_OUT, DIR_IN)
       if tween then tweens[#tweens + 1] = tween end
     end
   end
 end
 
-local function fadeOutForReplacement()
-  if not screenGui or not screenGui.Parent or UIState.closing then return end
+local function fadeOutForReplacement(preserveUpdate)
+  if UIState.closing then
+    if fadeEvent and not fadeDone then fadeEvent.Event:Wait() end
+    return
+  end
+  if not screenGui or not screenGui.Parent then return end
   UIState.closing = true
+  fadeDone = false; fadeEvent = Instance.new("BindableEvent")
   safeCancel(UIState.panelTween)
   safeCancel(UIState.btnTween)
+  safeCancel(UIState.miniTween); safeCancel(UIState.toastTween)
+  for _, tween in ipairs(UIState.pageTweens) do safeCancel(tween) end
+  for _, tween in ipairs(flowingTweens) do safeCancel(tween) end
   local tweens = {}
 
   fadeGuiTree(screenGui, tweens, 0.26)
@@ -1369,7 +1482,8 @@ local function fadeOutForReplacement()
   if persistentLayer and persistentLayer.Parent then
     for _, card in ipairs(persistentLayer:GetChildren()) do
       local key = card:GetAttribute("ExodusNotificationKey")
-      if key ~= "update" then
+      if key ~= "update" or preserveUpdate == false then
+        if key then safeCancel(persistentTweens[key]); persistentTweens[key] = nil end
         fadeGuiTree(card, tweens, 0.26)
       end
     end
@@ -1379,54 +1493,31 @@ local function fadeOutForReplacement()
 
   local oldKeys = {}
   for _, key in ipairs(persistentOrder) do
-    if key ~= "update" then oldKeys[#oldKeys + 1] = key end
+    if key ~= "update" or preserveUpdate == false then oldKeys[#oldKeys + 1] = key end
   end
   for _, key in ipairs(oldKeys) do
-    clearPersistentNotification(key)
+    local card = persistentLayer and persistentLayer:FindFirstChild("Notification_" .. key)
+    if card then card:Destroy() end
+    local index = table.find(persistentOrder, key); if index then table.remove(persistentOrder, index) end
   end
+  if persistentLayer and persistentLayer.Parent then
+    for _, card in ipairs(persistentLayer:GetChildren()) do
+      if card:GetAttribute("ExodusNotificationKey") ~= "update" or preserveUpdate == false then card:Destroy() end
+    end
+  end
+  fadeDone = true; local completed = fadeEvent; completed:Fire()
+  _spawn(function() _wait(); completed:Destroy() end)
 end
 local function animateClose(action)
   if UIState.closing then return end
-  UIState.closing = true; _G.ExodusShutdownReason = action == "close" and "close" or "reload"
-  if showPersistentNotification then showPersistentNotification("Closing...", "closing", "warning") end
+  _G.ExodusShutdownReason = action == "close" and "close" or "reload"
+  if action == "reload" and showPersistentNotification then showPersistentNotification("Updating...", "update", "info") end
   if type(print) == "function" then print("[Exodus] Closing...") end
-  safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
-  local tweens = {}
-  if configPanel and configPanel.Parent then
-    UIState.panelTween = twPlay(configPanel, 0.26, {
-      Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97),
-      GroupTransparency = 1,
-    }, EASE_OUT, DIR_IN)
-    if UIState.panelTween then tweens[#tweens + 1] = UIState.panelTween end
-  end
-  if floatingButton and floatingButton.Parent then
-    UIState.btnTween = twPlay(floatingButton, 0.26, {
-      Size = UDim2.new(0, 42, 0, 42),
-      BackgroundTransparency = 1,
-      TextTransparency = 1,
-    }, EASE_OUT, DIR_IN)
-    if UIState.btnTween then tweens[#tweens + 1] = UIState.btnTween end
-  end
-  if floatingButtonStroke and floatingButtonStroke.Parent then
-    local tween = twPlay(floatingButtonStroke, 0.26, { Transparency = 1 }, EASE_OUT, DIR_IN)
-    if tween then tweens[#tweens + 1] = tween end
-  end
-  for _, ball in ipairs({ clashBall, parryBall, darkBall, jumpBall, upDashBall }) do
-    if ball and ball.Parent then
-      local tween = twPlay(ball, 0.22, {
-        Position = UDim2.new(0, OFFSCREEN_X, ball.Position.Y.Scale, ball.Position.Y.Offset),
-      }, EASE_OUT, DIR_IN)
-      if tween then tweens[#tweens + 1] = tween end
-    end
-  end
-  local miniTween = showMini(false)
-  if miniTween then tweens[#tweens + 1] = miniTween end
-  watchTweens(tweens, function()
-    if not UIState.closing then return end
-    if action == "reload" and type(Controls.onReload) == "function" then Controls.onReload(restoreAfterReloadFailure)
-    elseif type(Controls.onClose) == "function" then Controls.onClose()
-    elseif Utils and type(Utils.stop) == "function" then Utils.stop() end
-  end)
+  fadeOutForReplacement(action == "reload")
+  if not UIState.closing then return end
+  if action == "reload" and type(Controls.onReload) == "function" then Controls.onReload(restoreAfterReloadFailure)
+  elseif type(Controls.onClose) == "function" then Controls.onClose()
+  elseif Utils and type(Utils.stop) == "function" then Utils.stop() end
 end
 
 -- setup
@@ -1471,7 +1562,7 @@ function ExodusUI.setup(deps)
   UIState.panelOpen = false; UIState.spamOn = false
   UIState.clashBallOn = false; UIState.closing = false
   UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil
-  UIState.btnTween = nil; shortcutLabels = {}
+  UIState.btnTween = nil; shortcutLabels = {}; _G.ExodusUIRestore = restoreAfterReloadFailure
   persistentLayerForPlayer(); _G.ExodusUICleanup = cleanupUI
   _G.ExodusUIFadeOut = fadeOutForReplacement; _G.ExodusShowPersistentNotification = showPersistentNotification
   _G.ExodusClearPersistentNotification = clearPersistentNotification
@@ -2647,6 +2738,7 @@ ExodusUI.__contract = {
     Dumper = { "start", "isRunning" },
   },
   requiresData = { UIConfig = { "panelToggles", "panelComponents", "pages" } },
+  data = { "Components" },
   provides = { "setup" },
 }
 
