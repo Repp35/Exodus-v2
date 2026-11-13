@@ -273,8 +273,7 @@ local function request(reason)
   end
   local generation, cycle = state.generation, state.cycle; local boundUtils, boundRemote = utils, remote
   local firedAt, speed, distance = now, state.speed, state.distance; state.fired, state.lastFireAt = true, firedAt
-  local wasRetry = state.retryReady
-  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+  local wasRetry = state.retryReady; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
   local function sameCycle()
     return state.generation == generation
       and state.cycle == cycle
@@ -303,7 +302,8 @@ local function request(reason)
       if errorAt - state.lastErrorAt >= 1 then state.lastErrorAt = errorAt; boundUtils.recordError("TrainingParry", tostring(detail or "Treino indisponível")) end
       return false
     end
-    state.fired = false; state.retryReady = wasRetry; local delay = 0.05
+    state.fired = false; state.retryReady = wasRetry
+    local delay = 0.05
     if type(gameInfo.getAutoSpamDelay) == "function" then
       local delayOk, value = pcall(gameInfo.getAutoSpamDelay)
       if delayOk and finite(value) then delay = math.max(delay, value) end
@@ -319,8 +319,7 @@ local function request(reason)
   if state.mode == "training" then
     state.trainingRetryAt = firedAt + gameInfo.getTrainingMissCooldown()
   else
-    state.retryPending = true
-    local window = gameInfo.getDeflectWindow(speed, false)
+    state.retryPending = true; local window = gameInfo.getDeflectWindow(speed, false)
     local ping = gameInfo.getLocalPing()
     if not finite(ping) or ping < 0 then ping = 0 end
     state.retryDeadline = finite(window) and window > 0 and firedAt + window + CONFIG.MISS_NOOB_EXTRA + 2 * ping or math.huge
@@ -418,9 +417,7 @@ local function tick(character, root, generation)
       state.retryCooldownSeen = true
     elseif cooldown.predictedReset ~= true and (state.retryCooldownSeen or (finite(cooldown.lastStartedAt) and cooldown.lastStartedAt >= state.lastFireAt)) then
       state.retryCooldownSeen = true
-      if time > state.retryDeadline then
-        state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady, state.nextAttemptAt = false, false, false, true, 0
-      end
+      if time > state.retryDeadline then state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady, state.nextAttemptAt = false, false, false, true, 0 end
     end
   end
   if state.fired then phase("waiting", "target_already_parried"); return end
@@ -446,10 +443,7 @@ local function tick(character, root, generation)
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
   samplePing(); local geometry = radius(speed, activeWindowFactor(time))
   if not geometry then return end
-  if state.retryReady then
-    geometry.effectiveWindow = math.min(geometry.effectiveWindow, geometry.deflectWindow * CONFIG.RETRY_WINDOW_FACTOR)
-    geometry.triggerPadding = 0
-  end
+  if state.retryReady then geometry.effectiveWindow = math.min(geometry.effectiveWindow, geometry.deflectWindow * CONFIG.RETRY_WINDOW_FACTOR); geometry.triggerPadding = 0 end
   local distance, closing, threshold = trajectory(position, velocity, rootPosition, speed, geometry); state.speed, state.distance, state.approaching = speed, distance, closing > 0
   state.closingSpeed, state.triggerDistance = closing, threshold
   if closing > 0 and distance <= threshold then request("parry_requested") end
@@ -833,4 +827,3 @@ AutoParry.__contract = {
 }
 
 return AutoParry
-
