@@ -37,7 +37,7 @@ local CONFIG = {
     DEFLECT_COOLDOWN_TIMEOUT_BASE = 0.15,
     DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED = 0.10,
     CLOSE_OPPONENT_PROTECTION_RADIUS = 10,
-    SYNC_PROTECTION_RADIUS = 10,
+    SYNC_PROTECTION_RADIUS = 16,
     CLOSE_OPPONENT_MEMORY_SECONDS = 0.1,
     STATIONARY_POSITION_EPSILON = 0.01,
   },
@@ -318,7 +318,7 @@ local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   -- The cooldown gate scales with speed and requires the opponent to be
-  -- outside the fixed 10-stud radius.
+  -- outside the fixed 16-stud radius.
   local cooldown = gameInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
     state.deflectCooldownSince = state.deflectCooldownSince or time
