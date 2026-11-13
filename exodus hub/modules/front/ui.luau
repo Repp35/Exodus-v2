@@ -12,7 +12,6 @@ local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
-local TextService = game:GetService("TextService")
 local Camera = workspace.CurrentCamera
 local _wait = task.wait
 local _spawn = task.spawn
@@ -130,7 +129,6 @@ local CONFIG = {
   TITLE_TEXT_SIZE = 16,
   AUTHOR_TEXT_SIZE = 14,
   AUTHOR_TRANSPARENCY = 0.22,
-  TITLE_SIDE_RESERVE = 80,
 }
 
 -- palette
