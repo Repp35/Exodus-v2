@@ -368,6 +368,23 @@ end
 local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
+  -- The cooldown gate scales with speed and requires the opponent to be
+  -- outside the fixed 10-stud radius.
+  local cooldown = gameInfo.getDeflectCooldownState()
+  if cooldown and cooldown.blocking == true then
+    local observedStart = time
+    if cooldown.rawActive == true and finite(cooldown.lastStartedAt) and cooldown.lastStartedAt <= time then
+      observedStart = math.max(state.activatedAt or time, cooldown.lastStartedAt)
+    end
+    state.deflectCooldownSince = state.deflectCooldownSince or observedStart
+  else
+    state.deflectCooldownSince = nil
+  end
+  local cooldownLimit = state.deflectCooldownSince and cooldownTimeout(snapshot, state, time) or nil
+  if state.activatedAt and state.deflectCooldownSince
+    and time - state.activatedAt >= cooldownLimit
+    and time - state.deflectCooldownSince >= cooldownLimit
+    and cooldownOpponentOutside(state) then return "deflect_cooldown_timeout" end
   if state.root and state.root.Parent and state.partner then
     local speed = snapshotSpeed(snapshot)
     local syncAt = snapshot and snapshot.syncAt
@@ -378,19 +395,6 @@ local function deactivationReason(state, snapshot, time)
     local limit = state.distanceSnapshot and deactivationDistanceLimit(state.distanceSnapshot, state.partner)
     if limit and typeof(opponent) == "Vector3" and (opponent - state.root.Position).Magnitude > limit then return "opponent_distance" end
   end
-  -- The cooldown gate scales with speed and requires the opponent to be
-  -- outside the fixed 10-stud radius.
-  local cooldown = gameInfo.getDeflectCooldownState()
-  if cooldown and cooldown.blocking == true then
-    state.deflectCooldownSince = state.deflectCooldownSince or time
-  else
-    state.deflectCooldownSince = nil
-  end
-  local cooldownLimit = state.deflectCooldownSince and cooldownTimeout(snapshot, state, time) or nil
-  if state.activatedAt and state.deflectCooldownSince
-    and time - state.activatedAt >= cooldownLimit
-    and time - state.deflectCooldownSince >= cooldownLimit
-    and cooldownOpponentOutside(state) then return "deflect_cooldown_timeout" end
   if not (cooldown and cooldown.blocking == true) and state.activatedAt and (state.clashTargetCount or 1) < 3 and time - state.activatedAt >= 0.15
     and not closeClashProtected(state, time, CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS) then return "exchange_unconfirmed" end
   if gameInfo.getBallFrozen() == true then return "ball_frozen" end
