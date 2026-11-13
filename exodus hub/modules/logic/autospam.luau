@@ -2,7 +2,7 @@
 
 -- module
 local AutoSpam = {}
-local utils, gameInfo, clashStatsModule, danger, players, runService, localPlayer
+local utils, gameInfo, clashStatsModule, danger, autoParry, players, runService, localPlayer
 local current, generation = nil, 0
 local clashStats
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
@@ -20,6 +20,10 @@ local CONFIG = {
     REACTIVATION_COOLDOWN = 0.04,
     RADIUS_FACTOR = 1,
     RETURN_RADIUS_FACTOR = 0.6,
+    FAST_RETURN_INTERVAL = 1 / 3,
+    FAST_RETURN_SAMPLE_GAP = 0.2,
+    FAST_RETURN_MIN_CLOSING = 8,
+    FAST_RETURN_ALIGNMENT = 0.65,
     HAUNTER_RANGE = 11,
     HAUNTER_MATCH_RADIUS = 5,
     DASH_WINDOW_FACTOR = 0.4,
@@ -111,6 +115,7 @@ local function disconnectAll(state)
   end
 end
 local function resetExchange(state)
+  state.fastFlight = nil
   state.proximityPartner, state.proximityAt, state.proximityLastDistance, state.proximitySequence = nil, nil, nil, nil; state.exchangeFrom, state.exchangeTo, state.exchangeAt = nil, nil, nil
   state.exchangePartner, state.exchangeReadyAt = nil, nil; state.pending, state.departedAt, state.departedServerAt, state.departedTo = nil, nil, nil, nil
 end
@@ -237,6 +242,86 @@ local function activationGeometry(state, snapshot, partner, time)
   return geometry(snapshot, CONFIG.ACTIVATION.RETURN_RADIUS_FACTOR)
 end
 
+-- physical return
+local function sampleFastReturn(state, snapshot, time)
+  if not snapshot or not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported or snapshot.locked
+    or typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then state.fastFlight = nil; return nil end
+  local primary = snapshot.targetSignals and userId(snapshot.targetSignals.primary)
+  local target = primary or userId(snapshot.targetId)
+  if not target then state.fastFlight = nil; return nil end
+  local syncAt = snapshot.syncAt
+  if not finite(syncAt) or syncAt <= 0 or time < syncAt or time - syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return nil end
+  local ap = autoParry.getDefenseState(snapshot); local requestAt = ap.lastRequestAt
+  local interval = CONFIG.ACTIVATION.FAST_RETURN_INTERVAL
+  if not finite(requestAt) or requestAt <= 0 or time < requestAt then state.fastFlight = nil; return nil end
+  local parriedAt = finite(ap.lastParriedAt) and ap.lastParriedAt >= requestAt and ap.lastParriedAt <= time and ap.lastParriedAt or requestAt
+  if time - parriedAt > interval then state.fastFlight = nil; return nil end
+  local flight = state.fastFlight
+  if not flight or flight.ball ~= snapshot.ball or flight.requestAt ~= requestAt then
+    if ap.fired ~= true then return nil end
+    flight = { ball = snapshot.ball, requestAt = requestAt, sampledAt = time }; state.fastFlight = flight
+  elseif time < flight.sampledAt or time - flight.sampledAt > CONFIG.ACTIVATION.FAST_RETURN_SAMPLE_GAP then
+    state.fastFlight = nil; return nil
+  end
+  flight.sampledAt = time
+  local own, position, velocity = state.root.Position, snapshot.position, snapshot.velocity
+  local delta = own - position; local distance = delta.Magnitude
+  if distance <= 0.05 or velocity.Magnitude < CONFIG.ACTIVATION.FAST_RETURN_MIN_CLOSING then return nil end
+  local rootVelocity = state.root.AssemblyLinearVelocity
+  local relative = velocity - (typeof(rootVelocity) == "Vector3" and rootVelocity or Vector3.zero)
+  local closing = relative:Dot(delta) / distance
+  local rawClosing = velocity:Dot(delta) / distance
+  if flight.partner and target ~= localPlayer.UserId and target ~= flight.partner then state.fastFlight = nil; return nil end
+  if closing < -CONFIG.ACTIVATION.FAST_RETURN_MIN_CLOSING and rawClosing < 0 then
+    local outward = velocity.Unit
+    local function matches(id)
+      if not id or id == localPlayer.UserId or not playerIsAlive(id) then return nil end
+      local opponent = gameInfo.getPlayerMotion(id); local limit = deactivationDistanceLimit(snapshot, id)
+      if typeof(opponent) ~= "Vector3" or not limit then return nil end
+      local toward = opponent - own; local separation = toward.Magnitude
+      if separation <= 0.05 or separation > limit then return nil end
+      local projection = outward:Dot(toward)
+      if projection / separation < CONFIG.ACTIVATION.FAST_RETURN_ALIGNMENT then return nil end
+      local radius = gameInfo.getPlayerDeflectRange(id)
+      if not finite(radius) or (toward - outward * projection).Magnitude > radius then return nil end
+      return projection
+    end
+    local partner = target ~= localPlayer.UserId and target or flight.partner or state.departedTo or state.proximityPartner
+    if partner then
+      if not matches(partner) then return nil end
+    else
+      local best
+      for _, player in ipairs(players:GetPlayers()) do
+        local projection = matches(player.UserId)
+        if projection and (not best or projection < best) then partner, best = player.UserId, projection end
+      end
+    end
+    if partner then flight.partner, flight.outgoing = partner, true end
+    return nil
+  end
+  if not flight.outgoing or not flight.partner or closing < CONFIG.ACTIVATION.FAST_RETURN_MIN_CLOSING or rawClosing <= 0 then return nil end
+  if not playerIsAlive(flight.partner) then state.fastFlight = nil; return nil end
+  local opponent = gameInfo.getPlayerMotion(flight.partner)
+  local limit = deactivationDistanceLimit(snapshot, flight.partner)
+  if typeof(opponent) ~= "Vector3" or not limit or (opponent - own).Magnitude > limit then return nil end
+  local ownRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId)
+  local otherRange = gameInfo.getPlayerDeflectRange(flight.partner)
+  if not finite(ownRange) or not finite(otherRange) then return nil end
+  -- An outgoing flight must actually turn back through the pair's corridor.
+  local segment = opponent - own; local lengthSquared = segment:Dot(segment)
+  local along = lengthSquared > 0 and math.clamp((position - own):Dot(segment) / lengthSquared, 0, 1) or 0
+  if (position - (own + segment * along)).Magnitude > math.max(ownRange, otherRange) then return nil end
+  local projection = delta:Dot(relative.Unit)
+  if projection <= 0 or (delta - relative.Unit * projection).Magnitude > ownRange then return nil end
+  local toRange = math.max(0, distance - ownRange) / closing
+  local expectedInterval = time - parriedAt + toRange
+  local value = activationGeometry(state, snapshot, flight.partner, time)
+  if not value or toRange > value.effectiveWindow or expectedInterval > interval then return nil end
+  flight.expectedInterval, flight.toRange = expectedInterval, toRange
+  flight.readyAt = time
+  return flight.partner
+end
+
 -- protection
 local ownBallClose, watchOpponent
 local function closeClashProtected(state, time, radius)
@@ -286,6 +371,8 @@ local function stationaryTooLong(state, time, ball, snapshot)
   return time - state.stationarySince >= CONFIG.DEACTIVATION.STATIONARY_TIMEOUT
 end
 local function activate(state, reason, partner, time, serverTime, snapshot)
+  local physicalReturn = reason == "fast_reentry"
+  if physicalReturn and (not state.fastFlight or state.fastFlight.partner ~= partner or state.fastFlight.readyAt ~= time) then return false end
   if
     current ~= state
     or state.active
@@ -295,11 +382,11 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
     or partner == localPlayer.UserId
     or not playerIsAlive(partner)
     or state.timeoutBlocked == true
-    or (reason ~= "danger_deadline" and state.lastDeactivatedAt and time - state.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
+    or (reason ~= "danger_deadline" and not physicalReturn and state.lastDeactivatedAt and time - state.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
   then
     return false
   end
-  local bypassExchange = reason == "danger_deadline" or reason == "own_ball_proximity" or reason == "close_target_switch" or reason == "clash_intercept" or reason == "haunter" or reason == "haunter_self"
+  local bypassExchange = physicalReturn or reason == "danger_deadline" or reason == "own_ball_proximity" or reason == "close_target_switch" or reason == "clash_intercept" or reason == "haunter" or reason == "haunter_self"
   if
     not bypassExchange
     and (
@@ -312,7 +399,7 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
     return false
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
-  if not gameInfo.isSnapshotValid(snapshot) or snapshot.targetUncertain == true or snapshot.targetId ~= localPlayer.UserId
+  if not gameInfo.isSnapshotValid(snapshot) or (not physicalReturn and (snapshot.targetUncertain == true or snapshot.targetId ~= localPlayer.UserId))
     or snapshot.teleported == true or snapshot.locked == true or not state.root or not state.root.Parent
     or typeof(snapshot.position) ~= "Vector3" or typeof(snapshot.velocity) ~= "Vector3" then return false end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE) then return false end
@@ -331,6 +418,7 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   state.activatedAt = time; state.lastClosePartner, state.lastCloseAt, state.lastCloseDistance = nil, nil, nil
   state.distanceSnapshot = { syncSpeed = snapshotSpeed(snapshot) }
   state.clashTargetCount, state.clashLastTarget = 1, localPlayer.UserId
+  if physicalReturn then state.clashLastTarget = userId(snapshot.targetId) or localPlayer.UserId end
   state.stationaryBall, state.stationaryPosition, state.stationarySince = nil, nil, nil; state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime
   state.reason = reason
   lastActivationReason, lastActivationAt = reason, time
@@ -629,7 +717,9 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(state, snapshot, time, true); clashStats = clashStatsModule.get() end
   local risk = danger.sample(state, snapshot, time, localPlayer.UserId)
+  local fastPartner = autoEnabled and not state.active and sampleFastReturn(state, snapshot, time) or nil
   if not autoEnabled or blocked or state.active then return end
+  if fastPartner and activate(state, "fast_reentry", fastPartner, time, serverTime or snapshot.serverTime, snapshot) then return end
   if risk.urgent then
     local partner = state.pending and state.pending.partner or state.proximityPartner
     if not partner then local context = gameInfo.getClashContext(); partner = context and context.partnerId end
@@ -772,9 +862,9 @@ end
 
 -- lifecycle
 function AutoSpam.setup(deps)
-  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Danger then return false, "dependências ausentes" end
+  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Danger or not deps.AutoParry then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule, danger = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Danger; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
+  utils, gameInfo, clashStatsModule, danger, autoParry = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Danger, deps.AutoParry; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then
     utils, gameInfo, clashStatsModule, players, runService, localPlayer = nil, nil, nil, nil, nil, nil; return false, "serviços indisponíveis"
   end
@@ -852,7 +942,7 @@ end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
   detach("teardown"); clashStatsModule = nil
-  clashStats = nil; utils, gameInfo, danger, players, runService, localPlayer = nil, nil, nil, nil, nil, nil
+  clashStats = nil; utils, gameInfo, danger, autoParry, players, runService, localPlayer = nil, nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
   local state = current
@@ -989,6 +1079,12 @@ function AutoSpam.getStatus()
     snapshotAge = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and math.max(0, time - snapshot.syncAt) or nil,
     clashPartnerId = state and state.partner or -1,
     clashStats = clashStatus(),
+    fastReturn = state and state.fastFlight and {
+      partnerId = state.fastFlight.partner,
+      outgoingSeen = state.fastFlight.outgoing == true,
+      expectedIntervalMs = state.fastFlight.expectedInterval and state.fastFlight.expectedInterval * 1000,
+      timeToRangeMs = state.fastFlight.toRange and state.fastFlight.toRange * 1000,
+    } or nil,
     danger = state and state.danger and {
       phase = state.danger.phase, urgent = state.danger.urgent, protected = state.danger.protect,
       remainingMs = state.danger.remaining and state.danger.remaining * 1000,
@@ -1006,6 +1102,7 @@ AutoSpam.__contract = {
     GameInfo = "gameinfo",
     ClashStats = "clashstats",
     Danger = "danger",
+    AutoParry = "autoparry",
   },
   requiresMethods = {
     Utils = {
@@ -1044,6 +1141,7 @@ AutoSpam.__contract = {
     },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
     Danger = { "sample" },
+    AutoParry = { "getDefenseState" },
   },
   provides = {
     "setup",
