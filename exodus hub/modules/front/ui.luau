@@ -1726,7 +1726,8 @@ function ExodusUI.setup(deps)
     AnchorPoint = Vector2.new(0, 0.5),
     Position = UDim2.new(0, 0, 0.5, 0),
     BackgroundColor3 = C.header,
-    BackgroundTransparency = 0.2,
+    BackgroundTransparency = 1,
+    TextTransparency = 1,
     Text = "",
     TextColor3 = C.text,
     TextSize = 14,
@@ -1737,6 +1738,24 @@ function ExodusUI.setup(deps)
   })
   compactInformation(distanceLabel); compactInformation(travelLabel)
   compactInformation(gateLabel); corner(gateLabel, 8)
+  local gateShown, gateTween = false, nil
+  local function setGateVisible(visible)
+    if gateShown == visible then return end
+    gateShown = visible
+    if gateTween then gateTween:Cancel() end
+    if visible then gateLabel.Visible = true end
+    local transition = TweenService:Create(gateLabel, TweenInfo.new(0.2, EASE_OUT, DIR_OUT), {
+      BackgroundTransparency = visible and 0.2 or 1,
+      TextTransparency = visible and 0 or 1,
+    })
+    gateTween = transition
+    transition.Completed:Connect(function(playbackState)
+      if gateTween ~= transition then return end
+      gateTween = nil
+      if playbackState == Enum.PlaybackState.Completed and not gateShown then gateLabel.Visible = false end
+    end)
+    transition:Play()
+  end
   local nextGateUpdate, nextTravelUpdate, nextDistanceUpdate = 0, 0, 0
   local function validGate(value)
     return type(value) == "string" and value ~= "" and value ~= "null" and value ~= "nil" and value ~= "inactive" and value ~= "detached"
@@ -1756,7 +1775,10 @@ function ExodusUI.setup(deps)
     if not informationGui.Parent then return end
     local time = os.clock(); local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
     local travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true; local distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true
-    if not gateEnabled and not travelVisible and not distanceVisible then gateLabel.Visible, travelLabel.Visible, distanceLabel.Visible = false, false, false; return end
+    if not gateEnabled and not travelVisible and not distanceVisible then
+      setGateVisible(false); travelLabel.Visible, distanceLabel.Visible = false, false
+      return
+    end
     if gateEnabled and time >= nextGateUpdate then
       nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
       local lines = { "AutoSpam: " .. (status and status.active == true and "ACTIVE" or "WAITING") }
@@ -1765,8 +1787,7 @@ function ExodusUI.setup(deps)
       if status and validGate(status.lastStopReason) then lines[#lines + 1] = "Deactivation: " .. status.lastStopReason end
       setTextIfChanged(gateLabel, table.concat(lines, "\n"))
     end
-    local gateVisible = gateEnabled and gateLabel.Text ~= ""
-    if gateLabel.Visible ~= gateVisible then gateLabel.Visible = gateVisible end
+    local gateVisible = gateEnabled and gateLabel.Text ~= ""; setGateVisible(gateVisible)
     if travelLabel.Visible ~= travelVisible then travelLabel.Visible = travelVisible end
     if travelVisible and time >= nextTravelUpdate then
       nextTravelUpdate = time + 0.05; local status, snapshot = getTelemetry(time)
