@@ -290,18 +290,18 @@ assert(not state.active)
 ''')
 
 cooldownDistance=autospam[autospam.index('local function cooldownOpponentOutside('):autospam.index('local function stationaryTooLong(')]
-run('cooldown requires opponent beyond 10 studs', """
+run('cooldown requires opponent beyond 16 studs', """
 local V={}; V.__index=function(t,k) if k=='Magnitude' then return math.abs(t.x) end end
 V.__sub=function(a,b) return setmetatable({x=a.x-b.x},V) end
 local function v(x) return setmetatable({x=x},V) end
 local function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
-local CONFIG={DEACTIVATION={SYNC_PROTECTION_RADIUS=10}}
-local opponent=v(10); local gameInfo={getPlayerMotion=function() return opponent end}
+local CONFIG={DEACTIVATION={SYNC_PROTECTION_RADIUS=16}}
+local opponent=v(16); local gameInfo={getPlayerMotion=function() return opponent end}
 local players={GetPlayerByUserId=function() return nil end}
 local state={partner=99,root={Parent=true,Position=v(0)}}
 """+cooldownDistance+"""
-assert(not cooldownOpponentOutside(state),'10 studs should protect')
-opponent=v(10.01); assert(cooldownOpponentOutside(state),'outside 10 should permit')
+assert(not cooldownOpponentOutside(state),'16 studs should protect')
+opponent=v(16.01); assert(cooldownOpponentOutside(state),'outside 16 should permit')
 opponent=nil; assert(not cooldownOpponentOutside(state),'unknown position should protect')
 """)
 
@@ -321,7 +321,7 @@ assert(near(cooldownTimeout({syncSpeed=900},state,10),0.10))
 assert(near(cooldownTimeout(nil,state,10),0.10),'missing packet lost last speed')
 assert(near(cooldownTimeout({syncSpeed=16,syncAt=1},state,10),0.10),'stale speed replaced current speed')
 """)
-run('maximum-speed cooldown gate fires at 100ms outside protection', '''
+run('maximum-speed cooldown gate fires at 100ms beyond 16 studs', '''
 local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
 local function userId(x) return finite(x) and x>0 and x or nil end
 local function snapshotSpeed(x) return x and (x.syncSpeed or x.speed) end
