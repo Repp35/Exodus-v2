@@ -551,7 +551,7 @@ local function bindRuntime(loaded)
       end
     end
   end
-  local syncPriority = { autoparry = 1, autospam = 2 }
+  local syncPriority = { autospam = 1, autoparry = 2 }
   table.sort(ballSyncSubscribers, function(a, b)
     local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3; return left == right and a.name < b.name or left < right
   end)
