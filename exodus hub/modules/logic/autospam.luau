@@ -23,6 +23,7 @@ local CONFIG = {
     DASH_WINDOW_FACTOR = 0.4,
   },
   DEACTIVATION = {
+    RETURN_TIMEOUT = 0.2,
     DEFLECT_COOLDOWN_TIMEOUT_BASE = 0.225,
     DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED = 0.15,
     COOLDOWN_PROTECTION_RADIUS = 16,
@@ -240,6 +241,10 @@ local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if gameInfo.getBallFrozen() == true then return "ball_frozen" end
+  if state.departedAt and time >= state.departedAt then
+    local ping = gameInfo.getAveragePing(); local limit = CONFIG.DEACTIVATION.RETURN_TIMEOUT + (finite(ping) and math.max(0, ping) or 0)
+    if time - state.departedAt > limit then return "return_timeout" end
+  end
   local cooldown = gameInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
     local observedStart = time
@@ -332,6 +337,14 @@ local function targetChanged(state, target, time, snapshot, serverTime)
     state.departedAt, state.departedServerAt, state.departedTo = time, serverTime, target
   elseif switchedToMe then
     local matchingReturn = previous == state.departedTo and state.departedAt
+    if state.active and state.departedAt then
+      local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime); local ping = gameInfo.getAveragePing()
+      local limit = CONFIG.DEACTIVATION.RETURN_TIMEOUT + (finite(ping) and math.max(0, ping) or 0)
+      if duration and duration > limit then
+        deactivate(state, "return_timeout", time); state.target = target
+        return
+      end
+    end
     if not state.active and matchingReturn then armReturn(state, previous, time, snapshot, serverTime) end
     state.departedAt, state.departedServerAt, state.departedTo = nil, nil, nil
   end
