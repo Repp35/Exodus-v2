@@ -362,7 +362,7 @@ local function checkExchangeConfirmation(state, snapshot, time)
   end
   local ping = gameInfo.getAveragePing()
   if not finite(ping) or ping < 0 then ping = 0 end
-  if state.confirmSince and time - state.confirmSince >= 0.8 + 2 * ping then
+  if state.confirmSince and time - state.confirmSince >= 0.3 + 2 * ping then
     return deactivate(state, "exchange_unconfirmed", time)
   end
   return false
