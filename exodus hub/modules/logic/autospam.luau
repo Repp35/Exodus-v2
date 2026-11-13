@@ -401,8 +401,8 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   if not state.active and not blocked and canActivateReturn(state, snapshot, time) then activate(state, "return_target", state.pending.partner, time, serverTime or snapshot.serverTime, snapshot) end
 end
 local function watchCharacter(state, player, character)
-  if state.watchedDeath then forget(state, state.watchedDeath) end
-  if state.watchedChild then forget(state, state.watchedChild) end
+  if state.watchedDeath then forget(state, state.watchedDeath); state.watchedDeath = nil end
+  if state.watchedChild then forget(state, state.watchedChild); state.watchedChild = nil end
   state.watchedCharacter = character
   local function watchHumanoid(child)
     if not child:IsA("Humanoid") or state.watchedDeath then return end
