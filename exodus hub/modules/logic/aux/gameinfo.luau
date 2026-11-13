@@ -22,6 +22,7 @@ local trainingRound, trainingDespawned, trainingServerTime = 0, false, nil
 local trainingObservers = {}
 local trainingParryAt
 local trainingDataModule, trainingData
+local trainingSharedModule, trainingShared, trainingLockoutUntil
 local snapshotCache, snapshotCacheAt = nil, -math.huge
 local dashStateCache = setmetatable({}, { __mode = "k" })
 
@@ -121,6 +122,16 @@ local function inTrainingArea()
   return not finite(lives) or lives <= 0
 end
 function GameInfo.isTrainingArea() return inTrainingArea() end
+function GameInfo.getTrainingMissCooldown()
+  local module = child(child(storage(), "Training"), "TrainingShared")
+  if module ~= trainingSharedModule then trainingSharedModule, trainingShared = module, nil end
+  if module and not trainingShared then
+    local ok, value = pcall(load, module, "TrainingShared")
+    if ok then trainingShared = value end
+  end
+  local duration = trainingShared and trainingShared.MissCooldown
+  return finite(duration) and duration > 0 and duration or 1.45
+end
 function GameInfo.fireTrainingParry()
   if not inTrainingArea() then return false, "fora da arena de treino" end
   local endpoint = child(child(child(storage(), "Training"), "Remotes"), "Block"); local camera = world.CurrentCamera
@@ -321,7 +332,10 @@ local function bindTrainingSync()
       if kind == "BallSpawn" then resetTrainingBall(false)
       elseif kind == "BallDespawn" or kind == "Kill" then resetTrainingBall(true)
       elseif kind == "Parry" and players.LocalPlayer and playerId == players.LocalPlayer.UserId then
-        trainingParryAt = world:GetServerTimeNow(); invalidateSnapshotCache()
+        trainingParryAt = world:GetServerTimeNow(); trainingLockoutUntil = nil; invalidateSnapshotCache()
+      elseif kind == "Lockout" then
+        local duration = finite(playerId) and playerId >= 0 and playerId or GameInfo.getTrainingMissCooldown()
+        trainingLockoutUntil = os.clock() + duration; invalidateSnapshotCache()
       end
     end)
     utils.trackGlobal(trainingEventConnection)
@@ -413,6 +427,7 @@ function GameInfo.setup(deps)
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
   sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
+  trainingSharedModule, trainingShared, trainingLockoutUntil = nil, nil, nil
   snapshotCache, snapshotCacheAt = nil, -math.huge; table.clear(dashStateCache)
   minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}
   pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
@@ -610,6 +625,7 @@ function GameInfo.getDeflectCooldownState()
         local kind, duration = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
         if not kind then return end
         cooldown.known, cooldown.lastEventAt = true, os.clock(); cooldown.rawActive = kind == "started"
+        if kind == "started" then cooldown.lastStartedAt = cooldown.lastEventAt end
         cooldown.endsAt = cooldown.rawActive and cooldown.lastEventAt + duration or nil
       end)
       utils.trackGlobal(cooldownConnection); missingAt = nil
@@ -631,6 +647,7 @@ function GameInfo.getDeflectCooldownState()
     heldAt = time + CONFIG.HELD_COOLDOWN_INTERVAL; local duration, received = GameInfo.getHeldDeflectServerCooldown()
     if duration and received and received <= time and time < received + duration and received > cooldown.lastEventAt + 0.01 then
       cooldown.known, cooldown.rawActive, cooldown.lastEventAt, cooldown.endsAt = true, true, received, received + duration
+      cooldown.lastStartedAt = received
     end
   end
   if cooldown.rawActive and finite(cooldown.endsAt) and time >= cooldown.endsAt then cooldown.rawActive, cooldown.endsAt = false, nil end
@@ -639,6 +656,7 @@ function GameInfo.getDeflectCooldownState()
   local remaining = localCooldown and ability.Cooldown or 0
   if cooldown.rawActive and finite(cooldown.endsAt) then remaining = math.max(remaining, cooldown.endsAt - time) end
   cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true
+  cooldown.predictedReset = ability and finite(ability.PredictedResetUntil) and time < ability.PredictedResetUntil or false
   cooldown.blocking = cooldown.active; return cooldown
 end
 function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
@@ -780,6 +798,7 @@ local function snapshot(time)
       syncSequence = sample.sequence,
       trainingRound = sample.round,
       trainingParryAt = trainingParryAt,
+      trainingLockoutUntil = trainingLockoutUntil,
     }
 
     snapshotCache, snapshotCacheAt = result, time; return result
@@ -1047,6 +1066,7 @@ GameInfo.__contract = {
     "isTrainingArea",
     "observeTraining",
     "fireTrainingParry",
+    "getTrainingMissCooldown",
     "getBall",
     "getBallPosition",
     "getBallVelocity",
