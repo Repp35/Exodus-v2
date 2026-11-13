@@ -203,14 +203,21 @@ local function toggleSetting(key, label, after)
 end
 
 -- connections
+local connectionIndexes = {}
 local function trackConn(c)
-  if c and type(c.Disconnect) == "function" then UIState.connections[#UIState.connections + 1] = c end
+  if c and type(c.Disconnect) == "function" and not connectionIndexes[c] then
+    local index = #UIState.connections + 1
+    UIState.connections[index] = c; connectionIndexes[c] = index
+  end
   return c
 end
 local function untrackConn(c)
-  for i = #UIState.connections, 1, -1 do
-    if UIState.connections[i] == c then table.remove(UIState.connections, i); return end
-  end
+  local index = connectionIndexes[c]
+  if not index then return end
+  local last = #UIState.connections; local moved = UIState.connections[last]
+  UIState.connections[index] = moved; UIState.connections[last] = nil
+  connectionIndexes[c] = nil
+  if index ~= last then connectionIndexes[moved] = index end
 end
 local function safeDisconnect(c)
   if c then c:Disconnect() end
@@ -231,7 +238,8 @@ pulseButton = function(button)
 end
 local function disconnectUIConnections()
   for i = #UIState.connections, 1, -1 do
-    safeDisconnect(UIState.connections[i]); UIState.connections[i] = nil
+    local connection = UIState.connections[i]
+    safeDisconnect(connection); connectionIndexes[connection] = nil; UIState.connections[i] = nil
   end
 end
 local function watchTweens(tweens, callback)
@@ -488,7 +496,7 @@ local function cleanupUI()
   safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
   safeCancel(UIState.miniTween); UIState.miniTween = nil
   UIState.miniGeneration += 1; disconnectUIConnections()
-  UIState.connections = {}; UIState.pageGeneration += 1
+  UIState.connections = {}; table.clear(connectionIndexes); UIState.pageGeneration += 1
   for _, tween in ipairs(UIState.pageTweens) do
     safeCancel(tween)
   end

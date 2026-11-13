@@ -12,6 +12,8 @@ local CONFIG = {
 local RunService = game:GetService("RunService")
 local savedCollision = setmetatable({}, { __mode = "k" })
 local noclipCharacter
+local characterParts = {}
+local partsDirty = true
 local enabledState = false
 
 local connections = {}
@@ -25,6 +27,8 @@ local function connect(name, signal, callback)
 end
 
 local function restoreCollision()
+  disconnect("NoclipAdded"); disconnect("NoclipRemoving")
+  table.clear(characterParts); partsDirty = true
   for part, value in pairs(savedCollision) do
     if part.Parent then pcall(function() part.CanCollide = value end) end
     savedCollision[part] = nil
@@ -33,13 +37,25 @@ local function restoreCollision()
 end
 local function applyNoclip()
   local player = Utils.getLocalPlayer(); local character = player and player.Character
-  if character ~= noclipCharacter then restoreCollision(); noclipCharacter = character end
-  if not character or not character.Parent then return end
-  for _, part in ipairs(character:GetDescendants()) do
-    if part:IsA("BasePart") then
-      if savedCollision[part] == nil then savedCollision[part] = part.CanCollide end
-      part.CanCollide = false
+  if character ~= noclipCharacter then
+    restoreCollision(); noclipCharacter = character
+    if character then
+      local function markPartsDirty() partsDirty = true end
+      connect("NoclipAdded", character.DescendantAdded, markPartsDirty)
+      connect("NoclipRemoving", character.DescendantRemoving, markPartsDirty)
     end
+  end
+  if not character or not character.Parent then return end
+  if partsDirty then
+    table.clear(characterParts)
+    for _, part in ipairs(character:GetDescendants()) do
+      if part:IsA("BasePart") then characterParts[#characterParts + 1] = part end
+    end
+    partsDirty = false
+  end
+  for _, part in ipairs(characterParts) do
+    if savedCollision[part] == nil then savedCollision[part] = part.CanCollide end
+    if part.CanCollide then part.CanCollide = false end
   end
 end
 local function startNoclip() connect("Noclip", RunService.Stepped, applyNoclip); applyNoclip(); return true end
