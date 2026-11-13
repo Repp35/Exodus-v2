@@ -118,6 +118,7 @@ local CONFIG = {
     { name = "spam", path = "modules/logic/spam.luau" },
     { name = "character", path = "modules/logic/aux/character.luau" },
     { name = "dumper", path = "modules/logic/extras/universal/dumper.luau" },
+    { name = "servers", path = "modules/logic/extras/universal/servers.luau" },
     { name = "ui", path = "modules/front/ui.luau" },
   },
 }
@@ -286,6 +287,7 @@ local function stopPreviousRuntime()
   end
   if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then attempt("gameinfo", Modules.gameinfo.stopMaintenance) end
   for _, name in ipairs({
+    "servers",
     "universal",
     "infinitejump",
     "noclip",
@@ -636,6 +638,16 @@ local function loadInterface(loaded, controls)
   local interface = loaded.ui
   if type(interface) ~= "table" then return false, "UI", "módulo não carregado" end
   if type(interface.setup) ~= "function" then return false, "UI", "setup ausente" end
+  local function navigate(method)
+    local function status(message) notifyPersistent(message, "server_navigation", "info", 5) end
+    local ok, detail = loaded.servers[method](status)
+    if not ok then
+      loaded.utils.recordError("Servers", tostring(detail))
+      notifyPersistent(tostring(detail), "server_navigation", "warning", 5)
+    end
+  end
+  controls.onRejoin = function() navigate("rejoin") end
+  controls.onServerHop = function() navigate("hop") end
   local dependencies = loaded.permissions.resolve("ui", loaded); dependencies.Controls = controls
   local setupResult, setupError = interface.setup(dependencies)
   if setupResult ~= true then return false, "UI", setupError end

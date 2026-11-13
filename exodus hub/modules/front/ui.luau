@@ -2363,6 +2363,12 @@ function ExodusUI.setup(deps)
   local hubY = createToggleCard({
     title = "Notifications",
   }, notificationKey, 4, hubSettings)
+  hubY = createClickCard({ title = "Rejoin", description = "Reconecta ao servidor atual." }, hubY, hubSettings, function()
+    if type(Controls.onRejoin) == "function" then Controls.onRejoin() end
+  end)
+  hubY = createClickCard({ title = "Server Hop", description = "Busca vagas com ping informado de até 100 ms; prioriza o menor." }, hubY, hubSettings, function()
+    if type(Controls.onServerHop) == "function" then Controls.onServerHop() end
+  end)
   local resetCard = cardFrame(hubY, CARD_H, hubSettings); local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
   resetButton.Name = "ResetSettings"; resetButton.Size = UDim2.new(1, -20, 0, 30)
   local resetPending = false
