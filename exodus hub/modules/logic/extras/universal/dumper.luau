@@ -205,8 +205,7 @@ end
 -- dump
 local function run(token, callbacks)
   if type(writefile) ~= "function" or type(makefolder) ~= "function" then return nil, "writefile and makefolder are required" end
-  table.clear(createdFolders)
-  local base = nextFolder()
+  table.clear(createdFolders); local base = nextFolder()
   for _, path in ipairs({ base, base .. "/scripts", base .. "/remotes" }) do
     local ok, err = ensureFolder(path)
     if not ok then return nil, "cannot create " .. path .. ": " .. tostring(err) end
@@ -222,8 +221,7 @@ local function run(token, callbacks)
     if not ok then return nil, "cannot create disassembly folder: " .. tostring(err) end
     createdFolders[base .. "/disassembly"] = true
   end
-  emit(callbacks, "onStatus", "Collecting instances...")
-  local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
+  emit(callbacks, "onStatus", "Collecting instances..."); local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
   local function add(object, origin, detached)
     if not allowed(object, detached) or seen[object] then return end
     seen[object] = true; local item = { instance = object, path = objectPath(object), origin = origin }
@@ -244,8 +242,7 @@ local function run(token, callbacks)
     local api = lookup(name)
     if api then addDiscovery(api, catalog, candidates, seen, discoveryErrors, token) end
   end
-  status.total = #candidates
-  emit(callbacks, "onProgress", 0, #candidates)
+  status.total = #candidates; emit(callbacks, "onProgress", 0, #candidates)
   local collection
   pcall(function() collection = game:GetService("CollectionService") end)
   local tree = { "SrcDump - instances", "total=" .. #catalog, "" }; local remotes = { "SrcDump - remotes and bindables", "" }
@@ -296,8 +293,7 @@ local function run(token, callbacks)
     if fn then readers[#readers + 1] = { name = name, fn = fn } end
   end
   local manifest, errors = {}, discoveryErrors; local saved, failed, bytecodes, cacheHits = 0, 0, 0, 0
-  local sourceCache, unresolved = {}, {}
-  local folderByInstance, usedFolderNames = { [game] = "" }, { [""] = { _nilinstances = true } }
+  local sourceCache, unresolved = {}, {}; local folderByInstance, usedFolderNames = { [game] = "" }, { [""] = { _nilinstances = true } }
   local function folderFor(object)
     local chain, current = {}, safeProperty(object, "Parent")
     while isInstance(current) and current ~= game and folderByInstance[current] == nil and #chain < 200 do
@@ -306,13 +302,13 @@ local function run(token, callbacks)
     local folder = isInstance(current) and folderByInstance[current] or nil
     if folder == nil then folder = "_NilInstances" end
     for i = #chain, 1, -1 do
-      local node = chain[i]
-      local used = usedFolderNames[folder]
+      local node = chain[i]; local used = usedFolderNames[folder]
       if not used then used = {}; usedFolderNames[folder] = used end
       local name = safeFilename(objectName(node)); local candidate, suffix = name, 1
-      while used[candidate:lower()] do suffix += 1; candidate = name .. "__" .. suffix end
-      used[candidate:lower()] = true
-      folder = folder == "" and candidate or folder .. "/" .. candidate
+      while used[candidate:lower()] do
+        suffix += 1; candidate = name .. "__" .. suffix
+      end
+      used[candidate:lower()] = true; folder = folder == "" and candidate or folder .. "/" .. candidate
       folderByInstance[node] = folder
     end
     return folder
@@ -340,9 +336,7 @@ local function run(token, callbacks)
         if bytecode then break end
       end
     end
-    if not source and bytecode and sourceCache[bytecode] then
-      source, method = sourceCache[bytecode], "cached bytecode"; cacheHits += 1
-    end
+    if not source and bytecode and sourceCache[bytecode] then source, method = sourceCache[bytecode], "cached bytecode"; cacheHits += 1 end
     if not source and decompiler then
       source = attempt("decompile(instance)", decompiler, object, true)
       if source then method = "decompile(instance)" end
@@ -366,8 +360,7 @@ local function run(token, callbacks)
     if source and bytecode and not sourceCache[bytecode] then sourceCache[bytecode] = source end
     if not decompiler then attempts[#attempts + 1] = "decompile: unavailable" end
     if #readers == 0 then attempts[#attempts + 1] = "bytecode readers unavailable" end
-    local folder = folderFor(object)
-    local filename = ("%s__%s_%04d"):format(safeFilename(objectName(object)), objectClass(object), index)
+    local folder = folderFor(object); local filename = ("%s__%s_%04d"):format(safeFilename(objectName(object)), objectClass(object), index)
     local stem = folder ~= "" and folder .. "/" .. filename or filename
     if bytecode and CONFIG.SAVE_BYTECODE then
       local byteOk, byteError = saveFile(base .. "/bytecode/" .. stem .. ".bin", bytecode)
@@ -396,14 +389,11 @@ local function run(token, callbacks)
       if savedOk then manifest[#manifest + 1] = "[OK] " .. line(item.path) .. " | " .. method .. " | scripts/" .. stem .. ".lua"
       else manifest[#manifest + 1] = "[ERROR] " .. line(item.path) .. " | write failed" end
     else
-      unresolved[#unresolved + 1] = { item = item, stem = stem, index = index, bytecode = bytecode, attempts = attempts, context = context }
-      manifest[index] = "[PENDING] " .. line(item.path)
+      unresolved[#unresolved + 1] = { item = item, stem = stem, index = index, bytecode = bytecode, attempts = attempts, context = context }; manifest[index] = "[PENDING] " .. line(item.path)
       failed += 1
     end
     status.processed, status.saved, status.failed, status.bytecode = index, saved, failed, bytecodes
-    if index == 1 or index % CONFIG.PROGRESS_EVERY == 0 then
-      emit(callbacks, "onProgress", index, #candidates, item.path)
-    end
+    if index == 1 or index % CONFIG.PROGRESS_EVERY == 0 then emit(callbacks, "onProgress", index, #candidates, item.path) end
     if index % 50 == 0 then task.wait() end
   end
   for _, entry in ipairs(unresolved) do
@@ -411,26 +401,36 @@ local function run(token, callbacks)
     local recovered = entry.bytecode and sourceCache[entry.bytecode]
     if recovered then
       local header = table.concat({
-        "-- SrcDump", "-- index: " .. entry.index, "-- class: " .. objectClass(entry.item.instance),
-        "-- path: " .. line(entry.item.path), "-- discovered_by: " .. entry.item.origin,
-        "-- run_context: " .. entry.context, "-- method: cached bytecode (later match)", "",
+        "-- SrcDump",
+        "-- index: " .. entry.index,
+        "-- class: " .. objectClass(entry.item.instance),
+        "-- path: " .. line(entry.item.path),
+        "-- discovered_by: " .. entry.item.origin,
+        "-- run_context: " .. entry.context,
+        "-- method: cached bytecode (later match)",
+        "",
       }, "\n")
       local ok, err = saveFile(base .. "/scripts/" .. entry.stem .. ".lua", header .. recovered .. "\n")
       if ok then
-        saved += 1; failed -= 1; cacheHits += 1
-        manifest[entry.index] = "[OK] " .. line(entry.item.path) .. " | cached bytecode (later match) | scripts/" .. entry.stem .. ".lua"
+        saved += 1; failed -= 1
+        cacheHits += 1; manifest[entry.index] = "[OK] " .. line(entry.item.path) .. " | cached bytecode (later match) | scripts/" .. entry.stem .. ".lua"
       else
-        errors[#errors + 1] = "[WRITE_ERROR] " .. line(entry.item.path) .. " | " .. tostring(err)
-        manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | write failed"
+        errors[#errors + 1] = "[WRITE_ERROR] " .. line(entry.item.path) .. " | " .. tostring(err); manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | write failed"
       end
     else
-      local category = entry.bytecode and "bytecode available; source unavailable" or "bytecode unavailable to client"
-      errors[#errors + 1] = "[SOURCE_ERROR] " .. line(entry.item.path) .. " | " .. objectClass(entry.item.instance) .. " | " .. category .. "\n  " .. table.concat(entry.attempts, "\n  ")
+      local category = entry.bytecode and "bytecode available; source unavailable" or "bytecode unavailable to client"; errors[#errors + 1] = "[SOURCE_ERROR] "
+        .. line(entry.item.path)
+        .. " | "
+        .. objectClass(entry.item.instance)
+        .. " | "
+        .. category
+        .. "\n  "
+        .. table.concat(entry.attempts, "\n  ")
       manifest[entry.index] = "[ERROR] " .. line(entry.item.path) .. " | " .. category
     end
   end
-  status.saved, status.failed = saved, failed
-  saveFile(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n"); saveFile(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
+  status.saved, status.failed = saved, failed; saveFile(base .. "/manifest.txt", table.concat(manifest, "\n") .. "\n")
+  saveFile(base .. "/errors.txt", #errors > 0 and table.concat(errors, "\n\n") .. "\n" or "No errors.\n")
   saveFile(
     base .. "/summary.txt",
     table.concat({
@@ -479,8 +479,8 @@ function Dumper.start(callbacks)
     status.running = false
     if token.cancelled then emit(callbacks, "onCanceled"); return end
     if not ok or not result then
-      local message = not ok and result or reason or "Dump failed"
-      emit(callbacks, "onError", message); return
+      local message = not ok and result or reason or "Dump failed"; emit(callbacks, "onError", message)
+      return
     end
     status.folder = result.folder; status.total, status.saved, status.failed, status.bytecode = result.total, result.saved, result.failed, result.bytecode
     emit(callbacks, "onComplete", table.clone(result))
@@ -506,4 +506,3 @@ Dumper.__contract = {
 }
 
 return Dumper
-

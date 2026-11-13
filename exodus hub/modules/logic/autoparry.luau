@@ -113,8 +113,7 @@ local function resetTracking()
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
   state.lastPosition, state.lastSampleAt = nil, 0; cooldownSnapshot, cooldownSnapshotAt = nil, -math.huge
-  state.resetPending = false
-  state.retryPending, state.retryCooldownSeen, state.trainingRetryAt = false, false, 0
+  state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.trainingRetryAt = false, false, 0
   table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
@@ -222,8 +221,8 @@ local function observeTarget(target, time)
   elseif target == me and previous ~= me and state.awaySeen then
     if state.awayAt and state.awayTarget == previous and time >= state.awayAt then appendRecent(state.returns, { at = time, interval = time - state.awayAt }) end
     state.fired, state.awaySeen = false, false; state.nextAttemptAt = 0
-    state.retryPending, state.retryCooldownSeen = false, false
-    state.cycle += 1; state.awayAt, state.awayTarget = nil, nil
+    state.retryPending, state.retryCooldownSeen = false, false; state.cycle += 1
+    state.awayAt, state.awayTarget = nil, nil
   end
   state.target, state.targetKnown = target, true
 end
@@ -241,8 +240,7 @@ local function observeSnapshot(snapshot, time)
     state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false; state.fired, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, nil
     state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime, state.trainingConfirmedAt = 0, nil, nil
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
-    state.resetPending = newMatchBall
-    state.retryPending, state.retryCooldownSeen, state.trainingRetryAt = false, false, 0
+    state.resetPending = newMatchBall; state.retryPending, state.retryCooldownSeen, state.trainingRetryAt = false, false, 0
   end
   local order = sequenceOrder(snapshot.syncSequence)
   if order == "old" then return false end
@@ -296,8 +294,7 @@ local function request(reason)
   if sent ~= true then
     if state.mode == "training" then
       state.fired = false; state.nextAttemptAt = clock() + CONFIG.FRAME_BASE
-      phase("waiting", "training_attempt_failed")
-      local errorAt = clock()
+      phase("waiting", "training_attempt_failed"); local errorAt = clock()
       if errorAt - state.lastErrorAt >= 1 then state.lastErrorAt = errorAt; boundUtils.recordError("TrainingParry", tostring(detail or "Treino indisponível")) end
       return false
     end
@@ -314,11 +311,7 @@ local function request(reason)
     return false
   end
   state.nextAttemptAt = 0; recordAutoParryRequest()
-  if state.mode == "training" then
-    state.trainingRetryAt = firedAt + gameInfo.getTrainingMissCooldown()
-  else
-    state.retryPending = true
-  end
+  if state.mode == "training" then state.trainingRetryAt = firedAt + gameInfo.getTrainingMissCooldown() else state.retryPending = true end
   local factor = activeWindowFactor(firedAt)
   if factor > 0 then
     local geometry = radius(speed, factor)
@@ -338,26 +331,35 @@ local function tickTraining(value, root, time)
     state.approaching, state.closingSpeed, state.triggerDistance = false, 0, 0; phase("waiting", "training_speed_unavailable")
     return
   end
-  samplePing()
-  local geometry = trainingGeometry(speed, CONFIG.TRAINING_WINDOW_FACTOR)
+  samplePing(); local geometry = trainingGeometry(speed, CONFIG.TRAINING_WINDOW_FACTOR)
   local delta = rootPosition - position; local distance = delta.Magnitude
   local closing = distance > 0 and velocity:Dot(delta) / distance or 0
   if not finite(closing) then closing = 0 end
   local ping = finite(state.ping) and math.clamp(state.ping, 0, CONFIG.TRAINING_MAX_PING) or 0
   local lead = math.min(geometry.deflectWindow * CONFIG.TRAINING_MAX_LEAD_FACTOR, geometry.effectiveWindow + ping + CONFIG.FRAME_BASE + state.frameAllowance)
   local threshold = geometry.noWindowParryRadius + CONFIG.TRAINING_TRIGGER_PADDING + math.max(0, closing) * lead
-  state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0
-  state.closingSpeed, state.triggerDistance = closing, threshold
-  state.trainingLastValidAt, state.trainingLastServerTime = time, value.serverTime
-  local confirmed = value.trainingParryAt
-  if state.fired and finite(confirmed) and confirmed ~= state.trainingConfirmedAt
-    and finite(value.serverTime) and value.serverTime > confirmed and value.targetId == state.player.UserId and closing >= CONFIG.TRAINING_MIN_CLOSING_SPEED then
-    state.fired, state.awaySeen, state.trainingConfirmedAt = false, false, confirmed
-    state.cycle += 1; state.nextAttemptAt = 0
+  state.lastBall, state.speed, state.distance, state.approaching = value.ball, speed, distance, closing > 0; state.closingSpeed, state.triggerDistance = closing, threshold
+  state.trainingLastValidAt, state.trainingLastServerTime = time, value.serverTime; local confirmed = value.trainingParryAt
+  if
+    state.fired
+    and finite(confirmed)
+    and confirmed ~= state.trainingConfirmedAt
+    and finite(value.serverTime)
+    and value.serverTime > confirmed
+    and value.targetId == state.player.UserId
+    and closing >= CONFIG.TRAINING_MIN_CLOSING_SPEED
+  then
+    state.fired, state.awaySeen, state.trainingConfirmedAt = false, false, confirmed; state.cycle += 1
+    state.nextAttemptAt = 0
   end
-  if state.fired and time >= state.trainingRetryAt and (not finite(value.trainingLockoutUntil) or time >= value.trainingLockoutUntil)
+  if
+    state.fired
+    and time >= state.trainingRetryAt
+    and (not finite(value.trainingLockoutUntil) or time >= value.trainingLockoutUntil)
     and (not finite(confirmed) or confirmed == state.trainingConfirmedAt)
-    and value.targetId == state.player.UserId and closing >= CONFIG.TRAINING_MIN_CLOSING_SPEED then
+    and value.targetId == state.player.UserId
+    and closing >= CONFIG.TRAINING_MIN_CLOSING_SPEED
+  then
     state.fired, state.nextAttemptAt = false, 0
   end
   if state.fired then phase("waiting", "training_awaiting_return"); return end
@@ -414,13 +416,11 @@ local function tick(character, root, generation)
   if not vector(position) or not vector(rootPosition) then return end
   if not value.ball.Parent then return end
   local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or tonumber(value.speed) or 0
-  -- A fresh packet can precede the render update after a teleport. Never use
-  -- the previous flight's rendered position as the new ball position.
   if state.resetPending then
-    local real = value.realPosition
-    local tolerance = math.max(6, math.max(speed, 0) * 0.15)
+    local real = value.realPosition; local tolerance = math.max(6, math.max(speed, 0) * 0.15)
     if not vector(real) or (position - real).Magnitude > tolerance then
-      state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "reset_position_pending"); return
+      state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "reset_position_pending")
+      return
     end
     state.resetPending = false
   end
@@ -524,8 +524,7 @@ function AutoParry.onBallSync(data)
   if data.Teleported == true then
     state.teleported, state.teleportSequence = true, sequence; state.lastBall = nil
     state.cycle += 1; state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1
-    state.retryPending, state.retryCooldownSeen, state.trainingRetryAt = false, false, 0
-    state.resetPending = true
+    state.retryPending, state.retryCooldownSeen, state.trainingRetryAt = false, false, 0; state.resetPending = true
     state.speed, state.distance, state.approaching = 0, 0, false; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
     state.awayAt, state.awayTarget = nil, nil; table.clear(state.clicks)
@@ -555,9 +554,8 @@ function AutoParry.getTargetStatus()
   }
 end
 function AutoParry.getDefenseState(value)
-  samplePing()
-  local cooldown = safeCooldown(); local time = clock()
-  local speed = value and (tonumber(value.syncSpeed) or tonumber(value.speed))
+  samplePing(); local cooldown = safeCooldown()
+  local time = clock(); local speed = value and (tonumber(value.syncSpeed) or tonumber(value.speed))
   local geometry = finite(speed) and radius(speed, activeWindowFactor(time)) or nil
   local distance, closing, trigger
   if geometry and value and vector(value.position) and vector(value.velocity) and state.root and state.root.Parent then
@@ -565,11 +563,17 @@ function AutoParry.getDefenseState(value)
   end
   return {
     enabled = state.alive and state.bound and utils.getConfigValue("AutoParry") ~= false,
-    armed = not state.fired, fired = state.fired, cycle = state.cycle,
-    lastRequestAt = state.lastFireAt, retryAt = state.nextAttemptAt,
+    armed = not state.fired,
+    fired = state.fired,
+    cycle = state.cycle,
+    lastRequestAt = state.lastFireAt,
+    retryAt = state.nextAttemptAt,
     lastParriedAt = cooldown and cooldown.lastParriedAt or 0,
     blocking = cooldown and cooldown.blocking == true or false,
-    reason = state.reason, triggerDistance = trigger, distance = distance, closingSpeed = closing,
+    reason = state.reason,
+    triggerDistance = trigger,
+    distance = distance,
+    closingSpeed = closing,
   }
 end
 local function rootPosition()

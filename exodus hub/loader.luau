@@ -645,10 +645,7 @@ local function loadInterface(loaded, controls)
   local function navigate(method)
     local function status(message) notifyPersistent(message, "server_navigation", "info", 5) end
     local ok, detail = loaded.servers[method](status)
-    if not ok then
-      loaded.utils.recordError("Servers", tostring(detail))
-      notifyPersistent(tostring(detail), "server_navigation", "warning", 5)
-    end
+    if not ok then loaded.utils.recordError("Servers", tostring(detail)); notifyPersistent(tostring(detail), "server_navigation", "warning", 5) end
   end
   controls.onRejoin = function() navigate("rejoin") end
   controls.onServerHop = function() navigate("hop") end
@@ -846,25 +843,23 @@ end
 local function startUpdateChannel()
   closeUpdateChannel(); local sessionToken = _G.ExodusLoaderSessionToken
   local token = {}; _G.ExodusUpdateToken = token
-  local messageConnection, closeConnection, socket, connecting, checking = nil, nil, nil, false, false
-  local nextSocketAttempt = 0
+  local messageConnection, closeConnection, socket, connecting, checking = nil, nil, nil, false, false; local nextSocketAttempt = 0
   local function active() return _G.ExodusUpdateToken == token and _G.ExodusLoaderSessionToken == sessionToken and Exodus.Started == true end
   local function disconnectSocket()
     if messageConnection then pcall(messageConnection.Disconnect, messageConnection); messageConnection = nil end
     if closeConnection then pcall(closeConnection.Disconnect, closeConnection); closeConnection = nil end
     local old = socket; socket = nil
     if _G.ExodusUpdateSocket == old then _G.ExodusUpdateSocket = nil end
-    if old then pcall(function() old:Close() end) end
+    if old then
+      pcall(function() old:Close() end)
+    end
   end
   local function checkRevision()
     if not active() or checking or reloadInFlight then return end
     checking = true
     task.spawn(function()
-      local ok, revision = pcall(resolveLatestRevision)
-      checking = false
-      if ok and active() and validRevision(revision) and revision ~= (_G.ExodusLastLoadedRevision or Exodus.Revision) then
-        reloadLatest(nil, revision, true)
-      end
+      local ok, revision = pcall(resolveLatestRevision); checking = false
+      if ok and active() and validRevision(revision) and revision ~= (_G.ExodusLastLoadedRevision or Exodus.Revision) then reloadLatest(nil, revision, true) end
     end)
   end
   local function connectSocket()
@@ -872,9 +867,17 @@ local function startUpdateChannel()
     nextSocketAttempt = os.clock() + 5; connecting = true
     task.spawn(function()
       local ok, candidate = pcall(WebSocket.connect, UPDATE_WS_URL); connecting = false
-      if not active() then if candidate then pcall(function() candidate:Close() end) end; return end
+      if not active() then
+        if candidate then
+          pcall(function() candidate:Close() end)
+        end
+        return
+      end
       if not ok or not candidate or not candidate.OnMessage or type(candidate.OnMessage.Connect) ~= "function" then
-        if candidate then pcall(function() candidate:Close() end) end; return
+        if candidate then
+          pcall(function() candidate:Close() end)
+        end
+        return
       end
       socket, _G.ExodusUpdateSocket = candidate, candidate
       messageConnection = candidate.OnMessage:Connect(function(raw)
@@ -882,7 +885,9 @@ local function startUpdateChannel()
         if decoded and type(event) == "table" and event.event == "message" and validRevision(tostring(event.message or "")) then checkRevision() end
       end)
       if candidate.OnClose and type(candidate.OnClose.Connect) == "function" then
-        closeConnection = candidate.OnClose:Connect(function() if socket == candidate then disconnectSocket() end end)
+        closeConnection = candidate.OnClose:Connect(function()
+          if socket == candidate then disconnectSocket() end
+        end)
       end
       checkRevision()
     end)
@@ -894,12 +899,8 @@ local function startUpdateChannel()
   local nextRevisionCheck = 0
   task.spawn(function()
     while active() do
-      connectSocket()
-      local time = os.clock()
-      if not socket and time >= nextRevisionCheck then
-        nextRevisionCheck = time + CONFIG.UPDATE_POLL_INTERVAL
-        checkRevision()
-      end
+      connectSocket(); local time = os.clock()
+      if not socket and time >= nextRevisionCheck then nextRevisionCheck = time + CONFIG.UPDATE_POLL_INTERVAL; checkRevision() end
       task.wait(CONFIG.UPDATE_LOOP_INTERVAL)
     end
   end)
@@ -910,4 +911,3 @@ Exodus.Started = started == true
 if started and startupPerformed then startUpdateChannel() end
 
 return Loader
-

@@ -106,10 +106,7 @@ local function inTrainingArea()
   local root = character and character:FindFirstChild("HumanoidRootPart")
   if not root or not root.Parent then return false end
   local area = trainingZone
-  if not area or not area.Parent then
-    area = child(child(child(world, "Training"), "Areas"), "Zone")
-    trainingZone = area
-  end
+  if not area or not area.Parent then area = child(child(child(world, "Training"), "Areas"), "Zone"); trainingZone = area end
   if not area or not area:IsA("BasePart") then return false end
   local localPos = area.CFrame:PointToObjectSpace(root.Position); local half = area.Size / 2
   if math.abs(localPos.X) > half.X or math.abs(localPos.Y) > half.Y or math.abs(localPos.Z) > half.Z then return false end
@@ -134,8 +131,7 @@ function GameInfo.getTrainingMissCooldown()
     local ok, value = pcall(load, module, "TrainingShared")
     if ok then trainingShared = value end
   end
-  local duration = trainingShared and trainingShared.MissCooldown
-  return finite(duration) and duration > 0 and duration or 1.45
+  local duration = trainingShared and trainingShared.MissCooldown; return finite(duration) and duration > 0 and duration or 1.45
 end
 function GameInfo.fireTrainingParry()
   if not inTrainingArea() then return false, "fora da arena de treino" end
@@ -213,8 +209,6 @@ local function targetId(data, currentBall)
   if type(data) == "table" and data.Teleported == true then
     targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = nil, nil, nil, nil, nil
   end
-  -- An explicit non-positive server target means no target. Visual state and
-  -- workspace attributes can lag behind a reset and must not resurrect it.
   local rawTarget = type(data) == "table" and data.TargetPlayerID or nil
   local numericTarget = type(rawTarget) == "number" and rawTarget or (type(rawTarget) == "string" and tonumber(rawTarget) or nil)
   if finite(numericTarget) and numericTarget <= 0 then
@@ -224,25 +218,30 @@ local function targetId(data, currentBall)
   local strong = primary
   if strong then
     if strong == targetEvidence.stable or strong == attribute then
-      targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = strong, nil, nil, nil, time
+      targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt =
+        strong, nil, nil, nil, time
       targetEvidence.source, targetEvidence.uncertain = strong == attribute and "target_attribute" or "target", false; return strong
     end
     if targetEvidence.pending ~= strong then
       targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = strong, time, targetFrame
-    elseif (targetFrameConnection and targetEvidence.pendingFrame ~= targetFrame)
-      or (not targetFrameConnection and time - targetEvidence.pendingAt >= CONFIG.TARGET_CONFIRM_INTERVAL) then
-      targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = strong, nil, nil, nil, time
+    elseif
+      (targetFrameConnection and targetEvidence.pendingFrame ~= targetFrame)
+      or (not targetFrameConnection and time - targetEvidence.pendingAt >= CONFIG.TARGET_CONFIRM_INTERVAL)
+    then
+      targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt =
+        strong, nil, nil, nil, time
       targetEvidence.source, targetEvidence.uncertain = "target_confirmed", false; return strong
     end
     targetEvidence.source, targetEvidence.uncertain = "target_pending", true; return targetEvidence.stable or -1
   end
   local candidate = highlight or attribute; local source = highlight and "highlight" or (attribute and "attribute" or nil)
   if highlight and attribute and highlight ~= attribute then
-    targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = nil, nil, nil
-    targetEvidence.source, targetEvidence.uncertain = "conflicting_signals", true; return -1
+    targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = nil, nil, nil; targetEvidence.source, targetEvidence.uncertain = "conflicting_signals", true
+    return -1
   end
   if highlight and attribute and highlight == attribute then
-    targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = highlight, nil, nil, nil, time
+    targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt =
+      highlight, nil, nil, nil, time
     targetEvidence.source, targetEvidence.uncertain = "highlight_attribute", false; return highlight
   end
   if not candidate and player and (visualTargeted or (type(data) == "table" and data.Targeted == true)) then
@@ -321,16 +320,13 @@ local function notifyTraining()
   end
 end
 function GameInfo.observeTraining(callback)
-  assert(type(callback) == "function", "training callback required")
-  local entry = { Connected = true, callback = callback }
+  assert(type(callback) == "function", "training callback required"); local entry = { Connected = true, callback = callback }
   function entry:Disconnect()
     if not self.Connected then return end
-    self.Connected = false
-    local index = table.find(trainingObservers, self)
+    self.Connected = false; local index = table.find(trainingObservers, self)
     if index then table.remove(trainingObservers, index) end
   end
-  trainingObservers[#trainingObservers + 1] = entry
-  return entry
+  trainingObservers[#trainingObservers + 1] = entry; return entry
 end
 local function resetTrainingBall(despawned)
   trainingRound += 1; trainingState, trainingDespawned, trainingParryAt = nil, despawned, nil
@@ -345,13 +341,16 @@ local function bindTrainingSync()
   end
   if event and not trainingEventConnection then
     trainingEventConnection = event.OnClientEvent:Connect(function(kind, playerId)
-      if kind == "BallSpawn" then resetTrainingBall(false)
-      elseif kind == "BallDespawn" or kind == "Kill" then resetTrainingBall(true)
+      if kind == "BallSpawn" then
+        resetTrainingBall(false)
+      elseif kind == "BallDespawn" or kind == "Kill" then
+        resetTrainingBall(true)
       elseif kind == "Parry" and players.LocalPlayer and playerId == players.LocalPlayer.UserId then
-        trainingParryAt = world:GetServerTimeNow(); trainingLockoutUntil = nil; invalidateSnapshotCache()
+        trainingParryAt = world:GetServerTimeNow(); trainingLockoutUntil = nil
+        invalidateSnapshotCache()
       elseif kind == "Lockout" then
-        local duration = finite(playerId) and playerId >= 0 and playerId or GameInfo.getTrainingMissCooldown()
-        trainingLockoutUntil = os.clock() + duration; invalidateSnapshotCache()
+        local duration = finite(playerId) and playerId >= 0 and playerId or GameInfo.getTrainingMissCooldown(); trainingLockoutUntil = os.clock() + duration
+        invalidateSnapshotCache()
       end
     end)
     utils.trackGlobal(trainingEventConnection)
@@ -443,8 +442,7 @@ function GameInfo.setup(deps)
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
   sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
-  trainingSharedModule, trainingShared, trainingLockoutUntil = nil, nil, nil
-  trainingZone, targetHighlight, targetHighlightCharacter = nil, nil, nil
+  trainingSharedModule, trainingShared, trainingLockoutUntil = nil, nil, nil; trainingZone, targetHighlight, targetHighlightCharacter = nil, nil, nil
   snapshotCache, snapshotCacheAt = nil, -math.huge; table.clear(dashStateCache)
   minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}
   pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
@@ -663,8 +661,7 @@ function GameInfo.getDeflectCooldownState()
   if not cooldown.rawActive and time >= heldAt then
     heldAt = time + CONFIG.HELD_COOLDOWN_INTERVAL; local duration, received = GameInfo.getHeldDeflectServerCooldown()
     if duration and received and received <= time and time < received + duration and received > cooldown.lastEventAt + 0.01 then
-      cooldown.known, cooldown.rawActive, cooldown.lastEventAt, cooldown.endsAt = true, true, received, received + duration
-      cooldown.lastStartedAt = received
+      cooldown.known, cooldown.rawActive, cooldown.lastEventAt, cooldown.endsAt = true, true, received, received + duration; cooldown.lastStartedAt = received
     end
   end
   if cooldown.rawActive and finite(cooldown.endsAt) and time >= cooldown.endsAt then cooldown.rawActive, cooldown.endsAt = false, nil end
@@ -673,8 +670,8 @@ function GameInfo.getDeflectCooldownState()
   local remaining = localCooldown and ability.Cooldown or 0
   if cooldown.rawActive and finite(cooldown.endsAt) then remaining = math.max(remaining, cooldown.endsAt - time) end
   cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true
-  cooldown.predictedReset = ability and finite(ability.PredictedResetUntil) and time < ability.PredictedResetUntil or false
-  cooldown.blocking = cooldown.active; return cooldown
+  cooldown.predictedReset = ability and finite(ability.PredictedResetUntil) and time < ability.PredictedResetUntil or false; cooldown.blocking = cooldown.active
+  return cooldown
 end
 function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
   if not finite(activatedAt) then return false end
@@ -952,14 +949,12 @@ function GameInfo.getDeflectWindow(speed, includeResilience)
   return window
 end
 function GameInfo.getDefensePhysics()
-  GameInfo.getBallSpeedLimits()
-  local player = players.LocalPlayer; local ping = GameInfo.getAveragePing()
+  GameInfo.getBallSpeedLimits(); local player = players.LocalPlayer
+  local ping = GameInfo.getAveragePing()
   if not finite(ping) or ping < 0 then ping = 0 end
-  local grace, cap = ping + 0.075, 0.35
-  local press = player and player:GetAttribute("PressDelay")
+  local grace, cap = ping + 0.075, 0.35; local press = player and player:GetAttribute("PressDelay")
   if finite(press) then grace = math.max(grace, press + 0.05); cap = math.clamp(press + 0.05, 0.35, 0.45) end
-  grace = math.clamp(grace, 0.075, cap)
-  local inClash = gameBall and player and type(gameBall.IsInClash) == "function" and gameBall:IsInClash(player) == true
+  grace = math.clamp(grace, 0.075, cap); local inClash = gameBall and player and type(gameBall.IsInClash) == "function" and gameBall:IsInClash(player) == true
   if inClash and type(gameBall.ApplyClashPressureGrace) == "function" then grace = gameBall:ApplyClashPressureGrace(grace, player) end
   local kill = gameBall and type(gameBall.GetKillDistance) == "function" and gameBall:GetKillDistance() or 4
   return { killRadius = kill, grace = grace, ping = ping, uplink = ping * 0.5, serverNow = world:GetServerTimeNow(), inClash = inClash == true }

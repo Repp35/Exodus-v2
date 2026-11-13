@@ -33,10 +33,8 @@ local function allowed(guard)
 end
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function fireDeflect(ability)
-  local clicks = ability.ClickInstances
-  local beforeClick = type(clicks) == "table" and clicks[#clicks] or nil
-  local before = type(clicks) ~= "table" and gameInfo.getLastDeflectPressAt() or nil
-  local sent, detail = send(ability, CONFIG.PARRY_METHOD)
+  local clicks = ability.ClickInstances; local beforeClick = type(clicks) == "table" and clicks[#clicks] or nil
+  local before = type(clicks) ~= "table" and gameInfo.getLastDeflectPressAt() or nil; local sent, detail = send(ability, CONFIG.PARRY_METHOD)
   if not sent then return false, detail end
   clicks = ability.ClickInstances
   if type(clicks) == "table" then

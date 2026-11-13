@@ -93,8 +93,8 @@ local function removePlayer(player)
 end
 local function addPlayer(player)
   if records[player] then return end
-  local record = { player = player, index = #recordList + 1, signalAt = -math.huge }
-  records[player] = record; recordList[#recordList + 1] = record
+  local record = { player = player, index = #recordList + 1, signalAt = -math.huge }; records[player] = record
+  recordList[#recordList + 1] = record
   record.characterConnection = player.CharacterAdded:Connect(function(character)
     if records[player] == record then resetCharacter(record, character) end
   end)
@@ -154,8 +154,7 @@ function Dash.resetState()
   while next(records) do
     removePlayer(next(records))
   end
-  table.clear(recordList)
-  players, lastTick = nil, -math.huge
+  table.clear(recordList); players, lastTick = nil, -math.huge
 end
 function Dash.teardown()
   Dash.resetState(); utils, gameInfo, handler = nil, nil, nil
