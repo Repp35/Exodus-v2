@@ -19,6 +19,7 @@ local CONFIG = {
     EXCHANGE_READY_TIME = 0.5,
     REACTIVATION_COOLDOWN = 0.04,
     RADIUS_FACTOR = 1,
+    RETURN_RADIUS_FACTOR = 0.6,
     HAUNTER_RANGE = 11,
     HAUNTER_MATCH_RADIUS = 5,
     DASH_WINDOW_FACTOR = 0.4,
@@ -38,6 +39,7 @@ local CONFIG = {
     DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED = 0.10,
     CLOSE_OPPONENT_PROTECTION_RADIUS = 16,
     SYNC_PROTECTION_RADIUS = 16,
+    COOLDOWN_PROTECTION_RADIUS = 10,
     CLOSE_OPPONENT_MEMORY_SECONDS = 0.1,
     STATIONARY_POSITION_EPSILON = 0.01,
   },
@@ -53,7 +55,7 @@ local PROTECTED_REASONS = {
   frozen = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
   opponent_distance = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
   exchange_unconfirmed = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
-  deflect_cooldown_timeout = CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS,
+  deflect_cooldown_timeout = CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS,
 }
 
 -- helpers
@@ -232,9 +234,7 @@ local function dashAssistPartner(state, snapshot, time)
   local raw = compensatedRadius(localPlayer.UserId, snapshotSpeed(snapshot)); return finite(raw) and (opponent - own).Magnitude <= raw and partner or nil
 end
 local function activationGeometry(state, snapshot, partner, time)
-  local factor = CONFIG.ACTIVATION.RADIUS_FACTOR
-  if dashAssistPartner(state, snapshot, time) == partner then factor = math.min(1, factor * CONFIG.ACTIVATION.DASH_RADIUS_MULTIPLIER) end
-  return geometry(snapshot, factor)
+  return geometry(snapshot, CONFIG.ACTIVATION.RETURN_RADIUS_FACTOR)
 end
 
 -- protection
@@ -267,7 +267,7 @@ local function cooldownOpponentOutside(state)
     if root and root:IsA("BasePart") and root.Parent then position = root.Position end
   end
   if typeof(position) ~= "Vector3" then return false end
-  return (position - state.root.Position).Magnitude > CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS
+  return (position - state.root.Position).Magnitude > CONFIG.DEACTIVATION.COOLDOWN_PROTECTION_RADIUS
 end
 local function stationaryTooLong(state, time, ball, snapshot)
   if not state.active then state.stationaryBall, state.stationaryPosition, state.stationarySince = nil, nil, nil; return false end
@@ -360,10 +360,8 @@ end
 local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
-  if state.activatedAt and (state.clashTargetCount or 1) < 3 and time - state.activatedAt >= 0.15
-    and not closeClashProtected(state, time, CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS) then return "exchange_unconfirmed" end
   -- The cooldown gate scales with speed and requires the opponent to be
-  -- outside the fixed 16-stud radius.
+  -- outside the fixed 10-stud radius.
   local cooldown = gameInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
     state.deflectCooldownSince = state.deflectCooldownSince or time
@@ -375,6 +373,8 @@ local function deactivationReason(state, snapshot, time)
     and time - state.activatedAt >= cooldownLimit
     and time - state.deflectCooldownSince >= cooldownLimit
     and cooldownOpponentOutside(state) then return "deflect_cooldown_timeout" end
+  if not (cooldown and cooldown.blocking == true) and state.activatedAt and (state.clashTargetCount or 1) < 3 and time - state.activatedAt >= 0.15
+    and not closeClashProtected(state, time, CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS) then return "exchange_unconfirmed" end
   if gameInfo.getBallFrozen() == true then return "ball_frozen" end
   local ball = gameInfo.getBall()
   if not ball or not ball:IsA("BasePart") or not ball.Parent then return nil end
