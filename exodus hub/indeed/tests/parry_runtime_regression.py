@@ -183,6 +183,7 @@ local localPlayer={UserId=42}; local state={active=true,activatedAt=1,root={Pare
 local function distanceGate() return nil end
 local function stationaryTooLong() return false end
 local outside=true; local function cooldownOpponentOutside() return outside end
+local function cooldownTimeout() return 0.15 end
 '''+deactivation+'''
 assert(deactivationReason(state,nil,1.149)==nil,'timeout triggered early')
 assert(deactivationReason(state,nil,1.151)=='first_return_timeout','first return timeout was blocked')
@@ -299,3 +300,36 @@ assert(not cooldownOpponentOutside(state),'16 studs should protect')
 opponent=v(16.01); assert(cooldownOpponentOutside(state),'outside 16 should permit')
 opponent=nil; assert(not cooldownOpponentOutside(state),'unknown position should protect')
 """)
+
+cooldownTime=autospam[autospam.index('local function cooldownTimeout('):autospam.index('local function listen(')]
+run('cooldown timeout scales from 150ms to 100ms', """
+local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
+math.clamp=function(x,a,b) return math.max(a,math.min(b,x)) end
+local function snapshotSpeed(x) return x and (x.syncSpeed or x.speed) end
+local CONFIG={DEACTIVATION={DEFLECT_COOLDOWN_TIMEOUT_BASE=0.15,DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED=0.10}}
+local gameInfo={getBallSpeedLimits=function() return 16,600 end}; local state={}
+"""+cooldownTime+"""
+local function near(a,b) return math.abs(a-b)<1e-9 end
+assert(near(cooldownTimeout({syncSpeed=16},state),0.15))
+assert(near(cooldownTimeout({syncSpeed=308},state),0.125))
+assert(near(cooldownTimeout({syncSpeed=600},state),0.10))
+assert(near(cooldownTimeout({syncSpeed=900},state),0.10))
+assert(near(cooldownTimeout(nil,state),0.10),'missing packet lost last speed')
+""")
+run('maximum-speed cooldown gate fires at 100ms beyond 16 studs', '''
+local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
+local function userId(x) return finite(x) and x>0 and x or nil end
+local function snapshotSpeed(x) return x and (x.syncSpeed or x.speed) end
+local function typeof(x) return type(x) end
+math.clamp=function(x,a,b) return math.max(a,math.min(b,x)) end
+local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},DEACTIVATION={FIRST_RETURN_TIMEOUT=0.15,DEFLECT_COOLDOWN_TIMEOUT_BASE=0.15,DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED=0.10}}
+local gameInfo={getBallSpeedLimits=function() return 16,600 end,getDeflectCooldownState=function() return {blocking=true} end,getBallFrozen=function() return false end,getBall=function() return nil end}
+local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local function cooldownOpponentOutside() return true end
+local state={activatedAt=1,firstReturnSeen=true}; local localPlayer={UserId=42}
+'''+cooldownTime+deactivation+'''
+local snapshot={syncSpeed=600,targetUncertain=true}
+assert(deactivationReason(state,snapshot,1)==nil)
+assert(deactivationReason(state,snapshot,1.099)==nil)
+assert(deactivationReason(state,snapshot,1.101)=='deflect_cooldown_timeout')
+''')

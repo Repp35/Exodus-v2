@@ -36,7 +36,8 @@ local CONFIG = {
     MIN_ACTIVE_TIME = 0.05,
     STATIONARY_TIMEOUT = 0.1,
     FIRST_RETURN_TIMEOUT = 0.15,
-    DEFLECT_COOLDOWN_TIMEOUT = 0.15,
+    DEFLECT_COOLDOWN_TIMEOUT_BASE = 0.15,
+    DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED = 0.10,
     CLOSE_OPPONENT_PROTECTION_RADIUS = 10,
     SYNC_PROTECTION_RADIUS = 16,
     CLOSE_OPPONENT_MEMORY_SECONDS = 0.1,
@@ -74,6 +75,16 @@ end
 local function snapshotSpeed(snapshot)
   if not snapshot then return nil end
   local speed = tonumber(snapshot.syncSpeed); return finite(speed) and speed > 0 and speed or snapshot.speed
+end
+local function cooldownTimeout(snapshot, state)
+  local speed = snapshotSpeed(snapshot)
+  if finite(speed) and speed > 0 then state.cooldownSpeed = speed else speed = state.cooldownSpeed end
+  local slow, fast = CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT_BASE, CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED
+  if not finite(speed) or speed <= 0 then return slow end
+  local minimum, maximum = gameInfo.getBallSpeedLimits()
+  if not finite(minimum) or not finite(maximum) or maximum <= minimum then return slow end
+  local progress = math.clamp((speed - minimum) / (maximum - minimum), 0, 1)
+  return slow + (fast - slow) * progress
 end
 local function listen(state, signal, callback)
   local connection = signal:Connect(callback); state.connections[#state.connections + 1] = connection
@@ -281,7 +292,7 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   if not bypassExchange and distanceGate(state, snapshot, partner) ~= nil then return false end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
-  state.dashSwitchPartner, state.dashSwitchAt = nil, nil; state.deflectCooldownSince = nil
+  state.dashSwitchPartner, state.dashSwitchAt = nil, nil; state.deflectCooldownSince, state.cooldownSpeed = nil, snapshotSpeed(snapshot)
   state.activatedAt, state.firstReturnSeen = time, false; state.lastClosePartner, state.lastCloseAt, state.lastCloseDistance = nil, nil, nil
   state.stationaryBall, state.stationaryPosition, state.stationarySince = nil, nil, nil; state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime
   state.reason = reason; gameInfo.isClientDeflectResetLate(time, snapshot and snapshotSpeed(snapshot))
@@ -312,8 +323,8 @@ end
 local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
-  -- Cooldown and first-return timeouts do not depend on packet freshness.
-  -- Cooldown also requires the opponent to be outside the fixed 16-stud radius.
+  -- The cooldown gate scales with speed and requires the opponent to be
+  -- outside the fixed 16-stud radius.
   local cooldown = gameInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
     state.deflectCooldownSince = state.deflectCooldownSince or time
@@ -321,9 +332,10 @@ local function deactivationReason(state, snapshot, time)
     state.deflectCooldownSince = nil
   end
   if state.activatedAt and not state.firstReturnSeen and time - state.activatedAt >= CONFIG.DEACTIVATION.FIRST_RETURN_TIMEOUT then return "first_return_timeout" end
+  local cooldownLimit = state.deflectCooldownSince and cooldownTimeout(snapshot, state) or nil
   if state.activatedAt and state.deflectCooldownSince
-    and time - state.activatedAt >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
-    and time - state.deflectCooldownSince >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
+    and time - state.activatedAt >= cooldownLimit
+    and time - state.deflectCooldownSince >= cooldownLimit
     and cooldownOpponentOutside(state) then return "deflect_cooldown_timeout" end
   if gameInfo.getBallFrozen() == true then return "ball_frozen" end
   local ball = gameInfo.getBall()
