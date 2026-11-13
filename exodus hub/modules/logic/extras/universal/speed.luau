@@ -33,17 +33,18 @@ local function applySpeed()
   if humanoid ~= speedHumanoid then
     speedHumanoid = humanoid; speedRestore = humanoid and humanoid.WalkSpeed or nil
   end
-  if humanoid and humanoid.Health > 0 then
-    if humanoid.WalkSpeed ~= speedValue then speedRestore = humanoid.WalkSpeed; humanoid.WalkSpeed = speedValue end
-  end
+  local configured = tonumber(Utils.getConfigValue("UniversalSpeed"))
+  if configured and configured == configured and configured > -math.huge and configured < math.huge then speedValue = math.clamp(configured, 0, 200) end
+  if humanoid and humanoid.Health > 0 then humanoid.WalkSpeed = speedValue end
   return true
 end
 local function startSpeed()
-  connect("SpeedStep", RunService.Stepped, applySpeed)
+  connect("SpeedStep", RunService.PreSimulation or RunService.Stepped, applySpeed)
+  connect("SpeedFrame", RunService.Heartbeat, applySpeed)
   return applySpeed()
 end
 local function stopSpeed()
-  disconnect("SpeedStep")
+  disconnect("SpeedStep"); disconnect("SpeedFrame")
   if speedHumanoid and speedHumanoid.Parent and speedHumanoid.WalkSpeed == speedValue and speedRestore ~= nil then
     speedHumanoid.WalkSpeed = speedRestore
   end
