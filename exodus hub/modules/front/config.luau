@@ -21,6 +21,7 @@ local CONFIG = {
     position = "posição inválida: %s",
     keyCode = "keybind inválido: %s",
     rateMode = "SpamRateMode inválido",
+    clickMethod = "ClickMethod inválido",
   },
 }
 
@@ -44,6 +45,7 @@ local validators = {
   position = function(value) return isFiniteNumber(value) and value >= CONFIG.POSITION_MIN and value <= CONFIG.POSITION_MAX end,
   keyCode = validKeyCode,
   rateMode = function(value) return value == "CPS" or value == "CPF" or value == "MS" or value == "Auto" end,
+  clickMethod = function(value) return value == "Deflect" or value == "Game" or value == "Direct" end,
 }
 
 local function validateValue(key, kind, value)

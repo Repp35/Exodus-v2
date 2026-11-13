@@ -37,6 +37,10 @@ local CONFIG = {
       title = "Spam Rate",
     },
     {
+      kind = "click_method_selector",
+      title = "Click Method",
+    },
+    {
       kind = "off_on",
       title = "Manual Spam",
       mobileKey = "MiniSpamVisible",
@@ -149,6 +153,7 @@ local CONFIG = {
       CPF = "rate",
       MS = "rate",
       SpamRateMode = "rateMode",
+      ClickMethod = "clickMethod",
       Keybind = "keyCode",
       SpamKeybind = "keyCode",
       ManualSpamEnabled = "boolean",
@@ -198,6 +203,7 @@ local CONFIG = {
       CPF = 0.36,
       MS = 33,
       SpamRateMode = "CPF",
+      ClickMethod = "Deflect",
       Keybind = Enum.KeyCode.F9,
       SpamKeybind = Enum.KeyCode.F,
       ManualSpamEnabled = false,

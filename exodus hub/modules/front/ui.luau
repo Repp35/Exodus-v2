@@ -1341,6 +1341,48 @@ local function createCameraSensitivityCard(yPos, parent)
   end))
   return nextCardY(yPos, CARD_H)
 end
+local function createClickMethodSelector(yPos, parent, definition)
+  local f = cardFrame(yPos, RATE_CARD_H, parent)
+  cardLabel(optionInfo(definition), f)
+  local modes = { "Deflect", "Game", "Direct" }
+  local current = Utils.getConfigValue("ClickMethod")
+  local track = inst("Frame", {
+    Size = UDim2.new(1, -20, 0, 28),
+    Position = UDim2.new(0, 10, 0, 29),
+    BackgroundColor3 = C.inputBg,
+    BackgroundTransparency = 0.05,
+    BorderSizePixel = 0,
+    ZIndex = 7,
+    Parent = f,
+  })
+  corner(track, 999); stroke(track, C.border, 1)
+  local buttons = {}
+  for index, mode in ipairs(modes) do
+    local button = inst("TextButton", {
+      Size = UDim2.new(1 / 3, -4, 1, -4),
+      Position = UDim2.new((index - 1) / 3, 2, 0, 2),
+      BackgroundColor3 = C.accent,
+      BackgroundTransparency = mode == current and 0 or 1,
+      BorderSizePixel = 0,
+      Text = mode,
+      TextColor3 = mode == current and C.text or C.subtext,
+      TextSize = 12,
+      Font = Enum.Font.GothamBold,
+      ZIndex = 8,
+      Parent = track,
+    })
+    corner(button, 999); buttons[mode] = button
+    trackConn(button.Activated:Connect(function()
+      if mode == current or not setConfigValue("ClickMethod", mode) then return end
+      current = mode
+      for name, item in pairs(buttons) do
+        item.BackgroundTransparency = name == current and 0 or 1
+        item.TextColor3 = name == current and C.text or C.subtext
+      end
+    end))
+  end
+  return nextCardY(yPos, RATE_CARD_H)
+end
 local function createRateSelector(yPos, parent, definition)
   local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig()
   config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.3917)
@@ -2258,6 +2300,7 @@ function ExodusUI.setup(deps)
   local yR = 26
   local components = {
     rate_selector = createRateSelector,
+    click_method_selector = createClickMethodSelector,
     keybind_selector = createKeybindSelector,
     toggle = function(yPos, parent, definition)
       return createToggleCard(definition, definition.key, yPos, parent, toggleCallbacks[definition.key], definition.shortcutKey)

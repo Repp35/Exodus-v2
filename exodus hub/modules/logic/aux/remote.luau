@@ -2,7 +2,7 @@
 
 -- module
 local Remote = {}
-local gameInfo
+local gameInfo, utils
 
 -- configuration
 local CONFIG = {
@@ -15,7 +15,8 @@ local CONFIG = {
 -- lifecycle
 function Remote.setup(deps)
   if type(deps) ~= "table" or type(deps.GameInfo) ~= "table" then return false, "dependência inválida: GameInfo" end
-  gameInfo = deps.GameInfo; return true
+  if type(deps.Utils) ~= "table" then return false, "dependência inválida: Utils" end
+  gameInfo, utils = deps.GameInfo, deps.Utils; return true
 end
 
 -- dispatch
@@ -49,6 +50,37 @@ local function fireDeflect(ability)
   return true, detail
 end
 
+local function trimClicks(ability)
+  local clicks = ability and ability.ClickInstances
+  if type(clicks) == "table" and #clicks > 20 then
+    local keep = {}
+    for i = #clicks - 19, #clicks do keep[#keep + 1] = clicks[i] end
+    ability.ClickInstances = keep
+  end
+end
+local function directRemote()
+  local env = type(getrenv) == "function" and getrenv() or nil
+  local globals = type(env) == "table" and rawget(env, "_G")
+  local remote = type(globals) == "table" and rawget(globals, "did2") or nil
+  if typeof(remote) == "Instance" and remote:IsA("RemoteEvent") then return remote end
+  local remotes = game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
+  local player = game:GetService("Players").LocalPlayer
+  remote = remotes and player and (remotes:FindFirstChild("pu_" .. player.UserId) or remotes:FindFirstChild(""))
+  if remote and remote:IsA("RemoteEvent") then return remote end
+end
+local function fireDirect()
+  local remote = directRemote()
+  if not remote then return false, "Remote de Deflect indisponível" end
+  local camera = workspace.CurrentCamera
+  if not camera then return false, "Câmera indisponível" end
+  local cf = camera.CFrame; local pos, look = cf.Position, cf.LookVector
+  local packet = buffer.create(25)
+  buffer.writeu8(packet, 0, 1)
+  buffer.writef32(packet, 1, pos.X); buffer.writef32(packet, 5, pos.Y); buffer.writef32(packet, 9, pos.Z)
+  buffer.writef32(packet, 13, look.X); buffer.writef32(packet, 17, look.Y); buffer.writef32(packet, 21, look.Z)
+  remote:FireServer(packet); return true
+end
+
 -- public-api
 function Remote.fireParry(_flag, guard)
   if not gameInfo then return false, "Remote não inicializado" end
@@ -56,10 +88,13 @@ function Remote.fireParry(_flag, guard)
     if not allowed(guard) then return false, "Deflect cancelado" end
     local sent, detail = gameInfo.fireTrainingParry(); return sent, detail
   end
+  local method = utils.getConfigValue("ClickMethod")
+  if not allowed(guard) then return false, "Deflect cancelado" end
+  if method == "Direct" then return fireDirect() end
   local ability = gameInfo.getDeflectAbility()
   if not ability then return false, "Deflect indisponível" end
-  if not allowed(guard) then return false, "Deflect cancelado" end
-  local sent, detail = fireDeflect(ability); return sent, detail
+  if method == "Game" then trimClicks(ability) end
+  return fireDeflect(ability)
 end
 function Remote.fireDark(eventId, cameraFrame) return send(gameInfo and gameInfo.getDarkSealAbility(), CONFIG.DARK_METHOD, eventId, cameraFrame) end
 function Remote.fireFierce(guard)
@@ -71,8 +106,9 @@ function Remote.fireDash() return send(gameInfo and gameInfo.getDashAbility(), C
 
 -- contract
 Remote.__contract = {
-  requires = { GameInfo = "gameinfo" },
+  requires = { GameInfo = "gameinfo", Utils = "utils" },
   requiresMethods = {
+    Utils = { "getConfigValue" },
     GameInfo = {
       "isTrainingArea",
       "fireTrainingParry",
