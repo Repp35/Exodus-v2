@@ -701,8 +701,28 @@ local function reloadLatest(onFailure, requestedRevision, automatic)
     local revisionError
     if not revision then revision, revisionError = resolveLatestRevision() end
     if not revision then fail(revisionError or "Version manifest unavailable"); return end
+    if
+      automatic
+      and (
+        (validRevision(Exodus.Revision) and revision:lower() == Exodus.Revision:lower())
+        or (validRevision(_G.ExodusLastLoadedRevision) and revision:lower() == _G.ExodusLastLoadedRevision:lower())
+      )
+    then
+      clearPersistent("update"); reloadInFlight = false
+      return
+    end
     local source, fetchError = request(BASE_URL .. revision .. "/" .. PROJECT_PATH .. "loader.luau")
     if not source then fail(fetchError); return end
+    if
+      automatic
+      and (
+        (validRevision(Exodus.Revision) and revision:lower() == Exodus.Revision:lower())
+        or (validRevision(_G.ExodusLastLoadedRevision) and revision:lower() == _G.ExodusLastLoadedRevision:lower())
+      )
+    then
+      clearPersistent("update"); reloadInFlight = false
+      return
+    end
     if automatic and type(_G.ExodusUIFadeOut) == "function" then
       local faded, fadeError = pcall(_G.ExodusUIFadeOut)
       if not faded then warn("[Exodus Reload] Fade out failed: " .. tostring(fadeError)) end
@@ -857,7 +877,11 @@ local function startUpdateChannel()
     checking = true
     task.spawn(function()
       local ok, revision = pcall(resolveLatestRevision); checking = false
-      if ok and active() and validRevision(revision) and revision ~= (_G.ExodusLastLoadedRevision or Exodus.Revision) then reloadLatest(nil, revision, true) end
+      if not ok or not active() or not validRevision(revision) then return end
+      local current, last = Exodus.Revision, _G.ExodusLastLoadedRevision
+      if validRevision(current) and revision:lower() == current:lower() then return end
+      if validRevision(last) and revision:lower() == last:lower() then return end
+      reloadLatest(nil, revision, true)
     end)
   end
   local function connectSocket()
