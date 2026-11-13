@@ -3,6 +3,8 @@
 -- module
 local Danger = {}
 local gameInfo, autoParry
+
+-- configuration
 local CONFIG = { FRAME = 1 / 60, JITTER = 0.015, MAX_SAMPLE_AGE = 0.2, RETRY = 0.04 }
 local function finite(x) return type(x) == "number" and x == x and x > -math.huge and x < math.huge end
 local function vector(x) return typeof(x) == "Vector3" end
