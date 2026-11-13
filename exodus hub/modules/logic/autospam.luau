@@ -52,6 +52,8 @@ local CONFIG = {
 local PROTECTED_REASONS = {
   frozen = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
   opponent_distance = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
+  exchange_unconfirmed = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
+  danger_defended = CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS,
 }
 
 -- helpers
@@ -367,7 +369,16 @@ local function checkExchangeConfirmation(state, snapshot, time)
   end
   local ping = gameInfo.getAveragePing()
   if not finite(ping) or ping < 0 then ping = 0 end
-  if state.confirmSince and time - state.confirmSince >= 0.3 + ping then
+  if closeClashProtected(state, time, CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS) then
+    state.confirmSince = time; return false
+  end
+  local speed = snapshotSpeed(snapshot)
+  local geometry = finite(speed) and speed > 0 and gameInfo.getDeflectGeometry(speed, "game", 1, false)
+  local physics = gameInfo.getDefensePhysics()
+  local window = geometry and geometry.deflectWindow or 0
+  local grace = physics and physics.grace or 0
+  local budget = math.max(0.3, window + grace) + ping
+  if state.confirmSince and time - state.confirmSince >= budget then
     return deactivate(state, "exchange_unconfirmed", time)
   end
   return false
@@ -571,7 +582,8 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(state, snapshot, time, true); clashStats = clashStatsModule.get() end
   local risk = danger.sample(state, snapshot, time, localPlayer.UserId)
-  if state.active and state.dangerActivation and state.confirmSwitches and state.confirmSwitches >= 2 then state.dangerActivation = false end
+  if state.active and state.dangerActivation and (state.confirmSwitches and state.confirmSwitches >= 2
+    or closeClashProtected(state, time, CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS)) then state.dangerActivation = false end
   if state.active and state.dangerActivation and risk.phase == "resolved" then deactivate(state, "danger_defended", time); return end
   if not autoEnabled or blocked or state.active then return end
   if risk.urgent then
@@ -855,7 +867,9 @@ function AutoSpam.canSend()
   local state = current
   if not state or not state.active then return false end
   if not state.dangerActivation then return true end
-  local time = now(); local snapshot = gameInfo.getSnapshotAt(time)
+  local time = now()
+  if closeClashProtected(state, time, CONFIG.DEACTIVATION.CLOSE_OPPONENT_PROTECTION_RADIUS) then state.dangerActivation = false; return true end
+  local snapshot = gameInfo.getSnapshotAt(time)
   local risk = danger.sample(state, snapshot, time, localPlayer.UserId)
   if risk.phase == "resolved" or risk.phase == "moving_away" or risk.phase == "not_target" or risk.phase == "suspended" or risk.phase == "unavailable" then return false end
   return risk.allowSend ~= false
@@ -987,6 +1001,7 @@ AutoSpam.__contract = {
       "getPlayerMotion",
       "getHaunterEvent",
       "getDeflectGeometry",
+      "getDefensePhysics",
       "getDeflectRangeParameters",
       "isPlayerDashing",
       "getLocalDashState",
