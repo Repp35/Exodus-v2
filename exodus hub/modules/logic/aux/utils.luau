@@ -34,7 +34,7 @@ local spamObservers, configObservers = {}, {}
 -- configuration
 local CONFIG = {
   API_VERSION = 1,
-  VERSION = "3.1.5",
+  VERSION = "3.2.0",
   NAME = "Exodus Hub",
   AUTHOR = "deltapolinha_2915",
   FOLDER = "Exodus Hub",
