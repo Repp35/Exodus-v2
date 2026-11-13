@@ -2,7 +2,7 @@
 
 -- module
 local Spam = {}
-local utils, remote, gameInfo, spamObserver, configObserver
+local utils, remote, gameInfo, autoSpam, spamObserver, configObserver
 local function traceback(err) return debug.traceback(tostring(err), 2) end
 local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
@@ -69,20 +69,22 @@ local function sync()
   generation += 1; local token, boundUtils, boundRemote, boundGameInfo = generation, utils, remote, gameInfo
   running, currentMode, currentRate = true, mode, rate; transition(true, "spam_active")
   task.spawn(function()
+    local boundAutoSpam = autoSpam
     local function guard() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
+    local function allowed() return guard() and (boundUtils.isManualSpamActive() or boundAutoSpam.canSend()) end
     local ok, err = xpcall(function()
       local due = os.clock()
       while guard() do
         local time = os.clock(); local minimum = mode == "Auto" and boundGameInfo.getMinimumSpamInterval() or 0
         local interval = mode ~= "Auto" and 1 / (mode == "CPF" and rate * 60 or rate) or nil
         local gameDelay = mode == "Auto" and boundGameInfo.getAutoSpamDelay() or 0
-        if inFlight or (mode == "Auto" and gameDelay == nil) then
+        if inFlight or not allowed() or (mode == "Auto" and gameDelay == nil) then
           task.wait(CONFIG.POLL_INTERVAL)
         else
           local readyAt = interval and due or math.max(nextAllowedAt, time)
           if type(gameDelay) == "number" and gameDelay == gameDelay and gameDelay > 0 and gameDelay < math.huge then readyAt = math.max(readyAt, time + gameDelay) end
           if time >= readyAt then
-            request(boundUtils, boundRemote, token, guard, minimum)
+            request(boundUtils, boundRemote, token, allowed, minimum)
             if interval then
               local completedAt = os.clock()
               due += (math.floor(math.max(0, completedAt - due) / interval) + 1) * interval
@@ -116,6 +118,7 @@ function Spam.setup(deps)
     or type(deps.Utils) ~= "table"
     or type(deps.Remote) ~= "table"
     or type(deps.GameInfo) ~= "table"
+    or type(deps.AutoSpam) ~= "table" or type(deps.AutoSpam.canSend) ~= "function"
     or type(deps.GameInfo.getAutoSpamDelay) ~= "function"
     or type(deps.GameInfo.getMinimumSpamInterval) ~= "function"
     or type(deps.Remote.fireParry) ~= "function"
@@ -128,7 +131,7 @@ function Spam.setup(deps)
   then
     return false, "dependência ausente: Remote ou Utils"
   end
-  Spam.teardown(); utils, remote, gameInfo = deps.Utils, deps.Remote, deps.GameInfo
+  Spam.teardown(); utils, remote, gameInfo, autoSpam = deps.Utils, deps.Remote, deps.GameInfo, deps.AutoSpam
   spamObserver = utils.observeSpam(sync)
   configObserver = utils.observeConfig(function(changes)
     if changes.SpamRateMode ~= nil or changes.CPS ~= nil or changes.CPF ~= nil then sync() end
@@ -151,7 +154,7 @@ function Spam.teardown()
     if spamObserver then utils.untrackGlobal(spamObserver); spamObserver:Disconnect() end
     if configObserver then utils.untrackGlobal(configObserver); configObserver:Disconnect() end
   end
-  spamObserver, configObserver, utils, remote, gameInfo = nil, nil, nil, nil, nil
+  spamObserver, configObserver, utils, remote, gameInfo, autoSpam = nil, nil, nil, nil, nil, nil
 end
 
 -- public-api
@@ -177,9 +180,10 @@ end
 
 -- contract
 Spam.__contract = {
-  requires = { Remote = "remote", Utils = "utils", GameInfo = "gameinfo" },
+  requires = { Remote = "remote", Utils = "utils", GameInfo = "gameinfo", AutoSpam = "autospam" },
   requiresMethods = {
     Remote = { "fireParry" },
+    AutoSpam = { "canSend" },
     GameInfo = { "getAutoSpamDelay", "getMinimumSpamInterval" },
     Utils = {
       "apiVersion",

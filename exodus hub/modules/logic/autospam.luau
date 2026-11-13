@@ -2,7 +2,7 @@
 
 -- module
 local AutoSpam = {}
-local utils, gameInfo, clashStatsModule, players, runService, localPlayer
+local utils, gameInfo, clashStatsModule, danger, players, runService, localPlayer
 local current, generation = nil, 0
 local clashStats
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
@@ -260,11 +260,11 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
     or partner == localPlayer.UserId
     or not playerIsAlive(partner)
     or state.timeoutBlocked == true
-    or (state.lastDeactivatedAt and time - state.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
+    or (reason ~= "danger_deadline" and state.lastDeactivatedAt and time - state.lastDeactivatedAt < CONFIG.ACTIVATION.REACTIVATION_COOLDOWN)
   then
     return false
   end
-  local bypassExchange = reason == "own_ball_proximity" or reason == "close_target_switch" or reason == "clash_intercept" or reason == "haunter" or reason == "haunter_self"
+  local bypassExchange = reason == "danger_deadline" or reason == "own_ball_proximity" or reason == "close_target_switch" or reason == "clash_intercept" or reason == "haunter" or reason == "haunter_self"
   if
     not bypassExchange
     and (
@@ -283,11 +283,16 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE) then return false end
   local toward = state.root.Position - snapshot.position
   if toward.Magnitude <= 0.05 or snapshot.velocity:Dot(toward) <= 0 then return false end
+  local risk = danger.sample(state, snapshot, time, localPlayer.UserId)
+  if risk.pending then return false end
+  local proximity = reason == "own_ball_proximity" or reason == "close_target_switch" or reason == "clash_intercept"
+  if proximity and risk.protect and not risk.urgent then return false end
   if not bypassExchange and distanceGate(state, snapshot, partner) ~= nil then return false end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
   state.dashSwitchPartner, state.dashSwitchAt = nil, nil; state.deflectCooldownSince, state.cooldownSpeed = nil, snapshotSpeed(snapshot)
   state.activatedAt = time; state.lastClosePartner, state.lastCloseAt, state.lastCloseDistance = nil, nil, nil
+  state.dangerActivation = reason == "danger_deadline"
   state.confirmTarget, state.confirmSwitches, state.confirmSince, state.confirmPacketAt = localPlayer.UserId, 0, nil, nil
   state.stationaryBall, state.stationaryPosition, state.stationarySince = nil, nil, nil; state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime
   state.reason = reason
@@ -565,7 +570,25 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   if not snapshot or not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
   if fresh then clashStatsModule.observe(state, snapshot, time, true); clashStats = clashStatsModule.get() end
+  local risk = danger.sample(state, snapshot, time, localPlayer.UserId)
+  if state.active and state.dangerActivation and state.confirmSwitches and state.confirmSwitches >= 2 then state.dangerActivation = false end
+  if state.active and state.dangerActivation and risk.phase == "resolved" then deactivate(state, "danger_defended", time); return end
   if not autoEnabled or blocked or state.active then return end
+  if risk.urgent then
+    local partner = state.pending and state.pending.partner or state.proximityPartner
+    if not partner then local context = gameInfo.getClashContext(); partner = context and context.partnerId end
+    if not partner then
+      local nearest
+      for _, player in ipairs(players:GetPlayers()) do
+        if player ~= localPlayer and playerIsAlive(player.UserId) then
+          local position = gameInfo.getPlayerMotion(player.UserId)
+          local distance = typeof(position) == "Vector3" and (position - state.root.Position).Magnitude or math.huge
+          if distance <= CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS and (not nearest or distance < nearest) then partner, nearest = player.UserId, distance end
+        end
+      end
+    end
+    if partner and activate(state, "danger_deadline", partner, time, serverTime, snapshot) then return end
+  end
   -- Keep the intercept within the same fixed proximity bounds as the close
   -- target-switch gate; speed must not expand these activation distances.
   local context = gameInfo.getClashContext()
@@ -703,9 +726,9 @@ end
 
 -- lifecycle
 function AutoSpam.setup(deps)
-  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats then return false, "dependências ausentes" end
+  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Danger then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule = deps.Utils, deps.GameInfo, deps.ClashStats; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
+  utils, gameInfo, clashStatsModule, danger = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Danger; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then
     utils, gameInfo, clashStatsModule, players, runService, localPlayer = nil, nil, nil, nil, nil, nil; return false, "serviços indisponíveis"
   end
@@ -783,7 +806,7 @@ end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
   detach("teardown"); clashStatsModule = nil
-  clashStats = nil; utils, gameInfo, players, runService, localPlayer = nil, nil, nil, nil, nil
+  clashStats = nil; utils, gameInfo, danger, players, runService, localPlayer = nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
   local state = current
@@ -828,6 +851,15 @@ end
 
 -- public-api
 function AutoSpam.isActive() return current ~= nil and current.active end
+function AutoSpam.canSend()
+  local state = current
+  if not state or not state.active then return false end
+  if not state.dangerActivation then return true end
+  local time = now(); local snapshot = gameInfo.getSnapshotAt(time)
+  local risk = danger.sample(state, snapshot, time, localPlayer.UserId)
+  if risk.phase == "resolved" or risk.phase == "moving_away" or risk.phase == "not_target" or risk.phase == "suspended" or risk.phase == "unavailable" then return false end
+  return risk.allowSend ~= false
+end
 function AutoSpam.stopSpam()
   if current then deactivate(current, "stop_spam", now()) end
 end
@@ -915,6 +947,13 @@ function AutoSpam.getStatus()
     snapshotAge = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and math.max(0, time - snapshot.syncAt) or nil,
     clashPartnerId = state and state.partner or -1,
     clashStats = clashStatus(),
+    danger = state and state.danger and {
+      phase = state.danger.phase, urgent = state.danger.urgent, protected = state.danger.protect,
+      remainingMs = state.danger.remaining and state.danger.remaining * 1000,
+      deliveryMs = state.danger.delivery and state.danger.delivery * 1000,
+      graceMs = state.danger.grace and state.danger.grace * 1000,
+      enteredAt = state.danger.enteredAt,
+    } or nil,
   }
 end
 
@@ -924,6 +963,7 @@ AutoSpam.__contract = {
     Utils = "utils",
     GameInfo = "gameinfo",
     ClashStats = "clashstats",
+    Danger = "danger",
   },
   requiresMethods = {
     Utils = {
@@ -961,6 +1001,7 @@ AutoSpam.__contract = {
       "getClashContext",
     },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
+    Danger = { "sample" },
   },
   provides = {
     "setup",
@@ -969,6 +1010,7 @@ AutoSpam.__contract = {
     "teardown",
     "onBallSync",
     "isActive",
+    "canSend",
     "getActivationContext",
     "getStatus",
     "getTargetSwitch",

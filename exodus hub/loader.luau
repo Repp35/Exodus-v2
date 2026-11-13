@@ -112,6 +112,7 @@ local CONFIG = {
     { name = "remote", path = "modules/logic/aux/remote.luau" },
     { name = "autofierce", path = "modules/logic/extras/autofierce.luau" },
     { name = "autoparry", path = "modules/logic/autoparry.luau" },
+    { name = "danger", path = "modules/logic/aux/danger.luau" },
     { name = "dash", path = "modules/logic/aux/dash.luau" },
     { name = "autospam", path = "modules/logic/autospam.luau" },
     { name = "autodash", path = "modules/logic/extras/autodash.luau" },
@@ -300,6 +301,7 @@ local function stopPreviousRuntime()
     "spam",
     "autodash",
     "autospam",
+    "danger",
     "clashstats",
     "autodark",
     "autofierce",
@@ -549,7 +551,7 @@ local function bindRuntime(loaded)
       end
     end
   end
-  local syncPriority = { autospam = 1, autoparry = 2 }
+  local syncPriority = { autoparry = 1, autospam = 2 }
   table.sort(ballSyncSubscribers, function(a, b)
     local left, right = syncPriority[a.name] or 3, syncPriority[b.name] or 3; return left == right and a.name < b.name or left < right
   end)
