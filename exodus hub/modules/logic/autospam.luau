@@ -318,11 +318,18 @@ local function activate(state, reason, partner, time, serverTime, snapshot)
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and (time < snapshot.syncAt or time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE) then return false end
   local toward = state.root.Position - snapshot.position
   if toward.Magnitude <= 0.05 or snapshot.velocity:Dot(toward) <= 0 then return false end
+  if state.distanceBlockedPartner == partner then
+    local position = gameInfo.getPlayerMotion(partner)
+    local limit = deactivationDistanceLimit(snapshot, partner) or deactivationDistanceLimit(state.distanceSnapshot, partner)
+    if limit and typeof(position) == "Vector3" and (position - state.root.Position).Magnitude > limit then return false end
+    state.distanceBlockedPartner = nil
+  end
   if not bypassExchange and distanceGate(state, snapshot, partner) ~= nil then return false end
   if clashStats and clashStats.frozen then clashStatsModule.begin(partner, time); clashStats = clashStatsModule.get() end
   state.active, state.partner, state.pending = true, partner, nil; state.stoppedPartner, state.stoppedAt = nil, nil
   state.dashSwitchPartner, state.dashSwitchAt = nil, nil; state.deflectCooldownSince, state.cooldownSpeed = nil, snapshotSpeed(snapshot)
   state.activatedAt = time; state.lastClosePartner, state.lastCloseAt, state.lastCloseDistance = nil, nil, nil
+  state.distanceSnapshot = { syncSpeed = snapshotSpeed(snapshot) }
   state.clashTargetCount, state.clashLastTarget = 1, localPlayer.UserId
   state.stationaryBall, state.stationaryPosition, state.stationarySince = nil, nil, nil; state.lastSwitchAt, state.lastSwitchServerAt = time, serverTime
   state.reason = reason
@@ -344,6 +351,7 @@ local function deactivate(state, reason, time)
     return true
   end
   if state.active then
+    if reason == "opponent_distance" then state.distanceBlockedPartner = state.partner end
     state.stoppedPartner, state.stoppedAt = state.partner, time; state.active, state.lastDeactivatedAt = false, time
     if reason == "deflect_cooldown_timeout" then
       state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target
@@ -360,6 +368,16 @@ end
 local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
+  if state.root and state.root.Parent and state.partner then
+    local speed = snapshotSpeed(snapshot)
+    local syncAt = snapshot and snapshot.syncAt
+    if finite(speed) and speed > 0 and (not finite(syncAt) or syncAt <= 0 or (time >= syncAt and time - syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE)) then
+      state.distanceSnapshot = state.distanceSnapshot or {}; state.distanceSnapshot.syncSpeed = speed
+    end
+    local opponent = gameInfo.getPlayerMotion(state.partner)
+    local limit = state.distanceSnapshot and deactivationDistanceLimit(state.distanceSnapshot, state.partner)
+    if limit and typeof(opponent) == "Vector3" and (opponent - state.root.Position).Magnitude > limit then return "opponent_distance" end
+  end
   -- The cooldown gate scales with speed and requires the opponent to be
   -- outside the fixed 10-stud radius.
   local cooldown = gameInfo.getDeflectCooldownState()
@@ -389,10 +407,6 @@ local function deactivationReason(state, snapshot, time)
   if target ~= localPlayer.UserId and target ~= state.partner then
     return "target_changed"
   end
-  -- A ball travelling to the partner can legitimately be far from us.
-  local opponent = state.partner and gameInfo.getPlayerMotion(state.partner)
-  local limit = state.partner and deactivationDistanceLimit(snapshot, state.partner)
-  if limit and typeof(opponent) == "Vector3" and (opponent - state.root.Position).Magnitude > limit then return "opponent_distance" end
 end
 local function checkDeactivation(state, snapshot, time)
   if not state.active then return false end
@@ -574,6 +588,10 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
     return
   end
   if autoEnabled == nil then autoEnabled = utils.getConfigValue("AutoSpam") == true end
+  if state.timeoutBlocked and not state.active then
+    local cooldown = gameInfo.getDeflectCooldownState()
+    if cooldown and cooldown.blocking == false then state.timeoutBlocked, state.timeoutBlockedTarget = false, nil end
+  end
   if not autoEnabled then
     if state.active then deactivate(state, "disabled", time) end
     state.timeoutBlocked, state.timeoutBlockedTarget = false, nil
@@ -585,6 +603,11 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
     return
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
+  if state.active and snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetUncertain ~= true and not snapshot.teleported and not snapshot.locked
+    and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE)) then
+    local target = userId(snapshot.targetId)
+    if target then targetChanged(state, target, time, snapshot, fresh and serverTime or nil) end
+  end
   if state.active and not blocked and checkDeactivation(state, snapshot, time) then blocked = true end
   if snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetUncertain ~= true and not snapshot.teleported and not snapshot.locked
     and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE)) then
@@ -857,7 +880,11 @@ function AutoSpam.onBallSync(data)
     if type(data.Locked) == "boolean" then snapshot.locked = data.Locked end
     if finite(speed) and speed > 0 then snapshot.syncSpeed = speed end
   end
-  local target = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil; local blocked = state.active and checkDeactivation(state, snapshot, time) or false
+  local target = snapshot and snapshot.targetUncertain ~= true and userId(snapshot.targetId) or nil
+  if state.active and target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported and not snapshot.locked then
+    targetChanged(state, target, time, snapshot, serverTime)
+  end
+  local blocked = state.active and checkDeactivation(state, snapshot, time) or false
   if target and snapshot and gameInfo.isSnapshotValid(snapshot) and not snapshot.teleported then targetChanged(state, target, time, snapshot, serverTime) end
   evaluate(state, time, true, serverTime, snapshot, blocked, autoEnabled)
 end
