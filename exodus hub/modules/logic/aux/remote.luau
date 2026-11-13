@@ -33,8 +33,19 @@ local function allowed(guard)
 end
 local function finite(value) return type(value) == "number" and value == value and value > -math.huge and value < math.huge end
 local function fireDeflect(ability)
-  local before = gameInfo.getLastDeflectPressAt(); local sent, detail = send(ability, CONFIG.PARRY_METHOD)
+  -- ClickInstances is updated synchronously by Deflect in the current game.
+  -- Reconstructing a timestamp from its frame-updated Time value is not a
+  -- reliable way to distinguish two presses in the same frame.
+  local clicks = ability.ClickInstances
+  local beforeClick = type(clicks) == "table" and clicks[#clicks] or nil
+  local before = type(clicks) ~= "table" and gameInfo.getLastDeflectPressAt() or nil
+  local sent, detail = send(ability, CONFIG.PARRY_METHOD)
   if not sent then return false, detail end
+  clicks = ability.ClickInstances
+  if type(clicks) == "table" then
+    if clicks[#clicks] ~= nil and clicks[#clicks] ~= beforeClick then return true, detail end
+    return false, "Deflect não aceito pelo cliente"
+  end
   local after = gameInfo.getLastDeflectPressAt()
   if not finite(after) or (finite(before) and after <= before + 0.001) or (not finite(before) and after <= 0) then return false, "Deflect não aceito pelo cliente" end
   return true, detail

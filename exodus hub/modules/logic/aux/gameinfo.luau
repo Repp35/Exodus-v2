@@ -195,6 +195,14 @@ local function targetId(data, currentBall)
   if type(data) == "table" and data.Teleported == true then
     targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = nil, nil, nil, nil, nil
   end
+  -- An explicit non-positive server target means no target. Visual state and
+  -- workspace attributes can lag behind a reset and must not resurrect it.
+  local rawTarget = type(data) == "table" and data.TargetPlayerID or nil
+  local numericTarget = type(rawTarget) == "number" and rawTarget or (type(rawTarget) == "string" and tonumber(rawTarget) or nil)
+  if finite(numericTarget) and numericTarget <= 0 then
+    targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = nil, nil, nil, nil, nil
+    targetEvidence.source, targetEvidence.uncertain = "target_none", true; return -1
+  end
   local strong = primary
   if strong then
     targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt =
@@ -202,6 +210,14 @@ local function targetId(data, currentBall)
     targetEvidence.source, targetEvidence.uncertain = "target", false; return strong
   end
   local candidate = highlight or attribute; local source = highlight and "highlight" or (attribute and "attribute" or nil)
+  if highlight and attribute and highlight ~= attribute then
+    targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame = nil, nil, nil
+    targetEvidence.source, targetEvidence.uncertain = "conflicting_signals", true; return -1
+  end
+  if highlight and attribute and highlight == attribute then
+    targetEvidence.stable, targetEvidence.pending, targetEvidence.pendingAt, targetEvidence.pendingFrame, targetEvidence.observedAt = highlight, nil, nil, nil, time
+    targetEvidence.source, targetEvidence.uncertain = "highlight_attribute", false; return highlight
+  end
   if not candidate and player and (visualTargeted or (type(data) == "table" and data.Targeted == true)) then
     candidate, source = player.UserId, visualTargeted and (redBall and "visual_color" or "visual") or "targeted"
   end
@@ -514,7 +530,7 @@ function GameInfo.getMinimumSpamInterval() return CONFIG.SPAM_MIN_INTERVAL end
 function GameInfo.getAutoSpamDelay()
   local ability = GameInfo.getDeflectAbility()
   if not ability then return nil end
-  local time = os.clock(); local last = ability.LastPressClock
+  local time = os.clock(); local last = ability.LastDeflectCallAt or ability.LastPressClock
   local delay = finite(last) and math.max(0, CONFIG.SPAM_MIN_INTERVAL - (time - last)) or 0; local limit = world:GetAttribute("CPS_LIMIT")
   if not finite(limit) then limit = 50 end
   limit = math.floor(limit)
@@ -697,6 +713,7 @@ local function decodeBallPacketFallback(value)
     seq = buffer.readu16(value, 1),
     serverTime = serverTime,
     position = Vector3.new(x, y, z),
+    direction = Vector3.new(dx, dy, dz),
     speed = speed,
     targetId = target,
     highlightId = highlight,
@@ -730,6 +747,7 @@ function GameInfo.decodeBallPacket(value)
     HighlightTargetPlayerID = decoded.highlightId,
     PossessorId = decoded.possessed and decoded.possessorId or 0,
     RealPosition = decoded.position,
+    ForcedDirection = decoded.direction,
     Speed = decoded.speed,
   }
 end

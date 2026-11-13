@@ -732,6 +732,7 @@ function AutoSpam.onBallSync(data)
   end
   if finite(sequence) then state.sequence = sequence end
   if data.Teleported == true then
+    if state.active then deactivate(state, "ball_teleported", time) end
     state.target, state.stoppedPartner = nil, nil; resetExchange(state)
     state.haunterPartner, state.haunterUntil = nil, nil; return
   end

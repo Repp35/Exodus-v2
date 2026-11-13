@@ -8,6 +8,7 @@ local generation, running, inFlight = 0, false, false
 local currentMode, currentRate
 local nextAllowedAt = 0
 local status = { phase = "stopped", lastRequestAt = 0, lastError = nil, lastErrorAt = -math.huge }
+local requestSamples, requestIndex = {}, 0
 
 -- configuration
 local CONFIG = {
@@ -44,6 +45,8 @@ local function request(boundUtils, boundRemote, token, guard, minimum)
   inFlight = true; status.lastRequestAt = os.clock()
   local ok, result, detail = xpcall(boundRemote.fireParry, traceback, 1, guard); nextAllowedAt = os.clock() + minimum
   inFlight = false
+  requestIndex = requestIndex % 128 + 1
+  requestSamples[requestIndex] = { at = status.lastRequestAt, accepted = ok and result == true }
   if not ok then error(result, 0) end
   if token ~= generation or utils ~= boundUtils then return end
   if result == true then status.lastError = nil; return end
@@ -135,6 +138,7 @@ function Spam.setup(deps)
 end
 function Spam.resetState()
   cancel("reset"); status.lastError, status.lastErrorAt = nil, -math.huge
+  table.clear(requestSamples); requestIndex = 0
   local token = generation
   task.defer(function()
     if token == generation then sync() end
@@ -142,6 +146,7 @@ function Spam.resetState()
 end
 function Spam.teardown()
   cancel("teardown")
+  table.clear(requestSamples); requestIndex = 0
   if utils then
     if spamObserver then utils.untrackGlobal(spamObserver); spamObserver:Disconnect() end
     if configObserver then utils.untrackGlobal(configObserver); configObserver:Disconnect() end
@@ -151,11 +156,20 @@ end
 
 -- public-api
 function Spam.getStatus()
+  local now, attempts, accepted = os.clock(), 0, 0
+  for _, sample in pairs(requestSamples) do
+    if now >= sample.at and now - sample.at < 1 then
+      attempts += 1
+      if sample.accepted then accepted += 1 end
+    end
+  end
   return {
     schema = utils and utils.apiVersion() or 1,
     phase = status.phase,
     lastRequestAt = status.lastRequestAt,
     lastError = status.lastError,
+    attemptsLastSecond = attempts,
+    acceptedLastSecond = accepted,
     cpfFps = 0,
     cpfClicks = 0,
     cpfCompensation = false,

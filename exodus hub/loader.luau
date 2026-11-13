@@ -593,7 +593,7 @@ local function bindRuntime(loaded)
             if (forward == true or forward < 32768) and currentDelta < 32768 then
               lastClashPacketSequence = sequence; packet.Source = "packet"
               if type(gameInfo.applyPacket) == "function" then gameInfo.applyPacket(packet) end
-              if not packet.Teleported then notifyBallSync(packet) end
+              notifyBallSync(packet)
             end
           end
         end

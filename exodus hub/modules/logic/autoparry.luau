@@ -52,6 +52,7 @@ local state = {
   nextAttemptAt = 0,
   lastPosition = nil,
   lastSampleAt = 0,
+  resetPending = false,
 }
 
 -- configuration
@@ -109,6 +110,7 @@ local function resetTracking()
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
   state.lastPosition, state.lastSampleAt = nil, 0; cooldownSnapshot, cooldownSnapshotAt = nil, -math.huge
+  state.resetPending = false
   table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
@@ -226,7 +228,8 @@ local function observeSnapshot(snapshot, time)
   if snapshot.targetUncertain == true then return false end
   local mode = snapshot.mode == "training" and "training" or "match"
   local newTrainingBall = mode == "training" and (snapshot.trainingRound ~= state.trainingRound or snapshot.ball ~= state.trainingBall)
-  if state.mode ~= mode or newTrainingBall then
+  local newMatchBall = mode == "match" and state.lastBall ~= nil and state.lastBall ~= snapshot.ball
+  if state.mode ~= mode or newTrainingBall or newMatchBall then
     state.cycle += 1; state.trainingRound, state.trainingBall = nil, nil
     if mode == "training" then
       state.trainingRound, state.trainingBall = snapshot.trainingRound, snapshot.ball; state.lastBall = nil
@@ -235,6 +238,7 @@ local function observeSnapshot(snapshot, time)
     state.mode, state.sequence, state.target, state.targetKnown = mode, nil, -1, false; state.fired, state.awaySeen, state.teleported, state.teleportSequence = false, false, false, nil
     state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime, state.trainingConfirmedAt = 0, nil, nil
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
+    state.resetPending = newMatchBall
   end
   local order = sequenceOrder(snapshot.syncSequence)
   if order == "old" then return false end
@@ -386,6 +390,16 @@ local function tick(character, root, generation)
   if not vector(position) or not vector(rootPosition) then return end
   if not value.ball.Parent then return end
   local syncSpeed = tonumber(value.syncSpeed); local speed = finite(syncSpeed) and syncSpeed > 0 and syncSpeed or tonumber(value.speed) or 0
+  -- A fresh packet can precede the render update after a teleport. Never use
+  -- the previous flight's rendered position as the new ball position.
+  if state.resetPending then
+    local real = value.realPosition
+    local tolerance = math.max(6, math.max(speed, 0) * 0.15)
+    if not vector(real) or (position - real).Magnitude > tolerance then
+      state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "reset_position_pending"); return
+    end
+    state.resetPending = false
+  end
   local velocity = resolveVelocity(value, position, speed, time); state.lastBall, state.lastPosition, state.lastSampleAt = value.ball, position, time
   if value.targetUncertain == true then phase("waiting", "target_uncertain"); return end
   if not state.player or value.targetId ~= state.player.UserId then phase("waiting", "not_target"); return end
@@ -485,6 +499,8 @@ function AutoParry.onBallSync(data)
   if order == "new" then state.sequence = sequence end
   if data.Teleported == true then
     state.teleported, state.teleportSequence = true, sequence; state.lastBall = nil
+    state.cycle += 1; state.fired, state.awaySeen, state.targetKnown, state.target = false, false, false, -1
+    state.resetPending = true
     state.speed, state.distance, state.approaching = 0, 0, false; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
     state.nextAttemptAt = 0; state.lastPosition, state.lastSampleAt = nil, 0
     state.awayAt, state.awayTarget = nil, nil; table.clear(state.clicks)
