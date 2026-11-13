@@ -589,16 +589,6 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   if risk.urgent then
     local partner = state.pending and state.pending.partner or state.proximityPartner
     if not partner then local context = gameInfo.getClashContext(); partner = context and context.partnerId end
-    if not partner then
-      local nearest
-      for _, player in ipairs(players:GetPlayers()) do
-        if player ~= localPlayer and playerIsAlive(player.UserId) then
-          local position = gameInfo.getPlayerMotion(player.UserId)
-          local distance = typeof(position) == "Vector3" and (position - state.root.Position).Magnitude or math.huge
-          if distance <= CONFIG.ACTIVATION.OWN_BALL_OPPONENT_RADIUS and (not nearest or distance < nearest) then partner, nearest = player.UserId, distance end
-        end
-      end
-    end
     if partner and activate(state, "danger_deadline", partner, time, serverTime, snapshot) then return end
   end
   -- Keep the intercept within the same fixed proximity bounds as the close
