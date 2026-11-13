@@ -182,12 +182,14 @@ local CONFIG={SHARED={SNAPSHOT_MAX_AGE=0.5},DEACTIVATION={FIRST_RETURN_TIMEOUT=0
 local localPlayer={UserId=42}; local state={active=true,activatedAt=1,root={Parent=true},partner=99}
 local function distanceGate() return nil end
 local function stationaryTooLong() return false end
+local outside=true; local function cooldownOpponentOutside() return outside end
 '''+deactivation+'''
 assert(deactivationReason(state,nil,1.149)==nil,'timeout triggered early')
 assert(deactivationReason(state,nil,1.151)=='first_return_timeout','first return timeout was blocked')
 state.firstReturnSeen=true; blocking=true
 assert(deactivationReason(state,{targetUncertain=true},2)==nil,'cooldown timeout triggered early')
-assert(deactivationReason(state,{targetUncertain=true},2.151)=='deflect_cooldown_timeout','cooldown timeout was blocked')
+outside=false; assert(deactivationReason(state,{targetUncertain=true},2.151)==nil,'cooldown stopped with opponent close')
+outside=true; assert(deactivationReason(state,{targetUncertain=true},2.151)=='deflect_cooldown_timeout','cooldown timeout was blocked outside range')
 blocking=false; state.deflectCooldownSince=nil; frozen=true; assert(deactivationReason(state,nil,2.2)=='ball_frozen')
 ''')
 evaluate=autospam[autospam.index('local function evaluate('):autospam.index('local function watchCharacter')]
@@ -265,7 +267,7 @@ evaluate(state,10.05,false,nil,snapshot,nil,true); assert(activations==1,'did no
 ''')
 reasons=autospam[autospam.index('local PROTECTED_REASONS ='):autospam.index('-- helpers')]
 stop=autospam[autospam.index('local function deactivate('):autospam.index('local function deactivationReason(')]
-run('150ms timeouts bypass close-player protection and lock reactivation', '''
+run('timeout deactivation locks reactivation', '''
 local CONFIG={DEACTIVATION={SYNC_PROTECTION_RADIUS=16,CLOSE_OPPONENT_PROTECTION_RADIUS=10}}
 '''+reasons+'''
 local current={active=true,partner=99,target=42}; local state=current
@@ -281,3 +283,19 @@ state.active=true; state.partner=99
 assert(deactivate(state,'first_return_timeout',2))
 assert(not state.active and state.timeoutBlocked)
 ''')
+
+cooldownDistance=autospam[autospam.index('local function cooldownOpponentOutside('):autospam.index('local function stationaryTooLong(')]
+run('cooldown requires opponent beyond 16 studs', """
+local V={}; V.__index=function(t,k) if k=='Magnitude' then return math.abs(t.x) end end
+V.__sub=function(a,b) return setmetatable({x=a.x-b.x},V) end
+local function v(x) return setmetatable({x=x},V) end
+local function typeof(x) return getmetatable(x)==V and 'Vector3' or type(x) end
+local CONFIG={DEACTIVATION={SYNC_PROTECTION_RADIUS=16}}
+local opponent=v(16); local gameInfo={getPlayerMotion=function() return opponent end}
+local players={GetPlayerByUserId=function() return nil end}
+local state={partner=99,root={Parent=true,Position=v(0)}}
+"""+cooldownDistance+"""
+assert(not cooldownOpponentOutside(state),'16 studs should protect')
+opponent=v(16.01); assert(cooldownOpponentOutside(state),'outside 16 should permit')
+opponent=nil; assert(not cooldownOpponentOutside(state),'unknown position should protect')
+""")

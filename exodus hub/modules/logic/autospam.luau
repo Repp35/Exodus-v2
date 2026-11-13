@@ -218,6 +218,17 @@ local function closeClashProtected(state, time, radius)
     and finite(state.lastCloseDistance)
     and state.lastCloseDistance <= radius
 end
+local function cooldownOpponentOutside(state)
+  if not state.partner or not state.root or not state.root.Parent then return false end
+  local position = gameInfo.getPlayerMotion(state.partner)
+  if typeof(position) ~= "Vector3" then
+    local player = players:GetPlayerByUserId(state.partner)
+    local root = player and player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if root and root:IsA("BasePart") and root.Parent then position = root.Position end
+  end
+  if typeof(position) ~= "Vector3" then return false end
+  return (position - state.root.Position).Magnitude > CONFIG.DEACTIVATION.SYNC_PROTECTION_RADIUS
+end
 local function stationaryTooLong(state, time, ball, snapshot)
   if not state.active then state.stationaryBall, state.stationaryPosition, state.stationarySince = nil, nil, nil; return false end
   local position = ball.Position
@@ -301,8 +312,8 @@ end
 local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
-  -- These safety timeouts have priority over target, distance and snapshot
-  -- protections. The activation delay and cooldown duration both apply.
+  -- Cooldown and first-return timeouts do not depend on packet freshness.
+  -- Cooldown also requires the opponent to be outside the fixed 16-stud radius.
   local cooldown = gameInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
     state.deflectCooldownSince = state.deflectCooldownSince or time
@@ -312,7 +323,8 @@ local function deactivationReason(state, snapshot, time)
   if state.activatedAt and not state.firstReturnSeen and time - state.activatedAt >= CONFIG.DEACTIVATION.FIRST_RETURN_TIMEOUT then return "first_return_timeout" end
   if state.activatedAt and state.deflectCooldownSince
     and time - state.activatedAt >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
-    and time - state.deflectCooldownSince >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT then return "deflect_cooldown_timeout" end
+    and time - state.deflectCooldownSince >= CONFIG.DEACTIVATION.DEFLECT_COOLDOWN_TIMEOUT
+    and cooldownOpponentOutside(state) then return "deflect_cooldown_timeout" end
   if gameInfo.getBallFrozen() == true then return "ball_frozen" end
   local ball = gameInfo.getBall()
   if not ball or not ball:IsA("BasePart") or not ball.Parent then return nil end
