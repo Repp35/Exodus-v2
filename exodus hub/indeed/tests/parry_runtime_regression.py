@@ -91,7 +91,7 @@ local ball={Parent=true,instance=true,IsA=function() return true end}
 local snap={mode='match',ball=ball,position=v(100),realPosition=v(100),velocity=v(-100),speed=100,syncSpeed=100,targetId=42,targetUncertain=false,syncSequence=1,teleported=false,locked=false}
 local sequence=1; local fires=0; local cd={blocking=false}
 local u={getLocalPlayer=function() return player end,getRunService=function() return {PostSimulation=signal()} end,isActive=function() return true end,getConfigValue=function() return true end,isSpamActive=function() return false end,trackCharacter=function() end,untrackCharacter=function() end,recordTransition=function() end,recordError=function() end}
-local g={getDeflectCooldownState=function() return cd end,getSnapshotAt=function() return snap end,isSnapshotValid=function() return true end, getRootPosition=function() return root.Position end,isTrainingArea=function() return false end,observeTraining=function() return {Disconnect=function() end} end,getSyncSequence=function() return sequence end,getAveragePing=function() return 0,0,1 end,getAutoParryGeometry=function() return {noWindowParryRadius=8,triggerPadding=0,leadTime=0,effectiveWindow=0,fullRadius=20} end,getProjectedDeflectRadius=function() return 20 end}
+local g={getDeflectCooldownState=function() return cd end,getDeflectWindow=function() return 0.5 end,getLocalPing=function() return 0 end,getSnapshotAt=function() return snap end,isSnapshotValid=function() return true end, getRootPosition=function() return root.Position end,isTrainingArea=function() return false end,observeTraining=function() return {Disconnect=function() end} end,getSyncSequence=function() return sequence end,getAveragePing=function() return 0,0,1 end,getAutoParryGeometry=function() return {noWindowParryRadius=8,triggerPadding=0,leadTime=0.2,effectiveWindow=0.2,deflectWindow=0.5,fullRadius=28} end,getProjectedDeflectRadius=function(g,closing) return g.noWindowParryRadius + math.max(0,closing)*g.effectiveWindow end}
 local r={fireParry=function(_,guard) assert(guard()); fires=fires+1; return true end}
 local ap=(function()\n'''+source+'''\nend)()
 assert(ap.setup({Utils=u,GameInfo=g,Remote=r})); assert(ap.bindCharacter(character))
@@ -108,11 +108,13 @@ ap.onBallSync({Sequence=5,TargetPlayerID=42}); assert(fires==1,'failed to parry 
 tm=tm+0.02; frameCb(0.02); assert(fires==1,'retried before cooldown was observed')
 cd.blocking=true; cd.lastStartedAt=tm; tm=tm+0.02; frameCb(0.02); assert(fires==1)
 cd.blocking=false; cd.predictedReset=true; tm=tm+0.02; frameCb(0.02); assert(fires==1,'retried during predicted parry')
-cd.predictedReset=false; tm=tm+0.02; frameCb(0.02); assert(fires==2,'miss did not retry when cooldown ended')
+cd.predictedReset=false; tm=tm+0.02; frameCb(0.02); assert(fires==1,'retried before miss deadline')
+tm=tm+0.6; snap.position=v(20); frameCb(0.02); assert(fires==1,'retry used the normal large window')
+snap.position=v(10); frameCb(0.02); assert(fires==2,'miss did not retry inside smaller window')
 -- A whole server cooldown can occur between two frames. Do not fire while
 -- the ball is moving away, but rearm for a later incoming trajectory.
 tm=tm+0.01; cd.lastStartedAt=tm; snap.velocity=v(100); tm=tm+0.02; frameCb(0.02); assert(fires==2,'retried with ball moving away')
-snap.velocity=v(-100); tm=tm+0.02; frameCb(0.02); assert(fires==3,'did not rearm after a short cooldown')
+snap.velocity=v(-100); tm=tm+0.7; frameCb(0.02); assert(fires==3,'did not rearm after a short cooldown')
 -- A successful parry keeps the target cycle disarmed even after cooldown.
 cd.blocking=true; tm=tm+0.02; cd.lastStartedAt=tm; frameCb(0.02)
 cd.blocking=false; tm=tm+0.02; cd.lastParriedAt=tm; frameCb(0.02); assert(fires==3,'retried a confirmed parry')
@@ -136,14 +138,16 @@ local ball={Parent=true,instance=true,IsA=function() return true end}
 local snap={mode='training',trainingRound=1,serverTime=100,ball=ball,position=v(10),realPosition=v(10),velocity=v(-100),speed=100,syncSpeed=100,targetId=42,targetUncertain=false,syncSequence=1,teleported=false,locked=false}
 local sequence=1; local fires=0; local cd={blocking=false}
 local u={getLocalPlayer=function() return player end,getRunService=function() return {PostSimulation=signal()} end,isActive=function() return true end,getConfigValue=function() return true end,isSpamActive=function() return false end,trackCharacter=function() end,untrackCharacter=function() end,recordTransition=function() end,recordError=function() end}
-local g={getDeflectCooldownState=function() return cd end,getSnapshotAt=function() return snap end,isSnapshotValid=function() return true end, getRootPosition=function() return root.Position end,isTrainingArea=function() return true end,getTrainingMissCooldown=function() return 1.45 end,observeTraining=function() return {Disconnect=function() end} end,getSyncSequence=function() return sequence end,getAveragePing=function() return 0,0,1 end,getAutoParryGeometry=function() return {noWindowParryRadius=8,triggerPadding=0,leadTime=0,effectiveWindow=0,fullRadius=20} end,getProjectedDeflectRadius=function() return 20 end}
+local g={getDeflectCooldownState=function() return cd end,getDeflectWindow=function() return 0.5 end,getLocalPing=function() return 0 end,getSnapshotAt=function() return snap end,isSnapshotValid=function() return true end, getRootPosition=function() return root.Position end,isTrainingArea=function() return true end,getTrainingMissCooldown=function() return 1.45 end,observeTraining=function() return {Disconnect=function() end} end,getSyncSequence=function() return sequence end,getAveragePing=function() return 0,0,1 end,getAutoParryGeometry=function() return {noWindowParryRadius=8,triggerPadding=0,leadTime=0.2,effectiveWindow=0.2,deflectWindow=0.5,fullRadius=28} end,getProjectedDeflectRadius=function(g,closing) return g.noWindowParryRadius + math.max(0,closing)*g.effectiveWindow end}
 local r={fireParry=function(_,guard) assert(guard()); fires=fires+1; return true end}
 local ap=(function()\n'''+source+'''\nend)()
 assert(ap.setup({Utils=u,GameInfo=g,Remote=r})); assert(ap.bindCharacter(character))
 frameCb(0.02); assert(fires==1,'training first request missing')
+snap.position=v(20)
 tm=tm+1.44; frameCb(0.02); assert(fires==1,'training retried before cooldown')
 snap.trainingLockoutUntil=tm+0.20; tm=tm+0.02; frameCb(0.02); assert(fires==1,'ignored server training lockout')
-tm=tm+0.20; frameCb(0.02); assert(fires==2,'training miss did not retry')
+tm=tm+0.20; frameCb(0.02); assert(fires==1,'training retried outside smaller window')
+snap.position=v(9); frameCb(0.02); assert(fires==2,'training miss did not retry')
 -- A new parry event blocks retry until a newer state confirms the return.
 snap.trainingParryAt=101; tm=tm+1.5; frameCb(0.02); assert(fires==2,'ignored fresh training parry')
 ''')
@@ -377,4 +381,28 @@ assert(not canActivateReturn(state,snapshot,1),'slow closing speed wrongly treat
 snapshot.velocity=v(-600); assert(canActivateReturn(state,snapshot,1),'fast incoming ball rejected')
 snapshot.velocity=v(600); assert(not canActivateReturn(state,snapshot,1),'outgoing ball accepted')
 snapshot.velocity=v(-600); snapshot.targetUncertain=true; assert(not canActivateReturn(state,snapshot,1),'uncertain target accepted')
+''')
+
+
+# Fierce only fires for an expired click and an incoming ball in range.
+fierce=(root/'extras/autofierce.luau').read_text()
+fierce=re.sub(r'([A-Za-z_][\w.]*) \+= ([^;\n]+?)(?=;|\n| end)',lambda m:f'{m[1]} = {m[1]} + ({m[2]})',fierce)
+run('fierce waits for miss and incoming ball', '''
+local t=10; os.clock=function() return t end
+local frame,parried; local c={Connected=true,Disconnect=function() end}
+local heartbeat={Connect=function(_,fn) frame=fn; return c end}
+local signal={Connect=function(_,fn) parried=fn; return c end}
+local press=10; local cooldown={blocking=true,predictedReset=false}; local target=42; local distance=50; local approaching=true; local count=0
+local u={isActive=function() return true end,getConfigValue=function() return true end,getLocalPlayer=function() return {UserId=42} end,getRunService=function() return {Heartbeat=heartbeat} end,trackGlobal=function() end,untrackGlobal=function() end}
+local g={areAbilitiesEnabled=function() return true end,getDeflectServerEvents=function() return {parried=signal} end,getLastDeflectPressAt=function() return press end,getDeflectWindow=function() return 0.5 end,getLocalPing=function() return 0 end,getDeflectCooldownState=function() return cooldown end,getSnapshotAt=function() return {syncAt=t,targetId=target} end,isSnapshotValid=function() return true end,getBallFrozen=function() return false end}
+local a={getTiming=function() return {approaching=approaching,distance=distance,triggerDistance=20} end,beginFierce=function() return {} end,cancelFierce=function() end}
+local r={fireFierce=function(guard) if guard() then count=count+1; return true end return false end}
+local mod=(function()\n'''+fierce+'''\nend)(); assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a}))
+frame(); t=10.6; distance=10; frame(); assert(count==0,'used before deadline')
+t=10.66; cooldown.predictedReset=true; frame(); assert(count==0,'used during predicted reset')
+cooldown.predictedReset=false; target=99; frame(); assert(count==0,'used against another target')
+target=42; approaching=false; frame(); assert(count==0,'used for outgoing ball')
+approaching=true; distance=30; frame(); assert(count==0,'used outside window')
+distance=10; frame(); assert(count==1,'did not use after miss'); frame(); assert(count==1,'duplicate')
+t=11; press=11; frame(); parried(); t=12; press=0; frame(); assert(count==1,'used after parry')
 ''')
