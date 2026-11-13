@@ -19,6 +19,7 @@ local targetFrame, targetFrameConnection = 0, nil
 local trainingConnection, trainingRemote, trainingState, trainingSequence = nil, nil, nil, 0
 local trainingEventConnection, trainingEventRemote
 local trainingRound, trainingDespawned, trainingServerTime = 0, false, nil
+local trainingParryAt
 local trainingDataModule, trainingData
 local snapshotCache, snapshotCacheAt = nil, -math.huge
 local dashStateCache = setmetatable({}, { __mode = "k" })
@@ -267,7 +268,7 @@ local function findSyncRemote()
   return nil
 end
 local function resetTrainingBall(despawned)
-  trainingRound += 1; trainingState, trainingDespawned = nil, despawned
+  trainingRound += 1; trainingState, trainingDespawned, trainingParryAt = nil, despawned, nil
   invalidateSnapshotCache()
 end
 local function bindTrainingSync()
@@ -278,8 +279,12 @@ local function bindTrainingSync()
     resetTrainingBall(false)
   end
   if event and not trainingEventConnection then
-    trainingEventConnection = event.OnClientEvent:Connect(function(kind)
-      if kind == "BallSpawn" then resetTrainingBall(false) elseif kind == "BallDespawn" or kind == "Kill" then resetTrainingBall(true) end
+    trainingEventConnection = event.OnClientEvent:Connect(function(kind, playerId)
+      if kind == "BallSpawn" then resetTrainingBall(false)
+      elseif kind == "BallDespawn" or kind == "Kill" then resetTrainingBall(true)
+      elseif kind == "Parry" and players.LocalPlayer and playerId == players.LocalPlayer.UserId then
+        trainingParryAt = world:GetServerTimeNow(); invalidateSnapshotCache()
+      end
     end)
     utils.trackGlobal(trainingEventConnection)
   end
@@ -734,6 +739,7 @@ local function snapshot(time)
       serverTime = sample.serverTime,
       syncSequence = sample.sequence,
       trainingRound = sample.round,
+      trainingParryAt = trainingParryAt,
     }
 
     snapshotCache, snapshotCacheAt = result, time; return result
