@@ -19,6 +19,7 @@ local targetFrame, targetFrameConnection = 0, nil
 local trainingConnection, trainingRemote, trainingState, trainingSequence = nil, nil, nil, 0
 local trainingEventConnection, trainingEventRemote
 local trainingRound, trainingDespawned, trainingServerTime = 0, false, nil
+local trainingObservers = {}
 local trainingParryAt
 local trainingDataModule, trainingData
 local snapshotCache, snapshotCacheAt = nil, -math.huge
@@ -267,6 +268,27 @@ local function findSyncRemote()
   if validSyncRemote(candidate) then return candidate end
   return nil
 end
+local function notifyTraining()
+  local listeners = table.clone(trainingObservers)
+  for _, entry in ipairs(listeners) do
+    if entry.Connected then
+      local ok, err = pcall(entry.callback)
+      if not ok then utils.recordError("Training.onState", err) end
+    end
+  end
+end
+function GameInfo.observeTraining(callback)
+  assert(type(callback) == "function", "training callback required")
+  local entry = { Connected = true, callback = callback }
+  function entry:Disconnect()
+    if not self.Connected then return end
+    self.Connected = false
+    local index = table.find(trainingObservers, self)
+    if index then table.remove(trainingObservers, index) end
+  end
+  trainingObservers[#trainingObservers + 1] = entry
+  return entry
+end
 local function resetTrainingBall(despawned)
   trainingRound += 1; trainingState, trainingDespawned, trainingParryAt = nil, despawned, nil
   invalidateSnapshotCache()
@@ -313,7 +335,7 @@ local function bindTrainingSync()
         round = trainingRound,
       }
 
-      invalidateSnapshotCache()
+      invalidateSnapshotCache(); notifyTraining()
     end)
     utils.trackGlobal(trainingConnection)
   end
@@ -739,6 +761,7 @@ local function snapshot(time)
       serverTime = sample.serverTime,
       syncSequence = sample.sequence,
       trainingRound = sample.round,
+      trainingPosition = sample.position,
       trainingParryAt = trainingParryAt,
     }
 
@@ -998,12 +1021,14 @@ GameInfo.__contract = {
       "getRunService",
       "trackGlobal",
       "untrackGlobal",
+      "recordError",
     },
   },
   provides = {
     "setup",
     "applyPacket",
     "isTrainingArea",
+    "observeTraining",
     "fireTrainingParry",
     "getBall",
     "getBallPosition",
