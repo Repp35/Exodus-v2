@@ -337,7 +337,6 @@ local function deactivationReason(state, snapshot, time)
   local age = snapshot and finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt
   -- A missing or delayed packet is not evidence that the exchange ended.
   if not snapshot or not gameInfo.isSnapshotValid(snapshot) or not age or age < 0 or age > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return nil end
-  if stationaryTooLong(state, time, ball, snapshot) then return "frozen" end
   local target = userId(snapshot.targetId)
   if not target then return nil end
   if target ~= localPlayer.UserId and target ~= state.partner then
@@ -781,7 +780,6 @@ function AutoSpam.onBallSync(data)
   end
   if finite(sequence) then state.sequence = sequence end
   if data.Teleported == true then
-    if state.active then deactivate(state, "ball_teleported", time) end
     state.timeoutBlocked, state.timeoutBlockedTarget = false, nil
     state.target, state.stoppedPartner = nil, nil; resetExchange(state)
     state.haunterPartner, state.haunterUntil = nil, nil; return
