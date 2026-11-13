@@ -61,6 +61,15 @@ local function userId(value)
   return finite(value) and value > 0 and value % 1 == 0 and value or nil
 end
 local function now() return utils.now() end
+local function networkLatency()
+  local ping = gameInfo.getAveragePing()
+  return finite(ping) and math.max(0, ping) * 0.5 or 0
+end
+local function compensatedRadius(id, speed)
+  local radius = gameInfo.getPlayerRawRadius(id, speed, false)
+  if not finite(radius) then return nil end
+  return radius + (id == localPlayer.UserId and finite(speed) and math.max(0, speed) * networkLatency() or 0)
+end
 local function elapsed(localStart, serverStart, time, serverTime)
   if finite(serverStart) and finite(serverTime) then return serverTime >= serverStart and serverTime - serverStart or nil end
   return finite(localStart) and time >= localStart and time - localStart or nil
@@ -118,7 +127,7 @@ local function distanceLimit(snapshot, partner)
   if not finite(speed) or speed <= 0 then return nil end
   local minimum, maximum = gameInfo.getBallSpeedLimits(); local baseRange, resilienceMax = gameInfo.getDeflectRangeParameters()
   local ownRange, otherRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId), gameInfo.getPlayerDeflectRange(partner)
-  local ownRaw, otherRaw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true), gameInfo.getPlayerRawRadius(partner, speed, false)
+  local ownRaw, otherRaw = compensatedRadius(localPlayer.UserId, speed), gameInfo.getPlayerRawRadius(partner, speed, false)
   if
     not finite(minimum)
     or not finite(maximum)
@@ -142,7 +151,7 @@ local function deactivationDistanceLimit(snapshot, partner)
   if not finite(speed) or speed <= 0 then return nil end
   local minimum, maximum = gameInfo.getBallSpeedLimits(); local baseRange, resilienceMax = gameInfo.getDeflectRangeParameters()
   local ownRange, otherRange = gameInfo.getPlayerDeflectRange(localPlayer.UserId), gameInfo.getPlayerDeflectRange(partner)
-  local ownRaw, otherRaw = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true), gameInfo.getPlayerRawRadius(partner, speed, true)
+  local ownRaw, otherRaw = compensatedRadius(localPlayer.UserId, speed), compensatedRadius(partner, speed)
   if
     not finite(minimum)
     or not finite(maximum)
@@ -164,11 +173,11 @@ end
 local function geometry(snapshot, factor)
   local speed = snapshotSpeed(snapshot)
   if not finite(speed) or speed <= 0 then return nil end
-  local value = gameInfo.getDeflectGeometry(speed, "game", factor, false); return value, speed, value and value.deflectWindow
+  local value = gameInfo.getDeflectGeometry(speed, "game", factor, false, networkLatency()); return value, speed, value and value.deflectWindow
 end
 local function distanceGate(state, snapshot, partner)
   if not state.root.Parent or not snapshot or typeof(snapshot.position) ~= "Vector3" then return "distance_unavailable" end
-  local speed = snapshotSpeed(snapshot); local value = finite(speed) and speed > 0 and gameInfo.getDeflectGeometry(speed, "game", CONFIG.ACTIVATION.RADIUS_FACTOR, false)
+  local speed = snapshotSpeed(snapshot); local value = finite(speed) and speed > 0 and gameInfo.getDeflectGeometry(speed, "game", CONFIG.ACTIVATION.RADIUS_FACTOR, false, networkLatency())
   local opponent, limit = partner and gameInfo.getPlayerMotion(partner), distanceLimit(snapshot, partner)
   if not value or typeof(opponent) ~= "Vector3" or not limit then return "distance_unavailable" end
   local own = state.root.Position
@@ -218,7 +227,7 @@ local function dashAssistPartner(state, snapshot, time)
     local direction = own - snapshot.position; local velocity = snapshot.velocity
     if direction.Magnitude > 1 and velocity.Magnitude > 8 and velocity:Dot(direction) / (velocity.Magnitude * direction.Magnitude) < -0.35 then return nil end
   end
-  local raw = gameInfo.getPlayerRawRadius(localPlayer.UserId, snapshotSpeed(snapshot), true); return finite(raw) and (opponent - own).Magnitude <= raw and partner or nil
+  local raw = compensatedRadius(localPlayer.UserId, snapshotSpeed(snapshot)); return finite(raw) and (opponent - own).Magnitude <= raw and partner or nil
 end
 local function activationGeometry(state, snapshot, partner, time)
   local factor = CONFIG.ACTIVATION.RADIUS_FACTOR
@@ -454,7 +463,7 @@ local function armReturn(state, previous, time, snapshot, serverTime)
   end
   local value, speed, window = activationGeometry(state, snapshot, previous, time); local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime)
   if not value or not window or not duration then return end
-  local uncertainty = finite(state.departedServerAt) and finite(serverTime) and 0 or gameInfo.getAveragePing()
+  local uncertainty = finite(state.departedServerAt) and finite(serverTime) and 0 or networkLatency()
   local startedNear = (snapshot.position - state.root.Position).Magnitude <= value.fullRadius; local fastReturn = duration <= returnWindow(window, speed, CONFIG.ACTIVATION.RETURN, uncertainty)
   if startedNear and not fastReturn then return end
   state.pending = { partner = previous, startedNear = startedNear, fastReturn = fastReturn }
@@ -532,7 +541,7 @@ local function safeToReset(state, time)
   if not state.pendingReset or (state.resetCheckAt and time - state.resetCheckAt < 0.15) then return end
   state.resetCheckAt = time; local snapshot = gameInfo.getSnapshotAt(time)
   local speed = snapshot and (snapshot.syncSpeed or snapshot.speed) or 16
-  local radius = gameInfo.getPlayerRawRadius(localPlayer.UserId, speed, true) or select(1, gameInfo.getDeflectRangeParameters()) or 16
+  local radius = compensatedRadius(localPlayer.UserId, speed) or select(1, gameInfo.getDeflectRangeParameters()) or 16
   for _, player in ipairs(players:GetPlayers()) do
     if player ~= localPlayer and playerIsAlive(player.UserId) then
       local position = gameInfo.getPlayerMotion(player.UserId)
