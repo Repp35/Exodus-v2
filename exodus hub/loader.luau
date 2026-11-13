@@ -95,6 +95,7 @@ local CONFIG = {
   MODULES = {
     { name = "permissions", path = "modules/logic/aux/permissions.luau" },
     { name = "config", path = "modules/front/config.luau" },
+    { name = "uiconfig", path = "modules/front/uiconfig.luau" },
     { name = "utils", path = "modules/logic/aux/utils.luau" },
     { name = "gameinfo", path = "modules/logic/aux/gameinfo.luau" },
     { name = "clashstats", path = "modules/logic/aux/clashstats.luau" },
@@ -136,7 +137,7 @@ local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
 for _, entry in ipairs(MODULE_MANIFEST) do
   MODULE_BY_NAME[entry.name] = entry
-  if entry.name ~= "permissions" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
+  if entry.name ~= "ui" and entry.name ~= "permissions" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
 end
 
 -- http
@@ -285,8 +286,6 @@ local function stopPreviousRuntime()
   end
   if type(Modules.gameinfo) == "table" and type(Modules.gameinfo.stopMaintenance) == "function" then attempt("gameinfo", Modules.gameinfo.stopMaintenance) end
   for _, name in ipairs({
-    "config",
-    "ui",
     "universal",
     "infinitejump",
     "noclip",
@@ -506,7 +505,7 @@ local function initializeModules(loaded)
   local characterBinds, bindModule, bindError = collectCharacterBinds(loaded)
   if not characterBinds then error(("%s: %s"):format(tostring(bindModule), tostring(bindError)), 2) end
   for _, name in ipairs(MODULE_ORDER) do
-    if name ~= "utils" and name ~= "config" then
+    if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
       local module = loaded[name]
       if type(module) ~= "table" or type(module.setup) ~= "function" then error("API interna ausente: " .. name .. ".setup", 2) end
       local deps = loaded.permissions.resolve(name, loaded)
@@ -634,10 +633,10 @@ end
 
 -- interface
 local function loadInterface(loaded, controls)
-  local interface = loaded.config
+  local interface = loaded.ui
   if type(interface) ~= "table" then return false, "UI", "módulo não carregado" end
   if type(interface.setup) ~= "function" then return false, "UI", "setup ausente" end
-  local dependencies = loaded.permissions.resolve("config", loaded); dependencies.Controls = controls
+  local dependencies = loaded.permissions.resolve("ui", loaded); dependencies.Controls = controls
   local setupResult, setupError = interface.setup(dependencies)
   if setupResult ~= true then return false, "UI", setupError end
   return true
@@ -765,7 +764,7 @@ local function startInternal()
   })
   if not uiReady then return stopStartup(utils, uiModule, uiError) end
   Exodus.Context = loaded; Exodus.UIReady = uiReady == true
-  Exodus.UI = Modules.config; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
+  Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
   Exodus.Revision = version; _G.ExodusLastLoadedRevision = version
   if requestedRevision then clearPersistent("update"); printStartup("Exodus: Update completed.") elseif wasStarted then printStartup("Exodus: Reloaded.") else printStartup("Exodus: Initialized.") end
