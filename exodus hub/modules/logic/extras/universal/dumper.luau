@@ -69,7 +69,9 @@ local function objectPath(object)
 end
 local function isInstance(object) return typeof(object) == "Instance" end
 local function safeFilename(value)
-  local result = tostring(value):gsub("[^%w%._%-]", "_"):gsub("_+", "_"):sub(1, 110); return result ~= "" and result or "unnamed"
+  local result = tostring(value):gsub("[^%w%._%-]", "_"):gsub("_+", "_"):sub(1, 80)
+  if result == "" or result == "." or result == ".." then return "unnamed" end
+  return result
 end
 local function getEnvironment()
   if type(getfenv) == "function" then
@@ -102,8 +104,21 @@ local function ensureFolder(path)
   end
   return false, tostring(err)
 end
+local createdFolders = {}
 local function saveFile(path, content)
   if type(writefile) ~= "function" then return false, "writefile is unavailable" end
+  local directory = path:match("^(.*)/[^/]+$")
+  if directory and not createdFolders[directory] then
+    local current = ""
+    for part in directory:gmatch("[^/]+") do
+      current = current == "" and part or current .. "/" .. part
+      if not createdFolders[current] then
+        local ok, err = ensureFolder(current)
+        if not ok then return false, "cannot create " .. current .. ": " .. tostring(err) end
+        createdFolders[current] = true
+      end
+    end
+  end
   local ok, err = pcall(writefile, path, content); return ok, ok and nil or tostring(err)
 end
 local function allowed(object, allowDetached)
@@ -190,18 +205,22 @@ end
 -- dump
 local function run(token, callbacks)
   if type(writefile) ~= "function" or type(makefolder) ~= "function" then return nil, "writefile and makefolder are required" end
+  table.clear(createdFolders)
   local base = nextFolder()
   for _, path in ipairs({ base, base .. "/scripts", base .. "/remotes" }) do
     local ok, err = ensureFolder(path)
     if not ok then return nil, "cannot create " .. path .. ": " .. tostring(err) end
+    createdFolders[path] = true
   end
   if CONFIG.SAVE_BYTECODE then
     local ok, err = ensureFolder(base .. "/bytecode")
     if not ok then return nil, "cannot create bytecode folder: " .. tostring(err) end
+    createdFolders[base .. "/bytecode"] = true
   end
   if CONFIG.SAVE_DISASSEMBLY then
     local ok, err = ensureFolder(base .. "/disassembly")
     if not ok then return nil, "cannot create disassembly folder: " .. tostring(err) end
+    createdFolders[base .. "/disassembly"] = true
   end
   emit(callbacks, "onStatus", "Collecting instances...")
   local catalog, candidates, seen, discoveryErrors = {}, {}, {}, {}
@@ -278,6 +297,26 @@ local function run(token, callbacks)
   end
   local manifest, errors = {}, discoveryErrors; local saved, failed, bytecodes, cacheHits = 0, 0, 0, 0
   local sourceCache, unresolved = {}, {}
+  local folderByInstance, usedFolderNames = { [game] = "" }, { [""] = { _nilinstances = true } }
+  local function folderFor(object)
+    local chain, current = {}, safeProperty(object, "Parent")
+    while isInstance(current) and current ~= game and folderByInstance[current] == nil and #chain < 200 do
+      chain[#chain + 1] = current; current = safeProperty(current, "Parent")
+    end
+    local folder = isInstance(current) and folderByInstance[current] or nil
+    if folder == nil then folder = "_NilInstances" end
+    for i = #chain, 1, -1 do
+      local node = chain[i]
+      local used = usedFolderNames[folder]
+      if not used then used = {}; usedFolderNames[folder] = used end
+      local name = safeFilename(objectName(node)); local candidate, suffix = name, 1
+      while used[candidate:lower()] do suffix += 1; candidate = name .. "__" .. suffix end
+      used[candidate:lower()] = true
+      folder = folder == "" and candidate or folder .. "/" .. candidate
+      folderByInstance[node] = folder
+    end
+    return folder
+  end
   for index, item in ipairs(candidates) do
     if token.cancelled then return nil, "Dump canceled" end
     local object, attempts = item.instance, {}
@@ -327,7 +366,9 @@ local function run(token, callbacks)
     if source and bytecode and not sourceCache[bytecode] then sourceCache[bytecode] = source end
     if not decompiler then attempts[#attempts + 1] = "decompile: unavailable" end
     if #readers == 0 then attempts[#attempts + 1] = "bytecode readers unavailable" end
-    local stem = ("%04d_%s_%s"):format(index, objectClass(object), safeFilename(item.path))
+    local folder = folderFor(object)
+    local filename = ("%s__%s_%04d"):format(safeFilename(objectName(object)), objectClass(object), index)
+    local stem = folder ~= "" and folder .. "/" .. filename or filename
     if bytecode and CONFIG.SAVE_BYTECODE then
       local byteOk, byteError = saveFile(base .. "/bytecode/" .. stem .. ".bin", bytecode)
       if byteOk then bytecodes += 1 else attempts[#attempts + 1] = "save bytecode: " .. tostring(byteError) end
