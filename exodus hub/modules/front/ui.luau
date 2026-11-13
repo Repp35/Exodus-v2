@@ -2484,7 +2484,7 @@ function ExodusUI.setup(deps)
   local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 26, settingsRight)
   local gateYPos = createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight); createToggleCard("AutoSpam Gates", "ClashGateInfoVisible", gateYPos, settingsRight)
   local function updateAbilityVisibility(enabled)
-    for _, card in ipairs({ darkCard, miniDarkCard, jumpCard, miniJumpCard, upDashCard, fierceCard, autoUpDashCard }) do
+    for _, card in pairs({ darkCard, miniDarkCard, jumpCard, miniJumpCard, upDashCard, fierceCard, autoUpDashCard }) do
       if card then card.Visible = enabled end
     end
     darkBall.Visible, upDashBall.Visible = enabled and not UIState.desktop, enabled and not UIState.desktop
