@@ -100,6 +100,7 @@ local CONFIG = {
     { name = "uiconfig", path = "modules/front/uiconfig.luau" },
     { name = "utils", path = "modules/logic/aux/utils.luau" },
     { name = "gameinfo", path = "modules/logic/aux/gameinfo.luau" },
+    { name = "cooldown", path = "modules/logic/aux/cooldown.luau" },
     { name = "clashstats", path = "modules/logic/aux/clashstats.luau" },
     { name = "autodark", path = "modules/logic/extras/autodark.luau" },
     { name = "movement", path = "modules/logic/aux/movement.luau" },
@@ -310,6 +311,7 @@ local function stopPreviousRuntime()
     "movement",
     "dash",
     "autoparry",
+    "cooldown",
   }) do
     local module = Modules[name]
     if type(module) == "table" then

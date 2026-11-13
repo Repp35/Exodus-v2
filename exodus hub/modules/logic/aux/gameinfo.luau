@@ -9,10 +9,8 @@ local lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
 local sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt
 local ballData, dashAnimation
 local minimumSpeed, maximumSpeed, speedAt
-local errors, cooldownConnection, parriedConnection = {}, nil, nil
+local errors = {}
 local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
-local cooldown, signalAt, heldAt, missingAt, warningAt
-local localCooldownObservation
 local pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
 local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
 local targetFrame, targetFrameConnection = 0, nil
@@ -23,7 +21,6 @@ local trainingRound, trainingDespawned, trainingServerTime = 0, false, nil
 local trainingObservers = {}
 local trainingParryAt
 local trainingDataModule, trainingData
-local trainingSharedModule, trainingShared, trainingLockoutUntil
 local snapshotCache, snapshotCacheAt = nil, -math.huge
 local dashStateCache = setmetatable({}, { __mode = "k" })
 
@@ -35,11 +32,7 @@ local CONFIG = {
   BALL_SEARCH_INTERVAL = 0.5,
   SYNC_CONNECTED_INTERVAL = 3,
   SYNC_RETRY_INTERVAL = 1,
-  COOLDOWN_RETRY = 0.5,
   SPAM_MIN_INTERVAL = 0.0301,
-  HELD_COOLDOWN_INTERVAL = 0.05,
-  CLIENT_DEFLECT_RESET_FAST = 0.1,
-  CLIENT_DEFLECT_RESET_SLOW = 0.15,
   SPEED_REFRESH = 0.5,
   SAMPLE_INTERVAL = 1 / 240,
   SAMPLE_MAX_GAP = 0.5,
@@ -65,10 +58,6 @@ local CONFIG = {
     FIERCE = 19,
     DARK = 20,
     HAUNTER_REMOTE = 9.150098456648103e76,
-    COOLDOWN_REMOTE = 5.520474058077904e76,
-    PARRIED_REMOTE = 9.611859444202098e76,
-    COOLDOWN_EVENT = 5.93848805167512e76,
-    COOLDOWN_STOP = 6.60750295352893e76,
     DARK_EVENT = 2.4141700243704228e76,
     MANIFEST_REMOTE = 9.318024238496386e76,
     CRATE_CHECK = 4.702176977990345e76,
@@ -124,15 +113,6 @@ local function inTrainingArea()
   return not finite(lives) or lives <= 0
 end
 function GameInfo.isTrainingArea() return inTrainingArea() end
-function GameInfo.getTrainingMissCooldown()
-  local module = child(child(storage(), "Training"), "TrainingShared")
-  if module ~= trainingSharedModule then trainingSharedModule, trainingShared = module, nil end
-  if module and not trainingShared then
-    local ok, value = pcall(load, module, "TrainingShared")
-    if ok then trainingShared = value end
-  end
-  local duration = trainingShared and trainingShared.MissCooldown; return finite(duration) and duration > 0 and duration or 1.45
-end
 function GameInfo.fireTrainingParry()
   if not inTrainingArea() then return false, "fora da arena de treino" end
   local endpoint = child(child(child(storage(), "Training"), "Remotes"), "Block"); local camera = world.CurrentCamera
@@ -341,17 +321,9 @@ local function bindTrainingSync()
   end
   if event and not trainingEventConnection then
     trainingEventConnection = event.OnClientEvent:Connect(function(kind, playerId)
-      if kind == "BallSpawn" then
-        resetTrainingBall(false)
-      elseif kind == "BallDespawn" or kind == "Kill" then
-        resetTrainingBall(true)
-      elseif kind == "Parry" and players.LocalPlayer and playerId == players.LocalPlayer.UserId then
-        trainingParryAt = world:GetServerTimeNow(); trainingLockoutUntil = nil
-        invalidateSnapshotCache()
-      elseif kind == "Lockout" then
-        local duration = finite(playerId) and playerId >= 0 and playerId or GameInfo.getTrainingMissCooldown(); trainingLockoutUntil = os.clock() + duration
-        invalidateSnapshotCache()
-      end
+      if kind == "BallSpawn" then resetTrainingBall(false)
+      elseif kind == "BallDespawn" or kind == "Kill" then resetTrainingBall(true)
+      elseif kind == "Parry" and players.LocalPlayer and playerId == players.LocalPlayer.UserId then trainingParryAt = world:GetServerTimeNow(); invalidateSnapshotCache() end
     end)
     utils.trackGlobal(trainingEventConnection)
   end
@@ -435,34 +407,23 @@ function GameInfo.stopMaintenance()
 end
 function GameInfo.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
-  GameInfo.stopMaintenance(); disconnect(cooldownConnection)
-  disconnect(parriedConnection); cooldownConnection, parriedConnection = nil, nil
-  utils = deps.Utils; players, world = utils.getPlayers(), utils.getWorkspace()
+  GameInfo.stopMaintenance(); utils = deps.Utils
+  players, world = utils.getPlayers(), utils.getWorkspace()
   if not players or not world then return false, "dependência ausente: Players ou Workspace" end
   ball, searchAt, watching = nil, 0, false; ballData, dashAnimation = nil, nil
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
   sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
-  trainingSharedModule, trainingShared, trainingLockoutUntil = nil, nil, nil; trainingZone, targetHighlight, targetHighlightCharacter = nil, nil, nil
-  snapshotCache, snapshotCacheAt = nil, -math.huge; table.clear(dashStateCache)
-  minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}
-  pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
-  targetFrame = 0; local service = utils.getRunService()
+  trainingZone, targetHighlight, targetHighlightCharacter = nil, nil, nil; snapshotCache, snapshotCacheAt = nil, -math.huge
+  table.clear(dashStateCache); minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0
+  errors = {}; pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
+  targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }; targetFrame = 0
+  local service = utils.getRunService()
   if service and service.Heartbeat then
     targetFrameConnection = service.Heartbeat:Connect(function()
       targetFrame += 1
     end)
     utils.trackGlobal(targetFrameConnection)
   end
-  localCooldownObservation = nil
-  cooldown = {
-    known = false,
-    active = false,
-    rawActive = false,
-    lastEventAt = -math.huge,
-    lastParriedAt = -math.huge,
-  }
-
-  signalAt, heldAt, missingAt, warningAt = 0, 0, nil, 0; GameInfo.getDeflectCooldownState()
   return true
 end
 function GameInfo.getBall() return getBall() end
@@ -486,6 +447,46 @@ function GameInfo.getAveragePing()
     end
   end
   return #pingSamples > 0 and pingSum / #pingSamples or 0, pingRaw, #pingSamples
+end
+function GameInfo.getGameContext()
+  local player = players and players.LocalPlayer; local placeId = game.PlaceId
+  local matchStatus = world and world:GetAttribute("MatchStatus"); local modeId = world and world:GetAttribute("CurGamemode")
+  local lives = player and player:GetAttribute("Lives"); local playing = player and player:GetAttribute("Playing")
+  local afk = player and player:GetAttribute("AFK")
+  local statuses = {
+    [-1] = "None",
+    [0] = "WaitingForPlayers",
+    [1] = "Intermission",
+    [2] = "VoteGamemode",
+    [3] = "VoteMap",
+    [4] = "VoteLives",
+    [5] = "Starting",
+    [6] = "InGame",
+  }
+
+  local modes = { [0] = "Phantom Ball", [1] = "2 Teams", [2] = "4 Teams", [3] = "Zero Abilities", [5] = "Ball Bounce", [6] = "No Movement", [7] = "3 Lives" }
+  local roundActive
+  if finite(matchStatus) then roundActive = matchStatus == 6 end
+  local inMatch
+  if finite(matchStatus) and matchStatus ~= 6 then inMatch = false elseif roundActive and finite(lives) then inMatch = lives > 0 and playing ~= false end
+  local training = inTrainingArea(); local area = "unknown"
+  if placeId == 12979690461 then
+    if inMatch then area = "match" elseif training then area = "training" elseif player and finite(lives) then area = "lobby" end
+  end
+  return {
+    area = area,
+    placeId = placeId,
+    inMatch = inMatch,
+    roundActive = roundActive,
+    training = training,
+    playing = playing,
+    lives = lives,
+    afkEnabled = afk == true,
+    matchStatus = matchStatus,
+    matchStatusName = statuses[matchStatus],
+    modeId = modeId,
+    modeName = modes[modeId],
+  }
 end
 function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode") ~= 3 end
 function GameInfo.observeAbilityMode(callback)
@@ -608,92 +609,6 @@ function GameInfo.isPlayerDashing(player)
 end
 function GameInfo.getFierceDeflectAbility() return getAbility(CONFIG.GAME_IDS.FIERCE, "ActivateAndBlock") end
 function GameInfo.getDarkSealAbility() return getAbility(CONFIG.GAME_IDS.DARK, "SendEvent") end
-function GameInfo.getDeflectServerEvents()
-  local first, second = generatedRemote(CONFIG.GAME_IDS.COOLDOWN_REMOTE), generatedRemote(CONFIG.GAME_IDS.PARRIED_REMOTE)
-  if not first then return nil end
-  return { cooldown = first.OnClientEvent, parried = second and second.OnClientEvent or nil }
-end
-function GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
-  if abilityId ~= CONFIG.GAME_IDS.DEFLECT then return nil end
-  if eventId == CONFIG.GAME_IDS.COOLDOWN_EVENT and finite(value) then return value > 0 and "started" or "reset", math.max(value, 0) end
-  if eventId == CONFIG.GAME_IDS.COOLDOWN_STOP then return "stopped", 0 end
-  return nil
-end
-function GameInfo.getHeldDeflectServerCooldown()
-  local ability = GameInfo.getDeflectAbility()
-  if not ability then return nil end
-  local duration, received = ability.HeldServerCooldown, ability.HeldServerCooldownAt
-  if finite(duration) and duration > 0 and finite(received) then return duration, received end
-  return nil
-end
-function GameInfo.getDeflectCooldownState()
-  local time = os.clock()
-  if cooldownConnection and cooldownConnection.Connected == false then
-    disconnect(cooldownConnection); cooldownConnection = nil
-    cooldown.rawActive, cooldown.endsAt, signalAt = false, nil, 0
-  end
-  if parriedConnection and parriedConnection.Connected == false then disconnect(parriedConnection); parriedConnection = nil end
-  if not cooldownConnection and time >= signalAt then
-    signalAt = time + CONFIG.COOLDOWN_RETRY; local signals = GameInfo.getDeflectServerEvents()
-    if signals and signals.cooldown then
-      cooldownConnection = signals.cooldown:Connect(function(abilityId, eventId, value)
-        local kind, duration = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
-        if not kind then return end
-        cooldown.known, cooldown.lastEventAt = true, os.clock(); cooldown.rawActive = kind == "started"
-        if kind == "started" then cooldown.lastStartedAt = cooldown.lastEventAt end
-        cooldown.endsAt = cooldown.rawActive and cooldown.lastEventAt + duration or nil
-      end)
-      utils.trackGlobal(cooldownConnection); missingAt = nil
-    else
-      missingAt = missingAt or time
-      if time - missingAt >= 3 and time >= warningAt then warningAt = time + 10; report("DeflectCooldown", "evento de cooldown do servidor indisponível") end
-    end
-  end
-  if cooldownConnection and not parriedConnection then
-    local signals = GameInfo.getDeflectServerEvents()
-    if signals and signals.parried then
-      parriedConnection = signals.parried:Connect(function()
-        cooldown.active, cooldown.rawActive, cooldown.endsAt, cooldown.lastEventAt, cooldown.lastParriedAt = false, false, nil, os.clock(), os.clock()
-      end)
-      utils.trackGlobal(parriedConnection)
-    end
-  end
-  if not cooldown.rawActive and time >= heldAt then
-    heldAt = time + CONFIG.HELD_COOLDOWN_INTERVAL; local duration, received = GameInfo.getHeldDeflectServerCooldown()
-    if duration and received and received <= time and time < received + duration and received > cooldown.lastEventAt + 0.01 then
-      cooldown.known, cooldown.rawActive, cooldown.lastEventAt, cooldown.endsAt = true, true, received, received + duration; cooldown.lastStartedAt = received
-    end
-  end
-  if cooldown.rawActive and finite(cooldown.endsAt) and time >= cooldown.endsAt then cooldown.rawActive, cooldown.endsAt = false, nil end
-  local ability = GameInfo.getDeflectAbility(); local localCooldown = ability and finite(ability.Cooldown) and ability.Cooldown > 0
-  if localCooldown then cooldown.known = true end
-  local remaining = localCooldown and ability.Cooldown or 0
-  if cooldown.rawActive and finite(cooldown.endsAt) then remaining = math.max(remaining, cooldown.endsAt - time) end
-  cooldown.remaining = math.max(0, remaining); cooldown.active = cooldown.rawActive or localCooldown == true
-  cooldown.predictedReset = ability and finite(ability.PredictedResetUntil) and time < ability.PredictedResetUntil or false; cooldown.blocking = cooldown.active
-  return cooldown
-end
-function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
-  if not finite(activatedAt) then return false end
-  local ability = GameInfo.getDeflectAbility(); local time = os.clock()
-  if not ability or not finite(ability.Cooldown) or time < activatedAt then localCooldownObservation = nil; return false end
-  local remaining = math.max(0, ability.Cooldown); local observation = localCooldownObservation
-  if not observation or observation.activatedAt ~= activatedAt or observation.ability ~= ability or time < observation.sampledAt then
-    observation = { activatedAt = activatedAt, ability = ability, sampledAt = time }; localCooldownObservation = observation
-    if remaining > 0 then observation.startedAt = time end
-  elseif remaining <= 0 then
-    observation.startedAt = nil
-  elseif not observation.startedAt then
-    observation.startedAt = time
-  end
-  observation.sampledAt = time
-  if not observation.startedAt or not finite(speed) or speed <= 0 then return false end
-  local low, high = GameInfo.getBallSpeedLimits()
-  if not finite(low) or not finite(high) or high <= low then return false end
-  local progress = math.clamp((speed - low) / (high - low), 0, 1); local budget = CONFIG.CLIENT_DEFLECT_RESET_SLOW + (CONFIG.CLIENT_DEFLECT_RESET_FAST - CONFIG.CLIENT_DEFLECT_RESET_SLOW) * progress
-  if finite(multiplier) then budget *= math.max(1, multiplier) end
-  return time - observation.startedAt >= budget
-end
 function GameInfo.getSyncData() return syncData() end
 local function syncSequence(current, provider)
   if packet and current == packet then return packet.Sequence end
@@ -816,7 +731,6 @@ local function snapshot(time)
       syncSequence = sample.sequence,
       trainingRound = sample.round,
       trainingParryAt = trainingParryAt,
-      trainingLockoutUntil = trainingLockoutUntil,
     }
 
     snapshotCache, snapshotCacheAt = result, time; return result
@@ -1098,9 +1012,9 @@ GameInfo.__contract = {
     "setup",
     "applyPacket",
     "isTrainingArea",
+    "getGameContext",
     "observeTraining",
     "fireTrainingParry",
-    "getTrainingMissCooldown",
     "getBall",
     "getBallPosition",
     "getBallVelocity",
@@ -1126,11 +1040,6 @@ GameInfo.__contract = {
     "getLastDeflectPressAt",
     "getAutoSpamDelay",
     "getMinimumSpamInterval",
-    "getDeflectServerEvents",
-    "decodeDeflectServerEvent",
-    "getHeldDeflectServerCooldown",
-    "getDeflectCooldownState",
-    "isClientDeflectResetLate",
     "getDashAbility",
     "getLocalDashState",
     "isPlayerDashing",

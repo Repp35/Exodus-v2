@@ -2,7 +2,7 @@
 
 -- module
 local AutoSpam = {}
-local utils, gameInfo, clashStatsModule, players, runService, localPlayer
+local utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo
 local current, generation = nil, 0
 local clashStats
 local lastActivationReason, lastActivationAt, lastStopReason, lastStopAt
@@ -28,6 +28,7 @@ local CONFIG = {
     DEFLECT_COOLDOWN_TIMEOUT_BASE = 0.225,
     DEFLECT_COOLDOWN_TIMEOUT_MAX_SPEED = 0.15,
     COOLDOWN_PROTECTION_RADIUS = 16,
+    COOLDOWN_WINDOW_FRAME_MARGIN = 1 / 60,
   },
   SHARED = {
     MIN_RETURN = 1 / 25,
@@ -239,7 +240,7 @@ local function deactivate(state, reason, time)
   time = time or now()
   if state.active then
     state.stoppedPartner, state.stoppedAt = state.partner, time; state.active, state.lastDeactivatedAt = false, time
-    if reason == "deflect_cooldown_timeout" then state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target end
+    if reason == "deflect_cooldown_timeout" or reason == "deflect_window_expiring" or reason == "deflect_miss" then state.timeoutBlocked, state.timeoutBlockedTarget = true, state.target end
     lastStopReason, lastStopAt = reason, time; utils.setAutoSpamActive(false)
     utils.recordTransition("AutoSpam", "active", "idle", reason)
   end
@@ -255,11 +256,17 @@ local function deactivationReason(state, snapshot, time)
   if state.departedAt and time >= state.departedAt then
     if time - state.departedAt > returnTimeout(snapshot, state, time) then return "return_timeout" end
   end
-  local cooldown = gameInfo.getDeflectCooldownState()
+  local cooldown = cooldownInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
-    local observedStart = time
-    if cooldown.rawActive == true and finite(cooldown.lastStartedAt) and cooldown.lastStartedAt <= time then observedStart = math.max(state.activatedAt or time, cooldown.lastStartedAt) end
-    state.deflectCooldownSince = state.deflectCooldownSince or observedStart
+    if cooldown.miss == true then return "deflect_miss" end
+    if cooldown.phase == "reversible" and finite(cooldown.missDeadline) then
+      local ping = gameInfo.getAveragePing()
+      if not finite(ping) or ping < 0 then ping = 0 end
+      local margin = ping + CONFIG.DEACTIVATION.COOLDOWN_WINDOW_FRAME_MARGIN
+      if cooldown.missDeadline - time <= margin then return "deflect_window_expiring" end
+    end
+    local observedStart = finite(cooldown.blockingSince) and cooldown.blockingSince <= time and cooldown.blockingSince or time
+    state.deflectCooldownSince = math.max(state.activatedAt or time, observedStart)
   else
     state.deflectCooldownSince = nil
   end
@@ -321,7 +328,6 @@ local function armReturn(state, previous, time, snapshot, serverTime)
 end
 local function targetChanged(state, target, time, snapshot, serverTime)
   if not target or target == state.target then return end
-  if state.timeoutBlocked and target ~= state.timeoutBlockedTarget then state.timeoutBlocked, state.timeoutBlockedTarget = false, nil end
   local previous, ownId = state.target, localPlayer.UserId; local switchedToMe = target == ownId and previous and previous ~= ownId
   local exchangeReady
   if
@@ -392,7 +398,7 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
   end
   if autoEnabled == nil then autoEnabled = utils.getConfigValue("AutoSpam") == true end
   if state.timeoutBlocked and not state.active then
-    local cooldown = gameInfo.getDeflectCooldownState()
+    local cooldown = cooldownInfo.getDeflectCooldownState()
     if cooldown and cooldown.blocking == false then state.timeoutBlocked, state.timeoutBlockedTarget = false, nil end
   end
   if not autoEnabled then
@@ -530,11 +536,12 @@ end
 
 -- lifecycle
 function AutoSpam.setup(deps)
-  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats then return false, "dependências ausentes" end
+  if type(deps) ~= "table" or not deps.Utils or not deps.GameInfo or not deps.ClashStats or not deps.Cooldown then return false, "dependências ausentes" end
   if current then detach("setup") end
-  utils, gameInfo, clashStatsModule = deps.Utils, deps.GameInfo, deps.ClashStats; players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
+  utils, gameInfo, clashStatsModule, cooldownInfo = deps.Utils, deps.GameInfo, deps.ClashStats, deps.Cooldown
+  players, runService, localPlayer = utils.getPlayers(), utils.getRunService(), utils.getLocalPlayer()
   if not players or not runService or not localPlayer then
-    utils, gameInfo, clashStatsModule, players, runService, localPlayer = nil, nil, nil, nil, nil, nil; return false, "serviços indisponíveis"
+    utils, gameInfo, clashStatsModule, players, runService, localPlayer, cooldownInfo = nil, nil, nil, nil, nil, nil, nil; return false, "serviços indisponíveis"
   end
   clashStats = clashStatsModule.get(); return true
 end
@@ -611,7 +618,7 @@ end
 function AutoSpam.detachCharacter() detach("detach") end
 function AutoSpam.teardown()
   detach("teardown"); clashStatsModule = nil
-  clashStats = nil; utils, gameInfo, players, runService, localPlayer = nil, nil, nil, nil, nil
+  clashStats = nil; utils, gameInfo, players, runService, localPlayer, clashStatsModule, cooldownInfo = nil, nil, nil, nil, nil, nil, nil
 end
 function AutoSpam.onBallSync(data)
   local state = current
@@ -753,6 +760,7 @@ AutoSpam.__contract = {
     Utils = "utils",
     GameInfo = "gameinfo",
     ClashStats = "clashstats",
+    Cooldown = "cooldown",
   },
   requiresMethods = {
     Utils = {
@@ -779,7 +787,6 @@ AutoSpam.__contract = {
       "getDeflectRangeParameters",
       "isPlayerDashing",
       "getLocalDashState",
-      "getDeflectCooldownState",
       "getPlayerDeflectRange",
       "getPlayerRawRadius",
       "getBallFrozen",
@@ -788,6 +795,7 @@ AutoSpam.__contract = {
       "getBallSpeedLimits",
       "getClashContext",
     },
+    Cooldown = { "getDeflectCooldownState" },
     ClashStats = { "begin", "finish", "observe", "freeze", "get", "waitForNextClash" },
   },
   provides = {
