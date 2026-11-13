@@ -86,6 +86,7 @@ function Noclip.setup(deps)
 end
 
 Noclip.__config = CONFIG
+-- contract
 Noclip.__contract = {
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },

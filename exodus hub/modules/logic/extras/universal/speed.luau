@@ -89,6 +89,7 @@ function Speed.setup(deps)
 end
 
 Speed.__config = CONFIG
+-- contract
 Speed.__contract = {
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },

@@ -146,6 +146,7 @@ function Fly.setup(deps)
 end
 
 Fly.__config = CONFIG
+-- contract
 Fly.__contract = {
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },

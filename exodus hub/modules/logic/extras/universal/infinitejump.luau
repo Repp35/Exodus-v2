@@ -88,6 +88,7 @@ function InfiniteJump.setup(deps)
 end
 
 InfiniteJump.__config = CONFIG
+-- contract
 InfiniteJump.__contract = {
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },

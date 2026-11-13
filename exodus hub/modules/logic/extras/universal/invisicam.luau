@@ -48,6 +48,7 @@ function Invisicam.setup(deps)
 end
 
 Invisicam.__config = CONFIG
+-- contract
 Invisicam.__contract = {
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer" } },

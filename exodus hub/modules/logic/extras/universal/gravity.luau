@@ -51,6 +51,7 @@ function Gravity.setup(deps)
 end
 
 Gravity.__config = CONFIG
+-- contract
 Gravity.__contract = {
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getConfigValue", "setConfig" } },

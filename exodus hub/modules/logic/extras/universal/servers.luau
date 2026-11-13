@@ -79,6 +79,7 @@ function Servers.setup(deps)
   end)
   utils.trackGlobal(failureConnection); return true
 end
+-- contract
 Servers.__contract = {
   requires = { Utils = "utils" },
   requiresMethods = { Utils = { "getLocalPlayer", "isActive", "trackGlobal", "untrackGlobal", "recordError" } },
