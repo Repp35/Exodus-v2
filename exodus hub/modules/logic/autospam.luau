@@ -32,6 +32,7 @@ local CONFIG = {
     SNAPSHOT_MAX_AGE = 0.5,
     SEQUENCE_MODULUS = 65536,
     SEQUENCE_HALF = 32768,
+    RUNTIME_TICK_INTERVAL = 1 / 120,
   },
 }
 
@@ -101,6 +102,7 @@ local function newState(character, root)
     generation = generation,
     lastRootPosition = root.Position,
     pendingReset = false,
+    lastTickAt = -math.huge,
   }
 end
 local function distanceLimit(snapshot, partner)
@@ -382,17 +384,13 @@ local function evaluate(state, time, fresh, serverTime, snapshot, blocked, autoE
     return
   end
   snapshot = snapshot or gameInfo.getSnapshotAt(time)
-  if state.active and snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetUncertain ~= true and not snapshot.teleported and not snapshot.locked
-    and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE)) then
+  local snapshotFresh = snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetUncertain ~= true and not snapshot.teleported and not snapshot.locked
+    and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE))
+  if snapshotFresh then
     local target = userId(snapshot.targetId)
     if target then targetChanged(state, target, time, snapshot, fresh and serverTime or nil) end
   end
   if state.active and not blocked and checkDeactivation(state, snapshot, time) then blocked = true end
-  if snapshot and gameInfo.isSnapshotValid(snapshot) and snapshot.targetUncertain ~= true and not snapshot.teleported and not snapshot.locked
-    and (not finite(snapshot.syncAt) or snapshot.syncAt <= 0 or (time >= snapshot.syncAt and time - snapshot.syncAt <= CONFIG.SHARED.SNAPSHOT_MAX_AGE)) then
-    local confirmedTarget = userId(snapshot.targetId)
-    if confirmedTarget then targetChanged(state, confirmedTarget, time, snapshot, fresh and serverTime or nil) end
-  end
   sampleOwnDash(state, time)
   if not snapshot or not gameInfo.isSnapshotValid(snapshot) or snapshot.teleported then return end
   if finite(snapshot.syncAt) and snapshot.syncAt > 0 and time - snapshot.syncAt > CONFIG.SHARED.SNAPSHOT_MAX_AGE then return end
@@ -527,7 +525,10 @@ function AutoSpam.bindCharacter(character)
   end)
   listen(state, runService.Heartbeat, function()
     if current ~= state then return end
-    local time = now(); local autoEnabled = utils.getConfigValue("AutoSpam") == true
+    local time = now()
+    if time - state.lastTickAt < CONFIG.SHARED.RUNTIME_TICK_INTERVAL then return end
+    state.lastTickAt = time
+    local autoEnabled = utils.getConfigValue("AutoSpam") == true
     local upDashEnabled = utils.getConfigValue("AutoClashUpDash") == true; local manualEnabled = utils.isManualSpamActive()
     clashStats = clashStatsModule.get()
     if

@@ -1676,7 +1676,7 @@ function ExodusUI.setup(deps)
   end
   local telemetryAt, telemetryStatus, telemetrySnapshot = -math.huge, nil, nil
   local function getTelemetry(time)
-    if time < telemetryAt or time - telemetryAt >= 1 / 240 then telemetryAt, telemetryStatus, telemetrySnapshot = time, AutoSpam.getStatus(), GameInfo.getSnapshotAt(time) end
+    if time < telemetryAt or time - telemetryAt >= 1 / 30 then telemetryAt, telemetryStatus, telemetrySnapshot = time, AutoSpam.getStatus(), GameInfo.getSnapshotAt(time) end
     return telemetryStatus, telemetrySnapshot
   end
   local function formatSpeed(snapshot)
@@ -1687,7 +1687,14 @@ function ExodusUI.setup(deps)
   end
   local function updateInformation()
     if not informationGui.Parent then return end
-    local time = os.clock(); local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
+    local time = os.clock()
+    local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
+    local travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true
+    local distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true
+    if not gateEnabled and not travelVisible and not distanceVisible then
+      gateLabel.Visible, travelLabel.Visible, distanceLabel.Visible = false, false, false
+      return
+    end
     if gateEnabled and time >= nextGateUpdate then
       nextGateUpdate = time + 0.1; local status = AutoSpam.getStatus()
       local lines = {}
@@ -1698,7 +1705,6 @@ function ExodusUI.setup(deps)
     end
     local gateVisible = gateEnabled and gateLabel.Text ~= ""
     if gateLabel.Visible ~= gateVisible then gateLabel.Visible = gateVisible end
-    local travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true
     if travelLabel.Visible ~= travelVisible then travelLabel.Visible = travelVisible end
     if travelVisible and time >= nextTravelUpdate then
       nextTravelUpdate = time + 0.05; local status, snapshot = getTelemetry(time)
@@ -1727,7 +1733,6 @@ function ExodusUI.setup(deps)
         setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\n" .. text)
       end
     end
-    local distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true
     if distanceLabel.Visible ~= distanceVisible then distanceLabel.Visible = distanceVisible end
     if not distanceVisible or time < nextDistanceUpdate then return end
     nextDistanceUpdate = time + 0.1; local status, snapshot = getTelemetry(time)

@@ -39,8 +39,9 @@ local function applySpeed()
   return true
 end
 local function startSpeed()
-  connect("SpeedStep", RunService.PreSimulation or RunService.Stepped, applySpeed)
-  connect("SpeedFrame", RunService.Heartbeat, applySpeed)
+  local frameSignal = RunService.PreSimulation or RunService.Stepped or RunService.Heartbeat
+  if not frameSignal then return false end
+  connect("SpeedFrame", frameSignal, applySpeed)
   return applySpeed()
 end
 local function stopSpeed()

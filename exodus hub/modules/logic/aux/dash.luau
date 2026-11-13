@@ -3,7 +3,7 @@
 -- module
 local Dash = {}
 local utils, gameInfo, players, handler
-local records, connections = {}, {}
+local records, recordList, connections = {}, {}, {}
 local generation, lastTick = 0, -math.huge
 
 -- configuration
@@ -18,8 +18,14 @@ local CONFIG = {
 
 -- helpers
 local function now() return utils and utils.now() or os.clock() end
-local function rootOf(player)
-  local character = player.Character; return character and character:FindFirstChild("HumanoidRootPart")
+local function rootOf(player, record)
+  local character = player.Character
+  if not character then return nil end
+  local cached = record and record.root
+  if cached and cached.Parent == character then return cached end
+  local root = character:FindFirstChild("HumanoidRootPart")
+  if record then record.root = root end
+  return root
 end
 local function disconnect(connection)
   if connection then
@@ -49,14 +55,15 @@ end
 
 -- sampling
 local function resetCharacter(record, character)
-  record.character = character; record.position, record.positionAt = nil, nil
+  record.character = character; record.root, record.position, record.positionAt = nil, nil, nil
   record.lastDetection, record.signalAt, record.signalActive, record.confirmedSignalAt = nil, -math.huge, false, nil
 end
 local function observe(player, record, time, suppliedRoot)
   local character = player.Character
   if record.character ~= character then resetCharacter(record, character) end
   if not character or not character.Parent then return end
-  local root = suppliedRoot or rootOf(player)
+  local root = suppliedRoot or rootOf(player, record)
+  if suppliedRoot then record.root = suppliedRoot end
   if not root then record.position, record.positionAt = nil, nil; return end
   local position, velocity = root.Position, root.AssemblyLinearVelocity; local previous, previousAt = record.position, record.positionAt
   local delta = previousAt and time - previousAt
@@ -76,12 +83,18 @@ end
 local function removePlayer(player)
   local record = records[player]
   if not record then return end
+  local index, last = record.index, recordList[#recordList]
+  if index then
+    recordList[index] = last; recordList[#recordList] = nil
+    if last and last ~= record then last.index = index end
+  end
   resetCharacter(record, nil); disconnect(record.characterConnection)
   records[player] = nil
 end
 local function addPlayer(player)
   if records[player] then return end
-  local record = { signalAt = -math.huge }; records[player] = record
+  local record = { player = player, index = #recordList + 1, signalAt = -math.huge }
+  records[player] = record; recordList[#recordList + 1] = record
   record.characterConnection = player.CharacterAdded:Connect(function(character)
     if records[player] == record then resetCharacter(record, character) end
   end)
@@ -120,12 +133,13 @@ function Dash.tick(time, excludeLocal, center, radius)
     return
   end
   local limit = typeof(center) == "Vector3" and type(radius) == "number" and radius > 0 and radius * radius or nil
-  for player, record in pairs(records) do
+  for i = 1, #recordList do
+    local record = recordList[i]; local player = record.player
     if player.Parent and (not excludeLocal or player ~= players.LocalPlayer) then
       if not limit then
         observe(player, record, time)
       else
-        local root = rootOf(player)
+        local root = rootOf(player, record)
         if root and root.Parent then
           local delta = root.Position - center
           if delta:Dot(delta) <= limit then observe(player, record, time, root) else record.position, record.positionAt, record.signalActive, record.signalAt = nil, nil, false, -math.huge end
@@ -140,6 +154,7 @@ function Dash.resetState()
   while next(records) do
     removePlayer(next(records))
   end
+  table.clear(recordList)
   players, lastTick = nil, -math.huge
 end
 function Dash.teardown()
@@ -148,10 +163,7 @@ end
 
 -- public-api
 function Dash.getStatus()
-  local count = 0
-  for _ in pairs(records) do
-    count += 1
-  end
+  local count = #recordList
   return {
     schema = utils and utils.apiVersion and utils.apiVersion() or 1,
     players = players ~= nil,

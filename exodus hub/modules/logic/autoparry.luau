@@ -143,9 +143,7 @@ end
 local function configuredFactor()
   local factor = utils and tonumber(utils.getConfigValue("AutoParryWindowFactor")); return finite(factor) and math.clamp(factor, 0, CONFIG.MAX_WINDOW_FACTOR) or CONFIG.DEFAULT_WINDOW_FACTOR
 end
-local function activeWindowFactor(at)
-  local cps = state.autoParryCps
-  if state.lastAutoParryClickAt and finite(at) and at > state.lastAutoParryClickAt then local interval = at - state.lastAutoParryClickAt; cps = interval > 0 and 1 / interval or math.huge end
+local function activeWindowFactor()
   state.windowFactor = math.clamp(configuredFactor(), 0, CONFIG.MAX_WINDOW_FACTOR); return state.windowFactor
 end
 local function recordAutoParryRequest()

@@ -18,6 +18,7 @@ local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedA
 local targetFrame, targetFrameConnection = 0, nil
 local trainingConnection, trainingRemote, trainingState, trainingSequence = nil, nil, nil, 0
 local trainingEventConnection, trainingEventRemote
+local trainingZone, targetHighlight, targetHighlightCharacter
 local trainingRound, trainingDespawned, trainingServerTime = 0, false, nil
 local trainingObservers = {}
 local trainingParryAt
@@ -104,7 +105,11 @@ local function inTrainingArea()
   local player = players and players.LocalPlayer; local character = player and player.Character
   local root = character and character:FindFirstChild("HumanoidRootPart")
   if not root or not root.Parent then return false end
-  local area = child(child(child(world, "Training"), "Areas"), "Zone")
+  local area = trainingZone
+  if not area or not area.Parent then
+    area = child(child(child(world, "Training"), "Areas"), "Zone")
+    trainingZone = area
+  end
   if not area or not area:IsA("BasePart") then return false end
   local localPos = area.CFrame:PointToObjectSpace(root.Position); local half = area.Size / 2
   if math.abs(localPos.X) > half.X or math.abs(localPos.Y) > half.Y or math.abs(localPos.Z) > half.Z then return false end
@@ -199,7 +204,9 @@ local function targetId(data, currentBall)
   local time = os.clock(); local player = players and players.LocalPlayer
   local primary = type(data) == "table" and targetNumber(data.TargetPlayerID) or nil; local attribute = targetNumber(GameInfo.getBallTargetAttribute())
   local highlight = type(data) == "table" and targetNumber(data.HighlightTargetPlayerID) or nil; local character = player and player.Character
-  local visual = character and character:FindFirstChild("PlayerBallHighlight"); local visualTargeted = visual ~= nil and visual.Enabled == true
+  if character ~= targetHighlightCharacter then targetHighlightCharacter, targetHighlight = character, nil end
+  if character and (not targetHighlight or targetHighlight.Parent ~= character) then targetHighlight = character:FindFirstChild("PlayerBallHighlight") end
+  local visual = targetHighlight; local visualTargeted = visual ~= nil and visual.Enabled == true
   local color = currentBall and currentBall.Color
   local redBall = typeof(color) == "Color3" and color.R >= 0.65 and color.R > color.G * 1.5 and color.R > color.B * 1.5 or false
   targetEvidence.primary, targetEvidence.attribute, targetEvidence.highlight = primary, attribute, highlight; targetEvidence.visualTargeted, targetEvidence.redBall = visualTargeted, redBall
@@ -437,6 +444,7 @@ function GameInfo.setup(deps)
   abilityScript, abilities, replicatorScript, replicator, gameBallScript, gameBall = nil, nil, nil, nil, nil, nil; lastSync, packet, packetAt, syncReceivedAt = nil, nil, 0, 0
   sampledBall, sampledPosition, sampledAt, measuredVelocity, movedAt = nil, nil, nil, nil, nil; trainingState, trainingSequence, trainingDataModule, trainingData = nil, 0, nil, nil
   trainingSharedModule, trainingShared, trainingLockoutUntil = nil, nil, nil
+  trainingZone, targetHighlight, targetHighlightCharacter = nil, nil, nil
   snapshotCache, snapshotCacheAt = nil, -math.huge; table.clear(dashStateCache)
   minimumSpeed, maximumSpeed, speedAt = CONFIG.MIN_SPEED, CONFIG.MAX_SPEED, 0; errors = {}
   pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil; targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }

@@ -90,6 +90,8 @@ local Modules = type(Exodus.Modules) == "table" and Exodus.Modules or {}
 local CONFIG = {
   DELIVERY_BASE_URL = "https://repp35.github.io/Exodus-v2/",
   MANIFEST_URL = "https://repp35.github.io/Exodus-v2/manifest.json",
+  UPDATE_POLL_INTERVAL = 5,
+  UPDATE_LOOP_INTERVAL = 1,
   PROJECT_PATH = "exodus%20hub/",
   AUTHORIZATION_PATH = "security/entitlements.luau",
   MODULES = {
@@ -889,10 +891,16 @@ local function startUpdateChannel()
     if _G.ExodusUpdateToken == token then _G.ExodusUpdateToken = nil end
     disconnectSocket()
   end
+  local nextRevisionCheck = 0
   task.spawn(function()
     while active() do
-      connectSocket(); checkRevision()
-      task.wait(0.25)
+      connectSocket()
+      local time = os.clock()
+      if not socket and time >= nextRevisionCheck then
+        nextRevisionCheck = time + CONFIG.UPDATE_POLL_INTERVAL
+        checkRevision()
+      end
+      task.wait(CONFIG.UPDATE_LOOP_INTERVAL)
     end
   end)
   return true

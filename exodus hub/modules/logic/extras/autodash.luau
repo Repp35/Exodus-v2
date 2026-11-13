@@ -4,6 +4,7 @@
 local AutoDash = {}
 local utils, gameInfo, dash, movement, autoSpam, localPlayer, runService
 local root, heartbeat
+local lastTickAt = -math.huge
 local inFlight, handledSignals = nil, {}
 
 -- configuration
@@ -13,6 +14,7 @@ local CONFIG = {
   MAX_EVENT_AGE = 0.2,
   MIN_UP_SPEED = 68,
   MAX_HORIZONTAL_RATIO = 0.65,
+  TICK_INTERVAL = 1 / 120,
 }
 
 -- helpers
@@ -99,16 +101,19 @@ end
 function AutoDash.bindCharacter(character)
   AutoDash.detachCharacter(); local newRoot = character and character:FindFirstChild("HumanoidRootPart")
   if not newRoot or not newRoot:IsA("BasePart") then return false, "HumanoidRootPart indisponível" end
-  root = newRoot
+  root, lastTickAt = newRoot, -math.huge
   heartbeat = runService.Heartbeat:Connect(function()
     if not root or not root.Parent then return end
+    local time = utils.now()
+    if time - lastTickAt < CONFIG.TICK_INTERVAL then return end
+    lastTickAt = time
     if not utils.isActive() or utils.getConfigValue("AutoClashUpDash") ~= true or not gameInfo.areAbilitiesEnabled() then return end
-    dash.tick(utils.now(), true, root.Position, CONFIG.DETECTION_RANGE)
+    dash.tick(time, true, root.Position, CONFIG.DETECTION_RANGE)
   end)
   utils.trackCharacter(heartbeat); return true
 end
 function AutoDash.detachCharacter()
-  root, inFlight = nil, nil; table.clear(handledSignals)
+  root, inFlight, lastTickAt = nil, nil, -math.huge; table.clear(handledSignals)
   if heartbeat then
     utils.untrackCharacter(heartbeat); heartbeat:Disconnect()
     heartbeat = nil

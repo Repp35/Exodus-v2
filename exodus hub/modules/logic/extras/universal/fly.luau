@@ -105,8 +105,9 @@ local function startFly()
     local binding = bindings[input.KeyCode]; if binding then controls[binding[1]] = 0 end
   end)
   connect("FlyFocus", UIS.WindowFocusReleased, clearControls)
-  connect("FlyStep", RunService.PreSimulation or RunService.Stepped, updateFly)
-  connect("FlyFrame", RunService.Heartbeat, updateFly); updateFly(); return true
+  local frameSignal = RunService.PreSimulation or RunService.Stepped or RunService.Heartbeat
+  if not frameSignal then return false end
+  connect("FlyFrame", frameSignal, updateFly); updateFly(); return true
 end
 local function stopFly()
   disconnectPrefix("Fly"); clearControls(); detachFly(); playerControls = nil; return true
