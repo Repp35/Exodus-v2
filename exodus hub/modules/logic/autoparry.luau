@@ -55,6 +55,10 @@ local state = {
   retryPending = false,
   retryCooldownSeen = false,
   retryReady = false,
+  fierceUntil = 0,
+  fierceStartedAt = 0,
+  fierceCycle = nil,
+  fiercePreviouslyFired = false,
 }
 
 -- configuration
@@ -62,6 +66,8 @@ local CONFIG = {
   DEFAULT_WINDOW_FACTOR = 0.3,
   MAX_WINDOW_FACTOR = 0.35,
   MATCH_RETRY_DELAY_MAX = 0.5,
+  FIERCE_DURATION = 5,
+  FIERCE_END_MARGIN = 0.05,
   RETRY_WINDOW_FACTOR = 0.12,
   PRESSURE_SAMPLE_LIMIT = 100,
   PRESSURE_WINDOW = 3,
@@ -111,9 +117,10 @@ local function resetTracking()
   state.ping, state.pingRaw, state.pingCount, state.lastFireAt = 0, nil, 0, 0; state.autoParryCps, state.lastAutoParryClickAt, state.windowFactor = 0, nil, CONFIG.DEFAULT_WINDOW_FACTOR
   state.awayAt, state.awayTarget = nil, nil; state.trainingLastValidAt, state.trainingLastServerTime = 0, nil
   state.trainingRound, state.trainingBall, state.trainingConfirmedAt = nil, nil, nil; state.nextAttemptAt = 0
-  state.lastPosition, state.lastSampleAt = nil, 0; state.resetPending = false
-  state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false; table.clear(state.clicks)
-  table.clear(state.returns)
+  state.lastPosition, state.lastSampleAt = nil, 0
+  state.resetPending = false; state.retryPending, state.retryCooldownSeen, state.retryReady = false, false, false
+  state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = 0, 0, nil, false
+  table.clear(state.clicks); table.clear(state.returns)
 end
 local function detach(reason)
   state.generation += 1; disconnect()
@@ -249,12 +256,22 @@ end
 
 -- parry
 local function safeCooldown()
-  local ok, value = pcall(cooldownInfo.getDeflectCooldownState); return ok and type(value) == "table" and value or nil
+  local ok, value = pcall(cooldownInfo.getDeflectCooldownState)
+  return ok and type(value) == "table" and value or nil
+end
+local function fierceActive(time, cooldown)
+  if state.fierceUntil <= 0 then return false end
+  local parried = cooldown and finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= state.fierceStartedAt
+  if not parried and time < state.fierceUntil then return true end
+  if not parried and state.cycle == state.fierceCycle and not state.fiercePreviouslyFired then state.fired = false end
+  state.fierceUntil, state.fierceStartedAt, state.fierceCycle = 0, 0, nil
+  return false
 end
 local function request(reason)
   local now = clock(); local redirectReturn = reason == "redirect_return"
   if
     now < state.nextAttemptAt
+    or fierceActive(now, safeCooldown())
     or state.fired
     or not state.player
     or (not redirectReturn and (not state.targetKnown or state.target ~= state.player.UserId))
@@ -306,7 +323,11 @@ local function request(reason)
     return false
   end
   state.nextAttemptAt = 0; recordAutoParryRequest()
-  if state.mode == "training" then cooldownInfo.recordTrainingDeflectAttempt(firedAt) else state.retryPending = true; cooldownInfo.recordDeflectAttempt(firedAt, speed) end
+  if state.mode == "training" then
+    cooldownInfo.recordTrainingDeflectAttempt(firedAt)
+  else
+    state.retryPending = true; cooldownInfo.recordDeflectAttempt(firedAt, speed)
+  end
   local factor = activeWindowFactor(firedAt)
   if factor > 0 then
     local geometry = radius(speed, factor)
@@ -390,13 +411,23 @@ local function tick(character, root, generation)
     state.lastPosition, state.lastSampleAt = nil, 0; phase("waiting", "teleport_lock")
     return
   end
-  if value.mode == "training" then tickTraining(value, root, time); return end
   local cooldown = safeCooldown()
+  if fierceActive(time, cooldown) then phase("waiting", "fierce_active"); return end
+  if value.mode == "training" then tickTraining(value, root, time); return end
   if not cooldown or cooldown.source == "unknown" then phase("waiting", "cooldown_unknown"); return end
+  -- A manual Deflect (including a Fierce click) must not be followed by an AP click.
+  local ability = gameInfo.getDeflectAbility()
+  local manualAt = ability and ability.LastDeflectCallAt
+  local accepted = cooldown.predictedReset == true or (finite(cooldown.pressAt) and finite(manualAt) and cooldown.pressAt >= manualAt - 0.05)
+  if not state.fired and state.player and state.targetKnown and state.target == state.player.UserId
+    and finite(manualAt) and manualAt > state.lastFireAt and manualAt <= time and time - manualAt <= 0.15 and accepted then
+    state.fired, state.lastFireAt, state.retryPending, state.retryReady = true, manualAt, true, false
+  end
   if state.fired and state.retryPending and cooldown then
     if finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= state.lastFireAt then
       state.retryPending = false
-    elseif cooldown.miss == true and finite(cooldown.pressAt) and cooldown.pressAt >= state.lastFireAt - 0.05 and cooldown.blocking ~= true then
+    elseif cooldown.miss == true and finite(cooldown.pressAt) and cooldown.pressAt >= state.lastFireAt - 0.05
+      and cooldown.blocking ~= true then
       state.fired, state.retryPending, state.retryCooldownSeen, state.retryReady, state.nextAttemptAt = false, false, false, true, 0
     end
   end
@@ -431,15 +462,7 @@ end
 
 -- public-api
 function AutoParry.setup(deps)
-  if
-    type(deps) ~= "table"
-    or type(deps.Utils) ~= "table"
-    or type(deps.GameInfo) ~= "table"
-    or type(deps.Remote) ~= "table"
-    or type(deps.Cooldown) ~= "table"
-  then
-    return false, "dependências inválidas"
-  end
+  if type(deps) ~= "table" or type(deps.Utils) ~= "table" or type(deps.GameInfo) ~= "table" or type(deps.Remote) ~= "table" or type(deps.Cooldown) ~= "table" then return false, "dependências inválidas" end
   detach("setup"); utils, gameInfo, remote, cooldownInfo = deps.Utils, deps.GameInfo, deps.Remote, deps.Cooldown
   state.player = utils.getLocalPlayer()
   if not state.player then return false, "Players.LocalPlayer indisponível" end
@@ -473,13 +496,23 @@ end
 -- actions
 function AutoParry.beginFierce()
   if not state.alive or not state.bound then return nil end
-  local target = gameInfo.getTargetId()
-  if finite(target) then observeTarget(target, clock()) end
-  local token = { generation = state.generation, cycle = state.cycle, previouslyFired = state.fired }; state.fired = true
+  local time = clock(); local target = gameInfo.getTargetId()
+  if finite(target) then observeTarget(target, time) end
+  local token = { generation = state.generation, cycle = state.cycle, previouslyFired = state.fired,
+    oldUntil = state.fierceUntil, oldStartedAt = state.fierceStartedAt, oldCycle = state.fierceCycle,
+    oldPreviouslyFired = state.fiercePreviouslyFired, startedAt = time }
+  if state.fierceUntil <= time then state.fiercePreviouslyFired = state.fired; state.fierceCycle = state.cycle end
+  local ping = gameInfo.getAveragePing()
+  if not finite(ping) or ping < 0 then ping = 0 end
+  state.fierceUntil, state.fierceStartedAt = time + CONFIG.FIERCE_DURATION + ping + CONFIG.FIERCE_END_MARGIN, time
+  if state.player and state.targetKnown and state.target == state.player.UserId then state.fired = true end
   return token
 end
 function AutoParry.cancelFierce(token)
-  if token and state.generation == token.generation and state.cycle == token.cycle and not token.previouslyFired then state.fired = false end
+  if token and state.generation == token.generation and state.cycle == token.cycle and state.fierceStartedAt == token.startedAt then
+    state.fired = token.previouslyFired
+    state.fierceUntil, state.fierceStartedAt, state.fierceCycle, state.fiercePreviouslyFired = token.oldUntil, token.oldStartedAt, token.oldCycle, token.oldPreviouslyFired
+  end
 end
 function AutoParry.fire()
   if not state.alive or not state.bound or state.fired or state.teleported then return false end
@@ -753,17 +786,13 @@ end
 
 -- contract
 AutoParry.__contract = {
-  requires = {
-    Remote = "remote",
-    GameInfo = "gameinfo",
-    Utils = "utils",
-    Cooldown = "cooldown",
-  },
+  requires = { Remote = "remote", GameInfo = "gameinfo", Utils = "utils", Cooldown = "cooldown" },
   requiresMethods = {
     Remote = { "fireParry" },
     Cooldown = { "getDeflectCooldownState", "recordDeflectAttempt", "recordTrainingDeflectAttempt", "getTrainingCooldownState" },
     GameInfo = {
       "isTrainingArea",
+      "getDeflectAbility",
       "observeTraining",
       "getSnapshotAt",
       "isSnapshotValid",
@@ -817,3 +846,4 @@ AutoParry.__contract = {
 }
 
 return AutoParry
+
