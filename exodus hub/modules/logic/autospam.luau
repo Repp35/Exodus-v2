@@ -257,9 +257,9 @@ local function deactivationReason(state, snapshot, time)
   end
   local cooldown = gameInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
-    local observedStart = time
-    if cooldown.rawActive == true and finite(cooldown.lastStartedAt) and cooldown.lastStartedAt <= time then observedStart = math.max(state.activatedAt or time, cooldown.lastStartedAt) end
-    state.deflectCooldownSince = state.deflectCooldownSince or observedStart
+    -- This timeout is an AutoSpam policy; it is not proof of a final miss.
+    local observedStart = finite(cooldown.blockingSince) and cooldown.blockingSince <= time and cooldown.blockingSince or time
+    state.deflectCooldownSince = math.max(state.activatedAt or time, observedStart)
   else
     state.deflectCooldownSince = nil
   end
@@ -809,3 +809,4 @@ AutoSpam.__contract = {
 }
 
 return AutoSpam
+

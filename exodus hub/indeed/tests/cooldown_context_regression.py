@@ -39,22 +39,47 @@ local t=10; os.clock=function() return t end
 local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
 local CONFIG={MISS_NOOB_EXTRA=0.15,COOLDOWN_RETRY=0.5,HELD_COOLDOWN_INTERVAL=0.05}
 local cooldown={known=false,rawActive=false,lastEventAt=-math.huge,lastParriedAt=-math.huge}
-local deflectAttempt; local cooldownConnection,parriedConnection; local signalAt,heldAt,missingAt,warningAt=0,0,nil,0
+local deflectAttempt,observedAbility,blockingSince,previousBlocking; local cooldownConnection,parriedConnection; local signalAt,heldAt,missingAt,warningAt=0,0,nil,0
 local ability={Cooldown=0}; local press=0; local trainingLockoutUntil
 local cdCallback,parryCallback; local conn={Connected=true,Disconnect=function() end}
 local signals={cooldown={Connect=function(_,f) cdCallback=f; return conn end},parried={Connect=function(_,f) parryCallback=f; return conn end}}
 local utils={trackGlobal=function() end}; local function disconnect() end; local function report() end
 local GameInfo={getDeflectWindow=function() return 0.5 end,getLocalPing=function() return 0 end,getDeflectServerEvents=function() return signals end,decodeDeflectServerEvent=function(_,_,value) return value>0 and 'started' or 'reset',value end,getHeldDeflectServerCooldown=function() return nil end,getDeflectAbility=function() return ability end,getLastDeflectPressAt=function() return press end}
 '''+cooldown+'''
-local c=GameInfo.getDeflectCooldownState(); assert(not c.missConfirmed)
-press=10; ability.Cooldown=1; cdCallback(1,1,1); c=GameInfo.getDeflectCooldownState(); assert(c.blocking and c.serverRemaining==1 and c.outcome=='pending')
-t=10.6; c=GameInfo.getDeflectCooldownState(); assert(not c.missConfirmed)
+local c=GameInfo.getDeflectCooldownState(); assert(not c.missEstimated)
+press=10; ability.PendingPressAt=10; ability.PendingPredictUntil=10.5; ability.Cooldown=1; cdCallback(1,1,1); c=GameInfo.getDeflectCooldownState(); assert(c.blocking and c.serverRemaining==1 and c.outcome=='pending')
+t=10.3; press=10.3; c=GameInfo.getDeflectCooldownState(); assert(c.pressAt==10 and c.phase=='reversible', 'rejected spam click reset attempt')
+t=10.6; ability.PendingPredictUntil=nil; c=GameInfo.getDeflectCooldownState(); assert(not c.missEstimated)
 ability.Cooldown=0; ability.PredictedResetUntil=11; c=GameInfo.getDeflectCooldownState(); assert(not c.blocking and c.serverRemaining>0 and c.source=='local', 'server signal overrode local predicted reset')
 ability.Cooldown=0.4
-t=10.7; ability.PredictedResetUntil=11; c=GameInfo.getDeflectCooldownState(); assert(not c.missConfirmed and c.predictedReset)
-ability.PredictedResetUntil=0; c=GameInfo.getDeflectCooldownState(); assert(c.missConfirmed and c.outcome=='miss')
-parryCallback(); ability.Cooldown=0; c=GameInfo.getDeflectCooldownState(); assert(c.outcome=='parried' and not c.missConfirmed and not c.blocking)
-t=12; press=12; GameInfo.recordDeflectAttempt(12); t=13; c=GameInfo.getDeflectCooldownState(); assert(not c.missConfirmed, 'no cooldown is not proof of a miss')
-t=14; press=14; ability.Cooldown=0.4; c=GameInfo.getDeflectCooldownState(); assert(c.blocking and c.localRemaining==0.4)
-t=14.7; ability.Cooldown=0; c=GameInfo.getDeflectCooldownState(); assert(c.missConfirmed and not c.blocking, 'miss cooldown did not end locally')
+t=10.7; ability.PredictedResetUntil=11; c=GameInfo.getDeflectCooldownState(); assert(not c.missEstimated and c.predictedReset)
+ability.PredictedResetUntil=0; c=GameInfo.getDeflectCooldownState(); assert(c.missEstimated and c.outcome=='miss_estimated')
+parryCallback(); ability.Cooldown=0; c=GameInfo.getDeflectCooldownState(); assert(c.outcome=='parried' and not c.missEstimated and not c.blocking)
+t=12; press=12; GameInfo.recordDeflectAttempt(12); t=13; c=GameInfo.getDeflectCooldownState(); assert(not c.missEstimated, 'no cooldown is not proof of a miss')
+t=14; press=14; GameInfo.recordDeflectAttempt(14); ability.Cooldown=0.4; c=GameInfo.getDeflectCooldownState(); assert(c.blocking and c.localRemaining==0.4)
+t=14.7; ability.Cooldown=0; c=GameInfo.getDeflectCooldownState(); assert(c.missEstimated and not c.blocking, 'miss cooldown did not end locally')
+t=16; ability.PendingPressAt=16; ability.PendingPredictUntil=16.5; ability.Cooldown=0.3; c=GameInfo.getDeflectCooldownState(); assert(c.phase=='reversible' and c.blockingSince==16)
+t=16.1; ability.Cooldown=0; c=GameInfo.getDeflectCooldownState(); assert(c.lastClearedAt==16.1 and not c.blocking, 'local disappearance missed')
+t=16.2; ability.Cooldown=0.1; c=GameInfo.getDeflectCooldownState(); assert(c.blockingSince==16.2, 'restored cooldown kept old start time')
+t=16.7; ability.PendingPredictUntil=nil; conn.Connected=false; c=GameInfo.getDeflectCooldownState(); assert(not c.missEstimated and c.phase=='unknown', 'missing parry signal classified as a miss')
+
+''')
+autospam = (Path(__file__).resolve().parents[2] / 'modules/logic/autospam.luau').read_text()
+policy = autospam[autospam.index('local function deactivationReason('):autospam.index('local function checkDeactivation(')]
+run('AutoSpam follows local cooldown appearance and disappearance', '''
+local function finite(x) return type(x)=='number' and x==x and x>-math.huge and x<math.huge end
+local cd={blocking=false}; local gameInfo={getBallFrozen=function() return false end,getDeflectCooldownState=function() return cd end}
+local utils={isActive=function() return true end,getConfigValue=function() return true end}
+local function returnTimeout() return 1 end
+local function cooldownTimeout() return 0.2 end
+local function cooldownOpponentOutside() return true end
+local state={activatedAt=10}
+'''+policy+'''
+assert(deactivationReason(state,nil,10)==nil)
+cd.blocking=true; cd.blockingSince=10; assert(deactivationReason(state,nil,10)==nil)
+assert(deactivationReason(state,nil,10.19)==nil)
+assert(deactivationReason(state,nil,10.21)=='deflect_cooldown_timeout')
+cd.blocking=false; assert(deactivationReason(state,nil,10.22)==nil and state.deflectCooldownSince==nil)
+cd.blocking=true; cd.blockingSince=10.23; assert(deactivationReason(state,nil,10.3)==nil, 'new cooldown reused old elapsed time')
+assert(deactivationReason(state,nil,10.44)=='deflect_cooldown_timeout')
 ''')

@@ -13,7 +13,7 @@ local errors, cooldownConnection, parriedConnection = {}, nil, nil
 local syncConnection, syncRemote, snapshotConnection, snapshotRemote, maintenance = nil, nil, nil, nil, 0
 local cooldown, signalAt, heldAt, missingAt, warningAt
 local localCooldownObservation
-local deflectAttempt
+local deflectAttempt, observedAbility, blockingSince, previousBlocking
 local pingSamples, pingIndex, pingSum, pingSampleAt, pingRaw = {}, 0, 0, nil, nil
 local targetEvidence = { stable = nil, pending = nil, pendingAt = nil, observedAt = nil }
 local targetFrame, targetFrameConnection = 0, nil
@@ -139,13 +139,10 @@ function GameInfo.recordTrainingDeflectAttempt(time)
   if finite(time) then trainingAttemptUntil = time + GameInfo.getTrainingMissCooldown() end
 end
 function GameInfo.getTrainingCooldownState()
-  local now = os.clock(); local endsAt = math.max(trainingAttemptUntil or 0, trainingLockoutUntil or 0)
-  return {
-    known = trainingAttemptUntil ~= nil or trainingLockoutUntil ~= nil,
-    blocking = now < endsAt,
-    remaining = math.max(0, endsAt - now),
-    endsAt = endsAt > 0 and endsAt or nil,
-  }
+  local now = os.clock()
+  local endsAt = math.max(trainingAttemptUntil or 0, trainingLockoutUntil or 0)
+  return { known = trainingAttemptUntil ~= nil or trainingLockoutUntil ~= nil, blocking = now < endsAt,
+    remaining = math.max(0, endsAt - now), endsAt = endsAt > 0 and endsAt or nil }
 end
 function GameInfo.fireTrainingParry()
   if not inTrainingArea() then return false, "fora da arena de treino" end
@@ -464,10 +461,12 @@ function GameInfo.setup(deps)
   if service and service.Heartbeat then
     targetFrameConnection = service.Heartbeat:Connect(function()
       targetFrame += 1
+      local ok, err = pcall(GameInfo.getDeflectCooldownState)
+      if not ok then report("DeflectCooldown", err) end
     end)
     utils.trackGlobal(targetFrameConnection)
   end
-  localCooldownObservation, deflectAttempt = nil, nil
+  localCooldownObservation, deflectAttempt, observedAbility, blockingSince, previousBlocking = nil, nil, nil, nil, nil
   cooldown = {
     known = false,
     active = false,
@@ -501,45 +500,30 @@ function GameInfo.getAveragePing()
   end
   return #pingSamples > 0 and pingSum / #pingSamples or 0, pingRaw, #pingSamples
 end
+-- A missing PlaceId or replicated attribute stays unknown until the game supplies it.
 function GameInfo.getGameContext()
-  local player = players and players.LocalPlayer; local placeId = game.PlaceId
-  local matchStatus = world and world:GetAttribute("MatchStatus"); local modeId = world and world:GetAttribute("CurGamemode")
-  local lives = player and player:GetAttribute("Lives"); local playing = player and player:GetAttribute("Playing")
+  local player = players and players.LocalPlayer
+  local placeId = game.PlaceId
+  local matchStatus = world and world:GetAttribute("MatchStatus")
+  local modeId = world and world:GetAttribute("CurGamemode")
+  local lives = player and player:GetAttribute("Lives")
+  local playing = player and player:GetAttribute("Playing")
   local afk = player and player:GetAttribute("AFK")
-  local statuses = {
-    [-1] = "None",
-    [0] = "WaitingForPlayers",
-    [1] = "Intermission",
-    [2] = "VoteGamemode",
-    [3] = "VoteMap",
-    [4] = "VoteLives",
-    [5] = "Starting",
-    [6] = "InGame",
-  }
-
+  local statuses = { [-1] = "None", [0] = "WaitingForPlayers", [1] = "Intermission", [2] = "VoteGamemode", [3] = "VoteMap", [4] = "VoteLives", [5] = "Starting", [6] = "InGame" }
   local modes = { [0] = "Phantom Ball", [1] = "2 Teams", [2] = "4 Teams", [3] = "Zero Abilities", [5] = "Ball Bounce", [6] = "No Movement", [7] = "3 Lives" }
   local roundActive
   if finite(matchStatus) then roundActive = matchStatus == 6 end
   local inMatch
-  if finite(matchStatus) and matchStatus ~= 6 then inMatch = false elseif roundActive and finite(lives) then inMatch = lives > 0 and playing ~= false end
-  local training = inTrainingArea(); local area = "unknown"
+  if finite(matchStatus) and matchStatus ~= 6 then inMatch = false
+  elseif roundActive and finite(lives) then inMatch = lives > 0 and playing ~= false end
+  local training = inTrainingArea()
+  local area = "unknown"
   if placeId == 12979690461 then
     if inMatch then area = "match" elseif training then area = "training" elseif player and finite(lives) then area = "lobby" end
   end
-  return {
-    area = area,
-    placeId = placeId,
-    inMatch = inMatch,
-    roundActive = roundActive,
-    training = training,
-    playing = playing,
-    lives = lives,
-    afkEnabled = afk == true,
-    matchStatus = matchStatus,
-    matchStatusName = statuses[matchStatus],
-    modeId = modeId,
-    modeName = modes[modeId],
-  }
+  return { area = area, placeId = placeId, inMatch = inMatch, roundActive = roundActive, training = training,
+    playing = playing, lives = lives, afkEnabled = afk == true, matchStatus = matchStatus,
+    matchStatusName = statuses[matchStatus], modeId = modeId, modeName = modes[modeId] }
 end
 function GameInfo.areAbilitiesEnabled() return world:GetAttribute("CurGamemode") ~= 3 end
 function GameInfo.observeAbilityMode(callback)
@@ -664,8 +648,8 @@ function GameInfo.getFierceDeflectAbility() return getAbility(CONFIG.GAME_IDS.FI
 function GameInfo.getDarkSealAbility() return getAbility(CONFIG.GAME_IDS.DARK, "SendEvent") end
 function GameInfo.getDeflectServerEvents()
   local first, second = generatedRemote(CONFIG.GAME_IDS.COOLDOWN_REMOTE), generatedRemote(CONFIG.GAME_IDS.PARRIED_REMOTE)
-  if not first then return nil end
-  return { cooldown = first.OnClientEvent, parried = second and second.OnClientEvent or nil }
+  if not first and not second then return nil end
+  return { cooldown = first and first.OnClientEvent or nil, parried = second and second.OnClientEvent or nil }
 end
 function GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
   if abilityId ~= CONFIG.GAME_IDS.DEFLECT then return nil end
@@ -680,35 +664,34 @@ function GameInfo.getHeldDeflectServerCooldown()
   if finite(duration) and duration > 0 and finite(received) then return duration, received end
   return nil
 end
+-- Capture the variable window once per real attempt; every consumer uses this outcome.
 function GameInfo.recordDeflectAttempt(pressedAt, speed)
   if not finite(pressedAt) or pressedAt <= 0 then return end
-  if deflectAttempt and pressedAt <= deflectAttempt.pressedAt + 0.05 then return end
+  if deflectAttempt and pressedAt <= deflectAttempt.pressedAt then return end
   local ok, window = pcall(GameInfo.getDeflectWindow, speed, false)
   if not ok then window = nil end
   local ping = GameInfo.getLocalPing()
   if not finite(ping) or ping < 0 then ping = 0 end
   local deadline = finite(window) and window > 0 and pressedAt + window + CONFIG.MISS_NOOB_EXTRA + 2 * ping or nil
-  deflectAttempt = {
-    pressedAt = pressedAt,
-    deadline = deadline,
-    cooldownSeen = false,
-  }
-
+  deflectAttempt = { pressedAt = pressedAt, deadline = deadline, cooldownSeen = false, parryMonitored = parriedConnection ~= nil and parriedConnection.Connected ~= false }
 end
 function GameInfo.getDeflectCooldownState()
   local time = os.clock()
   if cooldownConnection and cooldownConnection.Connected == false then
     disconnect(cooldownConnection); cooldownConnection = nil
-    cooldown.rawActive, cooldown.endsAt, signalAt = false, nil, 0
+    cooldown.rawActive, cooldown.endsAt, cooldown.serverKnown, signalAt = false, nil, false, 0
   end
-  if parriedConnection and parriedConnection.Connected == false then disconnect(parriedConnection); parriedConnection = nil end
+  if parriedConnection and parriedConnection.Connected == false then
+    if deflectAttempt then deflectAttempt.parryMonitored = false end
+    disconnect(parriedConnection); parriedConnection = nil
+  end
   if not cooldownConnection and time >= signalAt then
     signalAt = time + CONFIG.COOLDOWN_RETRY; local signals = GameInfo.getDeflectServerEvents()
     if signals and signals.cooldown then
       cooldownConnection = signals.cooldown:Connect(function(abilityId, eventId, value)
         local kind, duration = GameInfo.decodeDeflectServerEvent(abilityId, eventId, value)
         if not kind then return end
-        cooldown.known, cooldown.lastEventAt = true, os.clock(); cooldown.rawActive = kind == "started"
+        cooldown.known, cooldown.serverKnown, cooldown.lastEventAt = true, true, os.clock(); cooldown.rawActive = kind == "started"
         if kind == "started" then cooldown.lastStartedAt = cooldown.lastEventAt end
         cooldown.endsAt = cooldown.rawActive and cooldown.lastEventAt + duration or nil
       end)
@@ -718,7 +701,7 @@ function GameInfo.getDeflectCooldownState()
       if time - missingAt >= 3 and time >= warningAt then warningAt = time + 10; report("DeflectCooldown", "evento de cooldown do servidor indisponível") end
     end
   end
-  if cooldownConnection and not parriedConnection then
+  if not parriedConnection then
     local signals = GameInfo.getDeflectServerEvents()
     if signals and signals.parried then
       parriedConnection = signals.parried:Connect(function()
@@ -730,28 +713,72 @@ function GameInfo.getDeflectCooldownState()
   if not cooldown.rawActive and time >= heldAt then
     heldAt = time + CONFIG.HELD_COOLDOWN_INTERVAL; local duration, received = GameInfo.getHeldDeflectServerCooldown()
     if duration and received and received <= time and time < received + duration and received > cooldown.lastEventAt + 0.01 then
-      cooldown.known, cooldown.rawActive, cooldown.lastEventAt, cooldown.endsAt = true, true, received, received + duration; cooldown.lastStartedAt = received
+      cooldown.known, cooldown.serverKnown, cooldown.rawActive, cooldown.lastEventAt, cooldown.endsAt = true, true, true, received, received + duration; cooldown.lastStartedAt = received
     end
   end
   if cooldown.rawActive and finite(cooldown.endsAt) and time >= cooldown.endsAt then cooldown.rawActive, cooldown.endsAt = false, nil end
-  local ability = GameInfo.getDeflectAbility(); local localKnown = ability ~= nil and finite(ability.Cooldown)
-  local localRemaining = localKnown and math.max(0, ability.Cooldown) or nil; local serverRemaining = cooldown.rawActive and finite(cooldown.endsAt) and math.max(0, cooldown.endsAt - time) or 0
+  local ability = GameInfo.getDeflectAbility()
+  if ability ~= observedAbility then
+    observedAbility, deflectAttempt, blockingSince, previousBlocking = ability, nil, nil, nil
+  end
+  local localKnown = ability ~= nil and finite(ability.Cooldown)
+  local localRemaining = localKnown and math.max(0, ability.Cooldown) or nil
+  local serverRemaining = cooldown.rawActive and finite(cooldown.endsAt) and math.max(0, cooldown.endsAt - time) or 0
   if localKnown then cooldown.known = true end
-  cooldown.remaining = localKnown and localRemaining or serverRemaining; cooldown.active = cooldown.remaining > 0
-  cooldown.blocking = cooldown.active; cooldown.predictedReset = ability and finite(ability.PredictedResetUntil) and time < ability.PredictedResetUntil or false
-  local press = GameInfo.getLastDeflectPressAt()
-  if finite(press) and press > 0 then GameInfo.recordDeflectAttempt(press) end
+  -- The client may hold a server cooldown while a predicted parry resets its local value.
+  -- Follow the ability's actual local value when available; keep server timing separate.
+  local serverKnown = cooldown.serverKnown and cooldownConnection ~= nil and cooldownConnection.Connected ~= false
+  if localKnown then
+    cooldown.remaining, cooldown.source = localRemaining, "local"
+  elseif serverKnown then
+    cooldown.remaining, cooldown.source = serverRemaining, "server"
+  else
+    cooldown.remaining, cooldown.source = nil, "unknown"
+  end
+  cooldown.active = nil
+  if cooldown.remaining ~= nil then cooldown.active = cooldown.remaining > 0 end
+  cooldown.blocking = cooldown.active
+  cooldown.predictedReset = ability and finite(ability.PredictedResetUntil) and time < ability.PredictedResetUntil or false
+  -- ClickInstances also contains rejected clicks made while cooling down. Only
+  -- PendingPressAt identifies an accepted local press; other clicks must not
+  -- restart the window (especially while AutoSpam is active).
+  local pendingAt = ability and ability.PendingPressAt
+  local pendingUntil = ability and ability.PendingPredictUntil
+  if finite(pendingAt) and pendingAt > 0 and pendingAt <= time and finite(pendingUntil) and pendingUntil > time then
+    GameInfo.recordDeflectAttempt(pendingAt)
+  end
+  if cooldown.blocking then
+    if previousBlocking ~= true then blockingSince = time end
+  elseif cooldown.blocking == false then
+    if previousBlocking == true then cooldown.lastClearedAt = time end
+    blockingSince = nil
+  else
+    blockingSince = nil
+  end
+  previousBlocking = cooldown.blocking
+  cooldown.blockingSince = blockingSince
   local attempt = deflectAttempt
   if attempt then
     if cooldown.blocking or (finite(cooldown.lastStartedAt) and cooldown.lastStartedAt >= attempt.pressedAt - 0.05) then attempt.cooldownSeen = true end
-    local parried = finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= attempt.pressedAt; cooldown.pressAt, cooldown.missDeadline = attempt.pressedAt, attempt.deadline
-    cooldown.missConfirmed = not parried and attempt.cooldownSeen and attempt.deadline ~= nil and time > attempt.deadline and not cooldown.predictedReset
-    cooldown.outcome = parried and "parried" or (cooldown.missConfirmed and "miss" or "pending")
+    local parried = finite(cooldown.lastParriedAt) and cooldown.lastParriedAt >= attempt.pressedAt
+    local canConfirm = attempt.parryMonitored and parriedConnection ~= nil and parriedConnection.Connected ~= false
+    local expired = attempt.deadline ~= nil and time > attempt.deadline
+    cooldown.pressAt, cooldown.missDeadline = attempt.pressedAt, attempt.deadline
+    cooldown.missEstimated = not parried and canConfirm and attempt.cooldownSeen and expired and not cooldown.predictedReset and not (finite(pendingUntil) and pendingUntil > time)
+    cooldown.outcome = parried and "parried" or (cooldown.missEstimated and "miss_estimated" or "pending")
+    if parried then cooldown.phase = "reverted"
+    elseif cooldown.predictedReset then cooldown.phase = "predicted_reset"
+    elseif cooldown.missEstimated then cooldown.phase = cooldown.blocking and "miss_cooldown" or "miss_finished"
+    elseif attempt.deadline and not expired and attempt.cooldownSeen then cooldown.phase = "reversible"
+    else cooldown.phase = "unknown" end
+    cooldown.missSource = cooldown.missEstimated and "estimated_window" or nil
   else
-    cooldown.pressAt, cooldown.missDeadline, cooldown.missConfirmed, cooldown.outcome = nil, nil, false, "unknown"
+    cooldown.pressAt, cooldown.missDeadline, cooldown.missEstimated, cooldown.outcome = nil, nil, false, "unknown"
+    cooldown.phase, cooldown.missSource = cooldown.blocking == false and "ready" or "unknown", nil
   end
-  cooldown.localRemaining = localRemaining; cooldown.serverRemaining = serverRemaining
-  cooldown.source = localKnown and "local" or (cooldown.known and "server" or "unknown"); cooldown.trainingRemaining = trainingLockoutUntil and math.max(0, trainingLockoutUntil - time) or 0
+  cooldown.localRemaining = localRemaining
+  cooldown.serverRemaining = serverRemaining
+  cooldown.trainingRemaining = trainingLockoutUntil and math.max(0, trainingLockoutUntil - time) or 0
   return cooldown
 end
 function GameInfo.isClientDeflectResetLate(activatedAt, speed, multiplier)
@@ -1245,3 +1272,4 @@ GameInfo.__contract = {
 }
 
 return GameInfo
+
