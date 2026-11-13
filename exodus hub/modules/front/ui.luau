@@ -80,6 +80,61 @@ function UILib.new(options)
     function handle.set(nextIndex, notify) index = math.clamp(math.floor(nextIndex), 1, #values); button.Text = tostring(text) .. ": " .. tostring(values[index]); if notify and callback then callback(values[index], index) end end
     watch(button.Activated, function() handle.set(index % #values + 1, true) end); handle.set(index, false); return handle
   end
+  function api.section(text)
+    local label = row("TextLabel", tostring(text), 32)
+    label.BackgroundTransparency = 1; label.Font = Enum.Font.GothamBold; label.TextXAlignment = Enum.TextXAlignment.Left
+    return label
+  end
+  function api.paragraph(title, description)
+    local label = row("TextLabel", tostring(title) .. "\n" .. tostring(description or ""), 60)
+    label.TextWrapped = true; label.TextXAlignment = Enum.TextXAlignment.Left
+    return label
+  end
+  function api.separator()
+    local line = UILib.create("Frame", { Size = UDim2.new(1, -5, 0, 1), BackgroundColor3 = CONFIG.ACCENT, BorderSizePixel = 0 }, container)
+    order += 1; line.LayoutOrder = order; return line
+  end
+  function api.number(text, initial, minimum, maximum, callback)
+    local value = tonumber(initial) or 0
+    local box = row("TextBox", tostring(value)); box.PlaceholderText = tostring(text or ""); box.ClearTextOnFocus = false
+    local handle = { instance = box }
+    function handle.get() return value end
+    function handle.set(nextValue, notify)
+      local number = tonumber(nextValue)
+      if not number or number ~= number or number == math.huge or number == -math.huge then box.Text = tostring(value); return false end
+      if type(minimum) == "number" then number = math.max(minimum, number) end
+      if type(maximum) == "number" then number = math.min(maximum, number) end
+      value = number; box.Text = tostring(value); if notify and callback then callback(value) end; return true
+    end
+    watch(box.FocusLost, function() handle.set(box.Text, true) end); return handle
+  end
+  function api.keybind(text, initial, callback)
+    local key = initial; local capturing = false; local button = row("TextButton", "")
+    local function render() button.Text = tostring(text) .. ": " .. (key and key.Name or "None") end
+    local handle = { instance = button }
+    function handle.get() return key end
+    function handle.set(value) key = value; capturing = false; render() end
+    watch(button.Activated, function() capturing = true; button.Text = tostring(text) .. ": ..." end)
+    watch(game:GetService("UserInputService").InputBegan, function(input, processed)
+      if capturing and input.UserInputType == Enum.UserInputType.Keyboard then
+        handle.set(input.KeyCode); return
+      end
+      if not processed and key and input.KeyCode == key and callback then callback(key) end
+    end)
+    render(); return handle
+  end
+  function api.multiselect(text, values, initial, callback)
+    assert(type(values) == "table" and #values > 0, "selection options required")
+    local selected = {}; for _, value in ipairs(initial or {}) do selected[value] = true end
+    local current = 1; local button = row("TextButton", "")
+    local handle = { instance = button }
+    local function render() local value = values[current]; button.Text = tostring(text) .. ": " .. tostring(value) .. (selected[value] and " [x]" or " [ ]") end
+    function handle.get() local result = {}; for _, value in ipairs(values) do if selected[value] then result[#result + 1] = value end end; return result end
+    function handle.set(value, enabled, notify) selected[value] = enabled == true or nil; render(); if notify and callback then callback(handle.get()) end end
+    function handle.next() current = current % #values + 1; render() end
+    watch(button.Activated, function() local value = values[current]; handle.set(value, not selected[value], true); handle.next() end)
+    render(); return handle
+  end
   function api.setVisible(visible) gui.Enabled = visible == true end
   function api.destroy() if destroyed then return end; destroyed = true; for _, connection in ipairs(connections) do connection:Disconnect() end; table.clear(connections); gui:Destroy() end
   api.gui = gui; api.panel = panel; return api
