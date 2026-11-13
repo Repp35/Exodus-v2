@@ -118,8 +118,7 @@ local CONFIG = {
     { name = "spam", path = "modules/logic/spam.luau" },
     { name = "character", path = "modules/logic/aux/character.luau" },
     { name = "dumper", path = "modules/logic/extras/universal/dumper.luau" },
-    { name = "uilib", path = "modules/front/ui.luau" },
-    { name = "ui", path = "modules/front/exodusui.luau" },
+    { name = "ui", path = "modules/front/ui.luau" },
   },
 }
 
@@ -138,7 +137,7 @@ local MODULE_ORDER = {}
 local MODULE_BY_NAME = {}
 for _, entry in ipairs(MODULE_MANIFEST) do
   MODULE_BY_NAME[entry.name] = entry
-  if entry.name ~= "ui" and entry.name ~= "permissions" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
+  if entry.name ~= "permissions" then MODULE_ORDER[#MODULE_ORDER + 1] = entry.name end
 end
 
 -- http
@@ -634,10 +633,10 @@ end
 
 -- interface
 local function loadInterface(loaded, controls)
-  local interface = loaded.ui
+  local interface = loaded.uiconfig
   if type(interface) ~= "table" then return false, "UI", "módulo não carregado" end
   if type(interface.setup) ~= "function" then return false, "UI", "setup ausente" end
-  local dependencies = loaded.permissions.resolve("ui", loaded); dependencies.Controls = controls
+  local dependencies = loaded.permissions.resolve("uiconfig", loaded); dependencies.Controls = controls
   local setupResult, setupError = interface.setup(dependencies)
   if setupResult ~= true then return false, "UI", setupError end
   return true
@@ -765,7 +764,7 @@ local function startInternal()
   })
   if not uiReady then return stopStartup(utils, uiModule, uiError) end
   Exodus.Context = loaded; Exodus.UIReady = uiReady == true
-  Exodus.UI = Modules.ui; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
+  Exodus.UI = Modules.uiconfig; utils.setLifecyclePhase(uiReady == true and "ready" or "runtime_ready")
   Exodus.Started = true; Exodus.Version = utils.version()
   Exodus.Revision = version; _G.ExodusLastLoadedRevision = version
   if requestedRevision then clearPersistent("update"); printStartup("Exodus: Update completed.") elseif wasStarted then printStartup("Exodus: Reloaded.") else printStartup("Exodus: Initialized.") end
