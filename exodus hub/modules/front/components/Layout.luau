@@ -2,14 +2,10 @@ local Base = require(script.Parent.Base)
 local Layout = {}
 function Layout.Stack(ctx, parent, options)
   local self = Base.new(ctx, parent, options, true)
-  self.root.BackgroundTransparency = options.surface and 0 or 1
+  self.root.BackgroundTransparency = options.surface and ctx.theme.transparency.card or 1
   self.root.Size = UDim2.new(1, 0, 0, 0)
   self.root.AutomaticSize = Enum.AutomaticSize.Y
-  self.content = ctx:Create(
-    "Frame",
-    { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 },
-    self.root
-  )
+  self.content = ctx:Create("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 }, self.root)
   ctx:List(self.content, false, options.gap)
   self.children = {}
   function self:Add(kind, props)
@@ -30,15 +26,18 @@ function Layout.Section(ctx, parent, options)
   self.title = ctx:Text(
     self.root,
     options.title or "Section",
-    { Size = UDim2.new(1, 0, 0, 28), Font = ctx.theme.font.bold, TextSize = ctx.theme.text.title }
+    { Size = UDim2.new(1, 0, 0, 18), Font = ctx.theme.font.bold, TextSize = ctx.theme.text.caption, TextColor3 = ctx.theme.colors.accent }
   )
-  self.content.Position = UDim2.fromOffset(0, 36)
+  ctx:WatchTheme(self.scope, function(t)
+    self.title.TextColor3 = t.colors.accent
+    self.title.TextSize = t.text.caption
+    self.title.Font = t.font.bold
+  end)
+  self.content.Position = UDim2.fromOffset(0, 24)
   -- Explicit height from list avoids offset + AutomaticSize feedback loops.
   self.root.AutomaticSize = Enum.AutomaticSize.None
   local layout = self.content:FindFirstChildOfClass("UIListLayout")
-  local function resize()
-    self.root.Size = UDim2.new(1, 0, 0, layout.AbsoluteContentSize.Y + 36 + (options.surface and 24 or 0))
-  end
+  local function resize() self.root.Size = UDim2.new(1, 0, 0, layout.AbsoluteContentSize.Y + 24 + (options.surface and 24 or 0)) end
   self.scope:Add(layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(resize))
   resize()
   return self
@@ -50,13 +49,9 @@ function Layout.Card(ctx, parent, options)
 end
 function Layout.Accordion(ctx, parent, options)
   local self = Layout.Section(ctx, parent, options)
-  local header = Base.button(
-    self,
-    self.root,
-    options.title or "Section",
-    { Size = UDim2.new(1, 0, 0, 32), TextXAlignment = Enum.TextXAlignment.Left }
-  )
+  local header = Base.button(self, self.root, options.title or "Section", { Size = UDim2.new(1, 0, 0, 32), TextXAlignment = Enum.TextXAlignment.Left })
   self.title.Visible = false
+  self.content.Position = UDim2.fromOffset(0, 36)
   local layout = self.content:FindFirstChildOfClass("UIListLayout")
   local function render()
     self.content.Visible = self.value
@@ -72,9 +67,7 @@ function Layout.Accordion(ctx, parent, options)
   end))
   self.scope:Add(layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(render))
   self.scope:Add(ctx.ThemeChanged:Connect(render))
-  return self:Initialize(function(v)
-    return v ~= false
-  end, render)
+  return self:Initialize(function(v) return v ~= false end, render)
 end
 function Layout.Grid(ctx, parent, options)
   local self = Layout.Stack(ctx, parent, options)
@@ -86,8 +79,7 @@ function Layout.Grid(ctx, parent, options)
   }, self.content)
   local function resize()
     local columns = self.root.AbsoluteSize.X < (options.breakpoint or 480) and 1 or (options.columns or 2)
-    grid.CellSize =
-      UDim2.new(1 / columns, -ctx.theme.space.sm * (columns - 1) / columns, 0, options.cellHeight or 108)
+    grid.CellSize = UDim2.new(1 / columns, -ctx.theme.space.sm * (columns - 1) / columns, 0, options.cellHeight or 108)
   end
   self.scope:Add(self.root:GetPropertyChangedSignal("AbsoluteSize"):Connect(resize))
   resize()
@@ -98,7 +90,7 @@ function Layout.Tabs(ctx, parent, options)
   props.height = options.height or 320
   local self = Base.new(ctx, parent, props, true)
   local bar = ctx:Create("ScrollingFrame", {
-    Size = UDim2.new(1, 0, 0, 44),
+    Size = UDim2.new(1, 0, 0, 36),
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
     CanvasSize = UDim2.new(),
@@ -121,8 +113,8 @@ function Layout.Tabs(ctx, parent, options)
     assert(type(definition.id) == "string" and not tabs[definition.id], "Expected unique tab id")
     count += 1
     local frame = ctx:Create("ScrollingFrame", {
-      Position = UDim2.fromOffset(0, 52),
-      Size = UDim2.new(1, 0, 1, -52),
+      Position = UDim2.fromOffset(0, 44),
+      Size = UDim2.new(1, 0, 1, -44),
       BackgroundTransparency = 1,
       BorderSizePixel = 0,
       CanvasSize = UDim2.new(),
@@ -130,16 +122,9 @@ function Layout.Tabs(ctx, parent, options)
       ScrollBarThickness = 4,
     }, self.root)
     local stack = Layout.Stack(ctx, frame, { scope = self.scope })
-    local button = Base.button(
-      self,
-      bar,
-      definition.title or definition.id,
-      { Size = UDim2.fromOffset(120, 40), LayoutOrder = count }
-    )
+    local button = Base.button(self, bar, definition.title or definition.id, { Size = UDim2.fromOffset(120, 30), LayoutOrder = count })
     tabs[definition.id] = { root = frame, button = button }
-    self.scope:Add(button.Activated:Connect(function()
-      self:SelectTab(definition.id)
-    end))
+    self.scope:Add(button.Activated:Connect(function() self:SelectTab(definition.id) end))
     if not self.active then
       self:SelectTab(definition.id)
     else

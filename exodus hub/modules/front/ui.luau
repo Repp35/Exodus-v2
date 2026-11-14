@@ -4,8 +4,8 @@ local UI = {}
 
 -- configuration
 local CONFIG = {
-  WINDOW_WIDTH = 760,
-  WINDOW_HEIGHT = 540,
+  WINDOW_WIDTH = 600,
+  WINDOW_HEIGHT = 400,
   TELEMETRY_INTERVAL = 0.1,
   IDLE_INTERVAL = 0.5,
 }
@@ -49,8 +49,20 @@ function UI.setup(deps, preview)
       id = "exodus",
       width = CONFIG.WINDOW_WIDTH,
       height = CONFIG.WINDOW_HEIGHT,
-      title = utils.name() .. " · v" .. utils.version(),
-      subtitle = "by " .. utils.author(),
+      title = utils.name() .. " | v" .. utils.version(),
+      subtitle = "— " .. utils.author(),
+      settingsPage = "hub",
+      actions = {
+        {
+          text = "Reload",
+          onClick = function(win)
+            call("onReload", function(message)
+              win:SetVisible(true); toast(tostring(message))
+            end)
+          end,
+        },
+        { text = "Close Script", variant = "destructive", onClick = function(win) win.options.onClose(win) end },
+      },
       visible = preview ~= nil,
       onMove = function(position) ctx.store:Patch({ PanelX = position.X.Offset, PanelY = position.Y.Offset }) end,
       onClose = function()
@@ -68,17 +80,23 @@ function UI.setup(deps, preview)
       window.responsive()
     end
     local launcher = ctx:FloatingButton({
-      text = "EX",
+      text = "E",
+      textSize = 26,
+      variant = "surface",
+      shape = "circle",
       position = UDim2.fromOffset(get("BtnX") or 16, get("BtnY") or 180),
       onClick = function() window:Toggle() end,
       onMove = function(position) ctx.store:Patch({ BtnX = position.X.Offset, BtnY = position.Y.Offset }) end,
     })
+    ctx.scope:Add(ctx.Events:Connect(function(event, _, visible)
+      if event == "visibility" then launcher:SetSize(visible and 44 or 56, visible and 44 or 56); launcher.button.BackgroundTransparency = visible and 0.6 or 0.1 end
+    end))
     ctx:Tooltip(launcher.button, { text = "Open or minimize " .. utils.name() .. ". Drag to reposition." }); local pages = {}
     for _, item in ipairs({
       { "main", "Main" },
-      { "automatic", "Automatic" },
       { "settings", "Settings" },
       { "utilities", "Utilities" },
+      { "automatic", "Automatic" },
       { "indeed", "Indeed" },
       { "hub", "Hub" },
     }) do
@@ -94,23 +112,33 @@ function UI.setup(deps, preview)
     end
     local combat = pages.main:Section({ title = "Combat" })
     for _, definition in ipairs(deps.UIConfig.panelToggles) do
-      if not definition.mobileOnly then bind(combat, "Toggle", definition) end
-    end
-    local rate = pages.main:Section({ title = "Spam rate" }); bind(rate, "Segmented", { title = "Rate mode", key = "SpamRateMode", options = { "CPS", "CPF", "MS", "Auto" } })
-    local rates = {}
-    for _, mode in ipairs({ "CPS", "CPF", "MS" }) do
-      rates[mode] = bind(rate, "NumberInput", { title = mode, key = mode, min = 0, max = 1000000, step = 0.0001 })
-    end
-    local function refreshRates()
-      for mode, component in pairs(rates) do
-        component:SetVisible(get("SpamRateMode") == mode)
+      if not definition.mobileOnly then
+        local props = table.clone(definition); props.shortcutKey = props.key == "AutoParry" and "ParryKeybind" or (props.key == "AutoSpam" and "ClashKeybind" or nil)
+        bind(combat, "Toggle", props)
       end
     end
-    ctx.scope:Add(ctx.store:Subscribe("SpamRateMode", refreshRates)); refreshRates()
-    local manualSection = pages.main:Section({ title = "Manual spam" })
-    local manualToggle = manualSection:Add("Toggle", { title = "Manual spam", value = utils.isManualSpamActive(), onChange = manual })
+    local rate = pages.main:Section({ title = "Spam" })
+    bind(rate, "UnitInput", {
+      title = "Spam Rate",
+      key = "SpamRateMode",
+      pill = true,
+      options = {
+        { value = "CPS", label = "CPS", key = "CPS", variant = "accent" },
+        { value = "CPF", label = "CPF", key = "CPF", variant = "secondary" },
+        { value = "MS", label = "MS", key = "MS", variant = "warning" },
+        { value = "Auto", label = "Auto", variant = "info" },
+      },
+    })
     for _, definition in ipairs(deps.UIConfig.panelComponents) do
-      if definition.kind == "dropdown" then bind(rate, "Dropdown", definition) elseif definition.kind == "segmented" then bind(manualSection, "Segmented", definition) end
+      if definition.kind == "dropdown" then bind(rate, "Dropdown", definition) end
+    end
+    local manualSection = pages.main:Section({ title = "Manual Spam" })
+    local manualToggle = manualSection:Add(
+      "Toggle",
+      { title = "Manual Spam", variant = "status", shortcutKey = "SpamKeybind", value = utils.isManualSpamActive(), onChange = manual }
+    )
+    for _, definition in ipairs(deps.UIConfig.panelComponents) do
+      if definition.kind == "segmented" then bind(manualSection, "Segmented", definition) end
     end
     local floating = pages.hub:Section({ title = "Floating controls" }); local visibilityControls = {}
     local function mobileControl(key, title)
@@ -321,15 +349,6 @@ function UI.setup(deps, preview)
       session:Add("Button", { title = item[1], text = "Connect", onClick = function() call(item[2]) end })
     end
     session:Add("Button", {
-      title = "Reload",
-      text = "Reload hub",
-      onClick = function()
-        call("onReload", function(message)
-          window:SetVisible(true); ctx:Notify({ title = "Reload failed", message = tostring(message), variant = "danger" })
-        end)
-      end,
-    })
-    session:Add("Button", {
       title = "Reset settings",
       text = "Restore defaults",
       variant = "danger",
@@ -359,9 +378,13 @@ function UI.setup(deps, preview)
       local button = ctx:FloatingButton({
         text = d[1],
         variant = d[5],
-        width = 72,
-        height = 56,
-        position = UDim2.fromOffset(get(d[4] .. "X") or 16, get(d[4] .. "Y") or (240 + (index - 1) * 64)),
+        shape = "circle",
+        width = 64,
+        height = 64,
+        position = UDim2.fromOffset(
+          get(d[4] .. "X") or (index >= 4 and math.max(14, ctx.root.AbsoluteSize.X - 78) or 14),
+          get(d[4] .. "Y") or (ctx.root.AbsoluteSize.Y / 2 + (index == 1 and -104 or index == 2 and -32 or index == 3 and 40 or index == 4 and -32 or 40))
+        ),
         onClick = function()
           if d[2] then toggle(d[2], d[6] and controls[d[6]]) else call(d[6]) end
         end,
@@ -370,9 +393,12 @@ function UI.setup(deps, preview)
       floatButtons[index] = button
     end
     local mini = ctx:FloatingButton({
-      text = "Spam",
+      text = "OFF",
+      title = "Spam",
+      shape = "mini",
+      variant = "danger",
       width = 112,
-      height = 80,
+      height = 96,
       position = UDim2.fromOffset(get("MiniX") or 100, get("MiniY") or 180),
       onClick = function()
         if get("ManualSpamMode") ~= "Hold" then manual(not utils.isManualSpamActive()) end
@@ -386,9 +412,10 @@ function UI.setup(deps, preview)
       for index, definition in ipairs(definitions) do
         floatButtons[index]:SetVisible(not desktop() and get(definition[3]) == true and (not definition[7] or info.areAbilitiesEnabled()))
         floatButtons[index]:SetText(definition[1] .. (definition[2] and (get(definition[2]) and "\nON" or "\nOFF") or ""))
+        floatButtons[index]:SetTone(definition[2] and (get(definition[2]) and (index <= 2 and "success" or definition[5]) or "danger") or definition[5])
       end
       mini:SetVisible(not desktop() and get("MiniSpamVisible") == true)
-      mini:SetSize(112 * (get("MiniSpamScale") or 1) * (get("MiniSpamWidth") or 1), 80 * (get("MiniSpamScale") or 1) * (get("MiniSpamHeight") or 1))
+      mini:SetSize(112 * (get("MiniSpamScale") or 1) * (get("MiniSpamWidth") or 1), 96 * (get("MiniSpamScale") or 1) * (get("MiniSpamHeight") or 1))
       for _, component in ipairs(visibilityControls) do
         component:SetDisabled(desktop())
       end
@@ -404,7 +431,7 @@ function UI.setup(deps, preview)
     ctx.scope:Add(utils.observeConfig(function(changes) ctx.store:Patch(changes, true) end))
     local function refreshSpam()
       local active = utils.isManualSpamActive(); manualToggle:SetValue(active, true)
-      mini:SetText(active and "Spam\nON" or "Spam\nOFF")
+      mini:SetText(active and "ON" or "OFF"); mini:SetTone(active and "success" or "danger")
     end
     ctx.scope:Add(utils.observeSpam(refreshSpam)); refreshSpam()
     refreshFloating()
@@ -413,8 +440,10 @@ function UI.setup(deps, preview)
     end
     local telemetryLabels = {}
     for index, key in ipairs({ "ClashDistanceVisible", "ClashTravelTimeVisible", "ClashGateInfoVisible" }) do
-      local label = ctx:Component("Alert", ctx.root, { title = "Telemetry", description = "—", height = 112 }); label.root.Size = UDim2.fromOffset(280, 112)
-      label.root.Position = UDim2.new(1, -292, 0, 16 + (index - 1) * 120); label.root.ZIndex = 30
+      local label = ctx:Component("Readout", ctx.root, { text = "—" }); label.root.ZIndex = 30
+      if index == 1 then label.root.AnchorPoint = Vector2.new(0.5, 0); label.root.Position = UDim2.new(0.5, 0, 0, 8)
+      elseif index == 2 then label.root.AnchorPoint = Vector2.new(0.5, 1); label.root.Position = UDim2.new(0.5, 0, 1, -20)
+      else label.root.AnchorPoint = Vector2.new(0, 0.5); label.root.Position = UDim2.new(0, 8, 0.5, 0) end
       telemetryLabels[key] = label
     end
     local function sample()
@@ -450,10 +479,7 @@ function UI.setup(deps, preview)
         }
 
         for key, label in pairs(telemetryLabels) do
-          local description = label.root:GetChildren()
-          for _, child in ipairs(description) do
-            if child:IsA("TextLabel") and child ~= label.title then child.Text = messages[key] end
-          end
+          label:SetText(messages[key])
         end
       end
       ctx.scope:Delay(anyVisible and CONFIG.TELEMETRY_INTERVAL or CONFIG.IDLE_INTERVAL, sample)

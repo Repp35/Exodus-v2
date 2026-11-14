@@ -1,9 +1,7 @@
 -- Deterministic dispatch. Disconnecting during dispatch is safe; new listeners wait.
 local Signal = {}
 Signal.__index = Signal
-function Signal.new(onError)
-  return setmetatable({ _listeners = {}, _next = 0, _destroyed = false, _onError = onError or warn }, Signal)
-end
+function Signal.new(onError) return setmetatable({ _listeners = {}, _next = 0, _destroyed = false, _onError = onError or warn }, Signal) end
 function Signal:Connect(callback)
   assert(not self._destroyed, "Signal is destroyed")
   assert(type(callback) == "function", "Expected callback")
@@ -28,9 +26,7 @@ function Signal:Fire(...)
   for id, listener in pairs(self._listeners) do
     snapshot[#snapshot + 1] = { id, listener }
   end
-  table.sort(snapshot, function(a, b)
-    return a[1] < b[1]
-  end)
+  table.sort(snapshot, function(a, b) return a[1] < b[1] end)
   for _, item in ipairs(snapshot) do
     if item[2].connection.Connected then
       local ok, err = pcall(item[2].callback, ...)

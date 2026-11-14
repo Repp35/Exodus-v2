@@ -57,30 +57,21 @@ function Data.Table(ctx, parent, options)
       local frame = rowScope:Add(ctx:Create("Frame", {
         Size = UDim2.new(1, -4, 0, 40),
         BackgroundColor3 = index % 2 == 0 and ctx.theme.colors.input or ctx.theme.colors.elevated,
+        BackgroundTransparency = ctx.theme.transparency.card,
         BorderSizePixel = 0,
         LayoutOrder = index,
       }, body))
       for col, column in ipairs(options.columns) do
-        ctx:Text(
-          frame,
-          column.format and column.format(row[column.key], row) or tostring(row[column.key] or "—"),
-          {
-            Position = UDim2.new((col - 1) / #options.columns, 8, 0, 0),
-            Size = UDim2.new(1 / #options.columns, -16, 1, 0),
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            TextWrapped = false,
-          }
-        )
+        ctx:Text(frame, column.format and column.format(row[column.key], row) or tostring(row[column.key] or "—"), {
+          Position = UDim2.new((col - 1) / #options.columns, 8, 0, 0),
+          Size = UDim2.new(1 / #options.columns, -16, 1, 0),
+          TextTruncate = Enum.TextTruncate.AtEnd,
+          TextWrapped = false,
+        })
       end
     end
     if #rows == 0 then
-      rowScope:Add(
-        ctx:Text(
-          body,
-          options.emptyText or "No results",
-          { Size = UDim2.new(1, 0, 0, 48), TextXAlignment = Enum.TextXAlignment.Center }
-        )
-      )
+      rowScope:Add(ctx:Text(body, options.emptyText or "No results", { Size = UDim2.new(1, 0, 0, 48), TextXAlignment = Enum.TextXAlignment.Center }))
     end
     body.ScrollBarImageColor3 = ctx.theme.colors.accent
   end

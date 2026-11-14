@@ -4,7 +4,7 @@ on:
     paths:
       - '.github/workflows/format-luau.yml'
       - 'exodus hub/**/*.luau'
-      - 'exodus hub/indeed/formatter.py'
+      - 'exodus hub/indeed/*.py'
       - 'exodus hub/indeed/tests/**'
       - 'exodus hub/indeed/stylua.toml'
   workflow_dispatch:
@@ -19,6 +19,13 @@ jobs:
           persist-credentials: true
       - name: Test formatter configuration audit
         run: python3 -m unittest discover -s "exodus hub/indeed/tests" -p "test_*.py"
+      - name: Test frontend library and host integration
+        run: |
+          curl --fail --location --retry 3 https://github.com/luau-lang/luau/releases/download/0.747/luau-ubuntu.zip -o /tmp/luau.zip
+          mkdir -p /tmp/luau
+          unzip /tmp/luau.zip -d /tmp/luau
+          chmod +x /tmp/luau/luau /tmp/luau/luau-compile
+          python3 "exodus hub/indeed/test_ui.py" --luau /tmp/luau/luau --compiler /tmp/luau/luau-compile
       - name: Format all Luau files using repository formatter
         run: |
           chmod +x "exodus hub/indeed/stylua-linux-x86_64"

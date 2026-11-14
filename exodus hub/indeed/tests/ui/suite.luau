@@ -3,26 +3,18 @@ local function check(condition, message)
   assert(condition, message)
   passed += 1
 end
-local function eq(actual, expected, message)
-  check(actual == expected, message or (tostring(actual) .. " ~= " .. tostring(expected)))
-end
+local function eq(actual, expected, message) check(actual == expected, message or (tostring(actual) .. " ~= " .. tostring(expected))) end
 local errors = {}
-local function onError(err)
-  table.insert(errors, err)
-end
+local function onError(err) table.insert(errors, err) end
 local signal = Signal.new(onError)
 local calls = {}
 local second
 signal:Connect(function()
   table.insert(calls, 1)
   second:Disconnect()
-  signal:Connect(function()
-    table.insert(calls, 3)
-  end)
+  signal:Connect(function() table.insert(calls, 3) end)
 end)
-second = signal:Connect(function()
-  table.insert(calls, 2)
-end)
+second = signal:Connect(function() table.insert(calls, 2) end)
 signal:Fire()
 eq(#calls, 1, "Disconnect during dispatch")
 signal:Fire()
@@ -43,9 +35,7 @@ scope:Destroy()
 eq(disposed, 1, "Idempotent disposal")
 local store = Store.new({
   values = { a = false, count = 2 },
-  validate = function(key, value)
-    return key ~= "count" or value >= 0, "negative"
-  end,
+  validate = function(key, value) return key ~= "count" or value >= 0, "negative" end,
 })
 local updates = 0
 store.Changed:Connect(function()
@@ -60,9 +50,7 @@ store:Set("count", 4)
 eq(updates, 1, "No-op update")
 local rejected = Store.new({
   values = { a = 1 },
-  write = function()
-    return false, "rejected"
-  end,
+  write = function() return false, "rejected" end,
 })
 check(not rejected:Set("a", 2))
 eq(rejected:Get("a"), 1)
@@ -86,6 +74,14 @@ local window = ctx:Window({ title = "Test" })
 local main = window:Page({ id = "main", title = "Main" })
 local other = window:Page({ id = "other" })
 local section = main:Section({ title = "Controls" })
+-- Regression checks for the original visual grammar and the requested navigation.
+eq(window.root.Size.X.Offset, 600, "Bounded window width")
+eq(window.root.Size.Y.Offset, 400, "Bounded window height")
+check(window.root.BackgroundTransparency > 0, "Window remains translucent")
+check(window.nav.Position.X.Offset < window.body.Position.X.Offset, "Navigation stays on the left")
+eq(#main.columns, 1, "Page content is one vertical flow")
+check(main.columns[1].root.ScrollingEnabled, "Page scrolls vertically")
+eq(main.columns[1].layout.FillDirection, Enum.FillDirection.Vertical)
 local changed = 0
 local toggle = section:Add("Toggle", {
   key = "enabled",
@@ -94,6 +90,13 @@ local toggle = section:Add("Toggle", {
     changed += 1
   end,
 })
+eq(toggle.root.Size.Y.Offset, 48, "Toggle uses one compact row")
+eq(toggle.content.Size.Y.Offset, 30)
+eq(toggle.track.Size.X.Offset, 48)
+eq(toggle.track.Size.Y.Offset, 30)
+eq(toggle.track:FindFirstChildOfClass("UICorner").CornerRadius.Offset, 999, "Switch remains pill shaped")
+check(toggle.root.BackgroundTransparency > 0)
+eq(toggle.root:FindFirstChildOfClass("UICorner").CornerRadius.Offset, 12)
 toggle.button.Activated:Fire()
 eq(ctx.store:Get("enabled"), true)
 eq(changed, 1, "Bound callback runs once")
@@ -146,9 +149,7 @@ ctx.InputEnded:Fire(nil)
 eq(triggers, 0, "Lost focus releases held action")
 local captured
 local captureOwner = ctx.scope:Child()
-ctx:Capture(captureOwner, function(value)
-  captured = value
-end)
+ctx:Capture(captureOwner, function(value) captured = value end)
 Mock.services.UserInputService.InputBegan:Fire(Mock.input(Enum.KeyCode.P), false)
 eq(captured, Enum.KeyCode.P)
 local ownerCount = Mock.countResources(captureOwner)
@@ -179,6 +180,7 @@ local accordion = other:Add("Accordion", { title = "Fold" })
 accordion:Add("Label", {})
 accordion:SetValue(false)
 eq(accordion.content.Visible, false)
+check(accordion.content.Position.Y.Offset >= accordion.root:FindFirstChildOfClass("TextButton").Size.Y.Offset, "Accordion content clears its header")
 local card = other:Add("Card", { title = "Card" })
 card:Add("Button", { onClick = function() end })
 window:SelectPage("other")
@@ -188,20 +190,41 @@ other:Destroy()
 eq(window.active, "main")
 ctx:SetTheme({ colors = { accent = Color3.fromRGB(255, 0, 0) } })
 eq(ctx.theme.colors.accent:ToHex(), "FF0000")
-check(not pcall(function()
-  ctx:SetTheme({ colors = { typo = Color3.new(0, 0, 0) } })
-end), "Unknown token rejected")
+check(not pcall(function() ctx:SetTheme({ colors = { typo = Color3.new(0, 0, 0) } }) end), "Unknown token rejected")
 local notify = ctx:Notify({ id = "one", message = "First", duration = 0 })
 local replacement = ctx:Notify({ id = "one", message = "Second", duration = 0 })
 check(notify.scope.destroyed)
 eq(#ctx.notificationOrder, 1)
 replacement:Destroy()
 eq(#ctx.notificationOrder, 0)
+local mode =
+  section:Add("UnitInput", { title = "Rate", key = "mode", options = { { value = "A", key = "number", label = "A" }, { value = "B", label = "Automatic" } } })
+ctx.store:Set("number", 12)
+eq(mode.input.Text, "12")
+mode:SetValue("B")
+eq(mode.input.TextEditable, false)
+mode:SetValue("A")
+mode.input.Text = "24"
+mode.input.FocusLost:Fire()
+eq(ctx.store:Get("number"), 24)
+local circle = ctx:FloatingButton({ width = 64, height = 64 })
+eq(circle.root.Size.X.Offset, circle.root.Size.Y.Offset)
+eq(circle.button:FindFirstChildOfClass("UICorner").CornerRadius.Offset, 999, "Floating actions remain circular")
+local mini = ctx:FloatingButton({ shape = "mini", title = "Action", text = "OFF", width = 112, height = 96 })
+eq(mini.root.Size.X.Offset, 112)
+eq(mini.root.Size.Y.Offset, 96)
+check(mini.root.BackgroundTransparency > 0)
+eq(mini.button.Position.Y.Offset, 22, "Mini panel has a separate drag header")
+eq(mini.button:FindFirstChildOfClass("UICorner").CornerRadius.Offset, 10)
+mini:SetTone("success")
+eq(mini.button.BackgroundColor3, ctx.theme.colors.success)
+local readout = ctx:Component("Readout", ctx.root, { text = "Initial" })
+readout:SetText("Updated")
+eq(readout.label.Text, "Updated")
+eq(readout.root.AutomaticSize, Enum.AutomaticSize.XY)
 local held = false
 local floating = ctx:FloatingButton({
-  onHold = function(down)
-    held = down
-  end,
+  onHold = function(down) held = down end,
 })
 floating.button.InputBegan:Fire({ UserInputType = Enum.UserInputType.MouseButton1 })
 check(held)
@@ -216,7 +239,7 @@ eq(ctx.modal, nil)
 local checkbox = section:Add("Checkbox", { value = false, size = "small" })
 checkbox.button.Activated:Fire()
 eq(checkbox:GetValue(), true)
-eq(checkbox.content.Size.Y.Offset, 32, "Small size token")
+eq(checkbox.content.Size.Y.Offset, 26, "Small size token")
 local textarea = section:Add("TextArea", { value = "Notes", maxLength = 5 })
 local areaPosition = textarea.content.Position.Y.Offset
 check(not textarea:SetValue("Too long"))
@@ -262,10 +285,7 @@ for _, bounds in ipairs({ Vector2.new(320, 568), Vector2.new(568, 320), Vector2.
   ctx.root:GetPropertyChangedSignal("AbsoluteSize"):Fire()
   check(window.root.Size.X.Offset <= bounds.X - 24, "Window fits viewport width")
   check(window.root.Size.Y.Offset <= bounds.Y - 24, "Window fits viewport height")
-  eq(
-    window.navLayout.FillDirection,
-    bounds.X < 644 and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical
-  )
+  eq(window.navLayout.FillDirection, Enum.FillDirection.Vertical)
 end
 local external = Library.new({ onError = onError })
 external.gui:Destroy()
@@ -285,18 +305,10 @@ local spamChanged = Signal.new(onError)
 local activeManual = false
 local hostErrors = {}
 local utils = {
-  getConfig = function()
-    return table.clone(configValues)
-  end,
-  getLocalPlayer = function()
-    return Mock.services.Players.LocalPlayer
-  end,
-  isActive = function()
-    return true
-  end,
-  isManualSpamActive = function()
-    return activeManual
-  end,
+  getConfig = function() return table.clone(configValues) end,
+  getLocalPlayer = function() return Mock.services.Players.LocalPlayer end,
+  isActive = function() return true end,
+  isManualSpamActive = function() return activeManual end,
   setConfig = function(patch)
     for k, v in pairs(patch) do
       configValues[k] = v
@@ -304,51 +316,25 @@ local utils = {
     configChanged:Fire(patch)
     return true
   end,
-  resetConfig = function()
-    return true
-  end,
+  resetConfig = function() return true end,
   setManualSpamActive = function(value)
     activeManual = value
     spamChanged:Fire()
   end,
-  observeConfig = function(callback)
-    return configChanged:Connect(callback)
-  end,
-  observeSpam = function(callback)
-    return spamChanged:Connect(callback)
-  end,
-  recordError = function(_, message)
-    table.insert(hostErrors, message)
-  end,
-  name = function()
-    return "Exodus"
-  end,
-  version = function()
-    return "2"
-  end,
-  author = function()
-    return "Author"
-  end,
+  observeConfig = function(callback) return configChanged:Connect(callback) end,
+  observeSpam = function(callback) return spamChanged:Connect(callback) end,
+  recordError = function(_, message) table.insert(hostErrors, message) end,
+  name = function() return "Exodus" end,
+  version = function() return "2" end,
+  author = function() return "Author" end,
 }
 local gameInfo = {
-  areAbilitiesEnabled = function()
-    return true
-  end,
-  observeAbilityMode = function(callback)
-    return Signal.new(onError):Connect(callback)
-  end,
-  getSnapshotAt = function()
-    return {}
-  end,
-  isSnapshotValid = function()
-    return false
-  end,
-  createCrateNetwork = function()
-    return {}
-  end,
-  spinCrate = function()
-    return false
-  end,
+  areAbilitiesEnabled = function() return true end,
+  observeAbilityMode = function(callback) return Signal.new(onError):Connect(callback) end,
+  getSnapshotAt = function() return {} end,
+  isSnapshotValid = function() return false end,
+  createCrateNetwork = function() return {} end,
+  spinCrate = function() return false end,
 }
 local modules = {
   uilibrary = Library,
@@ -357,17 +343,11 @@ local modules = {
   gameinfo = gameInfo,
   uiconfig = UIConfig,
   autospam = {
-    getStatus = function()
-      return {}
-    end,
+    getStatus = function() return {} end,
   },
   dumper = {
-    start = function()
-      return true
-    end,
-    isRunning = function()
-      return false
-    end,
+    start = function() return true end,
+    isRunning = function() return false end,
   },
 }
 for name, module in pairs(modules) do

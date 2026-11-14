@@ -17,11 +17,8 @@ function Overlay.Notify(ctx, options)
   }, ctx.overlays))
   ctx:Round(card, ctx.theme.radius.card)
   local border = ctx:Outline(card)
-  local label = ctx:Text(
-    card,
-    options.title or "Notification",
-    { Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -56, 0, 24), Font = ctx.theme.font.bold }
-  )
+  local label =
+    ctx:Text(card, options.title or "Notification", { Position = UDim2.fromOffset(12, 8), Size = UDim2.new(1, -56, 0, 24), Font = ctx.theme.font.bold })
   local description = ctx:Text(card, options.message or "", {
     Position = UDim2.fromOffset(12, 36),
     Size = UDim2.new(1, -24, 0, 44),
@@ -37,12 +34,8 @@ function Overlay.Notify(ctx, options)
     TextColor3 = ctx.theme.colors.muted,
     AutoButtonColor = false,
   }, card)
-  function handle:Destroy()
-    scope:Destroy()
-  end
-  function handle:SetText(text)
-    description.Text = text
-  end
+  function handle:Destroy() scope:Destroy() end
+  function handle:SetText(text) description.Text = text end
   ctx.notificationOrder = ctx.notificationOrder or {}
   table.insert(ctx.notificationOrder, handle)
   handle.root = card
@@ -68,11 +61,10 @@ function Overlay.Notify(ctx, options)
     end
     reflow()
   end)
-  scope:Add(close.Activated:Connect(function()
-    handle:Destroy()
-  end))
+  scope:Add(close.Activated:Connect(function() handle:Destroy() end))
   scope:Add(ctx.root:GetPropertyChangedSignal("AbsoluteSize"):Connect(reflow))
   ctx:WatchTheme(scope, function(t)
+    card.BackgroundTransparency = t.transparency.card
     card.BackgroundColor3 = t.colors.elevated
     label.TextColor3 = t.colors.text
     description.TextColor3 = t.colors.muted
@@ -84,9 +76,7 @@ function Overlay.Notify(ctx, options)
     ctx.notificationOrder[1]:Destroy()
   end
   if options.duration ~= 0 then
-    scope:Delay(options.duration or 4, function()
-      handle:Destroy()
-    end)
+    scope:Delay(options.duration or 4, function() handle:Destroy() end)
   end
   return handle
 end
@@ -134,21 +124,9 @@ function Overlay.Dialog(ctx, options)
     TextYAlignment = Enum.TextYAlignment.Top,
   })
   local proxy = { ctx = ctx }
-  local cancel = Base.button(
-    proxy,
-    card,
-    options.cancelText or "Cancel",
-    { Position = UDim2.new(0, 16, 1, -56), Size = UDim2.new(0.5, -24, 0, 40) }
-  )
-  local confirm = Base.button(
-    proxy,
-    card,
-    options.confirmText or "Confirm",
-    { Position = UDim2.new(0.5, 8, 1, -56), Size = UDim2.new(0.5, -24, 0, 40) }
-  )
-  function handle:Destroy()
-    scope:Destroy()
-  end
+  local cancel = Base.button(proxy, card, options.cancelText or "Cancel", { Position = UDim2.new(0, 16, 1, -56), Size = UDim2.new(0.5, -24, 0, 40) })
+  local confirm = Base.button(proxy, card, options.confirmText or "Confirm", { Position = UDim2.new(0.5, 8, 1, -56), Size = UDim2.new(0.5, -24, 0, 40) })
+  function handle:Destroy() scope:Destroy() end
   local function finish(accepted)
     if scope.destroyed then
       return
@@ -162,12 +140,8 @@ function Overlay.Dialog(ctx, options)
       end
     end
   end
-  scope:Add(cancel.Activated:Connect(function()
-    finish(false)
-  end))
-  scope:Add(confirm.Activated:Connect(function()
-    finish(true)
-  end))
+  scope:Add(cancel.Activated:Connect(function() finish(false) end))
+  scope:Add(confirm.Activated:Connect(function() finish(true) end))
   scope:Add(ctx.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Escape then
       finish(false)
@@ -194,14 +168,12 @@ function Overlay.Dialog(ctx, options)
     end
   end)
   local function resize()
-    card.Size = UDim2.fromOffset(
-      math.min(400, math.max(100, ctx.root.AbsoluteSize.X - 24)),
-      math.min(204, math.max(100, ctx.root.AbsoluteSize.Y - 24))
-    )
+    card.Size = UDim2.fromOffset(math.min(400, math.max(100, ctx.root.AbsoluteSize.X - 24)), math.min(204, math.max(100, ctx.root.AbsoluteSize.Y - 24)))
   end
   scope:Add(ctx.root:GetPropertyChangedSignal("AbsoluteSize"):Connect(resize))
   resize()
   ctx:WatchTheme(scope, function(t)
+    card.BackgroundTransparency = t.transparency.header
     card.BackgroundColor3 = t.colors.surface
     title.TextColor3 = t.colors.text
     body.TextColor3 = t.colors.muted
@@ -236,10 +208,7 @@ function Overlay.Tooltip(ctx, anchor, options)
     ctx:Outline(label)
     local function position()
       local p, bounds = anchor.AbsolutePosition - ctx.root.AbsolutePosition, ctx.root.AbsoluteSize
-      label.Position = UDim2.fromOffset(
-        math.clamp(p.X, 4, math.max(4, bounds.X - 244)),
-        math.clamp(p.Y - 60, 4, math.max(4, bounds.Y - 60))
-      )
+      label.Position = UDim2.fromOffset(math.clamp(p.X, 4, math.max(4, bounds.X - 244)), math.clamp(p.Y - 60, 4, math.max(4, bounds.Y - 60)))
     end
     position()
     tooltip:Add(anchor:GetPropertyChangedSignal("AbsolutePosition"):Connect(position))
@@ -248,9 +217,7 @@ function Overlay.Tooltip(ctx, anchor, options)
   scope:Add(anchor.MouseLeave:Connect(hide))
   scope:Add(anchor.SelectionGained:Connect(show))
   scope:Add(anchor.SelectionLost:Connect(hide))
-  scope:Add(anchor.Destroying:Connect(function()
-    scope:Destroy()
-  end))
+  scope:Add(anchor.Destroying:Connect(function() scope:Destroy() end))
   return scope
 end
 return Overlay
