@@ -1439,7 +1439,7 @@ local function createDropdown(yPos, parent, definition)
     })
     corner(line, 1)
   end
-  local popup, fadeGroup, followConnection, fadeTween
+  local popup, fadeGroup, followConnection, outsideConnection, fadeTween
   local opening = false
   local close
   close = function(immediate)
@@ -1447,6 +1447,10 @@ local function createDropdown(yPos, parent, definition)
     if followConnection then
       safeDisconnect(followConnection); untrackConn(followConnection)
       followConnection = nil
+    end
+    if outsideConnection then
+      safeDisconnect(outsideConnection); untrackConn(outsideConnection)
+      outsideConnection = nil
     end
     local oldPopup, oldGroup = popup, fadeGroup; popup, fadeGroup = nil, nil
     safeCancel(fadeTween); fadeTween = nil
@@ -1498,6 +1502,9 @@ local function createDropdown(yPos, parent, definition)
       Parent = popup,
     })
     local group = fadeGroup
+    corner(group, 9 * scale)
+    local popupOutline = stroke(group, C.accent, 1.5)
+    popupOutline.Transparency = 0
     local list = inst("ScrollingFrame", {
       Size = UDim2.fromScale(1, 1),
       BackgroundColor3 = C.card,
@@ -1512,7 +1519,7 @@ local function createDropdown(yPos, parent, definition)
       ZIndex = 3,
       Parent = group,
     })
-    corner(list, 9 * scale); stroke(list, C.border, 1.5)
+    corner(list, 9 * scale)
     for index, option in ipairs(options) do
       local row = inst("TextButton", {
         Size = UDim2.new(1, -2 * padding - 5, 0, rowHeight),
@@ -1555,12 +1562,11 @@ local function createDropdown(yPos, parent, definition)
       local pos, size = button.AbsolutePosition, button.AbsoluteSize; local parentPos, parentSize = parent.AbsolutePosition, parent.AbsoluteSize
       if pos.Y + size.Y <= parentPos.Y or pos.Y >= parentPos.Y + parentSize.Y then close(); return end
       local screen = workspace.CurrentCamera; local view = screen and screen.ViewportSize or Vector2.new(1920, 1080)
-      local margin, space = 6 * scale, 6 * scale; local cardBottom = math.max(f.AbsolutePosition.Y + f.AbsoluteSize.Y, pos.Y + size.Y)
+      local margin, space = 6 * scale, 5 * scale; local cardBottom = pos.Y + size.Y
       local below = math.max(0, view.Y - cardBottom - margin - space); local height = math.max(0, math.min(desiredHeight, below))
       local x = math.clamp(pos.X, margin, math.max(margin, view.X - size.X - margin)); group.AnchorPoint = Vector2.new(0, 0)
       group.Position = UDim2.fromOffset(x, cardBottom + space); return height, size.X
     end
-    local outsideConnection
     outsideConnection = trackConn(UIS.InputBegan:Connect(function(input)
       if popup ~= popupRef then return end
       if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
@@ -1569,14 +1575,6 @@ local function createDropdown(yPos, parent, definition)
       local onList = point.X >= gp.X and point.X <= gp.X + gs.X and point.Y >= gp.Y and point.Y <= gp.Y + gs.Y
       if not onButton and not onList then close() end
     end))
-    local originalClose = close
-    close = function(immediate)
-      if outsideConnection then
-        safeDisconnect(outsideConnection); untrackConn(outsideConnection)
-        outsideConnection = nil
-      end
-      originalClose(immediate)
-    end
     closeActiveDropdown = close; local height, width = updatePosition()
     if not popup then return end
     group.Size = UDim2.fromOffset(width, height); fadeTween = twPlay(group, 0.18, { GroupTransparency = 0 }, EASE_SINE, DIR_OUT)
