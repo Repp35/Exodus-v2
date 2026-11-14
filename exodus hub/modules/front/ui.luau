@@ -1501,10 +1501,8 @@ local function createDropdown(yPos, parent, definition)
       ZIndex = 2,
       Parent = popup,
     })
-    local group = fadeGroup
-    corner(group, 9 * scale)
-    local popupOutline = stroke(group, C.accent, 1.5)
-    popupOutline.Transparency = 0
+    local group = fadeGroup; corner(group, 9 * scale)
+    local popupOutline = stroke(group, C.accent, 1.5); popupOutline.Transparency = 0
     local list = inst("ScrollingFrame", {
       Size = UDim2.fromScale(1, 1),
       BackgroundColor3 = C.card,
