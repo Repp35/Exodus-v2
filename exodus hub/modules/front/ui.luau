@@ -309,9 +309,7 @@ local function bindInput()
   end))
   trackConn(UIS.InputEnded:Connect(function(input)
     local held = UIState.manualHoldInput
-    if held and (held == input or (inputBinding(held) and inputBinding(held) == inputBinding(input))) then
-      UIState.manualHoldInput = nil; setSpam(false)
-    end
+    if held and (held == input or (inputBinding(held) and inputBinding(held) == inputBinding(input))) then UIState.manualHoldInput = nil; setSpam(false) end
   end))
   trackConn(UIS.WindowFocusReleased:Connect(function()
     if UIState.manualHoldInput then UIState.manualHoldInput = nil; setSpam(false) end
@@ -518,9 +516,10 @@ local function cleanupUI()
   end
   UIState.pageTweens = {}; UIState.panelOpen = false
   UIState.clashBallOn = false; UIState.closing = false
-  UIState.keyCapture = false; UIState.manualHoldInput = nil; UIState.panelTween = nil
-  UIState.btnTween = nil; UIState.toastGeneration += 1
-  safeCancel(UIState.toastTween); UIState.toastTween = nil
+  UIState.keyCapture = false; UIState.manualHoldInput = nil
+  UIState.panelTween = nil; UIState.btnTween = nil
+  UIState.toastGeneration += 1; safeCancel(UIState.toastTween)
+  UIState.toastTween = nil
   UIState.btnIsDragging = function() return false end
   for i = #flowingTweens, 1, -1 do
     safeCancel(flowingTweens[i]); flowingTweens[i] = nil
@@ -1045,8 +1044,7 @@ local function keyName(value)
   local name = typeof(value) == "EnumItem" and value.Name or tostring(value or "—"); return names[name] or name
 end
 local function makeKeycap(parent, configKey)
-  local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 50, 26, parent, C.btnDark)
-  keycap.Name = "Shortcut_" .. configKey
+  local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 50, 26, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey
   keycap.Position = UDim2.new(1, -58, 0, 5); keycap.TextSize = 11
   keycap.TextTruncate = Enum.TextTruncate.AtEnd; keycap.ZIndex = 11
   shortcutLabels[configKey] = keycap
@@ -1111,8 +1109,7 @@ local function createToggleCard(option, configKey, yPos, parent, onAfter, shortc
   local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
   local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, UIState.desktop and shortcutKey and -148 or -78)
   local config = Utils.getConfig(); local initial = configKey and config[configKey] == true
-  local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
-  toggleTrack.Position = UDim2.new(1, UIState.desktop and shortcutKey and -120 or -INNER_PAD - 48, 0.5, -15)
+  local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, UIState.desktop and shortcutKey and -120 or -INNER_PAD - 48, 0.5, -15)
   if configKey == "UniversalFly" or configKey == "UniversalSpeedEnabled" or configKey == "UniversalGravityEnabled" then statusToggleVisuals[configKey] = setVisual end
   if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey, false, height) end
   if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
@@ -1513,20 +1510,25 @@ local function createDropdown(yPos, parent, definition)
   return nextCardY(yPos, RATE_CARD_H)
 end
 local function createSegmented(yPos, parent, definition)
-  local options = definition.options or {}
-  local card = cardFrame(yPos, RATE_CARD_H, parent)
+  local options = definition.options or {}; local card = cardFrame(yPos, RATE_CARD_H, parent)
   cardLabel(optionInfo(definition), card)
   local track = inst("Frame", {
-    Size = UDim2.new(1, -20, 0, 30), Position = UDim2.fromOffset(10, 28),
-    BackgroundColor3 = C.inputBg, BorderSizePixel = 0, ZIndex = 7, Parent = card,
+    Size = UDim2.new(1, -20, 0, 30),
+    Position = UDim2.fromOffset(10, 28),
+    BackgroundColor3 = C.inputBg,
+    BorderSizePixel = 0,
+    ZIndex = 7,
+    Parent = card,
   })
   corner(track, 9); stroke(track, C.border, 1)
   local thumb = inst("Frame", {
-    Size = UDim2.new(1 / #options, -4, 1, -4), BackgroundColor3 = C.accent,
-    BorderSizePixel = 0, ZIndex = 8, Parent = track,
+    Size = UDim2.new(1 / #options, -4, 1, -4),
+    BackgroundColor3 = C.accent,
+    BorderSizePixel = 0,
+    ZIndex = 8,
+    Parent = track,
   })
-  corner(thumb, 7)
-  local buttons = {}
+  corner(thumb, 7); local buttons = {}
   local function paint(animated)
     local current = Utils.getConfigValue(definition.key)
     for index, option in ipairs(options) do
@@ -1542,9 +1544,15 @@ local function createSegmented(yPos, parent, definition)
   end
   for index, option in ipairs(options) do
     local button = inst("TextButton", {
-      Size = UDim2.new(1 / #options, 0, 1, 0), Position = UDim2.new((index - 1) / #options, 0, 0, 0),
-      BackgroundTransparency = 1, Text = option.label, TextColor3 = C.subtext,
-      TextSize = 13, Font = Enum.Font.GothamBold, ZIndex = 9, Parent = track,
+      Size = UDim2.new(1 / #options, 0, 1, 0),
+      Position = UDim2.new((index - 1) / #options, 0, 0, 0),
+      BackgroundTransparency = 1,
+      Text = option.label,
+      TextColor3 = C.subtext,
+      TextSize = 13,
+      Font = Enum.Font.GothamBold,
+      ZIndex = 9,
+      Parent = track,
     })
     buttons[index] = button
     trackConn(button.Activated:Connect(function()
@@ -2288,9 +2296,7 @@ function ExodusUI.setup(deps)
   end))
   trackConn(spamButton.InputBegan:Connect(function(input)
     if Utils.getConfigValue("ManualSpamMode") ~= "Hold" or UIState.manualHoldInput then return end
-    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-      UIState.manualHoldInput = input; setSpam(true)
-    end
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then UIState.manualHoldInput = input; setSpam(true) end
   end))
   miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY)
   makeDraggable(miniTitleBar, miniGui, function()
@@ -2647,19 +2653,16 @@ function ExodusUI.setup(deps)
   end
   for _, row in ipairs(indeedRows) do
     if row.parentKey and row.root and indeedParents[row.parentKey] then
-      local parentRow = indeedParents[row.parentKey]
-      parentRow.baseHeight = parentRow.baseHeight or parentRow.root.Size.Y.Offset
-      parentRow.children = parentRow.children or {}
-      local childOffset = 0
-      for _, child in ipairs(parentRow.children) do childOffset += child.root.Size.Y.Offset + 5 end
-      row.root.Parent = parentRow.root
-      row.root.Position = UDim2.fromOffset(6, parentRow.baseHeight + childOffset)
-      row.root.Size = UDim2.new(1, -12, 0, row.root.Size.Y.Offset)
-      row.root.BackgroundTransparency = 0.45
+      local parentRow = indeedParents[row.parentKey]; parentRow.baseHeight = parentRow.baseHeight or parentRow.root.Size.Y.Offset
+      parentRow.children = parentRow.children or {}; local childOffset = 0
+      for _, child in ipairs(parentRow.children) do
+        childOffset += child.root.Size.Y.Offset + 5
+      end
+      row.root.Parent = parentRow.root; row.root.Position = UDim2.fromOffset(6, parentRow.baseHeight + childOffset)
+      row.root.Size = UDim2.new(1, -12, 0, row.root.Size.Y.Offset); row.root.BackgroundTransparency = 0.45
       local scale = row.root:FindFirstChild("CardScale")
       if scale then scale.Scale = 1; scale:SetAttribute("BaseScale", 1) end
-      parentRow.root.ClipsDescendants = true
-      parentRow.children[#parentRow.children + 1] = row
+      parentRow.root.ClipsDescendants = true; parentRow.children[#parentRow.children + 1] = row
     end
   end
   local indeedInitialized = false
@@ -2670,7 +2673,9 @@ function ExodusUI.setup(deps)
       if not row.parentKey then
         local extra = 0
         if row.children then
-          for _, child in ipairs(row.children) do extra += child.root.Size.Y.Offset + 5 end
+          for _, child in ipairs(row.children) do
+            extra += child.root.Size.Y.Offset + 5
+          end
           local expanded = config[row.children[1].parentKey] == true
           twPlay(row.root, duration, {
             Size = UDim2.new(row.root.Size.X.Scale, row.root.Size.X.Offset, 0, row.baseHeight + (expanded and extra or 0)),
@@ -2678,15 +2683,13 @@ function ExodusUI.setup(deps)
           if expanded then extra *= CARD_SCALE else extra = 0 end
         end
         if row.root then
-          row.root.Visible = true
-          local pos = row.root.Position
+          row.root.Visible = true; local pos = row.root.Position
           twPlay(row.root, duration, { Position = UDim2.new(pos.X.Scale, pos.X.Offset, 0, y) }, EASE_OUT, DIR_OUT)
         end
         y += row.span + extra
       end
     end
-    indeedContent.CanvasSize = UDim2.fromOffset(0, y + CARD_GAP)
-    indeedInitialized = true
+    indeedContent.CanvasSize = UDim2.fromOffset(0, y + CARD_GAP); indeedInitialized = true
   end
   refreshIndeedChildren(); cardLabel("Automatic Abilities", autosLeft)
   cardLabel("Quick Controls", autosRight)
@@ -3072,9 +3075,7 @@ function ExodusUI.setup(deps)
         if autoDarkSetVisual then autoDarkSetVisual(changes.AutoDark == true) end
       end
       if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
-      if changes.ManualSpamMode ~= nil then
-        UIState.manualHoldInput = nil; setSpam(false)
-      end
+      if changes.ManualSpamMode ~= nil then UIState.manualHoldInput = nil; setSpam(false) end
     end))
   end
   local currentGui = screenGui
