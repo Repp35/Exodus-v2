@@ -1744,10 +1744,8 @@ local function createRateSelector(yPos, parent, definition)
   return nextCardY(yPos, RATE_CARD_H)
 end
 local function createKeybindOnlyCard(title, yPos, parent, configKey)
-  local f = cardFrame(yPos, CARD_H, parent)
-  addOptionText(f, title, CARD_H, -78)
-  makeKeycap(f, configKey)
-  return nextCardY(yPos, CARD_H), f
+  local f = cardFrame(yPos, CARD_H, parent); addOptionText(f, title, CARD_H, -78)
+  makeKeycap(f, configKey); return nextCardY(yPos, CARD_H), f
 end
 local function createKeybindSelector(yPos, parent, definition)
   return createActionShortcutCard(definition or "Stop Functions", yPos, parent, "Keybind", function()
