@@ -1320,10 +1320,7 @@ end
 local function createActionShortcutCard(option, yPos, parent, configKey, onActivate)
   local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
   local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, -88)
-  if UIState.desktop and configKey then
-    local keycap = makeKeycap(f, configKey)
-    keycap.Position = UDim2.new(1, -62, 0.5, -13)
-  end
+  if UIState.desktop and configKey then local keycap = makeKeycap(f, configKey); keycap.Position = UDim2.new(1, -62, 0.5, -13) end
   addCardHitbox(f, height, function()
     if onActivate then onActivate() end
     if showToast then showToast(title .. " On") end
