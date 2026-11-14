@@ -8,9 +8,7 @@ function Mock.install(env)
     function self:Connect(callback)
       local connection = { Connected = true }
       self.listeners[connection] = callback
-      function connection:Disconnect()
-        self.Connected = false
-      end
+      function connection:Disconnect() self.Connected = false end
       return connection
     end
     function self:Fire(...)
@@ -49,80 +47,37 @@ function Mock.install(env)
     end
     return vector[key]
   end
-  vector.__add = function(a, b)
-    return setmetatable({ X = a.X + b.X, Y = a.Y + b.Y }, vector)
-  end
-  vector.__sub = function(a, b)
-    return setmetatable({ X = a.X - b.X, Y = a.Y - b.Y }, vector)
-  end
+  vector.__add = function(a, b) return setmetatable({ X = a.X + b.X, Y = a.Y + b.Y }, vector) end
+  vector.__sub = function(a, b) return setmetatable({ X = a.X - b.X, Y = a.Y - b.Y }, vector) end
   env.Vector2 = {
-    new = function(x, y)
-      return setmetatable({ X = x, Y = y }, vector)
-    end,
+    new = function(x, y) return setmetatable({ X = x, Y = y }, vector) end,
   }
   env.Vector2.zero = env.Vector2.new(0, 0)
   env.UDim = {
-    new = function(scale, offset)
-      return { Scale = scale, Offset = offset }
-    end,
+    new = function(scale, offset) return { Scale = scale, Offset = offset } end,
   }
   env.UDim2 = {
-    new = function(xs, xo, ys, yo)
-      return { X = env.UDim.new(xs, xo), Y = env.UDim.new(ys, yo) }
-    end,
+    new = function(xs, xo, ys, yo) return { X = env.UDim.new(xs, xo), Y = env.UDim.new(ys, yo) } end,
   }
-  env.UDim2.fromOffset = function(x, y)
-    return env.UDim2.new(0, x, 0, y)
-  end
-  env.UDim2.fromScale = function(x, y)
-    return env.UDim2.new(x, 0, y, 0)
-  end
+  env.UDim2.fromOffset = function(x, y) return env.UDim2.new(0, x, 0, y) end
+  env.UDim2.fromScale = function(x, y) return env.UDim2.new(x, 0, y, 0) end
   local color = {}
   color.__index = color
-  function color:Lerp(other, t)
-    return env.Color3.new(
-      self.R + (other.R - self.R) * t,
-      self.G + (other.G - self.G) * t,
-      self.B + (other.B - self.B) * t
-    )
-  end
-  function color:ToHex()
-    return string.format(
-      "%02X%02X%02X",
-      math.round(self.R * 255),
-      math.round(self.G * 255),
-      math.round(self.B * 255)
-    )
-  end
+  function color:Lerp(other, t) return env.Color3.new(self.R + (other.R - self.R) * t, self.G + (other.G - self.G) * t, self.B + (other.B - self.B) * t) end
+  function color:ToHex() return string.format("%02X%02X%02X", math.round(self.R * 255), math.round(self.G * 255), math.round(self.B * 255)) end
   env.Color3 = {
-    new = function(r, g, b)
-      return setmetatable({ R = r, G = g, B = b, __type = "Color3" }, color)
-    end,
+    new = function(r, g, b) return setmetatable({ R = r, G = g, B = b, __type = "Color3" }, color) end,
   }
-  env.Color3.fromRGB = function(r, g, b)
-    return env.Color3.new(r / 255, g / 255, b / 255)
-  end
-  env.Color3.fromHex = function(hex)
-    return env.Color3.fromRGB(
-      tonumber(hex:sub(1, 2), 16),
-      tonumber(hex:sub(3, 4), 16),
-      tonumber(hex:sub(5, 6), 16)
-    )
-  end
+  env.Color3.fromRGB = function(r, g, b) return env.Color3.new(r / 255, g / 255, b / 255) end
+  env.Color3.fromHex = function(hex) return env.Color3.fromRGB(tonumber(hex:sub(1, 2), 16), tonumber(hex:sub(3, 4), 16), tonumber(hex:sub(5, 6), 16)) end
   env.ColorSequence = {
-    new = function(...)
-      return { ... }
-    end,
+    new = function(...) return { ... } end,
   }
   env.TweenInfo = {
-    new = function(...)
-      return { ... }
-    end,
+    new = function(...) return { ... } end,
   }
   local nativeTypeof = typeof
-  env.typeof = function(value)
-    return type(value) == "table" and value.__type or nativeTypeof(value)
-  end
+  env.typeof = function(value) return type(value) == "table" and value.__type or nativeTypeof(value) end
   local events = {
     Activated = true,
     MouseEnter = true,
@@ -160,9 +115,7 @@ function Mock.install(env)
       end
     end
     if key == "IsA" then
-      return function(_, name)
-        return name == self.ClassName
-      end
+      return function(_, name) return name == self.ClassName end
     end
     if key == "GetChildren" then
       return function()
@@ -212,8 +165,7 @@ function Mock.install(env)
   end
   env.Instance = {
     new = function(class)
-      local instance =
-        setmetatable({ ClassName = class, _events = {}, _changes = {}, __type = "Instance" }, mt)
+      local instance = setmetatable({ ClassName = class, _events = {}, _changes = {}, __type = "Instance" }, mt)
       for name in pairs(events) do
         instance._events[name] = event()
       end
@@ -222,17 +174,13 @@ function Mock.install(env)
     end,
   }
   local services = { UserInputService = env.Instance.new("UserInputService"), GuiService = {} }
-  services.UserInputService.GetFocusedTextBox = function()
-    return nil
-  end
+  services.UserInputService.GetFocusedTextBox = function() return nil end
   services.UserInputService.KeyboardEnabled = true
   services.UserInputService.MouseEnabled = true
   services.UserInputService.TouchEnabled = false
   local player = env.Instance.new("Player")
   local playerGui = env.Instance.new("PlayerGui")
-  player.WaitForChild = function()
-    return playerGui
-  end
+  player.WaitForChild = function() return playerGui end
   services.Players = { LocalPlayer = player }
   services.TweenService = {
     Create = function(_, object, _, properties)
@@ -253,9 +201,7 @@ function Mock.install(env)
       return services[name]
     end,
   }
-  env.warn = function(message)
-    error("Unexpected warning: " .. tostring(message))
-  end
+  env.warn = function(message) error("Unexpected warning: " .. tostring(message)) end
   local pending = {}
   env.task = {
     delay = function(_, callback)
@@ -263,17 +209,13 @@ function Mock.install(env)
       pending[co] = true
       return co
     end,
-    cancel = function(co)
-      pending[co] = nil
-    end,
+    cancel = function(co) pending[co] = nil end,
     spawn = function(callback)
       local co = coroutine.create(callback)
       pending[co] = true
       return co
     end,
-    wait = function()
-      coroutine.yield()
-    end,
+    wait = function() coroutine.yield() end,
   }
   function Mock.pending()
     local count = 0
@@ -291,9 +233,7 @@ function Mock.install(env)
     end
     return count
   end
-  function Mock.input(key)
-    return { KeyCode = key, UserInputType = env.Enum.UserInputType.Keyboard, Position = env.Vector2.new(0, 0) }
-  end
+  function Mock.input(key) return { KeyCode = key, UserInputType = env.Enum.UserInputType.Keyboard, Position = env.Vector2.new(0, 0) } end
   function Mock.fire(ctx, key, ended)
     local input = Mock.input(key);
     (ended and ctx.InputEnded or ctx.InputBegan):Fire(input, false)

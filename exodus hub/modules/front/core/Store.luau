@@ -40,12 +40,8 @@ function Store.new(options)
   }, Store)
   return self
 end
-function Store:Get(key)
-  return copy(self._values[key])
-end
-function Store:Snapshot()
-  return copy(self._values)
-end
+function Store:Get(key) return copy(self._values[key]) end
+function Store:Snapshot() return copy(self._values) end
 function Store:Patch(patch, external)
   assert(type(patch) == "table", "Expected patch table")
   local changes = {}
@@ -90,9 +86,7 @@ function Store:Patch(patch, external)
   end
   return true
 end
-function Store:Set(key, value)
-  return self:Patch({ [key] = value })
-end
+function Store:Set(key, value) return self:Patch({ [key] = value }) end
 function Store:Subscribe(key, callback, immediate)
   local connection = self.Changed:Connect(function(changes)
     if changes[key] ~= nil then
@@ -104,7 +98,5 @@ function Store:Subscribe(key, callback, immediate)
   end
   return connection
 end
-function Store:Destroy()
-  self.Changed:Destroy()
-end
+function Store:Destroy() self.Changed:Destroy() end
 return Store

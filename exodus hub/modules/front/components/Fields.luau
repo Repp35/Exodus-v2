@@ -1,8 +1,6 @@
 local Base = require(script.Parent.Base)
 local Fields = {}
-local function finite(value)
-  return type(value) == "number" and value == value and math.abs(value) < math.huge
-end
+local function finite(value) return type(value) == "number" and value == value and math.abs(value) < math.huge end
 local function numberNormalizer(options)
   local min, max, step = options.min or 0, options.max or 100, options.step or 1
   assert(finite(min) and finite(max) and max > min and finite(step) and step > 0, "Invalid numeric range")
@@ -21,6 +19,7 @@ function Fields.Input(ctx, parent, options)
     Size = UDim2.fromScale(1, 1),
     BackgroundColor3 = ctx.theme.colors.input,
     BorderSizePixel = 0,
+    BackgroundTransparency = ctx.theme.transparency.input,
     TextColor3 = ctx.theme.colors.text,
     Font = ctx.theme.font.regular,
     TextSize = ctx.theme.text.body,
@@ -78,6 +77,7 @@ end
 function Fields.NumberInput(ctx, parent, options)
   local props = table.clone(options)
   props.numeric = true
+  props = Base.inline(props, 64)
   return Fields.Input(ctx, parent, props)
 end
 function Fields.Slider(ctx, parent, options)
@@ -85,11 +85,7 @@ function Fields.Slider(ctx, parent, options)
   local normalize = numberNormalizer(options)
   local min, max = options.min or 0, options.max or 100
   local rail = Base.button(self, self.content, "", { Size = UDim2.new(1, -88, 1, 0) })
-  local line = ctx:Create(
-    "Frame",
-    { Size = UDim2.new(1, -16, 0, 6), Position = UDim2.new(0, 8, 0.5, -3), BorderSizePixel = 0 },
-    rail
-  )
+  local line = ctx:Create("Frame", { Size = UDim2.new(1, -16, 0, 6), Position = UDim2.new(0, 8, 0.5, -3), BorderSizePixel = 0 }, rail)
   ctx:Round(line, 3)
   local fill = ctx:Create("Frame", { Size = UDim2.fromScale(0, 1), BorderSizePixel = 0 }, line)
   ctx:Round(fill, 3)
@@ -114,25 +110,13 @@ function Fields.Slider(ctx, parent, options)
     self:SetValue(min + ratio * (max - min))
   end
   self.scope:Add(rail.InputBegan:Connect(function(input)
-    if
-      input.UserInputType == Enum.UserInputType.MouseButton1
-      or input.UserInputType == Enum.UserInputType.Touch
-    then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
       active = input
       update(input)
     end
   end))
   self.scope:Add(ctx.InputChanged:Connect(function(input)
-    if
-      active
-      and (
-        input == active
-        or (
-          active.UserInputType ~= Enum.UserInputType.Touch
-          and input.UserInputType == Enum.UserInputType.MouseMovement
-        )
-      )
-    then
+    if active and (input == active or (active.UserInputType ~= Enum.UserInputType.Touch and input.UserInputType == Enum.UserInputType.MouseMovement)) then
       update(input)
     end
   end))
@@ -141,12 +125,8 @@ function Fields.Slider(ctx, parent, options)
       active = nil
     end
   end))
-  self.scope:Add(rail.SelectionGained:Connect(function()
-    self.selected = true
-  end))
-  self.scope:Add(rail.SelectionLost:Connect(function()
-    self.selected = false
-  end))
+  self.scope:Add(rail.SelectionGained:Connect(function() self.selected = true end))
+  self.scope:Add(rail.SelectionLost:Connect(function() self.selected = false end))
   self.scope:Add(ctx.InputBegan:Connect(function(input)
     if not self.selected or self:IsDisabled() then
       return
@@ -169,8 +149,7 @@ function Fields.Slider(ctx, parent, options)
     rail.BackgroundColor3 = t.colors.input
     rail.Active = not self:IsDisabled()
     value.TextColor3 = t.colors.muted
-    value.Text = options.format and options.format(self.value)
-      or string.format("%.3g%s", self.value, options.suffix or "")
+    value.Text = options.format and options.format(self.value) or string.format("%.3g%s", self.value, options.suffix or "")
     thumb.BackgroundTransparency = self:IsDisabled() and 0.5 or 0
   end
   self.scope:Add(ctx.ThemeChanged:Connect(render))

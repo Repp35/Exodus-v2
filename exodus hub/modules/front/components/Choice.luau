@@ -4,8 +4,7 @@ local function optionsList(options)
   assert(type(options.options) == "table" and #options.options > 0, "Expected non-empty options")
   local result, seen = {}, {}
   for _, option in ipairs(options.options) do
-    local item = type(option) == "table" and table.clone(option)
-      or { value = option, label = tostring(option) }
+    local item = type(option) == "table" and table.clone(option) or { value = option, label = tostring(option) }
     assert(item.value ~= nil and not seen[item.value], "Duplicate or missing option value")
     item.label = item.label or tostring(item.value)
     seen[item.value] = true
@@ -16,15 +15,32 @@ end
 function Choice.Segmented(ctx, parent, options)
   local self = Base.new(ctx, parent, options)
   local items, valid = optionsList(options)
+  local track = ctx:Create("Frame", {
+    Name = "Track",
+    Size = UDim2.fromScale(1, 1),
+    BackgroundColor3 = ctx.theme.colors.input,
+    BackgroundTransparency = ctx.theme.transparency.input,
+    BorderSizePixel = 0,
+  }, self.content)
+  ctx:Round(track, options.pill and 999 or ctx.theme.radius.control)
+  ctx:Outline(track)
+  local thumb = ctx:Create("Frame", {
+    Name = "Selection",
+    Size = UDim2.new(1 / #items, -4, 1, -4),
+    Position = UDim2.fromOffset(2, 2),
+    BorderSizePixel = 0,
+    BackgroundColor3 = ctx.theme.colors.accent,
+  }, track)
+  ctx:Round(thumb, options.pill and 999 or 7)
   local buttons = {}
-  local gap = 4
   for index, item in ipairs(items) do
     local button = Base.button(
       self,
-      self.content,
+      track,
       item.label,
-      { Position = UDim2.new((index - 1) / #items, gap / 2, 0, 0), Size = UDim2.new(1 / #items, -gap, 1, 0) }
+      { Position = UDim2.fromScale((index - 1) / #items, 0), Size = UDim2.new(1 / #items, 0, 1, 0), BackgroundTransparency = 1, ZIndex = 2 }
     )
+    button:FindFirstChildOfClass("UIStroke").Enabled = false
     self.scope:Add(button.Activated:Connect(function()
       if not self:IsDisabled() and not item.disabled then
         self:SetValue(item.value)
@@ -34,17 +50,20 @@ function Choice.Segmented(ctx, parent, options)
   end
   local function render()
     local t = ctx.theme
+    track.BackgroundColor3 = t.colors.input
     for index, button in ipairs(buttons) do
-      local disabled = self:IsDisabled() or items[index].disabled
-      button.Active = not disabled
-      button.TextTransparency = disabled and 0.5 or 0
-      button.TextColor3 = t.colors.text
-      ctx:Animate(
-        self.scope,
-        button,
-        { BackgroundColor3 = self.value == items[index].value and t.colors.accent or t.colors.input },
-        t.motion.fast
-      )
+      local selected = self.value == items[index].value
+      button.Active = not self:IsDisabled() and not items[index].disabled
+      button.TextColor3 = selected and t.colors.text or t.colors.muted
+      button.TextTransparency = button.Active and 0 or 0.5
+      if selected then
+        ctx:Animate(
+          self.scope,
+          thumb,
+          { Position = UDim2.new((index - 1) / #items, 2, 0, 2), BackgroundColor3 = t.colors[items[index].variant or "accent"] or t.colors.accent },
+          t.motion.normal
+        )
+      end
     end
   end
   self.scope:Add(ctx.ThemeChanged:Connect(render))
@@ -86,9 +105,7 @@ function Choice.Dropdown(ctx, parent, options)
     end
     return value
   end
-  local function selected(item)
-    return if options.multiple then table.find(self.value, item.value) ~= nil else self.value == item.value
-  end
+  local function selected(item) return if options.multiple then table.find(self.value, item.value) ~= nil else self.value == item.value end
   local function render()
     local labels = {}
     for _, item in ipairs(items) do
@@ -96,8 +113,7 @@ function Choice.Dropdown(ctx, parent, options)
         table.insert(labels, item.label)
       end
     end
-    button.Text = (#labels > 0 and table.concat(labels, ", ") or options.placeholder or "Select…")
-      .. "  ▾"
+    button.Text = (#labels > 0 and table.concat(labels, ", ") or options.placeholder or "Select…") .. "  ▾"
     button.TextColor3 = ctx.theme.colors.text
     button.BackgroundColor3 = ctx.theme.colors.input
     button.Active = not self:IsDisabled()
@@ -107,8 +123,7 @@ function Choice.Dropdown(ctx, parent, options)
     if self:IsDisabled() then
       return
     end
-    local popup, scope =
-      ctx:Popup(self.scope, button, math.min(280, #items * 44 + (options.searchable and 52 or 8)))
+    local popup, scope = ctx:Popup(self.scope, button, math.min(280, #items * 44 + (options.searchable and 52 or 8)))
     local filter
     if options.searchable then
       filter = ctx:Create("TextBox", {
@@ -132,9 +147,7 @@ function Choice.Dropdown(ctx, parent, options)
       local option = Base.button({
         ctx = ctx,
         scope = scope,
-        IsDisabled = function()
-          return item.disabled == true
-        end,
+        IsDisabled = function() return item.disabled == true end,
       }, popup, "", { Size = UDim2.new(1, -8, 0, 40), LayoutOrder = index })
       buttons[index] = option
       local function paint()
@@ -169,13 +182,13 @@ function Choice.Dropdown(ctx, parent, options)
     if filter then
       scope:Add(filter:GetPropertyChangedSignal("Text"):Connect(function()
         for i, option in ipairs(buttons) do
-          option.Visible = string.find(string.lower(items[i].label), string.lower(filter.Text), 1, true)
-            ~= nil
+          option.Visible = string.find(string.lower(items[i].label), string.lower(filter.Text), 1, true) ~= nil
         end
       end))
     end
     ctx.guiService.SelectedObject = filter or buttons[1]
   end))
+  self.button = button
   self.scope:Add(ctx.ThemeChanged:Connect(render))
   return self:Initialize(normalize, render)
 end
@@ -187,19 +200,14 @@ end
 function Choice.RadioGroup(ctx, parent, options)
   local items = optionsList(options)
   local props = table.clone(options)
-  props.height = 44 + #items * 44
+  props.height = 30 + #items * 34
   local self = Base.new(ctx, parent, props)
-  self.content.Position = UDim2.fromOffset(12, 36)
-  self.content.Size = UDim2.new(1, -24, 0, #items * 44)
+  self.content.Position = UDim2.fromOffset(10, 24)
+  self.content.Size = UDim2.new(1, -20, 0, #items * 34)
   local valid, buttons = {}, {}
   for index, item in ipairs(items) do
     valid[item.value] = true
-    local button = Base.button(
-      self,
-      self.content,
-      item.label,
-      { Position = UDim2.fromOffset(0, (index - 1) * 44), Size = UDim2.new(1, 0, 0, 40) }
-    )
+    local button = Base.button(self, self.content, item.label, { Position = UDim2.fromOffset(0, (index - 1) * 34), Size = UDim2.new(1, 0, 0, 30) })
     buttons[index] = button
     self.scope:Add(button.Activated:Connect(function()
       if not self:IsDisabled() and not item.disabled then
@@ -226,11 +234,11 @@ function Choice.RadioGroup(ctx, parent, options)
 end
 function Choice.ColorPicker(ctx, parent, options)
   local self = Base.new(ctx, parent, options)
-  local preview = ctx:Create("Frame", { Size = UDim2.fromOffset(40, 40), BorderSizePixel = 0 }, self.content)
+  local preview = ctx:Create("Frame", { Size = UDim2.fromOffset(30, 30), BorderSizePixel = 0 }, self.content)
   ctx:Round(preview)
   local box = ctx:Create("TextBox", {
-    Position = UDim2.fromOffset(48, 0),
-    Size = UDim2.new(1, -48, 1, 0),
+    Position = UDim2.fromOffset(38, 0),
+    Size = UDim2.new(1, -38, 1, 0),
     Text = "",
     ClearTextOnFocus = false,
     TextColor3 = ctx.theme.colors.text,
@@ -270,5 +278,62 @@ function Choice.ColorPicker(ctx, parent, options)
     end
     return value
   end, render)
+end
+-- Numeric input with selectable unit/mode; bindings and colors are supplied by the host.
+function Choice.UnitInput(ctx, parent, options)
+  local self = Choice.Segmented(ctx, parent, options)
+  local items = optionsList(options)
+  self.content.Size = UDim2.new(1, -96, 0, 30)
+  local box = ctx:Create("TextBox", {
+    Name = "Value",
+    Size = UDim2.fromOffset(64, 30),
+    Position = UDim2.new(1, -74, 1, -36),
+    BackgroundColor3 = ctx.theme.colors.input,
+    BackgroundTransparency = ctx.theme.transparency.input,
+    TextColor3 = ctx.theme.colors.text,
+    TextSize = ctx.theme.text.body,
+    Font = ctx.theme.font.bold,
+    ClearTextOnFocus = false,
+    Text = "",
+    BorderSizePixel = 0,
+  }, self.root)
+  ctx:Round(box)
+  ctx:Outline(box)
+  local function current()
+    for _, item in ipairs(items) do
+      if item.value == self.value then
+        return item
+      end
+    end
+  end
+  local function refresh()
+    local item = current()
+    box.TextEditable = item.key ~= nil and not self:IsDisabled()
+    box.Text = item.key and tostring(ctx.store:Get(item.key) or 0) or item.label
+    box.BackgroundColor3 = ctx.theme.colors.input
+    box.TextColor3 = ctx.theme.colors.text
+  end
+  self.scope:Add(self.Changed:Connect(refresh))
+  self.scope:Add(ctx.store.Changed:Connect(refresh))
+  self.scope:Add(ctx.ThemeChanged:Connect(refresh))
+  self.scope:Add(box.FocusLost:Connect(function()
+    local item = current()
+    local value = tonumber(box.Text)
+    if not item.key or self:IsDisabled() then
+      refresh()
+      return
+    end
+    if not value or value ~= value or math.abs(value) == math.huge or value < (options.min or 0) then
+      self:SetError("Enter a valid number")
+      refresh()
+      return
+    end
+    local ok, reason = ctx.store:Set(item.key, value)
+    self:SetError(ok and nil or reason)
+    refresh()
+  end))
+  self.input = box
+  refresh()
+  return self
 end
 return Choice

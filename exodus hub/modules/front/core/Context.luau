@@ -7,9 +7,7 @@ Context.__index = Context
 function Context.new(options)
   options = options or {}
   local self = setmetatable({}, Context)
-  self.onError = options.onError or function(err)
-    warn("[UI Library] " .. tostring(err))
-  end
+  self.onError = options.onError or function(err) warn("[UI Library] " .. tostring(err)) end
   self.scope = Scope.new(self.onError)
   self.theme = Theme.resolve(options.theme)
   self.ThemeChanged = self.scope:Add(Signal.new(self.onError))
@@ -36,16 +34,8 @@ function Context.new(options)
   self.gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
   self.gui.DisplayOrder = options.displayOrder or 100
   self.gui.Parent = parent
-  self.root = self:Create(
-    "Frame",
-    { Name = "Root", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1 },
-    self.gui
-  )
-  self.overlays = self:Create(
-    "Frame",
-    { Name = "Overlays", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 100 },
-    self.root
-  )
+  self.root = self:Create("Frame", { Name = "Root", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1 }, self.gui)
+  self.overlays = self:Create("Frame", { Name = "Overlays", Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, ZIndex = 100 }, self.root)
   self.InputBegan = self.scope:Add(Signal.new(self.onError))
   self.InputChanged = self.scope:Add(Signal.new(self.onError))
   self.InputEnded = self.scope:Add(Signal.new(self.onError))
@@ -70,22 +60,14 @@ function Context.new(options)
     end
     self.InputBegan:Fire(input, processed)
   end))
-  self.scope:Add(self.input.InputChanged:Connect(function(input)
-    self.InputChanged:Fire(input)
-  end))
-  self.scope:Add(self.input.InputEnded:Connect(function(input)
-    self.InputEnded:Fire(input)
-  end))
-  self.scope:Add(self.input.WindowFocusReleased:Connect(function()
-    self.InputEnded:Fire(nil)
-  end))
+  self.scope:Add(self.input.InputChanged:Connect(function(input) self.InputChanged:Fire(input) end))
+  self.scope:Add(self.input.InputEnded:Connect(function(input) self.InputEnded:Fire(input) end))
+  self.scope:Add(self.input.WindowFocusReleased:Connect(function() self.InputEnded:Fire(nil) end))
   self.scope:Add(function()
     self:ClosePopup()
     self:CancelCapture()
   end)
-  self.scope:Add(self.gui.Destroying:Connect(function()
-    self:Destroy()
-  end))
+  self.scope:Add(self.gui.Destroying:Connect(function() self:Destroy() end))
   return self
 end
 function Context:Create(class, properties, parent)
@@ -96,9 +78,7 @@ function Context:Create(class, properties, parent)
   object.Parent = parent
   return object
 end
-function Context:Round(object, radius)
-  return self:Create("UICorner", { CornerRadius = UDim.new(0, radius or self.theme.radius.control) }, object)
-end
+function Context:Round(object, radius) return self:Create("UICorner", { CornerRadius = UDim.new(0, radius or self.theme.radius.control) }, object) end
 function Context:Outline(object, color)
   return self:Create("UIStroke", {
     Color = color or self.theme.colors.border,
@@ -147,9 +127,7 @@ function Context:SetTheme(patch)
   self.theme = Theme.resolve(patch)
   self.ThemeChanged:Fire(self.theme)
 end
-function Context:SetReducedMotion(value)
-  self.reducedMotion = value == true
-end
+function Context:SetReducedMotion(value) self.reducedMotion = value == true end
 function Context:Animate(scope, object, properties, duration)
   if scope.destroyed then
     return
@@ -165,11 +143,8 @@ function Context:Animate(scope, object, properties, duration)
     end
     return
   end
-  local tween = self.tweenService:Create(
-    object,
-    TweenInfo.new(duration or self.theme.motion.normal, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out),
-    properties
-  )
+  local tween =
+    self.tweenService:Create(object, TweenInfo.new(duration or self.theme.motion.normal, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out), properties)
   scope._tweens[object] = tween
   local connection, cancel
   cancel = function()
@@ -183,18 +158,14 @@ function Context:Animate(scope, object, properties, duration)
     end
     scope:Remove(cancel)
   end
-  connection = tween.Completed:Connect(function()
-    cancel()
-  end)
+  connection = tween.Completed:Connect(function() cancel() end)
   scope:Add(connection)
   scope:Add(cancel)
   tween:Play()
 end
 function Context:Interactive(scope, button, disabled, render)
   local hovered, focused, pressed = false, false, false
-  local function paint()
-    render(disabled(), hovered or focused, pressed)
-  end
+  local function paint() render(disabled(), hovered or focused, pressed) end
   button.AutoButtonColor = false
   button.Selectable = true
   scope:Add(button.MouseEnter:Connect(function()
@@ -216,10 +187,7 @@ function Context:Interactive(scope, button, disabled, render)
     paint()
   end))
   scope:Add(button.InputBegan:Connect(function(input)
-    if
-      input.UserInputType == Enum.UserInputType.MouseButton1
-      or input.UserInputType == Enum.UserInputType.Touch
-    then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
       pressed = true
       paint()
     end
@@ -233,6 +201,24 @@ function Context:Interactive(scope, button, disabled, render)
   scope:Add(self.ThemeChanged:Connect(paint))
   paint()
   return paint
+end
+-- The original short card press, with one owned scale and cancellable work.
+function Context:Press(scope, button, target)
+  local scale = self:Create("UIScale", { Name = "PressScale", Scale = 1 }, target)
+  local generation = 0
+  scope:Add(button.Activated:Connect(function()
+    if self.reducedMotion then
+      return
+    end
+    generation += 1
+    local current = generation
+    self:Animate(scope, scale, { Scale = 0.97 }, 0.07)
+    scope:Delay(0.07, function()
+      if generation == current then
+        self:Animate(scope, scale, { Scale = 1 }, 0.15)
+      end
+    end)
+  end))
 end
 function Context:CancelCapture()
   if self.capture then
@@ -267,11 +253,7 @@ function Context:BindKey(scope, getKey, callback, hold)
       return
     end
     local key = getKey()
-    if
-      key ~= Enum.KeyCode.Unknown
-      and (input.KeyCode == key or input.UserInputType == key)
-      and not active
-    then
+    if key ~= Enum.KeyCode.Unknown and (input.KeyCode == key or input.UserInputType == key) and not active then
       active = input
       callback(true)
     end
@@ -297,12 +279,8 @@ function Context:Drag(scope, handle, target, onEnd)
     if self.modal or self.popup then
       return
     end
-    if
-      input.UserInputType == Enum.UserInputType.MouseButton1
-      or input.UserInputType == Enum.UserInputType.Touch
-    then
-      active, origin, initial, moved =
-        input, input.Position, target.AbsolutePosition - self.root.AbsolutePosition, false
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+      active, origin, initial, moved = input, input.Position, target.AbsolutePosition - self.root.AbsolutePosition, false
     end
   end))
   scope:Add(self.InputChanged:Connect(function(input)
@@ -336,9 +314,7 @@ function Context:Drag(scope, handle, target, onEnd)
       end
     end
   end))
-  return function()
-    return moved
-  end
+  return function() return moved end
 end
 function Context:ClosePopup()
   local popup = self.popup
@@ -384,18 +360,13 @@ function Context:Popup(ownerScope, anchor, height)
     if y + h > bounds.Y - 8 then
       y = p.Y - h - 4
     end
-    frame.Position = UDim2.fromOffset(
-      math.clamp(p.X, 8, math.max(8, bounds.X - width - 8)),
-      math.clamp(y, 8, math.max(8, bounds.Y - h - 8))
-    )
+    frame.Position = UDim2.fromOffset(math.clamp(p.X, 8, math.max(8, bounds.X - width - 8)), math.clamp(y, 8, math.max(8, bounds.Y - h - 8)))
     frame.Size = UDim2.fromOffset(width, h)
   end
   position()
   scope:Add(anchor:GetPropertyChangedSignal("AbsolutePosition"):Connect(position))
   scope:Add(self.root:GetPropertyChangedSignal("AbsoluteSize"):Connect(position))
-  scope:Add(shield.Activated:Connect(function()
-    self:ClosePopup()
-  end))
+  scope:Add(shield.Activated:Connect(function() self:ClosePopup() end))
   scope:Add(self.InputBegan:Connect(function(input)
     if input.KeyCode == Enum.KeyCode.Escape then
       self:ClosePopup()
@@ -413,7 +384,5 @@ function Context:Popup(ownerScope, anchor, height)
   end)
   return frame, scope
 end
-function Context:Destroy()
-  self.scope:Destroy()
-end
+function Context:Destroy() self.scope:Destroy() end
 return Context

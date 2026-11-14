@@ -14,9 +14,7 @@ local function dispose(resource)
     resource:Destroy()
   end
 end
-function Scope.new(onError)
-  return setmetatable({ _items = {}, _next = 0, destroyed = false, onError = onError or warn }, Scope)
-end
+function Scope.new(onError) return setmetatable({ _items = {}, _next = 0, destroyed = false, onError = onError or warn }, Scope) end
 function Scope:Add(resource)
   if self.destroyed then
     dispose(resource)
@@ -36,9 +34,7 @@ function Scope:Remove(resource)
 end
 function Scope:Child()
   local child = self:Add(Scope.new(self.onError))
-  child:Add(function()
-    self:Remove(child)
-  end)
+  child:Add(function() self:Remove(child) end)
   return child
 end
 function Scope:Delay(seconds, callback)
