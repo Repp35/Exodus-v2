@@ -530,7 +530,7 @@ local PARTICLE_COLORS = CONFIG.PARTICLE_COLORS
 
 -- cleanup
 local function cleanupUI()
-  if closeActiveDropdown then closeActiveDropdown() end
+  if closeActiveDropdown then closeActiveDropdown(true) end
   table.clear(outlineGradients); safeCancel(UIState.panelTween)
   safeCancel(UIState.btnTween); safeCancel(UIState.miniTween)
   UIState.miniTween = nil; UIState.miniGeneration += 1
@@ -1436,16 +1436,28 @@ local function createDropdown(yPos, parent, definition)
     })
     corner(line, 1)
   end
-  local popup, followConnection
+  local popup, fadeGroup, followConnection, fadeTween
   local opening = false
   local close
-  close = function()
+  close = function(immediate)
     if closeActiveDropdown == close then closeActiveDropdown = nil end
     if followConnection then
       safeDisconnect(followConnection); untrackConn(followConnection)
       followConnection = nil
     end
-    if popup then popup:Destroy(); popup = nil end
+    local oldPopup, oldGroup = popup, fadeGroup
+    popup, fadeGroup = nil, nil
+    safeCancel(fadeTween); fadeTween = nil
+    if oldPopup then
+      local dismiss = oldPopup:FindFirstChild("Dismiss")
+      if dismiss then dismiss.Visible = false end
+      if immediate == true or not oldGroup or not oldGroup.Parent then
+        oldPopup:Destroy()
+      else
+        twPlay(oldGroup, 0.18, { GroupTransparency = 1 }, EASE_SINE, DIR_OUT)
+        task.delay(0.18, function() if oldPopup.Parent then oldPopup:Destroy() end end)
+      end
+    end
     if arrow.Parent then twPlay(arrow, 0.18, { Rotation = 0 }, EASE_OUT, DIR_OUT) end
     if border.Parent then twPlay(border, 0.18, { Color = C.border }, EASE_OUT, DIR_OUT) end
   end
@@ -1475,7 +1487,9 @@ local function createDropdown(yPos, parent, definition)
       ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
       Parent = screenGui.Parent,
     })
+    local popupRef = popup
     local dismiss = inst("TextButton", {
+      Name = "Dismiss",
       Size = UDim2.fromScale(1, 1),
       BackgroundTransparency = 1,
       Text = "",
@@ -1483,9 +1497,15 @@ local function createDropdown(yPos, parent, definition)
       ZIndex = 1,
       Parent = popup,
     })
-    dismiss.Activated:Connect(close)
-    local list = inst("ScrollingFrame", {
+    dismiss.Activated:Connect(function() if popup == popupRef then close() end end)
+    fadeGroup = inst("CanvasGroup", {
       Size = UDim2.fromOffset(button.AbsoluteSize.X, 0),
+      BackgroundTransparency = 1, GroupTransparency = 1,
+      ZIndex = 2, Parent = popup,
+    })
+    local group = fadeGroup
+    local list = inst("ScrollingFrame", {
+      Size = UDim2.fromScale(1, 1),
       BackgroundColor3 = C.card,
       BackgroundTransparency = 0.02,
       BorderSizePixel = 0,
@@ -1495,8 +1515,8 @@ local function createDropdown(yPos, parent, definition)
       ScrollBarImageColor3 = C.accent,
       ScrollingDirection = Enum.ScrollingDirection.Y,
       ClipsDescendants = true,
-      ZIndex = 2,
-      Parent = popup,
+      ZIndex = 3,
+      Parent = group,
     })
     corner(list, 9 * scale); stroke(list, C.border, 1)
     for index, option in ipairs(options) do
@@ -1512,17 +1532,20 @@ local function createDropdown(yPos, parent, definition)
         Font = Enum.Font.GothamSemibold,
         TextTruncate = Enum.TextTruncate.AtEnd,
         AutoButtonColor = false,
-        ZIndex = 3,
+        ZIndex = 4,
         Parent = list,
       })
       corner(row, 7 * scale)
       row.MouseEnter:Connect(function()
+        if popup ~= popupRef then return end
         if current ~= option.value then twPlay(row, 0.15, { BackgroundTransparency = 0.7 }, EASE_SINE, DIR_OUT) end
       end)
       row.MouseLeave:Connect(function()
+        if popup ~= popupRef then return end
         if current ~= option.value then twPlay(row, 0.15, { BackgroundTransparency = 1 }, EASE_SINE, DIR_OUT) end
       end)
       row.Activated:Connect(function()
+        if popup ~= popupRef then return end
         if current ~= option.value and setConfigValue(definition.key, option.value) then current = option.value; selected.Text = labelFor(current) end
         close()
       end)
@@ -1540,12 +1563,14 @@ local function createDropdown(yPos, parent, definition)
       local screen = workspace.CurrentCamera; local view = screen and screen.ViewportSize or Vector2.new(1920, 1080)
       local margin, space = 6 * scale, 4 * scale; local cardBottom = f.AbsolutePosition.Y + f.AbsoluteSize.Y
       local below = math.max(0, view.Y - cardBottom - margin - space); local height = math.max(0, math.min(desiredHeight, below))
-      local x = math.clamp(pos.X, margin, math.max(margin, view.X - size.X - margin)); list.AnchorPoint = Vector2.new(0, 0)
-      list.Position = UDim2.fromOffset(x, cardBottom + space); return height, size.X
+      local x = math.clamp(pos.X, margin, math.max(margin, view.X - size.X - margin)); group.AnchorPoint = Vector2.new(0, 0)
+      group.Position = UDim2.fromOffset(x, cardBottom + space); return height, size.X
     end
     closeActiveDropdown = close; local height, width = updatePosition()
     if not popup then return end
-    twPlay(list, 0.2, { Size = UDim2.fromOffset(width, height) }, EASE_OUT, DIR_OUT); twPlay(arrow, 0.2, { Rotation = 180 }, EASE_OUT, DIR_OUT)
+    group.Size = UDim2.fromOffset(width, height)
+    fadeTween = twPlay(group, 0.18, { GroupTransparency = 0 }, EASE_SINE, DIR_OUT)
+    twPlay(arrow, 0.2, { Rotation = 180 }, EASE_OUT, DIR_OUT)
     twPlay(border, 0.2, { Color = C.accent }, EASE_OUT, DIR_OUT)
     followConnection = trackConn(RunService.Heartbeat:Connect(function()
       local nextHeight, nextWidth = updatePosition()
@@ -1553,7 +1578,7 @@ local function createDropdown(yPos, parent, definition)
         local oldHeight = list:GetAttribute("TargetHeight"); local oldWidth = list:GetAttribute("TargetWidth")
         if oldHeight ~= nextHeight or oldWidth ~= nextWidth then
           list:SetAttribute("TargetHeight", nextHeight); list:SetAttribute("TargetWidth", nextWidth)
-          twPlay(list, 0.15, { Size = UDim2.fromOffset(nextWidth, nextHeight) }, EASE_OUT, DIR_OUT)
+          group.Size = UDim2.fromOffset(nextWidth, nextHeight)
         end
       end
     end))
