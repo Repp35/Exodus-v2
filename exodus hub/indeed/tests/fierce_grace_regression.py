@@ -20,33 +20,33 @@ def run(name, script):
 def translate(source):
     return re.sub(r'([A-Za-z_][\w.]*) \+= ([^;\n]+?)(?=;|\n| end)',lambda m:f'{m[1]} = {m[1]} + ({m[2]})',source)
 fierce=translate((root/'extras/autofierce.luau').read_text())
-run('Fierce grace danger and manual ability hook', '''
+run('Fierce requires blocking cooldown and preserves manual activation', '''
 local t=10; os.clock=function() return t end
 local frame; local connection={Connected=true,Disconnect=function(self) self.Connected=false end}
 local h={Connect=function(_,f) frame=f; return connection end}
 local active=true; local fired,manual,begun=0,0,0; local distance=1; local approaching=false; local fresh=true
 local ball={}; local snap={ball=ball,mode='match',targetId=42,grace=false,serverTime=10,syncAt=10}
-local cooldown={blocking=false,phase='ready',episode=0,miss=false}; local frozen=false
+local cooldown={blocking=false,phase='ready',episode=0,miss=false}; local frozen=false; local cancelBeforeSend=false
 local ability={Cooldown=0}; function ability:ActivateAndBlock() manual=manual+1 end
 local original=ability.ActivateAndBlock
 local u={isActive=function() return true end,getConfigValue=function() return active end,getLocalPlayer=function() return {UserId=42} end,getRunService=function() return {Heartbeat=h} end,trackGlobal=function() end,untrackGlobal=function() end}
 local g={areAbilitiesEnabled=function() return true end,getFierceDeflectAbility=function() return ability end,getDefensePhysics=function() return {grace=0.2,ping=0.02,serverNow=t} end,getSnapshotAt=function() if fresh then snap.syncAt=t end; return snap end,isSnapshotValid=function(x) return x~=nil end,getBallFrozen=function() return frozen end}
 local a={getTiming=function() return {approaching=approaching,distance=distance,triggerDistance=20,noWindowParryRadius=8.5} end,beginFierce=function() begun=begun+1; return {id=begun} end,cancelFierce=function() end}
-local r={fireFierce=function(guard) if not guard() then return false end; fired=fired+1; ability:ActivateAndBlock(); return true end}
+local r={fireFierce=function(guard) if cancelBeforeSend then cooldown.blocking=false end; if not guard() then return false end; fired=fired+1; ability:ActivateAndBlock(); return true end}
 local mod=(function()\n'''+fierce+'''\nend)(); assert(mod.setup({Utils=u,GameInfo=g,Remote=r,AutoParry=a,Cooldown={getDeflectCooldownState=function() return cooldown end}}))
-frame(); assert(fired==0,'no grace triggered Fierce')
-snap.grace=true; snap.serverTime=10.02; t=10.1; frame(); assert(fired==0,'used too early in grace')
-t=10.16; ability.Cooldown=4; frame(); assert(fired==0,'used unavailable Fierce')
-ability.Cooldown=0; cooldown.predictedReset=true; frame(); assert(fired==0,'ignored predicted parry')
-cooldown.predictedReset=false; cooldown.phase='reversible'; cooldown.missDeadline=11; frame(); assert(fired==0,'ignored active normal defense')
-cooldown.phase='ready'; distance=20; frame(); assert(fired==0,'used outside deflect range')
+frame(); assert(fired==0,'no cooldown triggered Fierce')
+snap.grace=true; approaching=true; t=10.31; frame(); assert(fired==0,'proximity and grace triggered Fierce without cooldown')
+cooldown.blocking=true; cooldown.episode=1; ability.Cooldown=4; frame(); assert(fired==0,'used unavailable Fierce')
+ability.Cooldown=0; approaching=false; frame(); assert(fired==0,'used without incoming ball')
+approaching=true; distance=30; frame(); assert(fired==0,'used outside timing window')
 distance=1; snap.targetId=99; frame(); assert(fired==0,'used on another target')
-snap.targetId=42; snap.grace=false; snap.serverTime=10.16; frame()
-snap.grace=true; snap.serverTime=10.18; t=10.29; frame(); assert(fired==0,'used before safety margin')
-t=10.31; frame(); assert(fired==1,'failed emergency at one stud'); frame(); assert(fired==1,'repeated within grace')
-snap.grace=false; snap.serverTime=t; frame(); snap.grace=true; snap.serverTime=t+0.01; t=t+0.02; frozen=true; frame(); assert(fired==1)
-frozen=false; snap.targetUncertain=true; frame(); assert(fired==1); snap.targetUncertain=false
-fresh=false; t=t+0.3; frame(); assert(fired==1,'stale grace triggered Fierce')
+snap.targetId=42; frozen=true; frame(); assert(fired==0,'used on frozen ball')
+frozen=false; snap.targetUncertain=true; frame(); assert(fired==0); snap.targetUncertain=false
+fresh=false; t=t+0.3; frame(); assert(fired==0,'used stale snapshot')
+fresh=true; frame(); assert(fired==1,'failed to use Fierce during blocking cooldown'); frame(); assert(fired==1,'repeated in same cooldown episode')
+cooldown.blocking=false; cooldown.episode=2; frame(); assert(fired==1,'used after cooldown ended')
+cooldown.blocking=true; cooldown.episode=2; cancelBeforeSend=true; frame(); assert(fired==1,'used after cooldown ended before send')
+cancelBeforeSend=false; cooldown.blocking=true; frame(); assert(fired==2,'failed to respond to a new cooldown episode')
 active=false; local before=begun; ability:ActivateAndBlock(); assert(begun==before+1,'manual Fierce not detected when feature disabled')
 mod.teardown(); assert(ability.ActivateAndBlock==original,'manual hook not restored'); assert(not connection.Connected)
 ''')
