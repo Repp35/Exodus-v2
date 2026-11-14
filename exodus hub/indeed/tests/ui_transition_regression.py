@@ -27,8 +27,14 @@ def run(name, script):
     print('PASS', name)
 
 
-source=(root/'modules/front/ui.luau').read_text()
-transition=source[source.index('local function fadeOutForReplacement('):source.index('-- setup',source.index('local function fadeOutForReplacement('))]
+source=(root/'modules/front/controllers/lifecycle.luau').read_text()
+transition=source[source.index('local function fadeOutForReplacement('):source.index('  return { restore',source.index('local function fadeOutForReplacement('))]
+for old, new in {
+    'context.refs.screenGui': 'screenGui', 'context.refs.informationGui': 'informationGui',
+    'context.pages': 'pageController', 'context.kit': 'uiKit', 'context.motion': 'shellMotion',
+    'context.notifications.persistent': 'showPersistentNotification',
+    'state.layer': 'persistentLayer', 'state.order': 'persistentOrder', 'state.tweens': 'persistentTweens',
+}.items(): transition=transition.replace(old,new)
 run('close and reload wait for all fades', """
 local function build(action)
  local faded, destroyed, calls={}, {}, 0

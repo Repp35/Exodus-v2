@@ -20,8 +20,9 @@ end
 
 -- actions
 function Actions.create(context)
-  local scope, controls = context.scope, context.controls; local handles, callbacks, states = {}, {}, {}
-  local antiConnection, antiGeneration, spinActive, spinGeneration = nil, 0, nil, 0; local resetPending, resetGeneration = false, 0
+  local scope, controls = context.scope, context.controls; local shortcuts = {}
+  local handles, callbacks, states = {}, {}, {}; local antiConnection, antiGeneration, spinActive, spinGeneration = nil, 0, nil, 0
+  local resetPending, resetGeneration = false, 0
   local function notify(message, important)
     if scope.alive then context.notify(message, important) end
   end
@@ -34,9 +35,7 @@ function Actions.create(context)
   callbacks.panic = function()
     context.setSpam(false); invoke("onPanic")
   end
-  callbacks.upDash = function()
-    invoke("onUpDash"); notify("Up Dash")
-  end
+  callbacks.upDash = function() invoke("onUpDash") end
   callbacks.rejoin = function() invoke("onRejoin") end
   callbacks.serverHop = function() invoke("onServerHop") end
   callbacks.resetCharacter = function()
@@ -151,6 +150,7 @@ function Actions.create(context)
 
   local result = {}
   function result.resolve(definition)
+    definition.toast = false
     if not context.desktop then definition.shortcutKey = nil end
     if definition.action == "notifications" then definition.key = context.desktop and "DesktopNotifications" or "MobileNotifications" end
     if definition.action == "manualSpam" and not context.desktop then definition.key = "MiniSpamVisible" end
@@ -167,6 +167,35 @@ function Actions.create(context)
   end
   function result.attach(definition, handle)
     if definition.action then handles[definition.action] = handle end
+    if context.desktop and definition.shortcutKey then
+      local entry = { definition = definition, handle = handle }
+      if definition.action == "panic" then table.insert(shortcuts, 1, entry) else shortcuts[#shortcuts + 1] = entry end
+    end
+  end
+  function result.validateShortcut(key, binding)
+    if binding == Enum.KeyCode.Unknown then return true end
+    for _, entry in ipairs(shortcuts) do
+      local definition = entry.definition
+      if definition.shortcutKey ~= key and Utils.getConfigValue(definition.shortcutKey) == binding then return false, "Shortcut already used: " .. definition.title end
+    end
+    return true
+  end
+  function result.triggerShortcut(binding)
+    if not context.desktop or binding == Enum.KeyCode.Unknown then return false end
+    for _, entry in ipairs(shortcuts) do
+      local definition, handle = entry.definition, entry.handle
+      if Utils.getConfigValue(definition.shortcutKey) == binding then
+        if definition.abilityOnly and context.abilitiesEnabled and not context.abilitiesEnabled() then return false end
+        if not handle.activate or not handle.activate() then return false end
+        if definition.action ~= "manualSpam" and definition.action ~= "upDash" then
+          local message = definition.title
+          if definition.kind == "toggle" then message = message .. (handle.getValue() and " On" or " Off") end
+          context.notify(message, false, { category = "shortcut", topic = definition.action or definition.key })
+        end
+        return true
+      end
+    end
+    return false
   end
   function result.refreshManual()
     if handles.manualSpam then handles.manualSpam.setValue(states.manualSpam()) end

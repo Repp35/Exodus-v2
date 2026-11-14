@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE = ROOT / 'modules/front/uiicons.luau'
+MODULE = ROOT / 'modules/front/library/icons.luau'
 NAMES = ('settings', 'chevron', 'minimize')
 
 
