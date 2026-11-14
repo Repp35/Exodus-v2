@@ -1425,19 +1425,15 @@ local function createDropdown(yPos, parent, definition)
     if opening then return end
     if closeActiveDropdown then closeActiveDropdown() end
     if not screenGui or not screenGui.Parent or not button.Parent or #options == 0 then return end
-    opening = true
-    local owner = screenGui
+    opening = true; local owner = screenGui
     local scale = math.max(button.AbsoluteSize.Y / 28, 0.1); local rowHeight, gap, padding = 32 * scale, 3 * scale, 4 * scale
     local contentHeight = #options * (rowHeight + gap) + padding * 2; local desiredHeight = math.min(#options, definition.maxVisible or 4) * (rowHeight + gap) + padding * 2
     if parent:IsA("ScrollingFrame") then
       local cam = workspace.CurrentCamera; local view = cam and cam.ViewportSize or Vector2.new(1920, 1080)
-      local available = view.Y - f.AbsolutePosition.Y - f.AbsoluteSize.Y - 10 * scale
-      local need = math.max(0, desiredHeight - available)
-      local room = math.max(0, button.AbsolutePosition.Y - parent.AbsolutePosition.Y - 4 * scale)
-      local shift = math.min(need, room)
+      local available = view.Y - f.AbsolutePosition.Y - f.AbsoluteSize.Y - 10 * scale; local need = math.max(0, desiredHeight - available)
+      local room = math.max(0, button.AbsolutePosition.Y - parent.AbsolutePosition.Y - 4 * scale); local shift = math.min(need, room)
       if shift > 0 then
-        local uiScale = math.max(responsiveScale and responsiveScale.Scale or 1, 0.01)
-        parent.CanvasPosition = Vector2.new(parent.CanvasPosition.X, parent.CanvasPosition.Y + shift / uiScale)
+        local uiScale = math.max(responsiveScale and responsiveScale.Scale or 1, 0.01); parent.CanvasPosition = Vector2.new(parent.CanvasPosition.X, parent.CanvasPosition.Y + shift / uiScale)
         RunService.Heartbeat:Wait()
       end
     end
@@ -1515,10 +1511,9 @@ local function createDropdown(yPos, parent, definition)
       if pos.Y + size.Y <= parentPos.Y or pos.Y >= parentPos.Y + parentSize.Y then close(); return end
       local screen = workspace.CurrentCamera; local view = screen and screen.ViewportSize or Vector2.new(1920, 1080)
       local margin, space = 6 * scale, 4 * scale; local cardBottom = f.AbsolutePosition.Y + f.AbsoluteSize.Y
-      local below = math.max(0, view.Y - cardBottom - margin - space)
-      local height = math.max(0, math.min(desiredHeight, below)); local x = math.clamp(pos.X, margin, math.max(margin, view.X - size.X - margin))
-      list.AnchorPoint = Vector2.new(0, 0); list.Position = UDim2.fromOffset(x, cardBottom + space)
-      return height, size.X
+      local below = math.max(0, view.Y - cardBottom - margin - space); local height = math.max(0, math.min(desiredHeight, below))
+      local x = math.clamp(pos.X, margin, math.max(margin, view.X - size.X - margin)); list.AnchorPoint = Vector2.new(0, 0)
+      list.Position = UDim2.fromOffset(x, cardBottom + space); return height, size.X
     end
     closeActiveDropdown = close; local height, width = updatePosition()
     if not popup then return end
@@ -2522,8 +2517,7 @@ function ExodusUI.setup(deps, preview)
   local manualSpamVisual
   local components = {
     section = function(yPos, parent, definition)
-      cardLabel(definition.title, parent, yPos + 5)
-      return yPos + 28
+      cardLabel(definition.title, parent, yPos + 5); return yPos + 28
     end,
     rate_selector = createRateSelector,
     dropdown = createDropdown,
@@ -2564,8 +2558,7 @@ function ExodusUI.setup(deps, preview)
       yR = createComponent(yR, colRight, definition)
     end
   end
-  colRight.CanvasSize = UDim2.fromOffset(0, yR + CARD_GAP)
-  colRight.CanvasPosition = Vector2.zero
+  colRight.CanvasSize = UDim2.fromOffset(0, yR + CARD_GAP); colRight.CanvasPosition = Vector2.zero
   local settingsLeft = inst("ScrollingFrame", {
     AutomaticCanvasSize = Enum.AutomaticSize.Y,
     CanvasSize = UDim2.new(),
