@@ -133,18 +133,28 @@ function Components.install(context)
           end
         end
       end
+      local activeItem, resetActive
       for index, choice in ipairs(choices) do
         local selected = choiceValue(choice) == value
         local item = button(list, choiceLabel(choice), {
           LayoutOrder = index,
           BackgroundColor3 = C.cardHover,
-          BackgroundTransparency = selected and 0.1 or 1,
+          BackgroundTransparency = 1,
           TextColor3 = selected and C.text or C.subtext,
           ZIndex = 3,
         })
         local border = kit.stroke(item); border.Transparency = 1
-        local refresh = kit.feedback(openScope, item, function(active, pressed)
-          local selectedNow = choiceValue(choice) == value; menuMotion.play(border, "feedback", { Transparency = (active or selectedNow) and 0 or 1, Color = active and C.accent or C.border })
+        local reset
+        local refresh
+        refresh, reset = kit.feedback(openScope, item, function(active, pressed)
+          if active and activeItem ~= item then
+            if resetActive then resetActive() end
+            activeItem, resetActive = item, reset
+          elseif not active and activeItem == item then
+            activeItem, resetActive = nil, nil
+          end
+          local selectedNow = selecting and choiceValue(choice) == value
+          menuMotion.play(border, "feedback", { Transparency = (active or selectedNow) and 0 or 1, Color = active and C.accent or C.border })
           menuMotion.play(item, "feedback", {
             BackgroundTransparency = (selectedNow or active) and 0.1 or 1,
             TextColor3 = (active or selectedNow) and C.text or C.subtext,

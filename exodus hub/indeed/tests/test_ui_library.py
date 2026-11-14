@@ -282,6 +282,29 @@ click(trigger);kit.dismiss();flushDelays();finishTweens();assert(not playerGui:F
 kit.destroy();assert(listenerCount()==0)
 ''')
 
+    def test_dropdown_highlight_is_exclusive_and_fades_after_touch_release(self):
+        self.run_lua('''
+local kit=newKit();local dropdown=kit.Components.dropdown(panel,{key='ClickMethod',choices={'Deflect','Direct','Input'}})
+click(findDescendant(dropdown.Root,'Select'));finishTweens()
+local portal=playerGui:FindFirstChild('ExodusDropdown');local direct,other,selected
+for _, item in ipairs(portal:GetDescendants()) do
+ if item:IsA('TextButton') and item.Text=='Deflect' then selected=item end
+ if item:IsA('TextButton') and item.Text=='Direct' then direct=item end
+ if item:IsA('TextButton') and item.Text=='Input' then other=item end
+end
+assert(selected:FindFirstChildOfClass('UIStroke').Transparency==1)
+local one=input('Touch',110,120);local two=input('Touch',110,150)
+direct.InputBegan:Fire(one);finishTweens();assert(direct.BackgroundTransparency==0.1)
+other.InputBegan:Fire(two);finishTweens()
+assert(direct.BackgroundTransparency==1 and direct:FindFirstChildOfClass('UIStroke').Transparency==1)
+assert(other.BackgroundTransparency==0.1 and other:FindFirstChildOfClass('UIStroke').Transparency==0)
+game:GetService('UserInputService').InputEnded:Fire(two);stepTweens(0.5)
+assert(other.BackgroundTransparency>0.1 and other.BackgroundTransparency<1,'highlight did not fade smoothly')
+finishTweens();assert(other.BackgroundTransparency==1 and other:FindFirstChildOfClass('UIStroke').Transparency==1)
+assert(config.ClickMethod=='Deflect','pressing changed the selection')
+kit.destroy()
+''')
+
     def test_shortcut_registry_uses_the_same_actions_and_can_clear_bindings(self):
         self.run_lua('''
 local calls=0;local deps=fullDeps();deps.Controls.onUniversalToggle=function(feature,enabled) assert(feature=='Fly' and enabled);calls=calls+1 end

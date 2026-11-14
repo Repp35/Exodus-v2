@@ -198,7 +198,10 @@ function UIKit.create(options)
       hovered, held = false, nil; refresh()
     end
     local function release(input)
-      if held == input then held = nil; refresh() end
+      if held == input then
+        if held.UserInputType == Enum.UserInputType.Touch then hovered = false end
+        held = nil; refresh()
+      end
     end
     feedback[release] = reset
     lifetime.add(function() feedback[release] = nil end)
@@ -210,9 +213,12 @@ function UIKit.create(options)
     end)
     lifetime.connect(target.InputBegan, function(input)
       if held or kit.suspended or (enabled and not enabled()) then return end
-      if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then held = input; refresh() end
+      if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.Touch then hovered = false end
+        held = input; refresh()
+      end
     end)
-    return refresh
+    return refresh, reset
   end
   scope.connect(UIS.InputEnded, function(input)
     for release in pairs(feedback) do
