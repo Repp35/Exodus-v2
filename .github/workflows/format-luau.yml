@@ -17,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: true
+      - name: Install Lua runtime for behavioral tests
+        run: sudo apt-get update && sudo apt-get install -y liblua5.4-0
       - name: Test formatter configuration audit
         run: python3 -m unittest discover -s "exodus hub/indeed/tests" -p "test_*.py"
       - name: Format all Luau files using repository formatter

@@ -1,0 +1,189 @@
+-- Behavioral test double, not a Roblox renderer. Tweens complete only when requested.
+local allSignals, allTweens, deferred, delayed = {}, {}, {}, {}
+function signal()
+  local event = { listeners = {} }
+  allSignals[#allSignals + 1] = event
+  function event:Connect(callback)
+    local connection = { Connected = true }
+    self.listeners[connection] = callback
+    function connection:Disconnect() self.Connected = false; event.listeners[self] = nil end
+    return connection
+  end
+  function event:Fire(...)
+    local copy = table.clone(self.listeners)
+    for connection, callback in pairs(copy) do
+      if connection.Connected then callback(...) end
+    end
+  end
+  function event:Wait() return coroutine.yield() end
+  return event
+end
+function listenerCount()
+  local count = 0
+  for _, event in ipairs(allSignals) do for _ in pairs(event.listeners) do count = count + 1 end end
+  return count
+end
+function activeTweenCount()
+  local count = 0
+  for _, tween in ipairs(allTweens) do if tween.PlaybackState == Enum.PlaybackState.Playing then count = count + 1 end end
+  return count
+end
+function finishTweens()
+  for pass = 1, 20 do
+    local copy, pending = table.clone(allTweens), 0
+    for _, tween in ipairs(copy) do
+      if tween.PlaybackState == Enum.PlaybackState.Playing then tween:Finish(); pending = pending + 1 end
+    end
+    if pending == 0 then return end
+  end
+  error('Tween completion did not settle')
+end
+function flushDeferred()
+  local copy = deferred
+  deferred = {}
+  for _, callback in ipairs(copy) do callback() end
+end
+function flushDelays()
+  local copy = delayed
+  delayed = {}
+  for _, callback in ipairs(copy) do callback() end
+end
+Enum = setmetatable({}, { __index = function(self, group)
+  local result = setmetatable({}, { __index = function(values, name)
+    local value = { Name = name, __type = 'EnumItem', EnumType = values }
+    rawset(values, name, value)
+    return value
+  end })
+  rawset(self, group, result)
+  return result
+end })
+UDim = { new = function(scale, offset) return {Scale = scale or 0, Offset = offset or 0} end }
+UDim2 = { new = function(xs, xo, ys, yo) return { X = UDim.new(xs, xo), Y = UDim.new(ys, yo) } end }
+UDim2.fromOffset = function(x,y) return UDim2.new(0,x,0,y) end
+UDim2.fromScale = function(x,y) return UDim2.new(x,0,y,0) end
+Vector2 = { new = function(x,y) return {X=x or 0, Y=y or 0,__type='Vector2'} end }
+Vector2.zero = Vector2.new(0,0)
+Color3 = { fromRGB = function(r,g,b) return {R=r/255,G=g/255,B=b/255} end, new = function(r,g,b) return {R=r,G=g,B=b} end }
+ColorSequence = { new = function(x) return x end }
+ColorSequenceKeypoint = { new = function(t,c) return {t,c} end }
+NumberSequence = { new = function(x) return x end }
+TweenInfo = { new = function(duration,style,direction) return {duration=duration,style=style,direction=direction} end }
+function typeof(value) return type(value)=='table' and value.__type or type(value) end
+function warn(...) end
+local methods = {}
+local guiClasses = {Frame=true,CanvasGroup=true,TextButton=true,TextLabel=true,TextBox=true,ScrollingFrame=true}
+local inputEvents = {Activated=true,MouseEnter=true,MouseLeave=true,InputBegan=true,InputChanged=true,InputEnded=true,Destroying=true,Focused=true,FocusLost=true,Idled=true}
+function methods:IsA(class)
+  if self.ClassName == class then return true end
+  if class == 'GuiObject' then return guiClasses[self.ClassName] == true end
+  if class == 'GuiButton' then return self.ClassName == 'TextButton' end
+  return false
+end
+function methods:GetChildren() return table.clone(self._children) end
+function methods:GetDescendants()
+  local result = {}
+  local function visit(object)
+    for _, child in ipairs(object:GetChildren()) do result[#result+1]=child; visit(child) end
+  end
+  visit(self)
+  return result
+end
+function methods:FindFirstChild(name)
+  for _, child in ipairs(self._children) do if child.Name == name then return child end end
+end
+function methods:WaitForChild(name) return assert(self:FindFirstChild(name),name) end
+function methods:FindFirstChildOfClass(class)
+  for _, child in ipairs(self._children) do if child:IsA(class) then return child end end
+end
+function methods:GetPropertyChangedSignal(property)
+  if not self._events[property] then self._events[property]=signal() end
+  return self._events[property]
+end
+function methods:SetAttribute(key,value) self._attributes[key]=value end
+function methods:GetAttribute(key) return self._attributes[key] end
+function methods:Destroy()
+  if self._destroyed then return end
+  self._destroyed=true
+  self.Destroying:Fire()
+  for _, child in ipairs(self:GetChildren()) do child:Destroy() end
+  self.Parent=nil
+  for _, event in pairs(self._events) do
+    for connection in pairs(table.clone(event.listeners)) do connection:Disconnect() end
+  end
+end
+local instanceMeta = {
+  __index = function(self,key)
+    if methods[key] then return methods[key] end
+    if self._props[key] ~= nil then return self._props[key] end
+    if inputEvents[key] then
+      if not self._events[key] then self._events[key] = signal() end
+      return self._events[key]
+    end
+    return self:FindFirstChild(key)
+  end,
+  __newindex = function(self,key,value)
+    if key:sub(1,1)=='_' then rawset(self,key,value); return end
+    local previous = self._props[key]
+    if key=='Parent' and previous ~= value then
+      if previous then
+        for i, child in ipairs(previous._children) do if child==self then table.remove(previous._children,i); break end end
+      end
+      if value then value._children[#value._children+1]=self end
+    end
+    self._props[key]=value
+    if previous~=value and self._events[key] then self._events[key]:Fire() end
+  end,
+}
+Instance = { new = function(class)
+  local object = setmetatable({
+    _children={},_events={},_attributes={},
+    _props={ClassName=class,Name=class,Visible=true,Active=true,Selectable=true,Position=UDim2.new(),Size=UDim2.new(),
+      AnchorPoint=Vector2.zero,AbsolutePosition=Vector2.new(100,100),AbsoluteSize=Vector2.new(200,28),
+      AbsoluteContentSize=Vector2.new(200,80),CanvasPosition=Vector2.zero,BackgroundTransparency=0,
+      TextTransparency=0,TextStrokeTransparency=1,Text='',GroupTransparency=0,ZIndex=1,Scale=1,Rotation=0,
+    },
+  }, instanceMeta)
+  if class=='BindableEvent' then object.Event=signal(); object.Fire=function(self) self.Event:Fire() end end
+  return object
+end }
+local UIS = Instance.new('UserInputService')
+UIS.InputBegan=signal();UIS.InputChanged=signal();UIS.InputEnded=signal();UIS.WindowFocusReleased=signal()
+UIS.KeyboardEnabled=true;UIS.MouseEnabled=true;UIS.TouchEnabled=false
+function UIS:GetFocusedTextBox() return self.focused end
+local heartbeat=signal()
+local tweenService={}
+function tweenService:Create(object,profile,goals)
+  local tween={Completed=signal(),PlaybackState=Enum.PlaybackState.Begin,object=object,profile=profile,goals=goals}
+  allTweens[#allTweens+1]=tween
+  function tween:Play() self.PlaybackState=Enum.PlaybackState.Playing end
+  function tween:Cancel()
+    if self.PlaybackState==Enum.PlaybackState.Playing then self.PlaybackState=Enum.PlaybackState.Cancelled;self.Completed:Fire(self.PlaybackState) end
+  end
+  function tween:Finish()
+    for key,value in pairs(self.goals) do self.object[key]=value end
+    self.PlaybackState=Enum.PlaybackState.Completed;self.Completed:Fire(self.PlaybackState)
+  end
+  return tween
+end
+local player=Instance.new('Player')
+local playerGui=Instance.new('PlayerGui'); playerGui.Parent=player
+player.UserId=1
+local services={
+  UserInputService=UIS,TweenService=tweenService,RunService={Heartbeat=heartbeat},Players={LocalPlayer=player},
+  TextService={GetTextSize=function(_,value) return Vector2.new(#value*7,18) end},
+}
+game={GetService=function(_,name) return assert(services[name],name) end}
+workspace={CurrentCamera=Instance.new('Camera')}
+workspace.CurrentCamera.ViewportSize=Vector2.new(1280,720)
+task={
+  spawn=function(callback) local co=coroutine.create(callback);local ok,err=coroutine.resume(co);assert(ok,err);return co end,
+  defer=function(callback) deferred[#deferred+1]=callback end,
+  delay=function(_,callback) delayed[#delayed+1]=callback end,
+  wait=function() return coroutine.yield() end,
+}
+function findDescendant(root,name)
+  for _, object in ipairs(root:GetDescendants()) do if object.Name==name then return object end end
+  error('Missing descendant '..name)
+end
+function click(root) root.Activated:Fire() end
+function input(kind,x,y,key) return {UserInputType=Enum.UserInputType[kind],Position=Vector2.new(x,y),KeyCode=Enum.KeyCode[key or 'Unknown']} end

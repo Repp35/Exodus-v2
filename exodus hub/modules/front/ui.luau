@@ -6,7 +6,14 @@ local Utils
 local UIConfig
 local GameInfo
 local AutoSpam
-local Dumper
+local UIKit
+local UIPages
+local UIActions
+local Runtime
+local uiKit
+local pageController
+local shellScope
+local shellMotion
 local Controls = {}
 local UIS = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -25,8 +32,6 @@ local UIState = {
   btnTween = nil,
   miniTween = nil,
   miniGeneration = 0,
-  pageGeneration = 0,
-  pageTweens = {},
   desktop = false,
   closing = false,
   toastGeneration = 0,
@@ -50,13 +55,10 @@ local jumpBall
 local upDashBall
 local miniGui
 local configPanel
-local closeActiveDropdown
 local particleLayer
 local titleBar
 local minimizeButton
 local reloadButton
-local colLeft
-local colRight
 local killBtn
 local toastLayer
 local toastCard
@@ -67,78 +69,12 @@ local persistentOrder = {}
 local persistentTweens = {}
 local persistentGeneration = 0
 local responsiveScale
-local flowingTweens = {}
 local outlineGradients = setmetatable({}, { __mode = "k" })
-local shortcutLabels = {}
-local statusToggleVisuals = {}
 local fadeRestore, fadeEvent, fadeDone = {}, nil, false
 
 -- configuration
-local CONFIG = {
-  COLORS = {
-    bg = Color3.fromRGB(8, 8, 22),
-    header = Color3.fromRGB(14, 14, 34),
-    card = Color3.fromRGB(20, 20, 44),
-    accent = Color3.fromRGB(99, 102, 241),
-    accentPink = Color3.fromRGB(236, 72, 153),
-    autoMode = Color3.fromRGB(16, 154, 201),
-    green = Color3.fromRGB(34, 197, 94),
-    red = Color3.fromRGB(239, 68, 68),
-    redDark = Color3.fromRGB(153, 27, 27),
-    text = Color3.fromRGB(240, 240, 255),
-    subtext = Color3.fromRGB(140, 140, 200),
-    border = Color3.fromRGB(55, 55, 100),
-    btnBlue = Color3.fromRGB(45, 55, 130),
-    btnDark = Color3.fromRGB(30, 30, 65),
-    toggleOn = Color3.fromRGB(139, 92, 246),
-    toggleOff = Color3.fromRGB(45, 45, 80),
-    darkOn = Color3.fromRGB(151, 66, 221),
-    darkOff = Color3.fromRGB(52, 34, 87),
-    jumpOn = Color3.fromRGB(16, 154, 201),
-    jumpOff = Color3.fromRGB(24, 72, 105),
-    upDash = Color3.fromRGB(226, 135, 36),
-    hold = Color3.fromRGB(236, 72, 153),
-    inputBg = Color3.fromRGB(16, 16, 38),
-  },
-  GRADIENT = {
-    Color3.fromRGB(178, 215, 255),
-    Color3.fromRGB(227, 198, 255),
-    Color3.fromRGB(178, 215, 255),
-  },
-  PARTICLE_COLORS = {
-    Color3.fromRGB(85, 90, 140),
-    Color3.fromRGB(110, 95, 150),
-    Color3.fromRGB(150, 95, 130),
-    Color3.fromRGB(95, 130, 165),
-  },
-  BTN_SIZE = 56,
-  CLASH_SIZE = 64,
-  MINI_W = 112,
-  MINI_H = 96,
-  PANEL_W = 540,
-  PANEL_H = 380,
-  TITLE_H = 50,
-  PAD = 14,
-  GAP = 12,
-  CARD_GAP = 8,
-  INNER_PAD = 14,
-  CARD_H = 48,
-  RATE_CARD_H = 64,
-  SPAM_CARD_H = 118,
-  CARD_SCALE = 1.06,
-  DRAG_THRESHOLD_SQ = 100,
-  TITLE_SIDE_MARGIN = 90,
-  TITLE_SPACING = 7,
-  TITLE_TEXT_SIZE = 16,
-  AUTHOR_TEXT_SIZE = 14,
-  AUTHOR_TRANSPARENCY = 0.22,
-}
-
--- palette
-local C = CONFIG.COLORS
-local GRAD = CONFIG.GRADIENT
-local EASE_OUT, EASE_SINE = Enum.EasingStyle.Cubic, Enum.EasingStyle.Sine
-local DIR_OUT, DIR_IN, DIR_INOUT = Enum.EasingDirection.Out, Enum.EasingDirection.In, Enum.EasingDirection.InOut
+local CONFIG = {}
+local C, GRAD
 
 -- helpers
 local pulseButton
@@ -181,9 +117,11 @@ local function stroke(obj, col, th)
   end
   return line
 end
-local function twPlay(obj, t, props, style, dir)
+local function twPlay(obj, duration, props)
   if not obj or obj.Parent == nil then return nil end
-  local tween = TweenService:Create(obj, TweenInfo.new(t, style or EASE_OUT, dir or DIR_OUT), props); tween:Play()
+  if shellMotion and shellScope.alive then return shellMotion.play(obj, duration, props) end
+  local profile = CONFIG.MOTION[type(duration) == "string" and duration or "control"]
+  local tween = TweenService:Create(obj, TweenInfo.new(type(duration) == "number" and duration or profile.duration, profile.style, profile.direction), props); tween:Play()
   return tween
 end
 local function safeCancel(t)
@@ -231,12 +169,12 @@ pulseButton = function(button)
   local activeTween
   trackConn(button.Activated:Connect(function()
     safeCancel(activeTween); scale.Scale = 1
-    local tween = twPlay(scale, 0.07, { Scale = 0.94 }, EASE_SINE, DIR_IN); activeTween = tween
+    local tween = twPlay(scale, "press", { Scale = 0.94 }); activeTween = tween
     if not tween then return end
     local connection
     connection = trackConn(tween.Completed:Connect(function(playbackState)
       safeDisconnect(connection); untrackConn(connection)
-      if playbackState == Enum.PlaybackState.Completed and button.Parent then activeTween = twPlay(scale, 0.15, { Scale = 1 }, EASE_OUT, DIR_OUT) end
+      if playbackState == Enum.PlaybackState.Completed and button.Parent then activeTween = twPlay(scale, "feedback", { Scale = 1 }) end
     end))
   end))
 end
@@ -329,7 +267,8 @@ local function makeDraggable(handle, target, onDragEnd, disableOnMobile, coordin
     if disableOnMobile and UIS.TouchEnabled then return end
     if state ~= "Idle" then return end
     state, wasDragged, dragInput = "Pressed", false, input; local abs = target.AbsolutePosition
-    dragOffX, dragOffY = input.Position.X - abs.X, input.Position.Y - abs.Y; startX, startY = input.Position.X, input.Position.Y
+    local anchor = target.AnchorPoint; dragOffX, dragOffY = input.Position.X - abs.X - target.AbsoluteSize.X * anchor.X, input.Position.Y - abs.Y - target.AbsoluteSize.Y * anchor.Y
+    startX, startY = input.Position.X, input.Position.Y
   end))
   trackConn(UIS.InputChanged:Connect(function(input)
     if state == "Idle" or not dragInput then return end
@@ -339,7 +278,7 @@ local function makeDraggable(handle, target, onDragEnd, disableOnMobile, coordin
     local dx, dy = input.Position.X - startX, input.Position.Y - startY
     if state == "Pressed" and (dx * dx + dy * dy) >= THRESH_SQ then state, wasDragged = "Dragging", true end
     if state == "Dragging" then
-      local vp, sz = viewport(), target.AbsoluteSize; local scale = coordinateScale and coordinateScale() or 1
+      local vp, sz = viewport(), target.AbsoluteSize; local scale = coordinateScale and coordinateScale() or (responsiveScale and responsiveScale.Scale or 1)
       scale = math.max(scale, 0.01)
       target.Position = UDim2.new(
         0,
@@ -354,9 +293,11 @@ local function makeDraggable(handle, target, onDragEnd, disableOnMobile, coordin
     if input ~= dragInput or state == "Idle" then return end
     state, dragInput = "Idle", nil
     if wasDragged and onDragEnd then onDragEnd() end
-    wasDragged = false
+    task.defer(function()
+      if state == "Idle" then wasDragged = false end
+    end)
   end))
-  return function() return state == "Dragging" end
+  return function() return state == "Dragging" or wasDragged end
 end
 
 -- visuals
@@ -373,44 +314,36 @@ local function animateOutlines()
 end
 
 -- floating-controls
-local BTN_SIZE = CONFIG.BTN_SIZE
+local BTN_SIZE
 local function btnPos()
   local config = Utils.getConfig(); local x, y = config.BtnX, config.BtnY
   if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
   return UDim2.new(1, -70, 0.5, -28)
 end
-local CLASH_SIZE = CONFIG.CLASH_SIZE
-local OFFSCREEN_X = -CLASH_SIZE - 40
-local autoClashTrack, autoClashThumb, autoParrySetVisual, autoDarkSetVisual, autoJumpSetVisual
+local CLASH_SIZE, OFFSCREEN_X
 local function paintBall(ball, value, onText, offText, onColor, offColor, onSize, offSize)
   if not ball or not ball.Parent then return end
   ball.Text = value and onText or offText
   if onSize then ball.TextSize = value and onSize or offSize end
-  twPlay(ball, 0.28, { BackgroundColor3 = value and onColor or offColor }, EASE_SINE, DIR_INOUT)
+  twPlay(ball, "control", { BackgroundColor3 = value and onColor or offColor })
 end
 local function paintParryBall(value) paintBall(parryBall, value, "PARRY\nON", "PARRY\nOFF", C.green, C.red, 14, 14) end
 local function showBall(ball, visible, visibleKey, xKey, yKey, defaultX, defaultY)
-  setConfigValue(visibleKey, visible); local config = Utils.getConfig()
-  local x = config[xKey] or defaultX; local y = config[yKey] or defaultY
-  local shouldShow = visible and not UIState.desktop
-  twPlay(ball, 0.22, { Position = shouldShow and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) }, EASE_OUT, shouldShow and DIR_OUT or DIR_IN)
+  local config = Utils.getConfig(); local x = config[xKey] or defaultX
+  local y = config[yKey] or defaultY; local shouldShow = visible and not UIState.desktop
+  twPlay(ball, "control", { Position = shouldShow and UDim2.new(0, x, 0, y) or UDim2.new(0, OFFSCREEN_X, 0, y) })
 end
 local function pulseBall(ball)
-  local shrink = twPlay(ball, 0.08, { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) }, EASE_SINE, DIR_IN)
+  local shrink = twPlay(ball, "press", { Size = UDim2.new(0, CLASH_SIZE - 6, 0, CLASH_SIZE - 6) })
   if not shrink then return end
   local connection
   connection = trackConn(shrink.Completed:Connect(function(playbackState)
     safeDisconnect(connection); untrackConn(connection)
-    if playbackState == Enum.PlaybackState.Completed and ball and ball.Parent then twPlay(ball, 0.16, { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }, EASE_SINE, DIR_OUT) end
+    if playbackState == Enum.PlaybackState.Completed and ball and ball.Parent then twPlay(ball, "feedback", { Size = UDim2.new(0, CLASH_SIZE, 0, CLASH_SIZE) }) end
   end))
 end
 local function showParryBall(value) showBall(parryBall, value, "ParryBallVisible", "ParryBallX", "ParryBallY", 14, viewport().Y / 2 - CLASH_SIZE - 40) end
 local function paintClashBall() paintBall(clashBall, UIState.clashBallOn, "ON", "OFF", C.green, C.red, 18, 16) end
-local function syncAutoSpamToggle()
-  if not (autoClashTrack and autoClashThumb) then return end
-  local v = UIState.clashBallOn; twPlay(autoClashTrack, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT)
-  twPlay(autoClashThumb, 0.22, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_SINE, DIR_INOUT)
-end
 local function setClashBall(v, silent)
   UIState.clashBallOn = v; setConfigValue("AutoSpam", v)
   if silent then return end
@@ -423,9 +356,7 @@ local function showDarkBall(v) showBall(darkBall, v, "DarkBallVisible", "DarkBal
 local function setDarkBall(v)
   if not setConfigValue("AutoDark", v) then return end
   if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
-  paintDarkBall(v)
-  if autoDarkSetVisual then autoDarkSetVisual(v) end
-  pulseBall(darkBall)
+  paintDarkBall(v); pulseBall(darkBall)
   if showToast then showToast("Auto Dark " .. (v and "On" or "Off")) end
 end
 local function showMovementBall(ball, visible, visibleKey, xKey, yKey, yOffset)
@@ -433,17 +364,14 @@ local function showMovementBall(ball, visible, visibleKey, xKey, yKey, yOffset)
 end
 local function showJumpBall(v) showMovementBall(jumpBall, v, "JumpBallVisible", "JumpBallX", "JumpBallY", -CLASH_SIZE / 2) end
 local function showUpDashBall(v) showMovementBall(upDashBall, v, "UpDashBallVisible", "UpDashBallX", "UpDashBallY", CLASH_SIZE / 2 + 8) end
-local function paintJumpBall(v)
-  if autoJumpSetVisual then autoJumpSetVisual(v) end
-  paintBall(jumpBall, v, "JUMP\nON", "JUMP\nOFF", C.jumpOn, C.jumpOff)
-end
+local function paintJumpBall(v) paintBall(jumpBall, v, "JUMP\nON", "JUMP\nOFF", C.jumpOn, C.jumpOff) end
 local function setJumpBall(v)
   if not setConfigValue("AutoJump", v) then return end
   if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
   paintJumpBall(v)
   if showToast then showToast("Auto Jump " .. (v and "On" or "Off")) end
 end
-local MINI_W, MINI_H = CONFIG.MINI_W, CONFIG.MINI_H
+local MINI_W, MINI_H
 local function miniScreenScale() return responsiveScale and responsiveScale.Scale or 1 end
 local function miniLayout(scale)
   local view, screenScale = viewport(), math.max(miniScreenScale(), 0.01); local screenWidth, screenHeight = view.X / screenScale, view.Y / screenScale
@@ -454,8 +382,8 @@ end
 local function applyMiniScale(value)
   if not miniGui or not miniGui.Parent then return end
   local scale = math.clamp(tonumber(value) or 1, 0.5, 2); local x, y, width, height = miniLayout(scale)
-  twPlay(miniGui, 0.18, { Size = UDim2.fromOffset(width, height) }, EASE_OUT, DIR_OUT)
-  if miniGui.Visible then twPlay(miniGui, 0.18, { Position = UDim2.fromOffset(x, y) }, EASE_OUT, DIR_OUT) end
+  twPlay(miniGui, "feedback", { Size = UDim2.fromOffset(width, height) })
+  if miniGui.Visible then twPlay(miniGui, "feedback", { Position = UDim2.fromOffset(x, y) }) end
 end
 local function showMini(v)
   if UIState.desktop then v = false end
@@ -468,18 +396,18 @@ local function showMini(v)
       miniGui.Position = hiddenPosition; miniGui.GroupTransparency = 1
       miniGui.Visible = true
     end
-    UIState.miniTween = twPlay(miniGui, 0.24, {
+    UIState.miniTween = twPlay(miniGui, "control", {
       Position = UDim2.new(0, miniX, 0, miniY),
       GroupTransparency = 0,
-    }, EASE_OUT, DIR_OUT)
+    })
     return UIState.miniTween
   end
   if UIState.manualHoldInput then UIState.manualHoldInput = nil; setSpam(false) end
   if not miniGui.Visible then return end
-  local tween = twPlay(miniGui, 0.24, {
+  local tween = twPlay(miniGui, "control", {
     Position = hiddenPosition,
     GroupTransparency = 1,
-  }, EASE_OUT, DIR_IN)
+  })
   UIState.miniTween = tween
   if tween then
     local connection
@@ -496,29 +424,18 @@ setSpam = function(v)
   UIState.spamOn = v; Utils.setManualSpamActive(v)
   local spamButton = miniGui and miniGui:FindFirstChild("SpamButton")
   if spamButton then
-    spamButton.Text = v and "ON" or "OFF"; twPlay(spamButton, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT)
-    local shrink = twPlay(spamButton, 0.08, { Size = UDim2.new(1, -14, 0.78, -12) }, EASE_SINE, DIR_IN)
+    spamButton.Text = v and "ON" or "OFF"; twPlay(spamButton, "control", { BackgroundColor3 = v and C.green or C.red })
+    local shrink = twPlay(spamButton, "press", { Size = UDim2.new(1, -14, 0.78, -12) })
     if shrink then
       local connection
       connection = trackConn(shrink.Completed:Connect(function(playbackState)
         safeDisconnect(connection); untrackConn(connection)
-        if playbackState == Enum.PlaybackState.Completed and spamButton.Parent then twPlay(spamButton, 0.15, { Size = UDim2.new(1, -12, 0.78, -8) }, EASE_SINE, DIR_OUT) end
+        if playbackState == Enum.PlaybackState.Completed and spamButton.Parent then twPlay(spamButton, "feedback", { Size = UDim2.new(1, -12, 0.78, -8) }) end
       end))
     end
   end
 end
-local PW, PH = CONFIG.PANEL_W, CONFIG.PANEL_H
-local TITLE_H, PAD, GAP, CARD_GAP = CONFIG.TITLE_H, CONFIG.PAD, CONFIG.GAP, CONFIG.CARD_GAP
-local INNER_PAD, CARD_H, RATE_CARD_H, SPAM_CARD_H = CONFIG.INNER_PAD, CONFIG.CARD_H, CONFIG.RATE_CARD_H, CONFIG.SPAM_CARD_H
-local CONTENT_H = PH - TITLE_H - 60
-local COL_W = math.floor((PW - PAD * 2 - GAP) / 2)
-local CARD_SCALE = CONFIG.CARD_SCALE
-local CARD_MAX_H = CARD_H
-local function cardHeight(height) return math.max(0, height or CARD_MAX_H) end
-local function offOnText(labelText, value)
-  local color = value and "#22C55E" or "#EF4444"; return labelText .. ': <font color="' .. color .. '">' .. (value and "ON" or "OFF") .. "</font>"
-end
-local function nextCardY(yPos, height) return yPos + cardHeight(height) * CARD_SCALE + CARD_GAP end
+local PW, PH, TITLE_H, PAD
 
 -- panel
 local function panelPos()
@@ -526,29 +443,28 @@ local function panelPos()
   if type(x) == "number" and type(y) == "number" then return UDim2.new(0, x, 0, y) end
   return UDim2.new(0.5, -PW / 2, 0.5, -PH / 2)
 end
-local PARTICLE_COLORS = CONFIG.PARTICLE_COLORS
+local PARTICLE_COLORS
 
 -- cleanup
 local function cleanupUI()
-  if closeActiveDropdown then closeActiveDropdown(true) end
+  if UIState.manualHoldInput and Utils then Utils.setManualSpamActive(false) end
+  if pageController then pageController.destroy(); pageController = nil end
+  if uiKit then uiKit.destroy(); uiKit = nil end
+  if shellScope then
+    shellScope.destroy(); shellScope = nil
+    shellMotion = nil
+  end
   table.clear(outlineGradients); safeCancel(UIState.panelTween)
   safeCancel(UIState.btnTween); safeCancel(UIState.miniTween)
   UIState.miniTween = nil; UIState.miniGeneration += 1
   disconnectUIConnections(); UIState.connections = {}
-  table.clear(connectionIndexes); UIState.pageGeneration += 1
-  for _, tween in ipairs(UIState.pageTweens) do
-    safeCancel(tween)
-  end
-  UIState.pageTweens = {}; UIState.panelOpen = false
+  table.clear(connectionIndexes); UIState.panelOpen = false
   UIState.clashBallOn = false; UIState.closing = false
   UIState.keyCapture = false; UIState.manualHoldInput = nil
   UIState.panelTween = nil; UIState.btnTween = nil
   UIState.toastGeneration += 1; safeCancel(UIState.toastTween)
   UIState.toastTween = nil
   UIState.btnIsDragging = function() return false end
-  for i = #flowingTweens, 1, -1 do
-    safeCancel(flowingTweens[i]); flowingTweens[i] = nil
-  end
   local current = screenGui
   if current then current:Destroy() end
   local overlay = Players.LocalPlayer and Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -565,13 +481,8 @@ local function cleanupUI()
   toastCard = nil; toastLabel = nil
   particleLayer = nil; titleBar = nil
   minimizeButton = nil; reloadButton = nil
-  colLeft = nil; colRight = nil
   killBtn = nil; toastLayer = nil
-  responsiveScale = nil; shortcutLabels = {}
-  statusToggleVisuals = {}; fadeRestore, fadeEvent, fadeDone = {}, nil, false
-  autoClashTrack = nil; autoClashThumb = nil
-  autoParrySetVisual = nil; autoDarkSetVisual = nil
-  autoJumpSetVisual = nil
+  responsiveScale = nil; fadeRestore, fadeEvent, fadeDone = {}, nil, false
   if _G.ExodusUICleanup == cleanupUI then
     _G.ExodusUICleanup = nil; _G.ExodusUIFadeOut = nil
     _G.ExodusUIRestore = nil
@@ -594,11 +505,11 @@ local function spawnParticle()
     Parent = particleLayer,
   })
   corner(dot, 999); local dur = isFar and math.random(5, 9) or math.random(3, 5)
-  local endX = math.clamp(dot.Position.X.Scale + (math.random() - 0.5) * 0.15, 0, 1); twPlay(dot, 0.6, { BackgroundTransparency = math.max(startTrans - 0.1, 0.05) }, EASE_SINE, DIR_OUT)
+  local endX = math.clamp(dot.Position.X.Scale + (math.random() - 0.5) * 0.15, 0, 1); twPlay(dot, "panel", { BackgroundTransparency = math.max(startTrans - 0.1, 0.05) })
   local travel = twPlay(dot, dur, {
     Position = UDim2.new(endX, 0, -0.1, 0),
     BackgroundTransparency = 1,
-  }, EASE_SINE, DIR_INOUT)
+  })
   if travel then
     local connection
     connection = trackConn(travel.Completed:Connect(function()
@@ -606,68 +517,6 @@ local function spawnParticle()
       if dot.Parent then dot:Destroy() end
     end))
   end
-end
-
--- card-primitives
-local function cardFrame(yPos, h, parent, fixedWidth)
-  local f = inst("Frame", {
-    Size = fixedWidth and UDim2.fromOffset(fixedWidth, cardHeight(h)) or UDim2.new(1, -22, 0, cardHeight(h)),
-    Position = fixedWidth and UDim2.new(0.5, -fixedWidth / 2, 0, yPos) or UDim2.new(0, 2, 0, yPos),
-    BackgroundColor3 = C.card,
-    BackgroundTransparency = 0.1,
-    ZIndex = 6,
-    Parent = parent,
-  })
-  local scale = inst("UIScale", { Name = "CardScale", Scale = CARD_SCALE }, f); scale:SetAttribute("BaseScale", CARD_SCALE)
-  corner(f, 12); local s = stroke(f, C.border, 1)
-  trackConn(f.MouseEnter:Connect(function()
-    twPlay(s, 0.22, { Color = C.accent }, EASE_SINE, DIR_INOUT); twPlay(f, 0.22, { BackgroundColor3 = Color3.fromRGB(24, 24, 50) }, EASE_SINE, DIR_INOUT)
-  end))
-  trackConn(f.MouseLeave:Connect(function()
-    twPlay(s, 0.25, { Color = C.border }, EASE_SINE, DIR_INOUT); twPlay(f, 0.25, { BackgroundColor3 = C.card }, EASE_SINE, DIR_INOUT)
-  end))
-  return f
-end
-local function pressCard(card)
-  local scale = card:FindFirstChild("CardScale")
-  if not scale then return end
-  local baseScale = scale:GetAttribute("BaseScale") or scale.Scale; local tween = twPlay(scale, 0.07, { Scale = baseScale * 0.97 }, EASE_SINE, DIR_OUT)
-  if not tween then return end
-  local connection
-  connection = trackConn(tween.Completed:Connect(function(playbackState)
-    safeDisconnect(connection); untrackConn(connection)
-    if playbackState == Enum.PlaybackState.Completed and card.Parent then twPlay(scale, 0.15, { Scale = baseScale }, EASE_OUT, DIR_OUT) end
-  end))
-end
-local function addCardHitbox(card, height, callback)
-  local button = inst("TextButton", {
-    Name = "CardHitbox",
-    Size = UDim2.new(1, 0, 0, height),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    Text = "",
-    AutoButtonColor = false,
-    ZIndex = 10,
-    Parent = card,
-  })
-  trackConn(button.Activated:Connect(function()
-    pressCard(card); callback()
-  end))
-  return button
-end
-local function cardLabel(text, parent, yPos)
-  return inst("TextLabel", {
-    Size = UDim2.new(1, -10, 0, 16),
-    Position = UDim2.new(0, 10, 0, yPos or 5),
-    BackgroundTransparency = 1,
-    Text = text,
-    TextColor3 = C.accent,
-    TextSize = 10,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    ZIndex = 7,
-    Parent = parent,
-  })
 end
 local function makeBtn(text, x, y, w, h, parent, bg)
   local b = inst("TextButton", {
@@ -734,7 +583,7 @@ local function reflowPersistentNotifications(animated)
     local card = layer:FindFirstChild("Notification_" .. key)
     if card then
       safeCancel(persistentTweens[key]); local target = UDim2.new(0.5, 0, 1, -24 - (index - 1) * 46)
-      persistentTweens[key] = twPlay(card, animated and 0.22 or 0, { Position = target, GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
+      persistentTweens[key] = twPlay(card, animated and "control" or 0, { Position = target, GroupTransparency = 0 })
     end
   end
 end
@@ -754,10 +603,10 @@ clearPersistentNotification = function(key)
     return
   end
   safeCancel(persistentTweens[safeKey])
-  local fade = twPlay(card, 0.22, {
+  local fade = twPlay(card, "control", {
     Position = UDim2.new(card.Position.X.Scale, card.Position.X.Offset, card.Position.Y.Scale, card.Position.Y.Offset + 18),
     GroupTransparency = 1,
-  }, EASE_OUT, DIR_IN)
+  })
   persistentTweens[safeKey] = fade
   local function remove()
     if persistentTweens[safeKey] ~= fade then return end
@@ -855,10 +704,10 @@ showToast = function(message, important)
   if toastStroke then toastStroke.Color = isOff and C.red or C.accent end
   if toastLabel then toastLabel.Text = tostring(message) end
   toastCard.Position = UDim2.new(0.5, 0, 1, 18); toastCard.GroupTransparency = 1
-  local toast = toastCard; UIState.toastTween = twPlay(toast, 0.22, { Position = UDim2.new(0.5, 0, 1, -24), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
+  local toast = toastCard; UIState.toastTween = twPlay(toast, "control", { Position = UDim2.new(0.5, 0, 1, -24), GroupTransparency = 0 })
   task.delay(1.35, function()
     if generation ~= UIState.toastGeneration or not toast.Parent then return end
-    local fade = twPlay(toast, 0.22, { Position = UDim2.new(0.5, 0, 1, 18), GroupTransparency = 1 }, EASE_OUT, DIR_IN); UIState.toastTween = fade
+    local fade = twPlay(toast, "control", { Position = UDim2.new(0.5, 0, 1, 18), GroupTransparency = 1 }); UIState.toastTween = fade
     if fade then
       local connection
       connection = trackConn(fade.Completed:Connect(function(playbackState)
@@ -873,900 +722,41 @@ showToast = function(message, important)
     end
   end)
 end
-local function makeToggle(trackParent, initial)
-  local track = inst("Frame", {
-    Size = UDim2.new(0, 48, 0, 30),
-    Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -15),
-    BackgroundColor3 = initial and C.toggleOn or C.toggleOff,
-    BackgroundTransparency = 0.1,
-    ZIndex = 7,
-    Parent = trackParent,
-  })
-  corner(track, 999)
-  local thumb = inst("Frame", {
-    Size = UDim2.new(0, 20, 0, 20),
-    Position = initial and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10),
-    BackgroundColor3 = Color3.new(1, 1, 1),
-    ZIndex = 8,
-    Parent = track,
-  })
-  corner(thumb, 999)
-  local function setVisual(v)
-    twPlay(track, 0.22, { BackgroundColor3 = v and C.toggleOn or C.toggleOff }, EASE_SINE, DIR_INOUT)
-    twPlay(thumb, 0.25, { Position = v and UDim2.new(0, 25, 0.5, -10) or UDim2.new(0, 3, 0.5, -10) }, EASE_SINE, DIR_INOUT)
-  end
-  return track, thumb, setVisual
-end
+
+-- public-components
 local Components = {}
-local function componentText(parent, class, options)
-  options = options or {}
-  return inst(class, {
-    Name = options.name or class,
-    Size = options.size or UDim2.new(1, 0, 0, 34),
-    BackgroundColor3 = options.backgroundColor or C.card,
-    BackgroundTransparency = options.backgroundTransparency or 0,
-    Text = options.text or "",
-    TextColor3 = options.textColor or C.text,
-    TextSize = options.textSize or 13,
-    Font = Enum.Font.Gotham,
-    Parent = parent,
-  })
-end
-function Components.label(parent, options)
-  local label = componentText(parent, "TextLabel", options); label.BackgroundTransparency = 1
-  label.TextXAlignment = Enum.TextXAlignment.Left
-  return { Root = label, setText = function(text) label.Text = tostring(text) end }
-end
-function Components.button(parent, options)
-  options = options or {}; local button = componentText(parent, "TextButton", options)
-  corner(button, 8)
-  trackConn(button.Activated:Connect(function()
-    if type(options.onClick) == "function" then options.onClick() end
-  end))
-  return { Root = button, setText = function(text) button.Text = tostring(text) end }
-end
-function Components.textInput(parent, options)
-  options = options or {}; local input = componentText(parent, "TextBox", options)
-  corner(input, 8); input.PlaceholderText = options.placeholder or ""
-  input.ClearTextOnFocus = false
-  trackConn(input.FocusLost:Connect(function(enterPressed)
-    if type(options.onSubmit) == "function" then options.onSubmit(input.Text, enterPressed) end
-  end))
-  return { Root = input, setText = function(text) input.Text = tostring(text) end, getText = function() return input.Text end }
-end
-function Components.toggle(parent, options)
-  options = options or {}; local button = componentText(parent, "TextButton", options)
-  corner(button, 8); button.TextXAlignment = Enum.TextXAlignment.Left
-  local _, _, setVisual = makeToggle(button, options.value == true); local value = options.value == true
-  local function setValue(nextValue)
-    value = nextValue == true; setVisual(value)
+for _, name in ipairs({
+  "label",
+  "button",
+  "textInput",
+  "number",
+  "toggle",
+  "divider",
+  "progressBar",
+  "dropdown",
+  "slider",
+  "segmented",
+  "tabs",
+  "rate_selector",
+}) do
+  Components[name] = function(parent, options)
+    assert(uiKit, "Call ExodusUI.setup before creating components, or use UIKit.create for a standalone library"); return uiKit.Components[name](parent, options)
   end
-  trackConn(button.Activated:Connect(function()
-    setValue(not value)
-    if type(options.onChange) == "function" then options.onChange(value) end
-  end))
-  return { Root = button, setValue = setValue, getValue = function() return value end }
-end
-function Components.divider(parent, options)
-  options = options or {}
-  local line = inst("Frame", {
-    Name = options.name or "Divider",
-    Size = options.size or UDim2.new(1, 0, 0, 1),
-    BackgroundColor3 = options.color or C.border,
-    BorderSizePixel = 0,
-    Parent = parent,
-  })
-  return { Root = line }
-end
-function Components.progressBar(parent, options)
-  options = options or {}
-  local track = inst("Frame", {
-    Name = options.name or "ProgressBar",
-    Size = options.size or UDim2.new(1, 0, 0, 8),
-    BackgroundColor3 = C.border,
-    BorderSizePixel = 0,
-    ClipsDescendants = true,
-    Parent = parent,
-  })
-  corner(track, 4); local fill = inst("Frame", { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = options.color or C.accent, BorderSizePixel = 0, Parent = track })
-  corner(fill, 4)
-  local function setValue(value) fill.Size = UDim2.fromScale(math.clamp(tonumber(value) or 0, 0, 1), 1) end
-  setValue(options.value); return { Root = track, setValue = setValue }
-end
-function Components.dropdown(parent, options)
-  options = options or {}; local choices = options.choices or {}
-  local value = options.value; local root = inst("Frame", { Name = options.name or "Dropdown", Size = options.size or UDim2.new(1, 0, 0, 34), BackgroundTransparency = 1, Parent = parent })
-  local button = componentText(root, "TextButton", { size = UDim2.fromScale(1, 1), text = "" }); corner(button, 8)
-  local list = inst("Frame", {
-    Name = "Options",
-    Position = UDim2.fromScale(0, 1),
-    Size = UDim2.new(1, 0, 0, #choices * 30),
-    BackgroundColor3 = C.card,
-    Visible = false,
-    ZIndex = 20,
-    Parent = root,
-  })
-  corner(list, 8); inst("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder }, list)
-  local function setValue(nextValue)
-    value = nextValue; button.Text = tostring(value or options.placeholder or "Select") .. " ▾"
-  end
-  for index, choice in ipairs(choices) do
-    local item = componentText(list, "TextButton", { size = UDim2.new(1, 0, 0, 30), text = tostring(choice) }); item.LayoutOrder = index
-    item.ZIndex = 21
-    trackConn(item.Activated:Connect(function()
-      setValue(choice); list.Visible = false
-      if type(options.onChange) == "function" then options.onChange(choice) end
-    end))
-  end
-  trackConn(button.Activated:Connect(function() list.Visible = not list.Visible end))
-  setValue(value)
-  return { Root = root, setValue = setValue, getValue = function() return value end }
-end
-function Components.slider(parent, options)
-  options = options or {}; local minimum, maximum = tonumber(options.min) or 0, tonumber(options.max) or 100
-  assert(maximum > minimum, "slider max must exceed min"); local root = componentText(parent, "TextButton", { name = options.name or "Slider", size = options.size, text = "" })
-  corner(root, 8)
-  local fill = inst(
-    "Frame",
-    { Name = "Fill", Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.accent, BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = root }
-  )
-  corner(fill, 8); local label = componentText(root, "TextLabel", { size = UDim2.fromScale(1, 1), text = "" })
-  label.BackgroundTransparency = 1; label.ZIndex = root.ZIndex + 1
-  local value, dragging = minimum, false
-  local function setValue(nextValue)
-    value = math.clamp(tonumber(nextValue) or minimum, minimum, maximum); fill.Size = UDim2.fromScale((value - minimum) / (maximum - minimum), 1)
-    label.Text = tostring(options.text or "") .. " " .. string.format("%.2f", value)
-  end
-  local function update(input)
-    if root.AbsoluteSize.X <= 0 then return end
-    setValue(minimum + math.clamp((input.Position.X - root.AbsolutePosition.X) / root.AbsoluteSize.X, 0, 1) * (maximum - minimum))
-    if type(options.onChange) == "function" then options.onChange(value) end
-  end
-  trackConn(root.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true; update(input) end
-  end))
-  trackConn(UIS.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then update(input) end
-  end))
-  trackConn(UIS.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
-  end))
-  setValue(options.value)
-  return { Root = root, setValue = setValue, getValue = function() return value end }
 end
 ExodusUI.Components = Components
-
--- keybinds
-local function bindKeyCapture(btn, onPicked)
-  local listening = false
-  trackConn(btn.Activated:Connect(function()
-    if listening or UIState.keyCapture then return end
-    local previousText, restColor = btn.Text, btn.BackgroundColor3; listening = true
-    UIState.keyCapture = true; btn.Text = "..."
-    twPlay(btn, 0.1, { BackgroundColor3 = Color3.fromRGB(80, 85, 160) })
-    local conn
-    conn = trackConn(UIS.InputBegan:Connect(function(input, gpe)
-      local binding = inputBinding(input)
-      if not binding then return end
-      if input.KeyCode == Enum.KeyCode.Escape then btn.Text = previousText else onPicked(binding) end
-      listening = false; UIState.keyCapture = false
-      safeDisconnect(conn); untrackConn(conn)
-      twPlay(btn, 0.12, { BackgroundColor3 = restColor })
-    end))
-  end))
-end
-local function keyName(value)
-  local names = {
-    MouseButton1 = "M1",
-    MouseButton2 = "M2",
-    MouseButton3 = "M3",
-    LeftControl = "LCtrl",
-    RightControl = "RCtrl",
-    LeftShift = "LShift",
-    RightShift = "RShift",
-  }
-
-  local name = typeof(value) == "EnumItem" and value.Name or tostring(value or "—"); return names[name] or name
-end
-local function makeKeycap(parent, configKey)
-  local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 50, 26, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey
-  keycap.Position = UDim2.new(1, -126, 0.5, -13); keycap.TextSize = 11
-  keycap.TextTruncate = Enum.TextTruncate.AtEnd; keycap.ZIndex = 12
-  shortcutLabels[configKey] = keycap
-  bindKeyCapture(keycap, function(binding)
-    if setConfigValue(configKey, binding) then keycap.Text = keyName(binding) end
-  end)
-  return keycap
-end
-
--- cards
-local function optionInfo(value)
-  if type(value) == "table" then return tostring(value.title or value.label or value.name or "Option"), value.description, value end
-  return tostring(value or "Option"), nil, nil
-end
-local function addOptionText(parent, value, height, widthOffset)
-  local title, description = optionInfo(value)
-  if description and description ~= "" then
-    inst("TextLabel", {
-      Size = UDim2.new(1, widthOffset or -28, 0, 18),
-      Position = UDim2.fromOffset(14, 5),
-      BackgroundTransparency = 1,
-      Text = title,
-      TextColor3 = C.text,
-      TextSize = 12,
-      Font = Enum.Font.GothamSemibold,
-      TextXAlignment = Enum.TextXAlignment.Left,
-      ZIndex = 7,
-      Parent = parent,
-    })
-    inst("TextLabel", {
-      Size = UDim2.new(1, widthOffset or -28, 0, math.max(16, height - 28)),
-      Position = UDim2.fromOffset(14, 24),
-      BackgroundTransparency = 1,
-      Text = tostring(description),
-      TextColor3 = C.subtext,
-      TextSize = 10,
-      Font = Enum.Font.Gotham,
-      TextWrapped = true,
-      TextXAlignment = Enum.TextXAlignment.Left,
-      TextYAlignment = Enum.TextYAlignment.Top,
-      ZIndex = 7,
-      Parent = parent,
-    })
-  else
-    inst("TextLabel", {
-      Size = UDim2.new(1, widthOffset or -28, 0, height),
-      Position = UDim2.fromOffset(14, 0),
-      BackgroundTransparency = 1,
-      Text = title,
-      TextColor3 = C.text,
-      TextSize = UIState.desktop and 12 or 13,
-      Font = Enum.Font.GothamSemibold,
-      TextXAlignment = Enum.TextXAlignment.Left,
-      TextYAlignment = Enum.TextYAlignment.Center,
-      ZIndex = 7,
-      Parent = parent,
-    })
-  end
-  return title, description
-end
-local function createToggleCard(option, configKey, yPos, parent, onAfter, shortcutKey, fixedWidth)
-  local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
-  local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, UIState.desktop and shortcutKey and -148 or -78)
-  local config = Utils.getConfig(); local initial = configKey and config[configKey] == true
-  local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -15)
-  if configKey == "UniversalFly" or configKey == "UniversalSpeedEnabled" or configKey == "UniversalGravityEnabled" then statusToggleVisuals[configKey] = setVisual end
-  if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey, false, height) end
-  if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
-  if configKey == "AutoParry" then autoParrySetVisual = setVisual end
-  if configKey == "AutoDark" then autoDarkSetVisual = setVisual end
-  if configKey == "AutoJump" then autoJumpSetVisual = setVisual end
-  addCardHitbox(f, height, function()
-    local current = Utils.getConfig(); local state = not (configKey and current[configKey] == true)
-    if not configKey or setConfigValue(configKey, state) then
-      setVisual(state)
-      if onAfter then onAfter(state) end
-      if showToast then showToast(title .. (state and " On" or " Off")) end
-    end
-  end)
-  return nextCardY(yPos, height), f
-end
-local function createStatusToggleCard(option, yPos, parent, options)
-  options = options or {}; local title, description = optionInfo(option)
-  local height = description and CARD_H + 22 or CARD_H; local configKey, state = options.configKey, false
-  local function readState()
-    if options.getState then return options.getState() == true end
-    if configKey then return Utils.getConfigValue(configKey) == true end
-    return state
-  end
-  state = readState(); local f = cardFrame(yPos, height, parent)
-  local control
-  if description and description ~= "" then
-    control = inst("TextLabel", {
-      Size = UDim2.new(1, options.rightAligned and -86 or -28, 0, 21),
-      Position = UDim2.fromOffset(14, 2),
-      BackgroundTransparency = 1,
-      BorderSizePixel = 0,
-      Text = offOnText(title, state),
-      TextColor3 = C.text,
-      TextSize = 11,
-      Font = Enum.Font.GothamBold,
-      RichText = true,
-      TextXAlignment = Enum.TextXAlignment.Left,
-      ZIndex = 9,
-      Parent = f,
-    })
-    inst("TextLabel", {
-      Size = UDim2.new(1, options.rightAligned and -86 or -28, 0, height - 28),
-      Position = UDim2.fromOffset(14, 24),
-      BackgroundTransparency = 1,
-      Text = tostring(description),
-      TextColor3 = C.subtext,
-      TextSize = 10,
-      Font = Enum.Font.Gotham,
-      TextWrapped = true,
-      TextXAlignment = Enum.TextXAlignment.Left,
-      TextYAlignment = Enum.TextYAlignment.Top,
-      ZIndex = 7,
-      Parent = f,
-    })
-  else
-    control = inst("TextLabel", {
-      Size = UDim2.new(1, options.rightAligned and -72 or 0, 0, height),
-      BackgroundTransparency = 1,
-      BorderSizePixel = 0,
-      Text = offOnText(title, state),
-      TextColor3 = C.text,
-      TextSize = 13,
-      Font = Enum.Font.GothamBold,
-      RichText = true,
-      TextXAlignment = Enum.TextXAlignment.Center,
-      ZIndex = 9,
-      Parent = f,
-    })
-  end
-  local function setVisual(value)
-    state = value == true; control.Text = offOnText(title, state)
-  end
-  if configKey then statusToggleVisuals[configKey] = setVisual end
-  if UIState.desktop and options.shortcutKey then
-    local keycap = makeKeycap(f, options.shortcutKey)
-    if not options.togglePosition then keycap.Position = UDim2.new(1, -62, 0.5, -13) end
-  end
-  addCardHitbox(f, height, function()
-    local requested = not readState()
-    if configKey and not setConfigValue(configKey, requested) then return end
-    local result = options.onToggle and options.onToggle(requested); local nextState = type(result) == "boolean" and result or requested
-    setVisual(nextState)
-    if options.toastLabel and showToast then showToast(options.toastLabel .. (nextState and " On" or " Off")) end
-  end)
-  return nextCardY(yPos, height), f, setVisual
-end
-local function createClickCard(option, yPos, parent, onActivate, fixedWidth)
-  local _, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
-  local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, -28)
-  addCardHitbox(f, height, function()
-    if onActivate then onActivate() end
-  end)
-  return nextCardY(yPos, height), f
-end
-local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
-  local title, description = optionInfo(option); local height = option.compact and CARD_H or (description and 88 or 68)
-  local f = cardFrame(yPos, height, parent, fixedWidth)
-  if option.compact then
-    inst("TextLabel", {
-      Size = UDim2.new(1, -78, 0, 18),
-      Position = UDim2.fromOffset(14, 3),
-      BackgroundTransparency = 1,
-      Text = title,
-      TextColor3 = C.text,
-      TextSize = 12,
-      TextTruncate = Enum.TextTruncate.AtEnd,
-      Font = Enum.Font.GothamSemibold,
-      TextXAlignment = Enum.TextXAlignment.Left,
-      ZIndex = 7,
-      Parent = f,
-    })
-  else
-    addOptionText(f, option, height, -112)
-  end
-  local minValue, maxValue = tonumber(option.min) or 0, tonumber(option.max) or 100; local increment = tonumber(option.increment) or 1
-  local current = tonumber(Utils.getConfigValue(option.key)) or minValue
-  local valueLabel = inst("TextLabel", {
-    Size = UDim2.fromOffset(option.compact and 52 or 92, 18),
-    Position = UDim2.new(1, option.compact and -66 or -106, 0, option.compact and 3 or 7),
-    BackgroundTransparency = 1,
-    TextColor3 = C.text,
-    TextSize = 10,
-    Font = Enum.Font.GothamBold,
-    TextXAlignment = Enum.TextXAlignment.Right,
-    ZIndex = 9,
-    Parent = f,
-  })
-  local track = inst("Frame", {
-    Size = UDim2.new(1, -28, 0, 6),
-    Position = UDim2.new(0, 14, 1, option.compact and -12 or -17),
-    BackgroundColor3 = C.inputBg,
-    BorderSizePixel = 0,
-    ZIndex = 8,
-    Parent = f,
-  })
-  corner(track, 999); stroke(track, C.border, 1)
-  local fill = inst("Frame", { Size = UDim2.new(), BackgroundColor3 = C.accent, BorderSizePixel = 0, ZIndex = 9, Parent = track }); corner(fill)
-  local knob = inst(
-    "Frame",
-    { AnchorPoint = Vector2.new(0.5, 0.5), Size = UDim2.fromOffset(14, 14), BackgroundColor3 = C.text, BorderSizePixel = 0, ZIndex = 10, Parent = track }
-  )
-  corner(knob, 999); stroke(knob, C.accent, 1)
-  local hitbox = inst("TextButton", {
-    Name = "ScrollHitbox",
-    Size = UDim2.new(1, 0, 0, option.compact and 22 or 26),
-    Position = UDim2.new(0, 0, 1, option.compact and -22 or -27),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    AutoButtonColor = false,
-    Text = "",
-    ZIndex = 11,
-    Parent = f,
-  })
-  local function applyValue(value, notify)
-    local range = math.max(0, maxValue - minValue); local stepped = range > 0 and minValue + math.clamp(math.floor((value - minValue) / increment + 0.5) * increment, 0, range) or minValue
-    stepped = math.clamp(stepped, minValue, maxValue); local alpha = range > 0 and (stepped - minValue) / range or 0
-    fill.Size = UDim2.new(alpha, 0, 1, 0); knob.Position = UDim2.new(alpha, 0, 0.5, 0)
-    local rounded = math.floor(stepped * 100 + 0.5) / 100; local suffix = tostring(option.valueName or "")
-    valueLabel.Text = tostring(rounded) .. (suffix ~= "" and " " .. suffix or ""); setConfigValue(option.key, stepped)
-    if notify and onChange then onChange(stepped) end
-  end
-  local function applyInput(input)
-    local width = math.max(1, track.AbsoluteSize.X); applyValue(minValue + (maxValue - minValue) * math.clamp((input.Position.X - track.AbsolutePosition.X) / width, 0, 1), true)
-  end
-  local dragInput
-  trackConn(hitbox.InputBegan:Connect(function(input)
-    if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-    dragInput = input; applyInput(input)
-  end))
-  trackConn(UIS.InputChanged:Connect(function(input)
-    if not dragInput then return end
-    if not f.Visible then dragInput = nil; return end
-    local mouseDrag = dragInput.UserInputType == Enum.UserInputType.MouseButton1 and input.UserInputType == Enum.UserInputType.MouseMovement
-    local touchDrag = dragInput.UserInputType == Enum.UserInputType.Touch and input == dragInput
-    if mouseDrag or touchDrag then applyInput(input) end
-  end))
-  trackConn(UIS.InputEnded:Connect(function(input)
-    if input == dragInput then dragInput = nil end
-  end))
-  applyValue(current, false); return nextCardY(yPos, height), f
-end
-local function createActionShortcutCard(option, yPos, parent, configKey, onActivate)
-  local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
-  local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, -88)
-  if UIState.desktop and configKey then local keycap = makeKeycap(f, configKey); keycap.Position = UDim2.new(1, -62, 0.5, -13) end
-  addCardHitbox(f, height, function()
-    if onActivate then onActivate() end
-    if showToast then showToast(title .. " On") end
-  end)
-  return nextCardY(yPos, height), f
-end
-local function createParryTimingCard(yPos, parent)
-  local f = cardFrame(yPos, CARD_H, parent)
-  inst("TextLabel", {
-    Size = UDim2.new(1, -100, 1, 0),
-    Position = UDim2.new(0, 14, 0, 0),
-    BackgroundTransparency = 1,
-    Text = "AP Lead (%)",
-    TextColor3 = C.text,
-    TextSize = 13,
-    Font = Enum.Font.GothamSemibold,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    ZIndex = 7,
-    Parent = f,
-  })
-  local config = Utils.getConfig(); local initial = tonumber(config.AutoParryWindowFactor) or 0.3
-  local input = inst("TextBox", {
-    Size = UDim2.new(0, 62, 0, 30),
-    Position = UDim2.new(1, -74, 0.5, -15),
-    BackgroundColor3 = C.inputBg,
-    BackgroundTransparency = 0.1,
-    Text = tostring(math.clamp(initial, 0, 1) * 100),
-    ClearTextOnFocus = false,
-    TextColor3 = C.text,
-    TextSize = 13,
-    Font = Enum.Font.GothamBold,
-    ZIndex = 7,
-    Parent = f,
-  })
-  corner(input, 8); stroke(input, C.border, 1)
-  trackConn(input.FocusLost:Connect(function()
-    local value = tonumber(input.Text)
-    if not value or value ~= value or value == math.huge or value == -math.huge then value = (tonumber(Utils.getConfig().AutoParryWindowFactor) or 0.3) * 100 end
-    value = math.clamp(value, 0, 35); setConfigValue("AutoParryWindowFactor", value / 100)
-    input.Text = tostring(value)
-  end))
-  return nextCardY(yPos, CARD_H)
-end
-local function createCameraSensitivityCard(yPos, parent)
-  local f = cardFrame(yPos, CARD_H, parent); cardLabel("Camera Sensitivity", f)
-  local input = inst("TextBox", {
-    Size = UDim2.new(0, 62, 0, 30),
-    Position = UDim2.new(1, -74, 0.5, -15),
-    BackgroundColor3 = C.inputBg,
-    Text = tostring(Utils.getConfigValue("CameraSensitivity") or 1),
-    ClearTextOnFocus = false,
-    TextColor3 = C.text,
-    TextSize = 13,
-    Font = Enum.Font.GothamBold,
-    ZIndex = 7,
-    Parent = f,
-  })
-  corner(input, 8); stroke(input, C.border, 1)
-  trackConn(input.FocusLost:Connect(function()
-    local value = tonumber(input.Text)
-    if not value or value ~= value or value == math.huge or value == -math.huge or value < 0 then value = Utils.getConfigValue("CameraSensitivity") or 1 end
-    setConfigValue("CameraSensitivity", value); input.Text = tostring(value)
-  end))
-  return nextCardY(yPos, CARD_H)
-end
-local function createDropdown(yPos, parent, definition)
-  local options = definition.options or {}; local f = cardFrame(yPos, RATE_CARD_H, parent)
-  cardLabel(optionInfo(definition), f); local current = Utils.getConfigValue(definition.key)
-  local function labelFor(value)
-    for _, option in ipairs(options) do
-      if option.value == value then return option.label end
-    end
-    return tostring(value or "Selecionar")
-  end
-  local button = inst("TextButton", {
-    Size = UDim2.new(1, -20, 0, 28),
-    Position = UDim2.fromOffset(10, 29),
-    BackgroundColor3 = C.inputBg,
-    BorderSizePixel = 0,
-    Text = "",
-    AutoButtonColor = false,
-    ZIndex = 7,
-    Parent = f,
-  })
-  corner(button, 8); local border = stroke(button, C.border, 1)
-  local selected = inst("TextLabel", {
-    Size = UDim2.new(1, -38, 1, 0),
-    Position = UDim2.fromOffset(10, 0),
-    BackgroundTransparency = 1,
-    Text = labelFor(current),
-    TextColor3 = C.text,
-    TextSize = 12,
-    Font = Enum.Font.GothamSemibold,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    TextTruncate = Enum.TextTruncate.AtEnd,
-    ZIndex = 8,
-    Parent = button,
-  })
-  local arrow = inst("Frame", {
-    Size = UDim2.fromOffset(16, 16),
-    Position = UDim2.new(1, -24, 0.5, -8),
-    BackgroundTransparency = 1,
-    ZIndex = 8,
-    Parent = button,
-  })
-  for index, angle in ipairs({ 45, -45 }) do
-    local line = inst("Frame", {
-      AnchorPoint = Vector2.new(0.5, 0.5),
-      Position = UDim2.fromOffset(index == 1 and 5 or 10, 8),
-      Size = UDim2.fromOffset(7, 2),
-      Rotation = angle,
-      BackgroundColor3 = C.subtext,
-      BorderSizePixel = 0,
-      ZIndex = 9,
-      Parent = arrow,
-    })
-    corner(line, 1)
-  end
-  local popup, fadeGroup, followConnection, outsideConnection, fadeTween
-  local opening = false
-  local close
-  close = function(immediate)
-    if closeActiveDropdown == close then closeActiveDropdown = nil end
-    if followConnection then
-      safeDisconnect(followConnection); untrackConn(followConnection)
-      followConnection = nil
-    end
-    if outsideConnection then
-      safeDisconnect(outsideConnection); untrackConn(outsideConnection)
-      outsideConnection = nil
-    end
-    local oldPopup, oldGroup = popup, fadeGroup; popup, fadeGroup = nil, nil
-    safeCancel(fadeTween); fadeTween = nil
-    if oldPopup then
-      if immediate == true or not oldGroup or not oldGroup.Parent then
-        oldPopup:Destroy()
-      else
-        twPlay(oldGroup, 0.18, { GroupTransparency = 1 }, EASE_SINE, DIR_OUT)
-        task.delay(0.18, function()
-          if oldPopup.Parent then oldPopup:Destroy() end
-        end)
-      end
-    end
-    if arrow.Parent then twPlay(arrow, 0.18, { Rotation = 0 }, EASE_OUT, DIR_OUT) end
-    if border.Parent then twPlay(border, 0.18, { Color = C.border }, EASE_OUT, DIR_OUT) end
-  end
-  local function open()
-    if opening then return end
-    if closeActiveDropdown then closeActiveDropdown() end
-    if not screenGui or not screenGui.Parent or not button.Parent or #options == 0 then return end
-    opening = true; local owner = screenGui
-    local scale = math.max(button.AbsoluteSize.Y / 28, 0.1); local rowHeight, gap, padding = 32 * scale, 3 * scale, 4 * scale
-    local contentHeight = #options * (rowHeight + gap) + padding * 2; local desiredHeight = math.min(#options, definition.maxVisible or 4) * (rowHeight + gap) + padding * 2
-    if parent:IsA("ScrollingFrame") then
-      local cam = workspace.CurrentCamera; local view = cam and cam.ViewportSize or Vector2.new(1920, 1080)
-      local available = view.Y - f.AbsolutePosition.Y - f.AbsoluteSize.Y - 10 * scale; local need = math.max(0, desiredHeight - available)
-      local room = math.max(0, button.AbsolutePosition.Y - parent.AbsolutePosition.Y - 4 * scale); local shift = math.min(need, room)
-      if shift > 0 then
-        local uiScale = math.max(responsiveScale and responsiveScale.Scale or 1, 0.01); parent.CanvasPosition = Vector2.new(parent.CanvasPosition.X, parent.CanvasPosition.Y + shift / uiScale)
-        RunService.Heartbeat:Wait()
-      end
-    end
-    opening = false
-    if screenGui ~= owner or not owner.Parent or not button.Parent or not UIState.panelOpen then return end
-    popup = inst("ScreenGui", {
-      Name = "ExodusDropdown",
-      ResetOnSpawn = false,
-      IgnoreGuiInset = true,
-      DisplayOrder = screenGui.DisplayOrder + 1,
-      ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-      Parent = screenGui.Parent,
-    })
-    local popupRef = popup
-    fadeGroup = inst("CanvasGroup", {
-      Size = UDim2.fromOffset(button.AbsoluteSize.X, 0),
-      BackgroundTransparency = 1,
-      GroupTransparency = 1,
-      ZIndex = 2,
-      Parent = popup,
-    })
-    local group = fadeGroup; corner(group, 9 * scale)
-    local popupOutline = stroke(group, C.accent, 1.5); popupOutline.Transparency = 0
-    local list = inst("ScrollingFrame", {
-      Size = UDim2.fromScale(1, 1),
-      BackgroundColor3 = C.card,
-      BackgroundTransparency = 0.02,
-      BorderSizePixel = 0,
-      Active = true,
-      CanvasSize = UDim2.fromOffset(0, contentHeight),
-      ScrollBarThickness = 5,
-      ScrollBarImageColor3 = C.accent,
-      ScrollingDirection = Enum.ScrollingDirection.Y,
-      ClipsDescendants = true,
-      ZIndex = 3,
-      Parent = group,
-    })
-    corner(list, 9 * scale)
-    for index, option in ipairs(options) do
-      local row = inst("TextButton", {
-        Size = UDim2.new(1, -2 * padding - 5, 0, rowHeight),
-        Position = UDim2.fromOffset(padding, padding + (index - 1) * (rowHeight + gap)),
-        BackgroundColor3 = C.accent,
-        BackgroundTransparency = option.value == current and 0.25 or 1,
-        BorderSizePixel = 0,
-        Text = option.label,
-        TextColor3 = option.value == current and C.text or C.subtext,
-        TextSize = math.max(10, 12 * scale),
-        Font = Enum.Font.GothamSemibold,
-        TextTruncate = Enum.TextTruncate.AtEnd,
-        AutoButtonColor = false,
-        ZIndex = 4,
-        Parent = list,
-      })
-      corner(row, 7 * scale)
-      row.MouseEnter:Connect(function()
-        if popup ~= popupRef then return end
-        if current ~= option.value then twPlay(row, 0.15, { BackgroundTransparency = 0.7 }, EASE_SINE, DIR_OUT) end
-      end)
-      row.MouseLeave:Connect(function()
-        if popup ~= popupRef then return end
-        if current ~= option.value then twPlay(row, 0.15, { BackgroundTransparency = 1 }, EASE_SINE, DIR_OUT) end
-      end)
-      row.Activated:Connect(function()
-        if popup ~= popupRef then return end
-        if current ~= option.value and setConfigValue(definition.key, option.value) then current = option.value; selected.Text = labelFor(current) end
-        close()
-      end)
-    end
-    local function updatePosition()
-      if not popup or not popup.Parent or not button.Parent or not UIState.panelOpen then close(); return end
-      local ancestor = button
-      while ancestor and ancestor ~= screenGui do
-        if ancestor:IsA("GuiObject") and not ancestor.Visible then close(); return end
-        ancestor = ancestor.Parent
-      end
-      if ancestor ~= screenGui then close(); return end
-      local pos, size = button.AbsolutePosition, button.AbsoluteSize; local parentPos, parentSize = parent.AbsolutePosition, parent.AbsoluteSize
-      if pos.Y + size.Y <= parentPos.Y or pos.Y >= parentPos.Y + parentSize.Y then close(); return end
-      local screen = workspace.CurrentCamera; local view = screen and screen.ViewportSize or Vector2.new(1920, 1080)
-      local margin, space = 6 * scale, 5 * scale; local cardBottom = pos.Y + size.Y
-      local below = math.max(0, view.Y - cardBottom - margin - space); local height = math.max(0, math.min(desiredHeight, below))
-      local x = math.clamp(pos.X, margin, math.max(margin, view.X - size.X - margin)); group.AnchorPoint = Vector2.new(0, 0)
-      group.Position = UDim2.fromOffset(x, cardBottom + space); return height, size.X
-    end
-    outsideConnection = trackConn(UIS.InputBegan:Connect(function(input)
-      if popup ~= popupRef then return end
-      if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-      local point = input.Position; local bp, bs = button.AbsolutePosition, button.AbsoluteSize
-      local gp, gs = group.AbsolutePosition, group.AbsoluteSize; local onButton = point.X >= bp.X and point.X <= bp.X + bs.X and point.Y >= bp.Y and point.Y <= bp.Y + bs.Y
-      local onList = point.X >= gp.X and point.X <= gp.X + gs.X and point.Y >= gp.Y and point.Y <= gp.Y + gs.Y
-      if not onButton and not onList then close() end
-    end))
-    closeActiveDropdown = close; local height, width = updatePosition()
-    if not popup then return end
-    group.Size = UDim2.fromOffset(width, height); fadeTween = twPlay(group, 0.18, { GroupTransparency = 0 }, EASE_SINE, DIR_OUT)
-    twPlay(arrow, 0.2, { Rotation = 180 }, EASE_OUT, DIR_OUT); twPlay(border, 0.2, { Color = C.accent }, EASE_OUT, DIR_OUT)
-    followConnection = trackConn(RunService.Heartbeat:Connect(function()
-      local nextHeight, nextWidth = updatePosition()
-      if popup and nextHeight then
-        local oldHeight = list:GetAttribute("TargetHeight"); local oldWidth = list:GetAttribute("TargetWidth")
-        if oldHeight ~= nextHeight or oldWidth ~= nextWidth then
-          list:SetAttribute("TargetHeight", nextHeight); list:SetAttribute("TargetWidth", nextWidth)
-          group.Size = UDim2.fromOffset(nextWidth, nextHeight)
-        end
-      end
-    end))
-    list:SetAttribute("TargetHeight", height); list:SetAttribute("TargetWidth", width)
-  end
-  trackConn(button.Activated:Connect(function()
-    if popup then close() else open() end
-  end))
-  return nextCardY(yPos, RATE_CARD_H)
-end
-local function createSegmented(yPos, parent, definition)
-  local options = definition.options or {}; local card = cardFrame(yPos, RATE_CARD_H, parent)
-  cardLabel(optionInfo(definition), card)
-  local track = inst("Frame", {
-    Size = UDim2.new(1, -20, 0, 30),
-    Position = UDim2.fromOffset(10, 28),
-    BackgroundColor3 = C.inputBg,
-    BorderSizePixel = 0,
-    ZIndex = 7,
-    Parent = card,
-  })
-  corner(track, 9); stroke(track, C.border, 1)
-  local thumb = inst("Frame", {
-    Size = UDim2.new(1 / #options, -4, 1, -4),
-    BackgroundColor3 = C.accent,
-    BorderSizePixel = 0,
-    ZIndex = 8,
-    Parent = track,
-  })
-  corner(thumb, 7); local buttons = {}
-  local function paint(animated)
-    local current = Utils.getConfigValue(definition.key)
-    for index, option in ipairs(options) do
-      local active = current == option.value
-      if active then
-        twPlay(thumb, animated and 0.25 or 0, {
-          Position = UDim2.new((index - 1) / #options, 2, 0, 2),
-          BackgroundColor3 = index == 1 and C.accent or C.accentPink,
-        }, EASE_OUT, DIR_OUT)
-      end
-      twPlay(buttons[index], animated and 0.18 or 0, { TextColor3 = active and C.text or C.subtext }, EASE_SINE, DIR_INOUT)
-    end
-  end
-  for index, option in ipairs(options) do
-    local button = inst("TextButton", {
-      Size = UDim2.new(1 / #options, 0, 1, 0),
-      Position = UDim2.new((index - 1) / #options, 0, 0, 0),
-      BackgroundTransparency = 1,
-      Text = option.label,
-      TextColor3 = C.subtext,
-      TextSize = 13,
-      Font = Enum.Font.GothamBold,
-      ZIndex = 9,
-      Parent = track,
-    })
-    buttons[index] = button
-    trackConn(button.Activated:Connect(function()
-      if setConfigValue(definition.key, option.value) then paint(true) end
-    end))
-  end
-  paint(false); return nextCardY(yPos, RATE_CARD_H), card
-end
-local function createRateSelector(yPos, parent, definition)
-  local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig()
-  config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.3917)
-  config.MS = Utils.normalizeSpamRate(config.MS, 33)
-  config.SpamRateMode = (config.SpamRateMode == "Auto" or config.SpamRateMode == "CPF" or config.SpamRateMode == "MS") and config.SpamRateMode or "CPS"
-  Utils.setConfig({
-    CPS = config.CPS,
-    CPF = config.CPF,
-    MS = config.MS,
-    SpamRateMode = config.SpamRateMode,
-  })
-  cardLabel(optionInfo(definition or "Spam Rate"), f); local currentMode = config.SpamRateMode
-  local modeTrack = inst("Frame", {
-    Size = UDim2.new(0, 128, 0, 28),
-    Position = UDim2.new(0, 10, 0, 29),
-    BackgroundColor3 = C.inputBg,
-    BackgroundTransparency = 0.05,
-    BorderSizePixel = 0,
-    ZIndex = 7,
-    Parent = f,
-  })
-  corner(modeTrack, 999); stroke(modeTrack, C.border, 1)
-  local modes = { "CPS", "CPF", "MS", "Auto" }; local modeColors = { CPS = C.accent, CPF = C.accentPink, MS = Color3.fromRGB(234, 179, 8), Auto = C.autoMode }
-  local function modePosition(mode) return UDim2.new(0, (table.find(modes, mode) - 1) * 32 + 2, 0.5, -12) end
-  local modeThumb = inst("Frame", {
-    Size = UDim2.new(0, 28, 0, 24),
-    Position = modePosition(currentMode),
-    BackgroundColor3 = modeColors[currentMode],
-    BorderSizePixel = 0,
-    ZIndex = 8,
-    Parent = modeTrack,
-  })
-  corner(modeThumb, 999); stroke(modeThumb, C.text, 1)
-  local modeButtons = {}
-  for index, mode in ipairs(modes) do
-    local button = inst("TextButton", {
-      Size = UDim2.new(0, 32, 1, 0),
-      Position = UDim2.new(0, (index - 1) * 32, 0, 0),
-      BackgroundTransparency = 1,
-      Text = mode,
-      TextColor3 = mode == currentMode and C.text or C.subtext,
-      TextSize = 12,
-      Font = Enum.Font.GothamBold,
-      ZIndex = 9,
-      Parent = modeTrack,
-    })
-    modeButtons[mode] = button
-  end
-  local inputBox = inst("TextBox", {
-    Size = UDim2.new(0, 54, 0, 28),
-    Position = UDim2.new(1, -64, 0, 29),
-    BackgroundColor3 = C.inputBg,
-    BackgroundTransparency = 0.1,
-    Text = currentMode == "Auto" and "Auto" or tostring(config[currentMode]),
-    TextEditable = currentMode ~= "Auto",
-    PlaceholderText = "Rate",
-    ClearTextOnFocus = false,
-    TextColor3 = C.text,
-    TextSize = 13,
-    Font = Enum.Font.GothamBold,
-    ZIndex = 7,
-    Parent = f,
-  })
-  corner(inputBox, 8); local inputStroke = stroke(inputBox, C.border, 1)
-  local function paintRateMode(animated)
-    local targetPosition = modePosition(currentMode); local duration = animated and 0.32 or 0
-    twPlay(modeThumb, duration, {
-      Position = targetPosition,
-      BackgroundColor3 = modeColors[currentMode],
-    }, EASE_OUT, DIR_OUT)
-    for mode, button in pairs(modeButtons) do
-      twPlay(button, animated and 0.2 or 0, {
-        TextColor3 = mode == currentMode and C.text or C.subtext,
-      }, EASE_SINE, DIR_INOUT)
-    end
-  end
-  local function selectRateMode(mode)
-    if not modeColors[mode] or currentMode == mode then return end
-    currentMode = mode; config.SpamRateMode = mode
-    inputBox.TextEditable = mode ~= "Auto"; inputBox.Text = mode == "Auto" and "Auto" or tostring(config[mode])
-    setConfigValue("SpamRateMode", mode); paintRateMode(true)
-  end
-  for mode, button in pairs(modeButtons) do
-    trackConn(button.Activated:Connect(function() selectRateMode(mode) end))
-  end
-  trackConn(inputBox.Focused:Connect(function() twPlay(inputStroke, 0.15, { Color = C.accent }) end))
-  trackConn(inputBox.FocusLost:Connect(function()
-    twPlay(inputStroke, 0.15, { Color = C.border })
-    if currentMode == "Auto" then inputBox.Text = "Auto"; return end
-    local value = tonumber(inputBox.Text); local key = currentMode
-    local fallback = config[key]; local normalized = Utils.normalizeSpamRate(value, fallback)
-    config[key] = normalized; setConfigValue(key, normalized)
-    inputBox.Text = tostring(normalized)
-  end))
-  return nextCardY(yPos, RATE_CARD_H)
-end
-local function createKeybindSelector(yPos, parent, definition)
-  return createActionShortcutCard(definition or "Stop Functions", yPos, parent, "Keybind", function()
-    setSpam(false)
-    if type(Controls.onPanic) == "function" then Controls.onPanic() end
-  end)
-end
-local statusToggleCallbacks = {
-  MiniSpamVisible = showMini,
-  ManualSpamEnabled = function(enabled)
-    if not enabled then setSpam(false) end
-  end,
-}
-
 local function togglePanel()
   if not configPanel or not configPanel.Parent or not floatingButton or not floatingButton.Parent then return end
   UIState.panelOpen = not UIState.panelOpen; safeCancel(UIState.panelTween)
   safeCancel(UIState.btnTween)
+  if uiKit then uiKit.dismiss() end
+  if pageController then pageController.suspend() end
   if UIState.panelOpen then
     if not configPanel.Visible then configPanel.GroupTransparency = 1; configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97) end
-    configPanel.Visible = true; UIState.panelTween = twPlay(configPanel, 0.5, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
-    UIState.btnTween = twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN)
+    configPanel.Visible = true; UIState.panelTween = twPlay(configPanel, "panel", { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 })
+    UIState.btnTween = twPlay(floatingButton, "control", { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) })
   else
-    UIState.panelTween = twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97), GroupTransparency = 1 }, EASE_OUT, DIR_IN)
-    UIState.btnTween =
-      twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE) }, EASE_OUT, DIR_OUT)
+    UIState.panelTween = twPlay(configPanel, "panel", { Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97), GroupTransparency = 1 })
+    UIState.btnTween = twPlay(floatingButton, "control", { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE) })
     if UIState.panelTween then
       local conn
       conn = trackConn(UIState.panelTween.Completed:Connect(function()
@@ -1784,6 +774,7 @@ local function togglePanel()
 end
 local function restoreAfterReloadFailure(message)
   if not configPanel or not configPanel.Parent then return end
+  if uiKit then uiKit.resume() end
   for object, properties in pairs(fadeRestore) do
     if object.Parent then
       for key, value in pairs(properties) do
@@ -1798,8 +789,8 @@ local function restoreAfterReloadFailure(message)
     floatingButton.Size = UDim2.new(0, 42, 0, 42); floatingButton.BackgroundTransparency = 1
     floatingButton.TextTransparency = 1
   end
-  twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
-  if floatingButton and floatingButton.Parent then twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN) end
+  twPlay(configPanel, "panel", { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 })
+  if floatingButton and floatingButton.Parent then twPlay(floatingButton, "control", { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }) end
   local config = Utils.getConfig()
   if not UIState.desktop then
     showClashBall(config.ClashBallVisible == true); showParryBall(config.ParryBallVisible == true)
@@ -1841,7 +832,7 @@ local function fadeGuiTree(root, tweens, duration)
         end
         fadeRestore[object] = original
       end
-      local tween = twPlay(object, duration, props, EASE_OUT, DIR_IN)
+      local tween = twPlay(object, duration, props)
       if tween then tweens[#tweens + 1] = tween end
     end
   end
@@ -1853,23 +844,21 @@ local function fadeOutForReplacement(preserveUpdate)
   end
   if not screenGui or not screenGui.Parent then return end
   UIState.closing = true; fadeDone = false
+  if pageController then pageController.suspend() end
+  if uiKit then uiKit.suspend() end
+  if shellMotion then
+    shellMotion.cancelAll(function(object) return preserveUpdate ~= false and object:GetAttribute("ExodusNotificationKey") == "update" end)
+  end
   fadeEvent = Instance.new("BindableEvent"); safeCancel(UIState.panelTween)
   safeCancel(UIState.btnTween); safeCancel(UIState.miniTween)
-  safeCancel(UIState.toastTween)
-  for _, tween in ipairs(UIState.pageTweens) do
-    safeCancel(tween)
-  end
-  for _, tween in ipairs(flowingTweens) do
-    safeCancel(tween)
-  end
-  local tweens = {}; fadeGuiTree(screenGui, tweens, 0.26)
-  fadeGuiTree(informationGui, tweens, 0.26)
+  safeCancel(UIState.toastTween); local tweens = {}
+  fadeGuiTree(screenGui, tweens, "panel"); fadeGuiTree(informationGui, tweens, "panel")
   if persistentLayer and persistentLayer.Parent then
     for _, card in ipairs(persistentLayer:GetChildren()) do
       local key = card:GetAttribute("ExodusNotificationKey")
       if key ~= "update" or preserveUpdate == false then
         if key then safeCancel(persistentTweens[key]); persistentTweens[key] = nil end
-        fadeGuiTree(card, tweens, 0.26)
+        fadeGuiTree(card, tweens, "panel")
       end
     end
   end
@@ -1922,21 +911,24 @@ function ExodusUI.setup(deps, preview)
     or type(deps.Utils.version) ~= "function"
     or type(deps.Utils.author) ~= "function"
     or type(deps.UIConfig) ~= "table"
-    or type(deps.UIConfig.panelToggles) ~= "table"
-    or type(deps.UIConfig.panelComponents) ~= "table"
     or type(deps.UIConfig.pages) ~= "table"
     or type(deps.GameInfo) ~= "table"
     or type(deps.AutoSpam) ~= "table"
-    or type(deps.Dumper) ~= "table"
-    or type(deps.Dumper.start) ~= "function"
-    or type(deps.Dumper.isRunning) ~= "function"
+    or type(deps.UIKit) ~= "table"
+    or type(deps.UIPages) ~= "table"
+    or type(deps.UIActions) ~= "table"
+    or type(deps.Runtime) ~= "table"
+    or type(deps.Theme) ~= "table"
   then
-    return false, "missing dependency: Utils, Controls, UIConfig, GameInfo, AutoSpam or Dumper"
+    return false, "missing UI dependency"
   end
   Utils = deps.Utils; UIConfig = deps.UIConfig
   GameInfo = deps.GameInfo; AutoSpam = deps.AutoSpam
-  Dumper = deps.Dumper; Controls = type(deps.Controls) == "table" and deps.Controls or {}
-  local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
+  UIKit, UIPages, UIActions, Runtime = deps.UIKit, deps.UIPages, deps.UIActions, deps.Runtime; CONFIG = deps.Theme.tokens
+  C, GRAD = CONFIG.COLORS, CONFIG.GRADIENT; BTN_SIZE, CLASH_SIZE = CONFIG.BTN_SIZE, CONFIG.CLASH_SIZE
+  OFFSCREEN_X = -CLASH_SIZE - 40; MINI_W, MINI_H = CONFIG.MINI_W, CONFIG.MINI_H
+  PW, PH, TITLE_H, PAD = CONFIG.PANEL_W, CONFIG.PANEL_H, CONFIG.TITLE_H, CONFIG.PAD; PARTICLE_COLORS = CONFIG.PARTICLE_COLORS
+  Controls = deps.Controls; local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
   if type(_G.ExodusUICleanup) == "function" then
     if not preview and type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
     _G.ExodusUICleanup()
@@ -1944,13 +936,14 @@ function ExodusUI.setup(deps, preview)
     local old = playerGui:FindFirstChild("ExodusUISystem")
     if old then old:Destroy() end
   end
+  shellScope = Runtime.scope(); shellMotion = Runtime.motion(shellScope)
   UIState.panelOpen = false; UIState.spamOn = false
   UIState.clashBallOn = false; UIState.closing = false
   UIState.desktop = Utils.getConfigValue("ForcePCUI") == true or UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil
-  UIState.btnTween = nil; shortcutLabels = {}
-  _G.ExodusUIRestore = restoreAfterReloadFailure; persistentLayerForPlayer()
-  _G.ExodusUICleanup = cleanupUI; _G.ExodusUIFadeOut = fadeOutForReplacement
-  _G.ExodusShowPersistentNotification = showPersistentNotification; _G.ExodusClearPersistentNotification = clearPersistentNotification
+  UIState.btnTween = nil; _G.ExodusUIRestore = restoreAfterReloadFailure
+  persistentLayerForPlayer(); _G.ExodusUICleanup = cleanupUI
+  _G.ExodusUIFadeOut = fadeOutForReplacement; _G.ExodusShowPersistentNotification = showPersistentNotification
+  _G.ExodusClearPersistentNotification = clearPersistentNotification
   screenGui = inst("ScreenGui", {
     Name = "ExodusUISystem",
     DisplayOrder = 100,
@@ -1958,6 +951,15 @@ function ExodusUI.setup(deps, preview)
     IgnoreGuiInset = true,
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = playerGui,
+  })
+  uiKit = UIKit.create({
+    parent = screenGui,
+    read = Utils.getConfigValue,
+    write = setConfigValue,
+    observe = Utils.observeConfig,
+    notify = showToast,
+    onCapture = function(active) UIState.keyCapture = active end,
+    onOutline = function(gradient) outlineGradients[gradient] = true end,
   })
   animateOutlines(); responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
   local function updateResponsiveScale()
@@ -2007,17 +1009,22 @@ function ExodusUI.setup(deps, preview)
       shown = visible
       if activeTween then activeTween:Cancel() end
       if visible then label.Visible = true end
-      local transition = TweenService:Create(label, TweenInfo.new(0.2, EASE_OUT, DIR_OUT), {
+      local transition = twPlay(label, "control", {
         BackgroundTransparency = visible and 0.2 or 1,
         TextTransparency = visible and 0 or 1,
       })
       activeTween = transition
-      transition.Completed:Connect(function(playbackState)
-        if activeTween ~= transition then return end
-        activeTween = nil
-        if playbackState == Enum.PlaybackState.Completed and not shown then label.Visible = false end
-      end)
-      transition:Play()
+      if transition then
+        local connection
+        connection = trackConn(transition.Completed:Connect(function(playbackState)
+          safeDisconnect(connection); untrackConn(connection)
+          if activeTween ~= transition then return end
+          activeTween = nil
+          if playbackState == Enum.PlaybackState.Completed and not shown then label.Visible = false end
+        end))
+      elseif not shown then
+        label.Visible = false
+      end
     end
   end
   local distanceLabel = inst("TextLabel", {
@@ -2174,8 +1181,7 @@ function ExodusUI.setup(deps, preview)
   floatingButtonStroke.Transparency = 1
   task.defer(function()
     if not floatingButton or not floatingButton.Parent then return end
-    twPlay(floatingButton, 0.75, { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE) }, EASE_OUT, DIR_OUT)
-    twPlay(floatingButtonStroke, 0.75, { Transparency = 0 }, EASE_OUT, DIR_OUT)
+    twPlay(floatingButton, "panel", { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE) }); twPlay(floatingButtonStroke, "panel", { Transparency = 0 })
   end)
   local config = Utils.getConfig(); local clashX = config.ClashBallX or 14
   local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
@@ -2228,12 +1234,10 @@ function ExodusUI.setup(deps, preview)
     if UIState.btnIsDragging() then return end
     togglePanel()
   end))
-  makeDraggable(clashBall, clashBall, function()
+  local isClashDragging = makeDraggable(clashBall, clashBall, function()
     setConfigValue("ClashBallX", clashBall.Position.X.Offset); setConfigValue("ClashBallY", clashBall.Position.Y.Offset)
   end)
-  trackConn(clashBall.Activated:Connect(function()
-    setClashBall(not UIState.clashBallOn); syncAutoSpamToggle()
-  end))
+  trackConn(clashBall.Activated:Connect(function() setClashBall(not UIState.clashBallOn) end))
   local darkX = config.DarkBallX or 14; local darkY = config.DarkBallY or (viewport().Y / 2 + CLASH_SIZE / 2 + 8)
   darkBall = inst("TextButton", {
     Name = "ExodusDarkBall",
@@ -2481,8 +1485,8 @@ function ExodusUI.setup(deps, preview)
     Parent = titleBar,
   })
   corner(minimizeButton, 8)
-  trackConn(minimizeButton.MouseEnter:Connect(function() twPlay(minimizeButton, 0.12, { BackgroundTransparency = 0 }) end))
-  trackConn(minimizeButton.MouseLeave:Connect(function() twPlay(minimizeButton, 0.12, { BackgroundTransparency = 0.3 }) end))
+  trackConn(minimizeButton.MouseEnter:Connect(function() twPlay(minimizeButton, "feedback", { BackgroundTransparency = 0 }) end))
+  trackConn(minimizeButton.MouseLeave:Connect(function() twPlay(minimizeButton, "feedback", { BackgroundTransparency = 0.3 }) end))
   trackConn(minimizeButton.Activated:Connect(function()
     if UIState.panelOpen then togglePanel() end
   end))
@@ -2499,44 +1503,7 @@ function ExodusUI.setup(deps, preview)
     ZIndex = 9,
     Parent = titleBar,
   })
-  corner(settingsButton, 8); local pageGroups = {}
-  for index = 1, 6 do
-    pageGroups[index] = inst("CanvasGroup", {
-      Name = "Page" .. index,
-      Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
-      Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
-      BackgroundTransparency = 1,
-      GroupTransparency = index == 1 and 0 or 1,
-      Visible = index == 1,
-      ClipsDescendants = true,
-      ZIndex = 6,
-      Parent = configPanel,
-    })
-  end
-  colLeft = inst("ScrollingFrame", {
-    Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-    Position = UDim2.new(0, 0, 0, 0),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    ScrollBarThickness = 2,
-    CanvasSize = UDim2.new(0, 0, 0, 0),
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    ZIndex = 6,
-    Parent = pageGroups[1],
-  })
-  colRight = inst("ScrollingFrame", {
-    Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-    Position = UDim2.new(0, COL_W + GAP, 0, 0),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    Active = true,
-    ScrollingDirection = Enum.ScrollingDirection.Y,
-    ScrollBarThickness = 4,
-    ScrollBarImageColor3 = C.accent,
-    CanvasSize = UDim2.new(0, 0, 0, 0),
-    ZIndex = 6,
-    Parent = pageGroups[1],
-  })
+  corner(settingsButton, 8)
   killBtn = inst("TextButton", {
     Size = UDim2.new(0, 124, 0, 26),
     Position = UDim2.new(1, -PAD - 124, 1, -PAD - 26),
@@ -2554,476 +1521,6 @@ function ExodusUI.setup(deps, preview)
   reloadButton = makeBtn("Reload", 0, 0, 124, 26, configPanel, C.btnBlue); reloadButton.Name = "ReloadHub"
   reloadButton.Position = UDim2.new(1, -PAD - 256, 1, -PAD - 26); reloadButton.TextSize = 11
   trackConn(reloadButton.Activated:Connect(function() animateClose("reload") end))
-  cardLabel("Combat", colLeft); local yL = 26
-  local toggleCallbacks = {
-    AutoParry = paintParryBall,
-    ParryBallVisible = showParryBall,
-    AutoSpam = function(value)
-      setClashBall(value, true); paintClashBall()
-    end,
-    ClashBallVisible = showClashBall,
-  }
-
-  local shortcutByConfig = { AutoParry = "ParryKeybind", AutoSpam = "ClashKeybind" }
-  for _, definition in ipairs(UIConfig.panelToggles) do
-    if definition.kind == "toggle" and not (UIState.desktop and definition.mobileOnly) then
-      yL = createToggleCard(definition, definition.key, yL, colLeft, toggleCallbacks[definition.key], shortcutByConfig[definition.key])
-    end
-  end
-  colLeft.CanvasSize = UDim2.new(0, 0, 0, yL); cardLabel("Spam", colRight)
-  local yR = 26
-  local manualSpamVisual
-  local components = {
-    section = function(yPos, parent, definition)
-      cardLabel(definition.title, parent, yPos + 5); return yPos + 28
-    end,
-    rate_selector = createRateSelector,
-    dropdown = createDropdown,
-    segmented = createSegmented,
-    scroll = function(yPos, parent, definition) return createScrollCard(definition, yPos, parent) end,
-    keybind_selector = createKeybindSelector,
-    toggle = function(yPos, parent, definition)
-      return createToggleCard(definition, definition.key, yPos, parent, toggleCallbacks[definition.key], definition.shortcutKey)
-    end,
-    off_on = function(yPos, parent, definition)
-      local configKey
-      if not UIState.desktop then configKey = definition.mobileKey end
-      local nextY, card, visual = createStatusToggleCard(definition, yPos, parent, {
-        configKey = configKey,
-        getState = UIState.desktop and function() return Utils.isManualSpamActive() end or nil,
-        shortcutKey = UIState.desktop and (definition.shortcutKey or "SpamKeybind") or nil,
-        rightAligned = UIState.desktop,
-        togglePosition = true,
-        onToggle = UIState.desktop and function(requested)
-          if Utils.getConfigValue("ManualSpamMode") == "Hold" then return Utils.isManualSpamActive() end
-          setSpam(requested); return requested
-        end or statusToggleCallbacks[configKey],
-        toastLabel = UIState.desktop and definition.title or definition.mobileToast,
-      })
-      if UIState.desktop then manualSpamVisual = visual end
-      return nextY, card
-    end,
-  }
-
-  for _, definition in ipairs(UIConfig.panelComponents) do
-    local createComponent = components[definition.kind]
-    if
-      createComponent
-      and not (UIState.desktop and definition.mobileOnly)
-      and not (not UIState.desktop and definition.desktopOnly)
-      and (definition.kind ~= "keybind_selector" or UIState.desktop)
-    then
-      yR = createComponent(yR, colRight, definition)
-    end
-  end
-  colRight.CanvasSize = UDim2.fromOffset(0, yR + CARD_GAP); colRight.CanvasPosition = Vector2.zero
-  local settingsLeft = inst("ScrollingFrame", {
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    CanvasSize = UDim2.new(),
-    ScrollBarThickness = 2,
-    BorderSizePixel = 0,
-    Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-    Position = UDim2.new(0, 0, 0, 0),
-    BackgroundTransparency = 1,
-    Visible = true,
-    ZIndex = 6,
-    Parent = pageGroups[2],
-  })
-  local settingsRight = inst("ScrollingFrame", {
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    CanvasSize = UDim2.new(),
-    ScrollBarThickness = 2,
-    BorderSizePixel = 0,
-    Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-    Position = UDim2.new(0, COL_W + GAP, 0, 0),
-    BackgroundTransparency = 1,
-    Visible = true,
-    ZIndex = 6,
-    Parent = pageGroups[2],
-  })
-  local utilities = inst("ScrollingFrame", {
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    CanvasSize = UDim2.new(),
-    ScrollBarThickness = 2,
-    BorderSizePixel = 0,
-    Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-    Position = UDim2.new(0, 0, 0, 0),
-    BackgroundTransparency = 1,
-    Visible = true,
-    ZIndex = 6,
-    Parent = pageGroups[3],
-  })
-  local autosLeft = inst("ScrollingFrame", {
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    CanvasSize = UDim2.new(),
-    ScrollBarThickness = 2,
-    BorderSizePixel = 0,
-    Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-    Position = UDim2.new(0, 0, 0, 0),
-    BackgroundTransparency = 1,
-    ZIndex = 6,
-    Parent = pageGroups[4],
-  })
-  local autosRight = inst("ScrollingFrame", {
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    CanvasSize = UDim2.new(),
-    ScrollBarThickness = 2,
-    BorderSizePixel = 0,
-    Size = UDim2.new(0, COL_W, 0, CONTENT_H),
-    Position = UDim2.new(0, COL_W + GAP, 0, 0),
-    BackgroundTransparency = 1,
-    Visible = true,
-    ZIndex = 6,
-    Parent = pageGroups[4],
-  })
-  local indeedWidth = math.min(360, PW - PAD * 2); local indeedCardWidth = 298
-  local indeedContent = inst("ScrollingFrame", {
-    Name = "IndeedContent",
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    CanvasSize = UDim2.new(),
-    ScrollBarThickness = 2,
-    BorderSizePixel = 0,
-    Size = UDim2.new(0, indeedWidth, 0, CONTENT_H),
-    Position = UDim2.new(0.5, -indeedWidth / 2, 0, 0),
-    BackgroundTransparency = 1,
-    ZIndex = 6,
-    Parent = pageGroups[5],
-  })
-  local function runDumper()
-    if Dumper.isRunning() then
-      if showPersistentNotification then showPersistentNotification("Dumping...", "dumper", "info") end
-      return
-    end
-    if showPersistentNotification then showPersistentNotification("Dumping...", "dumper", "info") end
-    local accepted, reason = Dumper.start({
-      onStatus = function(message)
-        if showPersistentNotification then showPersistentNotification(tostring(message), "dumper", "info") end
-      end,
-      onProgress = function(processed, total)
-        if showPersistentNotification then showPersistentNotification(("Dumping... %d/%d"):format(processed, total), "dumper", "info") end
-      end,
-      onComplete = function()
-        if showPersistentNotification then showPersistentNotification("Dumping completed.", "dumper", "success", 2.2) end
-      end,
-      onCanceled = function()
-        if showPersistentNotification then showPersistentNotification("Dumping canceled.", "dumper", "warning", 1.5) end
-      end,
-      onError = function(message)
-        warn("[Exodus Dumper] " .. tostring(message))
-        if showPersistentNotification then showPersistentNotification("Dumper failed. Check the console.", "dumper", "critical", 2.5) end
-      end,
-    })
-    if not accepted then
-      warn("[Exodus Dumper] " .. tostring(reason))
-      if showPersistentNotification then showPersistentNotification("Dumper is already running.", "dumper", "warning", 2.0) end
-    end
-  end
-  local indeedY = 5; local indeedPage = UIConfig.pages.indeed
-  local indeedRows, indeedParents = {}, {}
-  local function renderIndeedComponent(definition, yPos)
-    if definition.kind == "click" then
-      return createClickCard(definition, yPos, indeedContent, runDumper, indeedCardWidth)
-    elseif definition.kind == "toggle" then
-      return createToggleCard(definition, definition.key, yPos, indeedContent, function(enabled)
-        if type(Controls.onUniversalToggle) == "function" then Controls.onUniversalToggle(definition.feature, enabled) end
-      end, nil, indeedCardWidth)
-    elseif definition.kind == "scroll" then
-      return createScrollCard(definition, yPos, indeedContent, function(value)
-        if type(Controls.onUniversalValue) == "function" then Controls.onUniversalValue(definition.feature, value) end
-      end, indeedCardWidth)
-    end
-    return yPos
-  end
-  if type(indeedPage) == "table" and type(indeedPage.sections) == "table" then
-    for _, section in ipairs(indeedPage.sections) do
-      local label = cardLabel(section.title or "Controls", indeedContent, indeedY); indeedRows[#indeedRows + 1] = { root = label, span = 24 }
-      indeedY += 24
-      for _, definition in ipairs(section.components or {}) do
-        local nextY, card = renderIndeedComponent(definition, indeedY)
-        if card then
-          local row = { root = card, span = nextY - indeedY, parentKey = definition.parentKey }; indeedRows[#indeedRows + 1] = row
-          if definition.key then indeedParents[definition.key] = row end
-        end
-        indeedY = nextY
-      end
-      indeedRows[#indeedRows + 1] = { span = CARD_GAP }; indeedY += CARD_GAP
-    end
-  end
-  for _, row in ipairs(indeedRows) do
-    if row.parentKey and row.root and indeedParents[row.parentKey] then
-      local parentRow = indeedParents[row.parentKey]; parentRow.baseHeight = parentRow.baseHeight or parentRow.root.Size.Y.Offset
-      parentRow.children = parentRow.children or {}; local childOffset = 0
-      for _, child in ipairs(parentRow.children) do
-        childOffset += child.root.Size.Y.Offset + 5
-      end
-      row.root.Parent = parentRow.root; row.root.Position = UDim2.fromOffset(6, parentRow.baseHeight + childOffset)
-      row.root.Size = UDim2.new(1, -12, 0, row.root.Size.Y.Offset); row.root.BackgroundTransparency = 0.45
-      local scale = row.root:FindFirstChild("CardScale")
-      if scale then scale.Scale = 1; scale:SetAttribute("BaseScale", 1) end
-      parentRow.root.ClipsDescendants = true; parentRow.children[#parentRow.children + 1] = row
-    end
-  end
-  local indeedInitialized = false
-  local function refreshIndeedChildren()
-    local config = Utils.getConfig(); local y = 5
-    local duration = indeedInitialized and 0.28 or 0
-    for _, row in ipairs(indeedRows) do
-      if not row.parentKey then
-        local extra = 0
-        if row.children then
-          for _, child in ipairs(row.children) do
-            extra += child.root.Size.Y.Offset + 5
-          end
-          local expanded = config[row.children[1].parentKey] == true
-          twPlay(row.root, duration, {
-            Size = UDim2.new(row.root.Size.X.Scale, row.root.Size.X.Offset, 0, row.baseHeight + (expanded and extra or 0)),
-          }, EASE_OUT, DIR_OUT)
-          if expanded then extra *= CARD_SCALE else extra = 0 end
-        end
-        if row.root then
-          row.root.Visible = true; local pos = row.root.Position
-          twPlay(row.root, duration, { Position = UDim2.new(pos.X.Scale, pos.X.Offset, 0, y) }, EASE_OUT, DIR_OUT)
-        end
-        y += row.span + extra
-      end
-    end
-    indeedContent.CanvasSize = UDim2.fromOffset(0, y + CARD_GAP); indeedInitialized = true
-  end
-  refreshIndeedChildren(); cardLabel("Automatic Abilities", autosLeft)
-  cardLabel("Quick Controls", autosRight)
-  local darkYPos, darkCard = createStatusToggleCard("Auto Dark", 26, autosLeft, {
-    configKey = "AutoDark",
-    shortcutKey = UIState.desktop and "DarkKeybind" or nil,
-    rightAligned = UIState.desktop,
-    onToggle = function(value)
-      paintDarkBall(value)
-      if type(Controls.onAutoDarkChanged) == "function" then Controls.onAutoDarkChanged() end
-    end,
-    toastLabel = "Auto Dark",
-  })
-  local fierceYPos, fierceCard = createStatusToggleCard("Auto Fierce", darkYPos, autosLeft, { configKey = "AutoFierce", toastLabel = "Auto Fierce" })
-  local jumpYPos, jumpCard = createStatusToggleCard("Auto Jump", fierceYPos, autosLeft, {
-    configKey = "AutoJump",
-    shortcutKey = UIState.desktop and "JumpKeybind" or nil,
-    rightAligned = UIState.desktop,
-    onToggle = function(value)
-      paintJumpBall(value)
-      if type(Controls.onAutoJumpChanged) == "function" then Controls.onAutoJumpChanged() end
-    end,
-    toastLabel = "Auto Jump",
-  })
-  local upDashYPos, autoUpDashCard = createStatusToggleCard("Auto Dash (clash)", jumpYPos, autosLeft, {
-    configKey = "AutoClashUpDash",
-    toastLabel = "Auto Dash (clash)",
-  })
-  local miniDarkCard, miniJumpCard, upDashCard
-  if UIState.desktop then
-    upDashYPos, upDashCard = createActionShortcutCard("Up Dash", 26, autosRight, "UpDashKeybind", function()
-      if type(Controls.onUpDash) == "function" then Controls.onUpDash() end
-      if showToast then showToast("Up Dash") end
-    end)
-  else
-    local miniDarkY
-    miniDarkY, miniDarkCard = createToggleCard({
-      title = "Mini Dark UI",
-      description = "Exibe o controle de Auto Dark na tela.",
-    }, "DarkBallVisible", 26, autosRight, showDarkBall)
-    local miniJumpY
-    miniJumpY, miniJumpCard = createToggleCard({
-      title = "Mini Auto Jump",
-      description = "Exibe o controle de Auto Jump na tela.",
-    }, "JumpBallVisible", miniDarkY, autosRight, showJumpBall)
-    local miniUpDashY
-    miniUpDashY, upDashCard = createToggleCard({
-      title = "Mini Up Dash",
-      description = "Exibe o botão de Up Dash na tela.",
-    }, "UpDashBallVisible", miniJumpY, autosRight, showUpDashBall)
-  end
-  cardLabel("Parry & Camera", settingsLeft); cardLabel("Clash Indicators", settingsRight)
-  local parryYPos = createParryTimingCard(26, settingsLeft); createCameraSensitivityCard(parryYPos, settingsLeft)
-  local travelYPos = createToggleCard("Clash Distance", "ClashDistanceVisible", 26, settingsRight)
-  local gateYPos = createToggleCard("Ball travel time", "ClashTravelTimeVisible", travelYPos, settingsRight); createToggleCard("AutoSpam Gates", "ClashGateInfoVisible", gateYPos, settingsRight)
-  local function updateAbilityVisibility(enabled)
-    for _, card in pairs({ darkCard, miniDarkCard, jumpCard, miniJumpCard, upDashCard, fierceCard, autoUpDashCard }) do
-      if card then card.Visible = enabled end
-    end
-    darkBall.Visible, upDashBall.Visible = enabled and not UIState.desktop, enabled and not UIState.desktop
-  end
-  updateAbilityVisibility(GameInfo.areAbilitiesEnabled()); trackConn(GameInfo.observeAbilityMode(updateAbilityVisibility))
-  local antiConnection
-  local antiGeneration = 0; cardLabel("Utilities", utilities)
-  local utilitiesY = 26
-  utilitiesY = createStatusToggleCard("Anti AFK", utilitiesY, utilities, {
-    onToggle = function(enabled)
-      if not enabled then
-        antiGeneration += 1
-        if antiConnection then
-          antiConnection:Disconnect(); untrackConn(antiConnection)
-          antiConnection = nil
-        end
-        return false
-      end
-      local player = Utils.getLocalPlayer(); local ok, virtualUser = pcall(game.GetService, game, "VirtualUser")
-      if not player then Utils.recordError("AntiAFK", "Player unavailable"); return false end
-      local function pulse()
-        local inputOk, err = pcall(function()
-          if not ok or not virtualUser then error("VirtualUser unavailable") end
-          virtualUser:CaptureController(); virtualUser:ClickButton2(Vector2.new(0, 0))
-        end)
-        if not inputOk then
-          local fallback, fallbackErr = pcall(function()
-            local vim = game:GetService("VirtualInputManager"); vim:SendMouseButtonEvent(0, 0, 1, true, game, 0)
-            vim:SendMouseButtonEvent(0, 0, 1, false, game, 0)
-          end)
-          if not fallback then Utils.recordError("AntiAFK", tostring(err) .. " | " .. tostring(fallbackErr)) end
-        end
-      end
-      antiConnection = trackConn(player.Idled:Connect(pulse)); antiGeneration += 1
-      local generation = antiGeneration
-      task.spawn(function()
-        while generation == antiGeneration and screenGui and screenGui.Parent and Utils.isActive() do
-          task.wait(20)
-          if generation == antiGeneration and screenGui and screenGui.Parent and Utils.isActive() then pulse() end
-        end
-      end)
-      return true
-    end,
-    toastLabel = "Anti AFK",
-  })
-  local spinActive, spinGeneration, spinButtons = nil, 0, {}; local spinModes = { { "Sword", "SwordCrate" }, { "Emote", "EmoteCrate" }, { "Explosion", "FinisherCrate" } }
-  local function paintSpin()
-    for _, mode in ipairs(spinModes) do
-      if spinButtons[mode[2]] then
-        spinButtons[mode[2]](spinActive == mode[2])
-      end
-    end
-  end
-  for index, mode in ipairs(spinModes) do
-    local crate = mode[2]
-    local setSpinVisual
-    utilitiesY, _, setSpinVisual = createStatusToggleCard(mode[1], utilitiesY, utilities, {
-      getState = function() return spinActive == crate end,
-      onToggle = function(enabled)
-        spinGeneration += 1
-        if enabled then spinActive = crate elseif spinActive == crate then spinActive = nil end
-        paintSpin()
-        if not enabled then return false end
-        local generation = spinGeneration
-        task.spawn(function()
-          local network = GameInfo.createCrateNetwork()
-          if generation ~= spinGeneration or spinActive ~= crate then return end
-          while generation == spinGeneration and spinActive == crate and screenGui and screenGui.Parent and Utils.isActive() do
-            local sent = GameInfo.spinCrate(network, crate, function() return generation == spinGeneration and spinActive == crate end)
-            if not sent then break end
-            task.wait(0.3)
-          end
-        end)
-        return true
-      end,
-      toastLabel = mode[1],
-    })
-    spinButtons[crate] = setSpinVisual
-  end
-  utilities.CanvasSize = UDim2.fromOffset(0, utilitiesY + CARD_GAP); utilities.CanvasPosition = Vector2.zero
-  local CONFIG_PAGE = 6; local configWidth = math.min(300, PW - PAD * 2)
-  local hubSettings = inst("ScrollingFrame", {
-    Name = "HubSettings",
-    AutomaticCanvasSize = Enum.AutomaticSize.Y,
-    Size = UDim2.new(0, configWidth, 0, CONTENT_H),
-    Position = UDim2.new(0.5, -configWidth / 2, 0, 0),
-    BackgroundTransparency = 1,
-    BorderSizePixel = 0,
-    ScrollBarThickness = 2,
-    CanvasSize = UDim2.new(),
-    Parent = pageGroups[CONFIG_PAGE],
-    ZIndex = 6,
-  })
-  local notificationKey = UIState.desktop and "DesktopNotifications" or "MobileNotifications"
-  local hubY = createToggleCard({
-    title = "Notifications",
-  }, notificationKey, 4, hubSettings)
-  hubY = createToggleCard(
-    {
-      title = "Modo PC",
-      description = "Pré-visualiza a interface de PC. Desative para voltar ao modo automático.",
-    },
-    "ForcePCUI",
-    hubY,
-    hubSettings,
-    function()
-      local currentGui, scroll = screenGui, hubSettings.CanvasPosition
-      if UIState.manualHoldInput then UIState.manualHoldInput = nil; setSpam(false) end
-      task.defer(function()
-        if screenGui ~= currentGui or not currentGui.Parent or UIState.closing then return end
-        local ok, reason = ExodusUI.setup(deps, { scroll = scroll })
-        if not ok then warn("[Exodus] Falha ao atualizar interface: " .. tostring(reason)) end
-      end)
-    end
-  )
-  hubY = createClickCard(
-    {
-      title = "Resetar personagem",
-      description = "Reinicia seu personagem na partida.",
-    },
-    hubY,
-    hubSettings,
-    function()
-      local character = Players.LocalPlayer and Players.LocalPlayer.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-      if humanoid and humanoid.Health > 0 then humanoid.Health = 0 elseif showToast then showToast("Personagem indisponível", true) end
-    end
-  )
-  hubY = createClickCard({ title = "Rejoin", description = "Reconecta ao servidor atual." }, hubY, hubSettings, function()
-    if type(Controls.onRejoin) == "function" then Controls.onRejoin() end
-  end)
-  hubY = createClickCard(
-    { title = "Server Hop", description = "Busca vagas com ping informado de até 100 ms; prioriza o menor." },
-    hubY,
-    hubSettings,
-    function()
-      if type(Controls.onServerHop) == "function" then Controls.onServerHop() end
-    end
-  )
-  local resetCard = cardFrame(hubY, CARD_H, hubSettings); local resetButton = makeBtn("Reset settings", 10, 9, 0, 30, resetCard, C.redDark)
-  resetButton.Name = "ResetSettings"; resetButton.Size = UDim2.new(1, -20, 0, 30)
-  local resetPending = false
-  trackConn(resetButton.Activated:Connect(function()
-    if not resetPending then
-      resetPending = true; resetButton.Text = "Tap again to confirm"
-      task.delay(3, function()
-        if resetButton.Parent and resetPending then resetPending = false; resetButton.Text = "Reset settings" end
-      end)
-      return
-    end
-    resetPending = false; local ok, result = pcall(Utils.resetConfig)
-    if not ok or not result then
-      showToast("Reset failed", true); warn("[Exodus] Reset settings: " .. tostring(result))
-      resetButton.Text = "Reset settings"; return
-    end
-    task.defer(function()
-      if not screenGui or not screenGui.Parent then return end
-      local rebuilt, detail = ExodusUI.setup(deps)
-      if rebuilt then togglePanel() else warn("[Exodus] Reset UI: " .. tostring(detail)) end
-    end)
-  end))
-  hubSettings.CanvasSize = UDim2.fromOffset(0, nextCardY(hubY, CARD_H)); local page = preview and CONFIG_PAGE or 1
-  local settingsReturnPage = 1
-  if preview then
-    for index, group in ipairs(pageGroups) do
-      group.Visible = index == CONFIG_PAGE; group.GroupTransparency = index == CONFIG_PAGE and 0 or 1
-    end
-    if typeof(preview.scroll) == "Vector2" then hubSettings.CanvasPosition = preview.scroll end
-  end
-  local pageInputShield = inst("TextButton", {
-    Name = "PageInputShield",
-    Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
-    Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
-    BackgroundTransparency = 1,
-    Text = "",
-    AutoButtonColor = false,
-    Visible = false,
-    ZIndex = 20,
-    Parent = configPanel,
-  })
   local previous = inst("TextButton", {
     Name = "PreviousPage",
     Size = UDim2.new(0, 32, 0, 26),
@@ -3061,173 +1558,95 @@ function ExodusUI.setup(deps, preview)
     Parent = configPanel,
   })
   corner(previous, 6); corner(nextPage, 6)
-  local pageNames = { "Main", "Settings", "Utilities", "Automatic", "Indeed", "Config" }; local NORMAL_PAGE_COUNT = CONFIG_PAGE - 1
-  local function updateNavigation()
-    if page == CONFIG_PAGE then
-      pageLabel.Text = "Config"; previous.Visible = false
-      nextPage.Visible = false; return
-    end
-    pageLabel.Text = tostring(page) .. "/" .. tostring(NORMAL_PAGE_COUNT) .. " " .. pageNames[page]; previous.Visible = true
-    nextPage.Visible = true; previous.TextTransparency = page == 1 and 0.7 or 0
-    nextPage.TextTransparency = page == NORMAL_PAGE_COUNT and 0.7 or 0; previous.AutoButtonColor = page > 1
-    nextPage.AutoButtonColor = page < NORMAL_PAGE_COUNT
-  end
-  updateNavigation()
-  local function changePage(direction)
-    if page == CONFIG_PAGE then return end
-    local target = math.clamp(page + direction, 1, NORMAL_PAGE_COUNT)
-    if target == page then return end
-    page = target; UIState.pageGeneration += 1
-    local generation = UIState.pageGeneration
-    if page == 3 then utilities.CanvasPosition = Vector2.zero end
-    for _, tween in ipairs(UIState.pageTweens) do
-      safeCancel(tween)
-    end
-    UIState.pageTweens = {}; pageInputShield.Visible = true
-    updateNavigation(); local tweens = {}
-    for index, group in ipairs(pageGroups) do
-      if index == page then
-        if not group.Visible then
-          group.Position = UDim2.new(0, PAD + 20 * direction, 0, TITLE_H + PAD); group.GroupTransparency = 1
-          group.Visible = true
-        end
-        local incoming = twPlay(group, 0.32, {
-          Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
-          GroupTransparency = 0,
-        }, EASE_OUT, DIR_INOUT)
-        if incoming then tweens[#tweens + 1] = incoming; UIState.pageTweens[#UIState.pageTweens + 1] = incoming end
-      elseif group.Visible then
-        local outgoing = twPlay(group, 0.32, {
-          Position = UDim2.new(0, PAD - 20 * direction, 0, TITLE_H + PAD),
-          GroupTransparency = 1,
-        }, EASE_OUT, DIR_INOUT)
-        if outgoing then tweens[#tweens + 1] = outgoing; UIState.pageTweens[#UIState.pageTweens + 1] = outgoing end
-      end
-    end
-    watchTweens(tweens, function()
-      if generation ~= UIState.pageGeneration or not pageInputShield.Parent then return end
-      for index, group in ipairs(pageGroups) do
-        group.Visible = index == page; group.GroupTransparency = index == page and 0 or 1
-        group.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
-      end
-      UIState.pageTweens = {}; pageInputShield.Visible = false
+  local actions
+  local rebuildQueued = false
+  local function rebuild(reset)
+    if rebuildQueued then return end
+    rebuildQueued = true; local owner = screenGui
+    local wasOpen = UIState.panelOpen; local snapshot = pageController and pageController.snapshot()
+    task.defer(function()
+      if screenGui ~= owner or not owner.Parent or UIState.closing then return end
+      local ok, reason = ExodusUI.setup(deps, { snapshot = not reset and snapshot or nil, open = wasOpen })
+      if not ok then warn("[Exodus] Falha ao atualizar interface: " .. tostring(reason)) end
     end)
   end
-  local function openConfigPage()
-    settingsReturnPage = page; page = CONFIG_PAGE
-    UIState.pageGeneration += 1; local generation = UIState.pageGeneration
-    local group = pageGroups[CONFIG_PAGE]; local outgoing = pageGroups[settingsReturnPage]
-    group.Position = UDim2.new(0, PAD + 18, 0, TITLE_H + PAD); group.GroupTransparency = 1
-    group.Visible = true; local tweens = {}
-    local incoming = twPlay(group, 0.32, {
-      Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
-      GroupTransparency = 0,
-    }, EASE_OUT, DIR_INOUT)
-    if incoming then tweens[#tweens + 1] = incoming end
-    if outgoing and outgoing ~= group and outgoing.Visible then
-      local exit = twPlay(outgoing, 0.32, {
-        Position = UDim2.new(0, PAD - 18, 0, TITLE_H + PAD),
-        GroupTransparency = 1,
-      }, EASE_OUT, DIR_INOUT)
-      if exit then tweens[#tweens + 1] = exit end
-    end
-    pageInputShield.Visible = true; updateNavigation()
-    watchTweens(tweens, function()
-      if generation ~= UIState.pageGeneration then return end
-      for index, item in ipairs(pageGroups) do
-        item.Visible = index == CONFIG_PAGE; item.GroupTransparency = index == CONFIG_PAGE and 0 or 1
-        item.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
-      end
-      pageInputShield.Visible = false
-    end)
+  actions = UIActions.create({
+    scope = uiKit.scope,
+    controls = Controls,
+    desktop = UIState.desktop,
+    notify = showToast,
+    persistent = showPersistentNotification,
+    setSpam = setSpam,
+    showMini = showMini,
+    rebuild = rebuild,
+  })
+  local function updateNavigation(state)
+    pageLabel.Text = state.utility and state.title or tostring(state.index) .. "/" .. tostring(state.count) .. " " .. state.title; previous.Visible = not state.utility
+    nextPage.Visible = not state.utility; previous.Active = state.index ~= nil and state.index > 1
+    previous.Selectable = previous.Active; nextPage.Active = state.index ~= nil and state.index < state.count
+    nextPage.Selectable = nextPage.Active; previous.TextTransparency = previous.Active and 0 or 0.7
+    nextPage.TextTransparency = nextPage.Active and 0 or 0.7; settingsButton.BackgroundColor3 = state.id == "config" and C.accent or C.btnDark
   end
-  local function closeConfigPage()
-    local target = math.clamp(settingsReturnPage, 1, NORMAL_PAGE_COUNT); local incoming = pageGroups[target]
-    local outgoing = pageGroups[CONFIG_PAGE]; page = target
-    UIState.pageGeneration += 1; local generation = UIState.pageGeneration
-    incoming.Position = UDim2.new(0, PAD - 18, 0, TITLE_H + PAD); incoming.GroupTransparency = 1
-    incoming.Visible = true; local tweens = {}
-    local enter = twPlay(incoming, 0.32, {
-      Position = UDim2.new(0, PAD, 0, TITLE_H + PAD),
-      GroupTransparency = 0,
-    }, EASE_OUT, DIR_INOUT)
-    if enter then tweens[#tweens + 1] = enter end
-    local exit = twPlay(outgoing, 0.32, {
-      Position = UDim2.new(0, PAD + 18, 0, TITLE_H + PAD),
-      GroupTransparency = 1,
-    }, EASE_OUT, DIR_INOUT)
-    if exit then tweens[#tweens + 1] = exit end
-    pageInputShield.Visible = true; updateNavigation()
-    watchTweens(tweens, function()
-      if generation ~= UIState.pageGeneration then return end
-      for index, item in ipairs(pageGroups) do
-        item.Visible = index == page; item.GroupTransparency = index == page and 0 or 1
-        item.Position = UDim2.new(0, PAD, 0, TITLE_H + PAD)
-      end
-      pageInputShield.Visible = false
-    end)
+  pageController = UIPages.create(uiKit, configPanel, UIConfig.pages, {
+    desktop = UIState.desktop,
+    read = Utils.getConfigValue,
+    resolve = actions.resolve,
+    onComponent = actions.attach,
+    abilitiesEnabled = GameInfo.areAbilitiesEnabled,
+    onNavigate = updateNavigation,
+  })
+  local function updateAbilityVisibility()
+    pageController.refresh(); local enabled = GameInfo.areAbilitiesEnabled() and not UIState.desktop
+    darkBall.Visible = enabled; jumpBall.Visible = enabled
+    upDashBall.Visible = enabled
   end
-  trackConn(settingsButton.Activated:Connect(function()
-    if page == CONFIG_PAGE then closeConfigPage() else openConfigPage() end
-  end))
-  trackConn(previous.Activated:Connect(function() changePage(-1) end))
-  trackConn(nextPage.Activated:Connect(function() changePage(1) end))
-  if not UIState.desktop and config.ClashBallVisible then twPlay(clashBall, 0.22, { Position = UDim2.new(0, clashX, 0, clashY) }, EASE_OUT, DIR_OUT) end
-  if not UIState.desktop and config.ParryBallVisible then twPlay(parryBall, 0.22, { Position = UDim2.new(0, parryX, 0, parryY) }, EASE_OUT, DIR_OUT) end
-  if not UIState.desktop and config.DarkBallVisible then twPlay(darkBall, 0.22, { Position = UDim2.new(0, darkX, 0, darkY) }, EASE_OUT, DIR_OUT) end
-  if not UIState.desktop and config.JumpBallVisible then twPlay(jumpBall, 0.22, { Position = UDim2.new(0, jumpX, 0, jumpY) }, EASE_OUT, DIR_OUT) end
-  if not UIState.desktop and config.UpDashBallVisible then twPlay(upDashBall, 0.22, { Position = UDim2.new(0, upDashX, 0, upDashY) }, EASE_OUT, DIR_OUT) end
+  updateAbilityVisibility(); trackConn(GameInfo.observeAbilityMode(updateAbilityVisibility))
+  trackConn(settingsButton.Activated:Connect(function() pageController.toggle("config") end))
+  trackConn(previous.Activated:Connect(function() pageController.step(-1) end))
+  trackConn(nextPage.Activated:Connect(function() pageController.step(1) end))
+  if preview and preview.snapshot then pageController.restore(preview.snapshot) end
+  if not UIState.desktop and config.ClashBallVisible then twPlay(clashBall, "control", { Position = UDim2.new(0, clashX, 0, clashY) }) end
+  if not UIState.desktop and config.ParryBallVisible then twPlay(parryBall, "control", { Position = UDim2.new(0, parryX, 0, parryY) }) end
+  if not UIState.desktop and config.DarkBallVisible then twPlay(darkBall, "control", { Position = UDim2.new(0, darkX, 0, darkY) }) end
+  if not UIState.desktop and config.JumpBallVisible then twPlay(jumpBall, "control", { Position = UDim2.new(0, jumpX, 0, jumpY) }) end
+  if not UIState.desktop and config.UpDashBallVisible then twPlay(upDashBall, "control", { Position = UDim2.new(0, upDashX, 0, upDashY) }) end
   showMini(config.MiniSpamVisible == true)
-  if type(Utils.observeSpam) == "function" then
-    trackConn(Utils.observeSpam(function()
-      local manual = Utils.isManualSpamActive()
-      if UIState.spamOn ~= manual then setSpam(manual) end
-      if manualSpamVisual then manualSpamVisual(manual) end
-    end))
-  end
-  if type(Utils.observeConfig) == "function" then
-    trackConn(Utils.observeConfig(function(changes)
-      for key in pairs(changes) do
-        if indeedParents[key] then refreshIndeedChildren(); break end
-      end
-      for key, label in pairs(shortcutLabels) do
-        if changes[key] ~= nil then label.Text = keyName(changes[key]) end
-      end
-      for key, setVisual in pairs(statusToggleVisuals) do
-        if changes[key] ~= nil then setVisual(changes[key] == true) end
-      end
-      if changes.AutoSpam ~= nil then
-        UIState.clashBallOn = changes.AutoSpam == true; paintClashBall()
-        syncAutoSpamToggle()
-      end
-      if changes.AutoParry ~= nil then
-        paintParryBall(changes.AutoParry == true)
-        if autoParrySetVisual then autoParrySetVisual(changes.AutoParry == true) end
-      end
-      if changes.AutoDark ~= nil then
-        paintDarkBall(changes.AutoDark == true)
-        if autoDarkSetVisual then autoDarkSetVisual(changes.AutoDark == true) end
-      end
-      if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
-      if changes.MiniSpamScale ~= nil or changes.MiniSpamWidth ~= nil or changes.MiniSpamHeight ~= nil then applyMiniScale(Utils.getConfigValue("MiniSpamScale")) end
-      if changes.ManualSpamMode ~= nil then UIState.manualHoldInput = nil; setSpam(false) end
-    end))
-  end
-  local currentGui = screenGui
+  trackConn(Utils.observeSpam(function()
+    local manual = Utils.isManualSpamActive()
+    if UIState.spamOn ~= manual then setSpam(manual) end
+    actions.refreshManual()
+  end))
+  trackConn(Utils.observeConfig(function(changes)
+    if changes.AutoSpam ~= nil then UIState.clashBallOn = changes.AutoSpam == true; paintClashBall() end
+    if changes.AutoParry ~= nil then paintParryBall(changes.AutoParry == true) end
+    if changes.AutoDark ~= nil then paintDarkBall(changes.AutoDark == true) end
+    if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
+    local visibility = {
+      ParryBallVisible = showParryBall,
+      ClashBallVisible = showClashBall,
+      DarkBallVisible = showDarkBall,
+      JumpBallVisible = showJumpBall,
+      UpDashBallVisible = showUpDashBall,
+      MiniSpamVisible = showMini,
+    }
+
+    for key, show in pairs(visibility) do
+      if changes[key] ~= nil then show(changes[key] == true) end
+    end
+    if changes.MiniSpamScale ~= nil or changes.MiniSpamWidth ~= nil or changes.MiniSpamHeight ~= nil then applyMiniScale(Utils.getConfigValue("MiniSpamScale")) end
+    if changes.ManualSpamMode ~= nil then UIState.manualHoldInput = nil; setSpam(false) end
+    actions.refreshManual()
+    if changes.ForcePCUI ~= nil then rebuild() end
+  end))
   local function refreshDevice()
     local desktop = Utils.getConfigValue("ForcePCUI") == true or UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled
-    if desktop == UIState.desktop or UIState.closing then return end
-    task.defer(function()
-      if screenGui ~= currentGui or not currentGui.Parent then return end
-      local wasOpen = UIState.panelOpen; ExodusUI.setup(deps)
-      if wasOpen then togglePanel() end
-    end)
+    if desktop ~= UIState.desktop and not UIState.closing then rebuild() end
   end
   for _, property in ipairs({ "KeyboardEnabled", "MouseEnabled", "TouchEnabled" }) do
     trackConn(UIS:GetPropertyChangedSignal(property):Connect(refreshDevice))
   end
   setSpam(Utils.isManualSpamActive(), true); _G.ExodusUIReturnAfterUpdate = nil
-  if preview then togglePanel() end
+  if preview and preview.open then togglePanel() end
   return true
 end
 
@@ -3238,7 +1657,11 @@ ExodusUI.__contract = {
     UIConfig = "uiconfig",
     GameInfo = "gameinfo",
     AutoSpam = "autospam",
-    Dumper = "dumper",
+    UIKit = "uikit",
+    UIPages = "uipages",
+    UIActions = "uiactions",
+    Runtime = "uiruntime",
+    Theme = "uitheme",
   },
   requiresMethods = {
     Utils = {
@@ -3264,13 +1687,14 @@ ExodusUI.__contract = {
       "observeAbilityMode",
       "getSnapshotAt",
       "isSnapshotValid",
-      "createCrateNetwork",
-      "spinCrate",
     },
     AutoSpam = { "getStatus" },
-    Dumper = { "start", "isRunning" },
+    UIKit = { "create" },
+    UIPages = { "create" },
+    UIActions = { "create" },
+    Runtime = { "scope", "motion" },
   },
-  requiresData = { UIConfig = { "panelToggles", "panelComponents", "pages" } },
+  requiresData = { UIConfig = { "pages" }, Theme = { "tokens" } },
   data = { "Components" },
   provides = { "setup" },
 }

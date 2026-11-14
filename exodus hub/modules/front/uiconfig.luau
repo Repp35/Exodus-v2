@@ -5,114 +5,200 @@ local UIConfig = {}
 
 -- configuration
 local CONFIG = {
-  PANEL_TOGGLES = {
-    {
-      kind = "toggle",
-      title = "Auto Parry",
-      key = "AutoParry",
-    },
-    {
-      kind = "toggle",
-      title = "Auto Spam",
-      key = "AutoSpam",
-    },
-    {
-      kind = "toggle",
-      title = "Mini Parry UI",
-      description = "Exibe um botão compacto para controlar o parry.",
-      key = "ParryBallVisible",
-      mobileOnly = true,
-    },
-    {
-      kind = "toggle",
-      title = "Mini Clash UI",
-      description = "Exibe um botão compacto para controlar o spam.",
-      key = "ClashBallVisible",
-      mobileOnly = true,
-    },
-  },
-  PANEL_COMPONENTS = {
-    {
-      kind = "rate_selector",
-      title = "Spam Rate",
-    },
-    {
-      kind = "dropdown",
-      title = "Click Method",
-      key = "ClickMethod",
-      options = {
-        { value = "Deflect", label = "Standard" },
-        { value = "Direct", label = "Direct remote" },
-        { value = "Input", label = "Key input" },
-      },
-    },
-    {
-      kind = "section",
-      title = "Manual Spam",
-    },
-    {
-      kind = "off_on",
-      title = "Manual Spam",
-      mobileKey = "MiniSpamVisible",
-      desktopKey = "ManualSpamEnabled",
-      shortcutKey = "SpamKeybind",
-      mobileToast = "Manual Spam UI",
-    },
-    {
-      kind = "segmented",
-      title = "Spam activation",
-      key = "ManualSpamMode",
-      options = {
-        { value = "Toggle", label = "Toggle" },
-        { value = "Hold", label = "Hold" },
-      },
-    },
-    {
-      kind = "scroll",
-      title = "Manual Spam Size",
-      key = "MiniSpamScale",
-      compact = true,
-      mobileOnly = true,
-      min = 0.5,
-      max = 2,
-      increment = 0.05,
-      valueName = "x",
-    },
-    {
-      kind = "scroll",
-      title = "Manual Spam Width",
-      key = "MiniSpamWidth",
-      mobileOnly = true,
-      compact = true,
-      min = 0.5,
-      max = 2,
-      increment = 0.05,
-      valueName = "x",
-    },
-    {
-      kind = "scroll",
-      title = "Manual Spam Height",
-      key = "MiniSpamHeight",
-      mobileOnly = true,
-      compact = true,
-      min = 0.5,
-      max = 2,
-      increment = 0.05,
-      valueName = "x",
-    },
-    {
-      kind = "section",
-      title = "Shortcuts",
-      desktopOnly = true,
-    },
-    {
-      kind = "keybind_selector",
-      title = "Stop Functions",
-    },
-  },
   PAGES = {
-    indeed = {
+    {
+      id = "main",
+      title = "Main",
+      columns = 2,
+      sections = {
+        {
+          title = "Combat",
+          column = 1,
+          components = {
+            { kind = "toggle", title = "Auto Parry", key = "AutoParry", shortcutKey = "ParryKeybind" },
+            { kind = "toggle", title = "Auto Spam", key = "AutoSpam", shortcutKey = "ClashKeybind" },
+            {
+              kind = "toggle",
+              title = "Mini Parry UI",
+              description = "Exibe um botão compacto para controlar o parry.",
+              key = "ParryBallVisible",
+              mobileOnly = true,
+            },
+            {
+              kind = "toggle",
+              title = "Mini Clash UI",
+              description = "Exibe um botão compacto para controlar o spam.",
+              key = "ClashBallVisible",
+              mobileOnly = true,
+            },
+          },
+        },
+        {
+          title = "Spam",
+          column = 2,
+          components = {
+            { kind = "rate_selector", title = "Spam Rate" },
+            {
+              kind = "dropdown",
+              title = "Click Method",
+              key = "ClickMethod",
+              options = {
+                { value = "Deflect", label = "Standard" },
+                { value = "Direct", label = "Direct remote" },
+                { value = "Input", label = "Key input" },
+              },
+            },
+          },
+        },
+        {
+          title = "Manual Spam",
+          column = 2,
+          components = {
+            { kind = "toggle", title = "Manual Spam", action = "manualSpam", shortcutKey = "SpamKeybind" },
+            {
+              kind = "segmented",
+              title = "Spam activation",
+              key = "ManualSpamMode",
+              options = { { value = "Toggle", label = "Toggle" }, { value = "Hold", label = "Hold" } },
+            },
+            {
+              kind = "slider",
+              title = "Manual Spam Size",
+              key = "MiniSpamScale",
+              compact = true,
+              mobileOnly = true,
+              min = 0.5,
+              max = 2,
+              increment = 0.05,
+              valueName = "x",
+            },
+            {
+              kind = "slider",
+              title = "Manual Spam Width",
+              key = "MiniSpamWidth",
+              compact = true,
+              mobileOnly = true,
+              min = 0.5,
+              max = 2,
+              increment = 0.05,
+              valueName = "x",
+            },
+            {
+              kind = "slider",
+              title = "Manual Spam Height",
+              key = "MiniSpamHeight",
+              compact = true,
+              mobileOnly = true,
+              min = 0.5,
+              max = 2,
+              increment = 0.05,
+              valueName = "x",
+            },
+          },
+        },
+        {
+          title = "Shortcuts",
+          column = 2,
+          desktopOnly = true,
+          components = {
+            { kind = "button", title = "Stop Functions", action = "panic", shortcutKey = "Keybind" },
+          },
+        },
+      },
+    },
+    {
+      id = "settings",
+      title = "Settings",
+      columns = 2,
+      sections = {
+        {
+          title = "Parry & Camera",
+          column = 1,
+          components = {
+            { kind = "number", title = "AP Lead (%)", key = "AutoParryWindowFactor", min = 0, max = 35, displayScale = 100 },
+            { kind = "number", title = "Camera Sensitivity", key = "CameraSensitivity", min = 0 },
+          },
+        },
+        {
+          title = "Clash Indicators",
+          column = 2,
+          components = {
+            { kind = "toggle", title = "Clash Distance", key = "ClashDistanceVisible" },
+            { kind = "toggle", title = "Ball travel time", key = "ClashTravelTimeVisible" },
+            { kind = "toggle", title = "AutoSpam Gates", key = "ClashGateInfoVisible" },
+          },
+        },
+      },
+    },
+    {
+      id = "utilities",
+      title = "Utilities",
+      columns = 2,
+      sections = {
+        {
+          title = "Utilities",
+          components = {
+            { kind = "toggle", title = "Anti AFK", action = "antiAFK" },
+            { kind = "toggle", title = "Sword", action = "spinSword" },
+            { kind = "toggle", title = "Emote", action = "spinEmote" },
+            { kind = "toggle", title = "Explosion", action = "spinExplosion" },
+          },
+        },
+      },
+    },
+    {
+      id = "automatic",
+      title = "Automatic",
+      columns = 2,
+      sections = {
+        {
+          title = "Automatic Abilities",
+          column = 1,
+          components = {
+            { kind = "toggle", title = "Auto Dark", key = "AutoDark", shortcutKey = "DarkKeybind", abilityOnly = true },
+            { kind = "toggle", title = "Auto Fierce", key = "AutoFierce", abilityOnly = true },
+            { kind = "toggle", title = "Auto Jump", key = "AutoJump", shortcutKey = "JumpKeybind", abilityOnly = true },
+            { kind = "toggle", title = "Auto Dash (clash)", key = "AutoClashUpDash", abilityOnly = true },
+          },
+        },
+        {
+          title = "Quick Controls",
+          column = 2,
+          components = {
+            { kind = "button", title = "Up Dash", action = "upDash", shortcutKey = "UpDashKeybind", desktopOnly = true, abilityOnly = true },
+            {
+              kind = "toggle",
+              title = "Mini Dark UI",
+              description = "Exibe o controle de Auto Dark na tela.",
+              key = "DarkBallVisible",
+              mobileOnly = true,
+              abilityOnly = true,
+            },
+            {
+              kind = "toggle",
+              title = "Mini Auto Jump",
+              description = "Exibe o controle de Auto Jump na tela.",
+              key = "JumpBallVisible",
+              mobileOnly = true,
+              abilityOnly = true,
+            },
+            {
+              kind = "toggle",
+              title = "Mini Up Dash",
+              description = "Exibe o botão de Up Dash na tela.",
+              key = "UpDashBallVisible",
+              mobileOnly = true,
+              abilityOnly = true,
+            },
+          },
+        },
+      },
+    },
+    {
+      id = "indeed",
       title = "Indeed",
+      columns = 1,
+      width = 360,
       sections = {
         {
           title = "Developer Tools",
@@ -176,6 +262,30 @@ local CONFIG = {
               feature = "Invisicam",
             },
             { kind = "toggle", title = "Noclip", description = "Permite atravessar objetos.", key = "UniversalNoclip", feature = "Noclip" },
+          },
+        },
+      },
+    },
+    {
+      id = "config",
+      title = "Config",
+      columns = 1,
+      width = 300,
+      utility = true,
+      sections = {
+        {
+          components = {
+            { kind = "toggle", title = "Notifications", action = "notifications" },
+            {
+              kind = "toggle",
+              title = "Modo PC",
+              description = "Pré-visualiza a interface de PC. Desative para voltar ao modo automático.",
+              key = "ForcePCUI",
+            },
+            { kind = "button", title = "Resetar personagem", description = "Reinicia seu personagem na partida.", action = "resetCharacter" },
+            { kind = "button", title = "Rejoin", description = "Reconecta ao servidor atual.", action = "rejoin" },
+            { kind = "button", title = "Server Hop", description = "Busca vagas com ping informado de até 100 ms; prioriza o menor.", action = "serverHop" },
+            { kind = "button", title = "Reset settings", action = "resetSettings" },
           },
         },
       },
@@ -284,16 +394,10 @@ local CONFIG = {
 }
 
 -- public-api
-UIConfig.panelToggles = CONFIG.PANEL_TOGGLES
-UIConfig.panelComponents = CONFIG.PANEL_COMPONENTS
 UIConfig.pages = CONFIG.PAGES
 UIConfig.__config = CONFIG.SETTINGS
 
 -- contract
-UIConfig.__contract = {
-  provides = {},
-  data = { "panelToggles", "panelComponents", "pages" },
-  requires = {},
-}
+UIConfig.__contract = { provides = {}, data = { "pages" }, requires = {} }
 
 return UIConfig
