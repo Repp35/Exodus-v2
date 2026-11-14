@@ -68,6 +68,7 @@ local persistentTweens = {}
 local persistentGeneration = 0
 local responsiveScale
 local flowingTweens = {}
+local outlineGradients = setmetatable({}, { __mode = "k" })
 local shortcutLabels = {}
 local statusToggleVisuals = {}
 local fadeRestore, fadeEvent, fadeDone = {}, nil, false
@@ -100,9 +101,9 @@ local CONFIG = {
     inputBg = Color3.fromRGB(16, 16, 38),
   },
   GRADIENT = {
-    Color3.fromRGB(56, 189, 248),
-    Color3.fromRGB(139, 92, 246),
-    Color3.fromRGB(236, 72, 153),
+    Color3.fromRGB(178, 215, 255),
+    Color3.fromRGB(227, 198, 255),
+    Color3.fromRGB(178, 215, 255),
   },
   PARTICLE_COLORS = {
     Color3.fromRGB(85, 90, 140),
@@ -167,15 +168,18 @@ local function inst(cls, props, parent)
   return o
 end
 local function corner(obj, r) return inst("UICorner", { CornerRadius = UDim.new(0, r) }, obj) end
-local function stroke(obj, col, th) return inst("UIStroke", { Color = col, Thickness = th or 1 }, obj) end
-local function attachFlow(s)
-  local g = inst("UIGradient", { Rotation = 0 }, s)
-  g.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0, GRAD[1]),
-    ColorSequenceKeypoint.new(0.5, GRAD[2]),
-    ColorSequenceKeypoint.new(1, GRAD[3]),
-  })
-  return g
+local function stroke(obj, col, th)
+  local line = inst("UIStroke", { Color = col, Thickness = th or 1 }, obj)
+  if col == C.accent or col == C.border then
+    local gradient = inst("UIGradient", { Rotation = 0 }, line)
+    gradient.Color = ColorSequence.new({
+      ColorSequenceKeypoint.new(0, GRAD[1]),
+      ColorSequenceKeypoint.new(0.5, GRAD[2]),
+      ColorSequenceKeypoint.new(1, GRAD[3]),
+    })
+    outlineGradients[gradient] = true
+  end
+  return line
 end
 local function twPlay(obj, t, props, style, dir)
   if not obj or obj.Parent == nil then return nil end
@@ -356,9 +360,17 @@ local function makeDraggable(handle, target, onDragEnd, disableOnMobile, coordin
 end
 
 -- visuals
-local function registerFlow(obj)
-  local gradient = attachFlow(obj); local tween = TweenService:Create(gradient, TweenInfo.new(12, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1), { Rotation = 360 })
-  flowingTweens[#flowingTweens + 1] = tween; tween:Play()
+local function animateOutlines()
+  local elapsed = 0
+  trackConn(RunService.Heartbeat:Connect(function(dt)
+    elapsed += dt
+    if elapsed < 0.05 then return end
+    elapsed = 0
+    local offset = Vector2.new(math.sin(os.clock() * 0.14) * 0.35, 0)
+    for gradient in pairs(outlineGradients) do
+      if gradient.Parent then gradient.Offset = offset else outlineGradients[gradient] = nil end
+    end
+  end))
 end
 
 -- floating-controls
@@ -435,8 +447,10 @@ end
 local MINI_W, MINI_H = CONFIG.MINI_W, CONFIG.MINI_H
 local function miniScreenScale() return responsiveScale and responsiveScale.Scale or 1 end
 local function miniLayout(scale)
-  local view, screenScale = viewport(), math.max(miniScreenScale(), 0.01); local width, height = MINI_W * scale, MINI_H * scale
+  local view, screenScale = viewport(), math.max(miniScreenScale(), 0.01)
   local screenWidth, screenHeight = view.X / screenScale, view.Y / screenScale; local config = Utils.getConfig()
+  local width = math.min(MINI_W * scale * (tonumber(config.MiniSpamWidth) or 1), screenWidth)
+  local height = math.min(MINI_H * scale * (tonumber(config.MiniSpamHeight) or 1), screenHeight)
   local x = math.clamp(config.MiniX or (screenWidth - width - 14), 0, math.max(0, screenWidth - width))
   local y = math.clamp(config.MiniY or (screenHeight / 2 - height / 2), 0, math.max(0, screenHeight - height)); return x, y, width, height, screenWidth
 end
@@ -520,6 +534,7 @@ local PARTICLE_COLORS = CONFIG.PARTICLE_COLORS
 -- cleanup
 local function cleanupUI()
   if closeActiveDropdown then closeActiveDropdown() end
+  table.clear(outlineGradients)
   safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
   safeCancel(UIState.miniTween); UIState.miniTween = nil
   UIState.miniGeneration += 1; disconnectUIConnections()
@@ -1217,13 +1232,23 @@ local function createClickCard(option, yPos, parent, onActivate, fixedWidth)
   return nextCardY(yPos, height), f
 end
 local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
-  local _, description = optionInfo(option); local height = description and 88 or 68
-  local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, -112)
+  local title, description = optionInfo(option); local height = option.compact and CARD_H or (description and 88 or 68)
+  local f = cardFrame(yPos, height, parent, fixedWidth)
+  if option.compact then
+    inst("TextLabel", {
+      Size = UDim2.new(1, -78, 0, 18), Position = UDim2.fromOffset(14, 3),
+      BackgroundTransparency = 1, Text = title, TextColor3 = C.text, TextSize = 12,
+      TextTruncate = Enum.TextTruncate.AtEnd, Font = Enum.Font.GothamSemibold,
+      TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7, Parent = f,
+    })
+  else
+    addOptionText(f, option, height, -112)
+  end
   local minValue, maxValue = tonumber(option.min) or 0, tonumber(option.max) or 100; local increment = tonumber(option.increment) or 1
   local current = tonumber(Utils.getConfigValue(option.key)) or minValue
   local valueLabel = inst("TextLabel", {
-    Size = UDim2.fromOffset(92, 18),
-    Position = UDim2.new(1, -106, 0, 7),
+    Size = UDim2.fromOffset(option.compact and 52 or 92, 18),
+    Position = UDim2.new(1, option.compact and -66 or -106, 0, option.compact and 3 or 7),
     BackgroundTransparency = 1,
     TextColor3 = C.text,
     TextSize = 10,
@@ -1234,7 +1259,7 @@ local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
   })
   local track = inst("Frame", {
     Size = UDim2.new(1, -28, 0, 6),
-    Position = UDim2.new(0, 14, 1, -17),
+    Position = UDim2.new(0, 14, 1, option.compact and -12 or -17),
     BackgroundColor3 = C.inputBg,
     BorderSizePixel = 0,
     ZIndex = 8,
@@ -1249,8 +1274,8 @@ local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
   corner(knob, 999); stroke(knob, C.accent, 1)
   local hitbox = inst("TextButton", {
     Name = "ScrollHitbox",
-    Size = UDim2.new(1, 0, 0, 26),
-    Position = UDim2.new(0, 0, 1, -27),
+    Size = UDim2.new(1, 0, 0, option.compact and 22 or 26),
+    Position = UDim2.new(0, 0, 1, option.compact and -22 or -27),
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
     AutoButtonColor = false,
@@ -1901,6 +1926,7 @@ function ExodusUI.setup(deps, preview)
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = playerGui,
   })
+  animateOutlines()
   responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
   local function updateResponsiveScale()
     local size = viewport(); responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
@@ -2113,7 +2139,7 @@ function ExodusUI.setup(deps, preview)
     Parent = screenGui,
   })
   corner(floatingButton, 999); floatingButtonStroke = stroke(floatingButton, C.accent, 2)
-  floatingButtonStroke.Transparency = 1; registerFlow(floatingButtonStroke)
+  floatingButtonStroke.Transparency = 1
   task.defer(function()
     if not floatingButton or not floatingButton.Parent then return end
     twPlay(floatingButton, 0.75, { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE) }, EASE_OUT, DIR_OUT)
@@ -2263,7 +2289,7 @@ function ExodusUI.setup(deps, preview)
     }),
     18
   )
-  registerFlow(stroke(miniGui, C.accent, 1.5))
+  stroke(miniGui, C.accent, 1.5)
   local miniTitleBar = inst("Frame", {
     Size = UDim2.new(1, 0, 0.22, 0),
     BackgroundColor3 = Color3.fromRGB(20, 20, 46),
@@ -2554,7 +2580,6 @@ function ExodusUI.setup(deps, preview)
       and not (not UIState.desktop and definition.desktopOnly)
       and (definition.kind ~= "keybind_selector" or UIState.desktop)
     then
-      if definition.joined then yR -= math.min(3, CARD_GAP) end
       yR = createComponent(yR, colRight, definition)
     end
   end
@@ -3151,7 +3176,9 @@ function ExodusUI.setup(deps, preview)
         if autoDarkSetVisual then autoDarkSetVisual(changes.AutoDark == true) end
       end
       if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
-      if changes.MiniSpamScale ~= nil then applyMiniScale(changes.MiniSpamScale) end
+      if changes.MiniSpamScale ~= nil or changes.MiniSpamWidth ~= nil or changes.MiniSpamHeight ~= nil then
+        applyMiniScale(Utils.getConfigValue("MiniSpamScale"))
+      end
       if changes.ManualSpamMode ~= nil then UIState.manualHoldInput = nil; setSpam(false) end
     end))
   end
