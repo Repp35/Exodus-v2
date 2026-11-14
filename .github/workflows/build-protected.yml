@@ -43,7 +43,6 @@ jobs:
           mkdir -p build-source/security "site/${REVISION}"
 
           cp -R "exodus hub" build-source/
-          python3 "exodus hub/indeed/build_ui.py" --output "build-source/exodus hub/modules/front/library.luau"
           # This standalone diagnostic is not loaded by the hub and is not published.
           rm -rf "build-source/exodus hub/indeed"
 
