@@ -1070,7 +1070,7 @@ local function keyName(value)
 end
 local function makeKeycap(parent, configKey)
   local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 50, 26, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey
-  keycap.Position = UDim2.new(1, -62, 0.5, -13); keycap.TextSize = 11
+  keycap.Position = UDim2.new(1, -126, 0.5, -13); keycap.TextSize = 11
   keycap.TextTruncate = Enum.TextTruncate.AtEnd; keycap.ZIndex = 12
   shortcutLabels[configKey] = keycap
   bindKeyCapture(keycap, function(binding)
@@ -1134,7 +1134,7 @@ local function createToggleCard(option, configKey, yPos, parent, onAfter, shortc
   local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
   local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, UIState.desktop and shortcutKey and -148 or -78)
   local config = Utils.getConfig(); local initial = configKey and config[configKey] == true
-  local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, UIState.desktop and shortcutKey and -120 or -INNER_PAD - 48, 0.5, -15)
+  local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -15)
   if configKey == "UniversalFly" or configKey == "UniversalSpeedEnabled" or configKey == "UniversalGravityEnabled" then statusToggleVisuals[configKey] = setVisual end
   if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey, false, height) end
   if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
@@ -1209,7 +1209,10 @@ local function createStatusToggleCard(option, yPos, parent, options)
     state = value == true; control.Text = offOnText(title, state)
   end
   if configKey then statusToggleVisuals[configKey] = setVisual end
-  if UIState.desktop and options.shortcutKey then makeKeycap(f, options.shortcutKey, options.rightAligned, height) end
+  if UIState.desktop and options.shortcutKey then
+    local keycap = makeKeycap(f, options.shortcutKey)
+    if not options.togglePosition then keycap.Position = UDim2.new(1, -62, 0.5, -13) end
+  end
   addCardHitbox(f, height, function()
     local requested = not readState()
     if configKey and not setConfigValue(configKey, requested) then return end
@@ -1316,8 +1319,11 @@ local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
 end
 local function createActionShortcutCard(option, yPos, parent, configKey, onActivate)
   local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
-  local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, -148)
-  if UIState.desktop and configKey then makeKeycap(f, configKey, false, height) end
+  local f = cardFrame(yPos, height, parent); addOptionText(f, option, height, -88)
+  if UIState.desktop and configKey then
+    local keycap = makeKeycap(f, configKey)
+    keycap.Position = UDim2.new(1, -62, 0.5, -13)
+  end
   addCardHitbox(f, height, function()
     if onActivate then onActivate() end
     if showToast then showToast(title .. " On") end
@@ -2592,8 +2598,9 @@ function ExodusUI.setup(deps, preview)
       local nextY, card, visual = createStatusToggleCard(definition, yPos, parent, {
         configKey = configKey,
         getState = UIState.desktop and function() return Utils.isManualSpamActive() end or nil,
-        shortcutKey = UIState.desktop and definition.shortcutKey or nil,
+        shortcutKey = UIState.desktop and (definition.shortcutKey or "SpamKeybind") or nil,
         rightAligned = UIState.desktop,
+        togglePosition = true,
         onToggle = UIState.desktop and function(requested)
           if Utils.getConfigValue("ManualSpamMode") == "Hold" then return Utils.isManualSpamActive() end
           setSpam(requested); return requested
