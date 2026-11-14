@@ -365,8 +365,7 @@ local function animateOutlines()
   trackConn(RunService.Heartbeat:Connect(function(dt)
     elapsed += dt
     if elapsed < 0.05 then return end
-    elapsed = 0
-    local offset = Vector2.new(math.sin(os.clock() * 0.14) * 0.35, 0)
+    elapsed = 0; local offset = Vector2.new(math.sin(os.clock() * 0.14) * 0.35, 0)
     for gradient in pairs(outlineGradients) do
       if gradient.Parent then gradient.Offset = offset else outlineGradients[gradient] = nil end
     end
@@ -447,11 +446,9 @@ end
 local MINI_W, MINI_H = CONFIG.MINI_W, CONFIG.MINI_H
 local function miniScreenScale() return responsiveScale and responsiveScale.Scale or 1 end
 local function miniLayout(scale)
-  local view, screenScale = viewport(), math.max(miniScreenScale(), 0.01)
-  local screenWidth, screenHeight = view.X / screenScale, view.Y / screenScale; local config = Utils.getConfig()
-  local width = math.min(MINI_W * scale * (tonumber(config.MiniSpamWidth) or 1), screenWidth)
-  local height = math.min(MINI_H * scale * (tonumber(config.MiniSpamHeight) or 1), screenHeight)
-  local x = math.clamp(config.MiniX or (screenWidth - width - 14), 0, math.max(0, screenWidth - width))
+  local view, screenScale = viewport(), math.max(miniScreenScale(), 0.01); local screenWidth, screenHeight = view.X / screenScale, view.Y / screenScale
+  local config = Utils.getConfig(); local width = math.min(MINI_W * scale * (tonumber(config.MiniSpamWidth) or 1), screenWidth)
+  local height = math.min(MINI_H * scale * (tonumber(config.MiniSpamHeight) or 1), screenHeight); local x = math.clamp(config.MiniX or (screenWidth - width - 14), 0, math.max(0, screenWidth - width))
   local y = math.clamp(config.MiniY or (screenHeight / 2 - height / 2), 0, math.max(0, screenHeight - height)); return x, y, width, height, screenWidth
 end
 local function applyMiniScale(value)
@@ -534,12 +531,11 @@ local PARTICLE_COLORS = CONFIG.PARTICLE_COLORS
 -- cleanup
 local function cleanupUI()
   if closeActiveDropdown then closeActiveDropdown() end
-  table.clear(outlineGradients)
-  safeCancel(UIState.panelTween); safeCancel(UIState.btnTween)
-  safeCancel(UIState.miniTween); UIState.miniTween = nil
-  UIState.miniGeneration += 1; disconnectUIConnections()
-  UIState.connections = {}; table.clear(connectionIndexes)
-  UIState.pageGeneration += 1
+  table.clear(outlineGradients); safeCancel(UIState.panelTween)
+  safeCancel(UIState.btnTween); safeCancel(UIState.miniTween)
+  UIState.miniTween = nil; UIState.miniGeneration += 1
+  disconnectUIConnections(); UIState.connections = {}
+  table.clear(connectionIndexes); UIState.pageGeneration += 1
   for _, tween in ipairs(UIState.pageTweens) do
     safeCancel(tween)
   end
@@ -1236,10 +1232,17 @@ local function createScrollCard(option, yPos, parent, onChange, fixedWidth)
   local f = cardFrame(yPos, height, parent, fixedWidth)
   if option.compact then
     inst("TextLabel", {
-      Size = UDim2.new(1, -78, 0, 18), Position = UDim2.fromOffset(14, 3),
-      BackgroundTransparency = 1, Text = title, TextColor3 = C.text, TextSize = 12,
-      TextTruncate = Enum.TextTruncate.AtEnd, Font = Enum.Font.GothamSemibold,
-      TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 7, Parent = f,
+      Size = UDim2.new(1, -78, 0, 18),
+      Position = UDim2.fromOffset(14, 3),
+      BackgroundTransparency = 1,
+      Text = title,
+      TextColor3 = C.text,
+      TextSize = 12,
+      TextTruncate = Enum.TextTruncate.AtEnd,
+      Font = Enum.Font.GothamSemibold,
+      TextXAlignment = Enum.TextXAlignment.Left,
+      ZIndex = 7,
+      Parent = f,
     })
   else
     addOptionText(f, option, height, -112)
@@ -1926,8 +1929,7 @@ function ExodusUI.setup(deps, preview)
     ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
     Parent = playerGui,
   })
-  animateOutlines()
-  responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
+  animateOutlines(); responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
   local function updateResponsiveScale()
     local size = viewport(); responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
     if miniGui and miniGui.Visible then applyMiniScale(Utils.getConfigValue("MiniSpamScale")) end
@@ -3176,9 +3178,7 @@ function ExodusUI.setup(deps, preview)
         if autoDarkSetVisual then autoDarkSetVisual(changes.AutoDark == true) end
       end
       if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
-      if changes.MiniSpamScale ~= nil or changes.MiniSpamWidth ~= nil or changes.MiniSpamHeight ~= nil then
-        applyMiniScale(Utils.getConfigValue("MiniSpamScale"))
-      end
+      if changes.MiniSpamScale ~= nil or changes.MiniSpamWidth ~= nil or changes.MiniSpamHeight ~= nil then applyMiniScale(Utils.getConfigValue("MiniSpamScale")) end
       if changes.ManualSpamMode ~= nil then UIState.manualHoldInput = nil; setSpam(false) end
     end))
   end
