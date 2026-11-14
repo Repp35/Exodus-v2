@@ -108,6 +108,19 @@ function Runtime.motion(scope, reducedMotion)
     end)
     tween:Play(); return tween
   end
+  function motion.group(object, preset, goals, onComplete)
+    if paused or not scope.alive or not object or not object.Parent then return nil end
+    if goals.GroupTransparency ~= nil then
+      for _, child in ipairs(object:GetChildren()) do
+        if child:IsA("UIStroke") then
+          local base = child:GetAttribute("ExodusBaseTransparency")
+          if base == nil then base = child.Transparency; child:SetAttribute("ExodusBaseTransparency", base) end
+          child.Transparency = base + (1 - base) * object.GroupTransparency; motion.play(child, preset, { Transparency = base + (1 - base) * goals.GroupTransparency })
+        end
+      end
+    end
+    return motion.play(object, preset, goals, onComplete)
+  end
   scope.add(motion.cancelAll); return motion
 end
 

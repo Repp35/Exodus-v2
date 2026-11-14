@@ -39,11 +39,12 @@ function table.freeze(t) return t end
 function math.clamp(x,a,b) return math.max(a,math.min(b,x)) end
 '''
 MOCK = (Path(__file__).parent / 'fixtures/roblox_ui.txt').read_text()
-MODULES = ''.join(module(name) for name in ('uitheme', 'uiruntime', 'uikit', 'uipages', 'uiconfig', 'uiactions', 'ui'))
+MODULES = ''.join(module(name) for name in ('uitheme', 'uiruntime', 'uiicons', 'uikit', 'uipages', 'uiconfig', 'uiactions', 'ui'))
 SETUP = '''
 assert(uitheme.setup())
 assert(uiruntime.setup({Theme=uitheme}))
-assert(uikit.setup({Theme=uitheme,Runtime=uiruntime}))
+assert(uiicons.setup({Theme=uitheme}))
+assert(uikit.setup({Theme=uitheme,Runtime=uiruntime,Icons=uiicons}))
 local config=table.clone(uiconfig.__config.defaults)
 config.UniversalFly=false;config.UniversalFlySpeed=1;config.UniversalSpeedEnabled=false;config.UniversalSpeed=16
 config.UniversalGravityEnabled=false;config.UniversalGravity=196.2
@@ -109,6 +110,113 @@ class UILibraryTests(unittest.TestCase):
         finally:
             LIB.lua_close(state)
 
+    def test_dropdown_stays_below_trigger_and_follows_motion_and_scaling(self):
+        self.run_lua('''
+local kit=newKit()
+local select=kit.Components.dropdown(panel,{key='ClickMethod',choices={'Deflect','Direct'}})
+local trigger=findDescendant(select.Root,'Select')
+select.Root.AbsolutePosition=Vector2.new(100,550);select.Root.AbsoluteSize=Vector2.new(220,64)
+trigger.AbsolutePosition=Vector2.new(110,579);trigger.AbsoluteSize=Vector2.new(200,28)
+click(trigger);local portal=playerGui:FindFirstChild('ExodusDropdown');assert(portal)
+local menu=portal:FindFirstChildOfClass('CanvasGroup')
+assert(menu.Position.Y.Offset==619 and menu.Position.X.Offset==110,'popup overlaps the activating card')
+local border=select.Root:FindFirstChildOfClass('UIStroke');local popupBorder=menu:FindFirstChildOfClass('UIStroke')
+assert(border.Color==popupBorder.Color and border.Thickness==popupBorder.Thickness)
+assert(border:FindFirstChildOfClass('UIGradient') and popupBorder:FindFirstChildOfClass('UIGradient'))
+assert(trigger.Text=='' and findDescendant(trigger,'Selected').Text=='Deflect')
+assert(findDescendant(trigger,'Icon_chevron'):IsA('ImageLabel'))
+select.Root.AbsolutePosition=Vector2.new(140,600);select.Root.AbsoluteSize=Vector2.new(110,32)
+trigger.AbsolutePosition=Vector2.new(145,614.5);trigger.AbsoluteSize=Vector2.new(100,14)
+game:GetService('RunService').Heartbeat:Fire(0.016)
+assert(menu.Position.Y.Offset==634.5 and menu.Position.X.Offset==145 and menu.Size.X.Offset==100)
+assert(menu.Size.Y.Offset<=720-menu.Position.Y.Offset-6,'popup leaves viewport')
+click(trigger);assert(not playerGui:FindFirstChild('ExodusDropdown'),'trigger must close its own popup')
+kit.destroy();assert(listenerCount()==0)
+''')
+
+    def test_dropdown_scrolls_owner_for_room_without_flipping_above(self):
+        self.run_lua('''
+local kit=newKit();local scroll=Instance.new('ScrollingFrame');scroll.Parent=panel
+scroll.AbsolutePosition=Vector2.new(100,400);scroll.AbsoluteSize=Vector2.new(240,290)
+local select=kit.Components.dropdown(scroll,{choices={'A','B','C','D','E'}})
+select.Root.AbsolutePosition=Vector2.new(100,625);select.Root.AbsoluteSize=Vector2.new(220,64)
+local trigger=findDescendant(select.Root,'Select')
+trigger.AbsolutePosition=Vector2.new(110,654);trigger.AbsoluteSize=Vector2.new(200,28)
+click(trigger);local portal=playerGui:FindFirstChild('ExodusDropdown');assert(portal)
+local menu=portal:FindFirstChildOfClass('CanvasGroup');local shift=scroll.CanvasPosition.Y
+assert(shift>0 and menu.Position.Y.Offset>=689,'opening must not cover its trigger')
+select.Root.AbsolutePosition=Vector2.new(100,625-shift);trigger.AbsolutePosition=Vector2.new(110,654-shift)
+game:GetService('RunService').Heartbeat:Fire(0.016)
+assert(menu.Position.Y.Offset==694-shift and menu.Size.Y.Offset>100)
+assert(menu.Position.Y.Offset>=trigger.AbsolutePosition.Y+trigger.AbsoluteSize.Y)
+kit.destroy();scroll:Destroy();assert(listenerCount()==0)
+''')
+
+    def test_selector_colors_follow_modes_and_custom_choice_colors(self):
+        self.run_lua('''
+local kit=newKit({reducedMotion=true})
+local rate=kit.Components.rate_selector(panel,{title='Rate'})
+local thumb=findDescendant(rate.Root,'Thumb')
+for _, mode in ipairs({'CPS','CPF','MS','Auto'}) do
+ utils.setConfig({SpamRateMode=mode})
+ assert(thumb.BackgroundColor3==uitheme.tokens.SELECTOR_COLORS[mode],'rate mode lost its semantic color')
+end
+local spam=kit.Components.segmented(panel,{key='ManualSpamMode',options={{value='Toggle',label='Toggle'},{value='Hold',label='Hold'}}})
+local toggleColor=findDescendant(spam.Root,'Thumb').BackgroundColor3
+utils.setConfig({ManualSpamMode='Hold'})
+assert(findDescendant(spam.Root,'Thumb').BackgroundColor3==uitheme.tokens.COLORS.hold)
+assert(findDescendant(spam.Root,'Thumb').BackgroundColor3~=toggleColor)
+local custom=Color3.fromRGB(1,2,3)
+local tabs=kit.Components.tabs(panel,{value='custom',choices={{value='custom',label='Custom',color=custom}}})
+assert(findDescendant(tabs.Root,'Thumb').BackgroundColor3==custom)
+kit.destroy()
+''')
+
+    def test_panel_border_fades_with_surface_during_minimize_and_reopen(self):
+        self.run_lua('''
+assert(ui.setup(fullDeps(),{open=true}));flushDeferred()
+local root=playerGui:FindFirstChild('ExodusUISystem');local panel=findDescendant(root,'ExodusPanel')
+local border=panel:FindFirstChildOfClass('UIStroke')
+assert(panel.GroupTransparency==1 and border.Transparency==1,'opening border flashed before surface')
+stepTweens(0.5);assert(panel.GroupTransparency==0.5 and border.Transparency==0.5)
+finishTweens();assert(border.Transparency==0)
+local minimize=findDescendant(root,'MinimizePanel')
+click(minimize);stepTweens(0.5)
+assert(panel.Visible and panel.GroupTransparency==0.5 and border.Transparency==0.5,'border did not fade with panel')
+finishTweens();assert(not panel.Visible and border.Transparency==1)
+click(findDescendant(root,'ExodusFloatingButton'));stepTweens(0.5)
+assert(panel.Visible and panel.GroupTransparency==0.5 and border.Transparency==0.5)
+click(minimize);click(findDescendant(root,'ExodusFloatingButton'));finishTweens()
+assert(panel.Visible and panel.GroupTransparency==0 and border.Transparency==0)
+local co=coroutine.create(function() _G.ExodusUIFadeOut(false) end)
+local ok,err=coroutine.resume(co);assert(ok,err);stepTweens(0.5)
+assert(border.Transparency==0.5,'replacement did not fade the panel border')
+finishTweens();ok,err=coroutine.resume(co);assert(ok,err)
+assert(border.Transparency==1)
+_G.ExodusUICleanup();finishTweens();assert(listenerCount()==0 and activeTweenCount()==0)
+''')
+
+    def test_embedded_png_icons_load_once_without_network(self):
+        expected = (ROOT / 'assets/ui/settings.png').read_bytes()
+        literal = '"' + ''.join(f'\\{byte:03d}' for byte in expected) + '"'
+        revision = re.search(r'VERSION = "([^"]+)"', (ROOT / 'modules/front/uiicons.luau').read_text())[1]
+        self.run_lua('''
+local files, writes={},0
+makefolder=function() end;isfolder=function() return true end
+writefile=function(path,content) files[path]=content;writes=writes+1 end
+getcustomasset=function(path) return 'rbxasset://test/'..path end
+local icon=uiicons.create(panel,'settings')
+assert(icon:IsA('ImageLabel') and icon.Image:find('rbxasset://test/',1,true)==1)
+assert(files['ExodusUIAssets/''' + revision + '''-settings.png']==''' + literal + ''')
+uiicons.create(panel,'settings');assert(writes==1,'icon bytes were written more than once')
+panel:Destroy()
+''')
+
+    def test_hub_has_no_font_icons_or_emojis(self):
+        sources = '\n'.join(p.read_text() for p in (ROOT / 'modules/front').glob('*.luau'))
+        self.assertNotRegex(sources, '[\\U0001F300-\\U0001FAFF\\u2600-\\u27FF\\uFE0F]')
+        self.assertNotIn('▾', sources)
+
     def test_navigation_races_share_one_controller_and_preserve_scroll(self):
         self.run_lua('''
 local kit=newKit()
@@ -143,7 +251,7 @@ assert(writes==0,'mount must not rewrite settings')
 utils.setConfig({AutoParry=false,MiniSpamScale=1.5,ClickMethod='Direct',SpamRateMode='MS',MS=42})
 assert(not toggle.getValue() and slider.getValue()==1.5 and select.getValue()=='Direct')
 assert(rate.getValue()=='MS' and findDescendant(rate.Root,'RateInput').Text=='42')
-assert(findDescendant(select.Root,'Select').Text=='Direct remote ▾')
+assert(findDescendant(select.Root,'Selected').Text=='Direct remote')
 click(findDescendant(toggle.Root,'CardHitbox'));assert(config.AutoParry)
 local before=writes;toggle.setValue(false);assert(writes==before,'setValue must be silent')
 kit.destroy();local value=toggle.getValue();utils.setConfig({AutoParry=true});assert(toggle.getValue()==value)
@@ -184,9 +292,9 @@ kit.destroy()
 local baseline=listenerCount();local kit=newKit();local selected=kit.Components.dropdown(panel,{key='ClickMethod',choices={'Deflect','Direct'}})
 local cap=kit.Components.button(panel,{title='Panic',shortcutKey='Keybind'})
 local trigger=findDescendant(selected.Root,'Select')
-trigger.AbsolutePosition=Vector2.new(100,690)
+trigger.AbsolutePosition=Vector2.new(100,650)
 click(trigger);local portal=playerGui:FindFirstChild('ExodusDropdown');assert(portal)
-local menu=portal:FindFirstChildOfClass('CanvasGroup');assert(menu.Position.Y.Offset<690,'popup should open above near bottom')
+local menu=portal:FindFirstChildOfClass('CanvasGroup');assert(menu.Position.Y.Offset>=678,'popup must stay below the trigger near bottom')
 kit.dismiss();assert(not playerGui:FindFirstChild('ExodusDropdown'))
 click(findDescendant(cap.Root,'Shortcut_Keybind'));game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'Escape'))
 assert(config.Keybind==Enum.KeyCode.F9)

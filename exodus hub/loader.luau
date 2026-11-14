@@ -100,6 +100,7 @@ local CONFIG = {
     { name = "uiconfig", path = "modules/front/uiconfig.luau" },
     { name = "uitheme", path = "modules/front/uitheme.luau" },
     { name = "uiruntime", path = "modules/front/uiruntime.luau" },
+    { name = "uiicons", path = "modules/front/uiicons.luau" },
     { name = "uikit", path = "modules/front/uikit.luau" },
     { name = "uipages", path = "modules/front/uipages.luau" },
     { name = "uiactions", path = "modules/front/uiactions.luau" },

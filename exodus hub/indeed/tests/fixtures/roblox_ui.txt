@@ -38,6 +38,11 @@ function finishTweens()
   end
   error('Tween completion did not settle')
 end
+function stepTweens(alpha)
+  for _, tween in ipairs(allTweens) do
+    if tween.PlaybackState == Enum.PlaybackState.Playing then tween:Step(alpha) end
+  end
+end
 function flushDeferred()
   local copy = deferred
   deferred = {}
@@ -71,7 +76,7 @@ TweenInfo = { new = function(duration,style,direction) return {duration=duration
 function typeof(value) return type(value)=='table' and value.__type or type(value) end
 function warn(...) end
 local methods = {}
-local guiClasses = {Frame=true,CanvasGroup=true,TextButton=true,TextLabel=true,TextBox=true,ScrollingFrame=true}
+local guiClasses = {Frame=true,CanvasGroup=true,TextButton=true,TextLabel=true,TextBox=true,ScrollingFrame=true,ImageLabel=true,ImageButton=true}
 local inputEvents = {Activated=true,MouseEnter=true,MouseLeave=true,InputBegan=true,InputChanged=true,InputEnded=true,Destroying=true,Focused=true,FocusLost=true,Idled=true}
 function methods:IsA(class)
   if self.ClassName == class then return true end
@@ -140,7 +145,7 @@ Instance = { new = function(class)
     _props={ClassName=class,Name=class,Visible=true,Active=true,Selectable=true,Position=UDim2.new(),Size=UDim2.new(),
       AnchorPoint=Vector2.zero,AbsolutePosition=Vector2.new(100,100),AbsoluteSize=Vector2.new(200,28),
       AbsoluteContentSize=Vector2.new(200,80),CanvasPosition=Vector2.zero,BackgroundTransparency=0,
-      TextTransparency=0,TextStrokeTransparency=1,Text='',GroupTransparency=0,ZIndex=1,Scale=1,Rotation=0,
+      TextTransparency=0,ImageTransparency=0,Transparency=0,TextStrokeTransparency=1,Text='',GroupTransparency=0,ZIndex=1,Scale=1,Rotation=0,
     },
   }, instanceMeta)
   if class=='BindableEvent' then object.Event=signal(); object.Fire=function(self) self.Event:Fire() end end
@@ -153,9 +158,16 @@ function UIS:GetFocusedTextBox() return self.focused end
 local heartbeat=signal()
 local tweenService={}
 function tweenService:Create(object,profile,goals)
-  local tween={Completed=signal(),PlaybackState=Enum.PlaybackState.Begin,object=object,profile=profile,goals=goals}
+  local start={}
+  for key in pairs(goals) do start[key]=object[key] end
+  local tween={Completed=signal(),PlaybackState=Enum.PlaybackState.Begin,object=object,profile=profile,goals=goals,start=start}
   allTweens[#allTweens+1]=tween
   function tween:Play() self.PlaybackState=Enum.PlaybackState.Playing end
+  function tween:Step(alpha)
+    for key,value in pairs(self.goals) do
+      if type(value)=='number' and type(self.start[key])=='number' then self.object[key]=self.start[key]+(value-self.start[key])*alpha end
+    end
+  end
   function tween:Cancel()
     if self.PlaybackState==Enum.PlaybackState.Playing then self.PlaybackState=Enum.PlaybackState.Cancelled;self.Completed:Fire(self.PlaybackState) end
   end
