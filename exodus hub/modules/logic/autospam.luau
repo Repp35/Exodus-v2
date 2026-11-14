@@ -253,9 +253,6 @@ local function deactivationReason(state, snapshot, time)
   if not utils.isActive() then return "hub_inactive" end
   if utils.getConfigValue("AutoSpam") ~= true then return "disabled" end
   if gameInfo.getBallFrozen() == true then return "ball_frozen" end
-  if state.departedAt and time >= state.departedAt then
-    if time - state.departedAt > returnTimeout(snapshot, state, time) then return "return_timeout" end
-  end
   local cooldown = cooldownInfo.getDeflectCooldownState()
   if cooldown and cooldown.blocking == true then
     if cooldown.miss == true then return "deflect_miss" end
@@ -355,10 +352,6 @@ local function targetChanged(state, target, time, snapshot, serverTime)
     local matchingReturn = previous == state.departedTo and state.departedAt
     if state.active and state.departedAt then
       local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime)
-      if duration and duration > returnTimeout(snapshot, state, time) then
-        deactivate(state, "return_timeout", time); state.target = target
-        return
-      end
     end
     if not state.active and matchingReturn then armReturn(state, previous, time, snapshot, serverTime) end
     state.departedAt, state.departedServerAt, state.departedTo = nil, nil, nil
