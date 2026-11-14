@@ -33,6 +33,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check UI distribution matches sources
+        run: python3 ui-library/scripts/build.py --check
+
       - name: Generate protected build
         shell: bash
         env:

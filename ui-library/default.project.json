@@ -1,0 +1,10 @@
+{
+  "name": "UILibrary",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "UILibrary": { "$path": "src" }
+    }
+  }
+}
