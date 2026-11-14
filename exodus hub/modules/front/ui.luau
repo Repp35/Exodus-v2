@@ -1743,6 +1743,12 @@ local function createRateSelector(yPos, parent, definition)
   end))
   return nextCardY(yPos, RATE_CARD_H)
 end
+local function createKeybindOnlyCard(title, yPos, parent, configKey)
+  local f = cardFrame(yPos, CARD_H, parent)
+  addOptionText(f, title, CARD_H, -78)
+  makeKeycap(f, configKey)
+  return nextCardY(yPos, CARD_H), f
+end
 local function createKeybindSelector(yPos, parent, definition)
   return createActionShortcutCard(definition or "Stop Functions", yPos, parent, "Keybind", function()
     setSpam(false)
@@ -2614,6 +2620,18 @@ function ExodusUI.setup(deps, preview)
       and (definition.kind ~= "keybind_selector" or UIState.desktop)
     then
       yR = createComponent(yR, colRight, definition)
+    end
+  end
+  if UIState.desktop then
+    for _, shortcut in ipairs({
+      { "Auto Parry Key", "ParryKeybind" },
+      { "Auto Spam Key", "ClashKeybind" },
+      { "Manual Spam Key", "SpamKeybind" },
+      { "Auto Dark Key", "DarkKeybind" },
+      { "Auto Jump Key", "JumpKeybind" },
+      { "Up Dash Key", "UpDashKeybind" },
+    }) do
+      yR = createKeybindOnlyCard(shortcut[1], yR, colRight, shortcut[2])
     end
   end
   colRight.CanvasSize = UDim2.fromOffset(0, yR + CARD_GAP); colRight.CanvasPosition = Vector2.zero
