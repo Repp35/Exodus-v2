@@ -112,8 +112,8 @@ local CONFIG = {
   },
   BTN_SIZE = 56,
   CLASH_SIZE = 64,
-  MINI_W = 120,
-  MINI_H = 90,
+  MINI_W = 112,
+  MINI_H = 96,
   PANEL_W = 540,
   PANEL_H = 380,
   TITLE_H = 50,
@@ -317,7 +317,7 @@ local function bindInput()
 end
 
 -- dragging
-local function makeDraggable(handle, target, onDragEnd, disableOnMobile)
+local function makeDraggable(handle, target, onDragEnd, disableOnMobile, coordinateScale, onDragMove)
   local dragInput, dragOffX, dragOffY = nil, 0, 0; local state, wasDragged, startX, startY = "Idle", false, 0, 0
   local THRESH_SQ = CONFIG.DRAG_THRESHOLD_SQ
   trackConn(handle.InputBegan:Connect(function(input)
@@ -336,12 +336,15 @@ local function makeDraggable(handle, target, onDragEnd, disableOnMobile)
     if state == "Pressed" and (dx * dx + dy * dy) >= THRESH_SQ then state, wasDragged = "Dragging", true end
     if state == "Dragging" then
       local vp, sz = viewport(), target.AbsoluteSize
+      local scale = coordinateScale and coordinateScale() or 1
+      scale = math.max(scale, 0.01)
       target.Position = UDim2.new(
         0,
-        math.clamp(input.Position.X - dragOffX, 0, math.max(0, vp.X - sz.X)),
+        math.clamp((input.Position.X - dragOffX) / scale, 0, math.max(0, (vp.X - sz.X) / scale)),
         0,
-        math.clamp(input.Position.Y - dragOffY, 0, math.max(0, vp.Y - sz.Y))
+        math.clamp((input.Position.Y - dragOffY) / scale, 0, math.max(0, (vp.Y - sz.Y) / scale))
       )
+      if onDragMove then onDragMove() end
     end
   end))
   trackConn(UIS.InputEnded:Connect(function(input)
@@ -431,11 +434,29 @@ local function setJumpBall(v)
   if showToast then showToast("Auto Jump " .. (v and "On" or "Off")) end
 end
 local MINI_W, MINI_H = CONFIG.MINI_W, CONFIG.MINI_H
+local function miniScreenScale() return responsiveScale and responsiveScale.Scale or 1 end
+local function miniLayout(scale)
+  local view, screenScale = viewport(), math.max(miniScreenScale(), 0.01)
+  local width, height = MINI_W * scale, MINI_H * scale
+  local screenWidth, screenHeight = view.X / screenScale, view.Y / screenScale
+  local config = Utils.getConfig()
+  local x = math.clamp(config.MiniX or (screenWidth - width - 14), 0, math.max(0, screenWidth - width))
+  local y = math.clamp(config.MiniY or (screenHeight / 2 - height / 2), 0, math.max(0, screenHeight - height))
+  return x, y, width, height, screenWidth
+end
+local function applyMiniScale(value)
+  if not miniGui or not miniGui.Parent then return end
+  local scale = math.clamp(tonumber(value) or 1, 0.5, 2)
+  local x, y, width, height = miniLayout(scale)
+  twPlay(miniGui, 0.18, { Size = UDim2.fromOffset(width, height) }, EASE_OUT, DIR_OUT)
+  if miniGui.Visible then twPlay(miniGui, 0.18, { Position = UDim2.fromOffset(x, y) }, EASE_OUT, DIR_OUT) end
+end
 local function showMini(v)
   if UIState.desktop then v = false end
   if not miniGui or not miniGui.Parent then return end
-  local config = Utils.getConfig(); local miniX = config.MiniX or (viewport().X - MINI_W - 14)
-  local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2); local hiddenPosition = UDim2.new(0, viewport().X + 30, 0, miniY)
+  local config = Utils.getConfig()
+  local miniX, miniY, _, _, screenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
+  local hiddenPosition = UDim2.new(0, screenWidth + 30, 0, miniY)
   UIState.miniGeneration += 1; local generation = UIState.miniGeneration
   safeCancel(UIState.miniTween)
   if v then
@@ -472,12 +493,12 @@ setSpam = function(v)
   local spamButton = miniGui and miniGui:FindFirstChild("SpamButton")
   if spamButton then
     spamButton.Text = v and "ON" or "OFF"; twPlay(spamButton, 0.25, { BackgroundColor3 = v and C.green or C.red }, EASE_SINE, DIR_INOUT)
-    local shrink = twPlay(spamButton, 0.08, { Size = UDim2.new(1, -18, 0, 46) }, EASE_SINE, DIR_IN)
+    local shrink = twPlay(spamButton, 0.08, { Size = UDim2.new(1, -14, 0.78, -12) }, EASE_SINE, DIR_IN)
     if shrink then
       local connection
       connection = trackConn(shrink.Completed:Connect(function(playbackState)
         safeDisconnect(connection); untrackConn(connection)
-        if playbackState == Enum.PlaybackState.Completed and spamButton.Parent then twPlay(spamButton, 0.15, { Size = UDim2.new(1, -16, 0, 48) }, EASE_SINE, DIR_OUT) end
+        if playbackState == Enum.PlaybackState.Completed and spamButton.Parent then twPlay(spamButton, 0.15, { Size = UDim2.new(1, -12, 0.78, -8) }, EASE_SINE, DIR_OUT) end
       end))
     end
   end
@@ -1877,6 +1898,7 @@ function ExodusUI.setup(deps, preview)
   responsiveScale = inst("UIScale", { Scale = 1, Parent = screenGui })
   local function updateResponsiveScale()
     local size = viewport(); responsiveScale.Scale = math.min(1, math.max(0.1, math.min((size.X - 20) / PW, (size.Y - 20) / PH)))
+    if miniGui and miniGui.Visible then applyMiniScale(Utils.getConfigValue("MiniSpamScale")) end
   end
   updateResponsiveScale(); local currentCamera = workspace.CurrentCamera or Camera
   if currentCamera then trackConn(currentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateResponsiveScale)) end
@@ -2210,13 +2232,14 @@ function ExodusUI.setup(deps, preview)
     pulseBall(ball)
     if showToast then showToast("Up Dash") end
   end)
-  paintJumpBall(config.AutoJump == true); local miniY = config.MiniY or (viewport().Y / 2 - MINI_H / 2)
-  local MINI_OFF_X = viewport().X + 30
+  paintJumpBall(config.AutoJump == true)
+  local _, miniY, miniWidth, miniHeight, miniScreenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
+  local MINI_OFF_X = miniScreenWidth + 30
   miniGui = inst("CanvasGroup", {
     Name = "ExodusSpamMini",
     Visible = false,
     GroupTransparency = 1,
-    Size = UDim2.new(0, MINI_W, 0, MINI_H),
+    Size = UDim2.fromOffset(miniWidth, miniHeight),
     BackgroundColor3 = C.header,
     BorderSizePixel = 0,
     ZIndex = 15,
@@ -2237,7 +2260,7 @@ function ExodusUI.setup(deps, preview)
   )
   registerFlow(stroke(miniGui, C.accent, 1.5))
   local miniTitleBar = inst("Frame", {
-    Size = UDim2.new(1, 0, 0, 26),
+    Size = UDim2.new(1, 0, 0.22, 0),
     BackgroundColor3 = Color3.fromRGB(20, 20, 46),
     BackgroundTransparency = 0.05,
     BorderSizePixel = 0,
@@ -2279,18 +2302,19 @@ function ExodusUI.setup(deps, preview)
   })
   local spamButton = inst("TextButton", {
     Name = "SpamButton",
-    Size = UDim2.new(1, -16, 0, 48),
-    Position = UDim2.new(0, 8, 0, 32),
+    Size = UDim2.new(1, -12, 0.78, -8),
+    Position = UDim2.new(0, 6, 0.22, 3),
     BackgroundColor3 = UIState.spamOn and C.green or C.red,
     BorderSizePixel = 0,
     Text = UIState.spamOn and "ON" or "OFF",
     TextColor3 = Color3.new(1, 1, 1),
-    TextSize = 24,
+    TextScaled = true,
     Font = Enum.Font.GothamBold,
     ZIndex = 16,
     Parent = miniGui,
   })
   corner(spamButton, 10)
+  inst("UITextSizeConstraint", { MaxTextSize = 30, MinTextSize = 12 }, spamButton)
   trackConn(spamButton.Activated:Connect(function()
     if Utils.getConfigValue("ManualSpamMode") ~= "Hold" then setSpam(not UIState.spamOn) end
   end))
@@ -2299,9 +2323,10 @@ function ExodusUI.setup(deps, preview)
     if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then UIState.manualHoldInput = input; setSpam(true) end
   end))
   miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY)
-  makeDraggable(miniTitleBar, miniGui, function()
-    setConfigValue("MiniX", miniGui.Position.X.Offset); setConfigValue("MiniY", miniGui.Position.Y.Offset)
-  end)
+  local function saveMiniPosition()
+    Utils.setConfig({ MiniX = miniGui.Position.X.Offset, MiniY = miniGui.Position.Y.Offset })
+  end
+  makeDraggable(miniTitleBar, miniGui, saveMiniPosition, false, miniScreenScale, saveMiniPosition)
   configPanel = inst("CanvasGroup", {
     Name = "ExodusPanel",
     Size = UDim2.new(0, PW, 0, PH),
@@ -2489,6 +2514,9 @@ function ExodusUI.setup(deps, preview)
     rate_selector = createRateSelector,
     dropdown = createDropdown,
     segmented = createSegmented,
+    scroll = function(yPos, parent, definition)
+      return createScrollCard(definition, yPos, parent)
+    end,
     keybind_selector = createKeybindSelector,
     toggle = function(yPos, parent, definition)
       return createToggleCard(definition, definition.key, yPos, parent, toggleCallbacks[definition.key], definition.shortcutKey)
@@ -2514,7 +2542,7 @@ function ExodusUI.setup(deps, preview)
 
   for _, definition in ipairs(UIConfig.panelComponents) do
     local createComponent = components[definition.kind]
-    if createComponent and (definition.kind ~= "keybind_selector" or UIState.desktop) then
+    if createComponent and not (UIState.desktop and definition.mobileOnly) and (definition.kind ~= "keybind_selector" or UIState.desktop) then
       if definition.joined then yR -= CARD_GAP end
       yR = createComponent(yR, colRight, definition)
     end
@@ -3111,6 +3139,7 @@ function ExodusUI.setup(deps, preview)
         if autoDarkSetVisual then autoDarkSetVisual(changes.AutoDark == true) end
       end
       if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
+      if changes.MiniSpamScale ~= nil then applyMiniScale(changes.MiniSpamScale) end
       if changes.ManualSpamMode ~= nil then UIState.manualHoldInput = nil; setSpam(false) end
     end))
   end
