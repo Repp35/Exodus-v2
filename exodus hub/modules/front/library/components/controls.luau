@@ -33,9 +33,11 @@ function Components.install(context)
   end
   function components.toggle(parent, definition)
     definition = definition or {}; local height = definition.description and Theme.CARD_H + 22 or Theme.CARD_H
+    if definition.expandedDescription and definition.description then height = Theme.CARD_H + 40 end
     local handle = control(parent, definition, height); title(handle, definition, definition.shortcutKey and 120 or 58, height)
     local track =
       inst("Frame", { Size = UDim2.fromOffset(48, 30), Position = UDim2.new(1, -62, 0.5, -15), BackgroundColor3 = C.toggleOff, ZIndex = 8 }, handle.Root)
+    if definition.expandedDescription and definition.description then track.Position = UDim2.new(1, -62, 0, 8) end
     kit.corner(track, Theme.RADIUS.pill); local thumb = inst("Frame", { Size = UDim2.fromOffset(20, 20), BackgroundColor3 = C.text, ZIndex = 9 }, track)
     kit.corner(thumb, Theme.RADIUS.pill); local value = false
     function handle.setValue(nextValue)
@@ -55,7 +57,7 @@ function Components.install(context)
       end
       return false
     end
-    hitbox(handle, handle.activate); shortcut(handle, definition.shortcutKey)
+    hitbox(handle, handle.activate); shortcut(handle, definition.shortcutKey, nil, definition.expandedDescription and definition.description ~= nil)
     if definition.getState then handle.setValue(definition.getState()) else handle.setValue(read(definition.key, definition.value)) end
     bind(handle, definition.key, handle.setValue); return handle
   end

@@ -152,6 +152,29 @@ return tree(playerGui)
             with self.subTest(desktop=desktop):
                 self.assertEqual(self.scene_digest(desktop), expected['desktop' if desktop else 'mobile'])
 
+    def test_long_descriptions_have_room_below_pc_toggle_and_shortcut(self):
+        self.run_lua('''
+assert(ui.setup(fullDeps(),{open=true}));flushDeferred();finishTweens()
+local root=playerGui:FindFirstChild('ExodusUISystem')
+for _,name in ipairs({'ForcePCUI','UniversalSpeedEnabled'}) do
+ local card=findDescendant(root,name);local description=findDescendant(card,'Description')
+ local track=card:FindFirstChildOfClass('Frame')
+ assert(card.Size.Y.Offset==88 and description.Position.Y.Offset==42)
+ assert(description.Size.X.Scale==1 and description.Size.X.Offset==-28 and description.Size.Y.Offset==40)
+ assert(track.Position.Y.Scale==0 and track.Position.Y.Offset==8)
+end
+assert(findDescendant(root,'Shortcut_SpeedKeybind').Position.Y.Offset==10)
+_G.ExodusUICleanup();finishTweens()
+local service=game:GetService('UserInputService');service.KeyboardEnabled=false;service.MouseEnabled=false;service.TouchEnabled=true
+assert(ui.setup(fullDeps(),{open=true}));flushDeferred();finishTweens()
+root=playerGui:FindFirstChild('ExodusUISystem')
+for _,name in ipairs({'ForcePCUI','UniversalSpeedEnabled'}) do
+ local card=findDescendant(root,name);local description=findDescendant(card,'Description')
+ assert(card.Size.Y.Offset==70 and description.Position.Y.Offset==26)
+end
+_G.ExodusUICleanup();finishTweens()
+''')
+
     def test_dropdown_stays_below_trigger_and_follows_motion_and_scaling(self):
         self.run_lua('''
 local kit=newKit()

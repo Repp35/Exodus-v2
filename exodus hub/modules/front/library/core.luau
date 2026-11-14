@@ -279,8 +279,8 @@ function UIKit.create(options)
     if hasDescription then
       text(root, definition.description, {
         Name = "Description",
-        Position = UDim2.fromOffset(14, 26),
-        Size = UDim2.new(1, -(28 + (rightSpace or 0)), 0, height - 30),
+        Position = UDim2.fromOffset(14, definition.expandedDescription and 42 or 26),
+        Size = UDim2.new(1, -(28 + (definition.expandedDescription and 0 or (rightSpace or 0))), 0, height - (definition.expandedDescription and 48 or 30)),
         TextColor3 = C.subtext,
         TextSize = TEXT.caption,
         Font = FONT.body,
@@ -332,11 +332,11 @@ function UIKit.create(options)
     if result == false and not definition.key then return false end
     return true
   end
-  local function shortcut(handle, key, xOffset)
+  local function shortcut(handle, key, xOffset, topAligned)
     if not key then return end
     local cap = button(handle.Root, keyName(read(key)), {
       Name = "Shortcut_" .. key,
-      Position = UDim2.new(1, xOffset or -126, 0.5, -13),
+      Position = topAligned and UDim2.new(1, xOffset or -126, 0, 10) or UDim2.new(1, xOffset or -126, 0.5, -13),
       Size = UDim2.fromOffset(50, 26),
       BackgroundColor3 = C.btnDark,
       TextSize = 11,

@@ -150,7 +150,7 @@ function Actions.create(context)
 
   local result = {}
   function result.resolve(definition)
-    definition.toast = false
+    definition.toast = false; definition.expandedDescription = context.desktop and definition.desktopExpanded == true
     if not context.desktop then definition.shortcutKey = nil end
     if definition.action == "notifications" then definition.key = context.desktop and "DesktopNotifications" or "MobileNotifications" end
     if definition.action == "manualSpam" and not context.desktop then definition.key = "MiniSpamVisible" end
