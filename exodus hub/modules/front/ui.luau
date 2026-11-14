@@ -1070,8 +1070,8 @@ local function keyName(value)
 end
 local function makeKeycap(parent, configKey)
   local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 50, 26, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey
-  keycap.Position = UDim2.new(1, -58, 0, 5); keycap.TextSize = 11
-  keycap.TextTruncate = Enum.TextTruncate.AtEnd; keycap.ZIndex = 11
+  keycap.Position = UDim2.new(1, -62, 0.5, -13); keycap.TextSize = 11
+  keycap.TextTruncate = Enum.TextTruncate.AtEnd; keycap.ZIndex = 12
   shortcutLabels[configKey] = keycap
   bindKeyCapture(keycap, function(binding)
     if setConfigValue(configKey, binding) then keycap.Text = keyName(binding) end
@@ -1742,10 +1742,6 @@ local function createRateSelector(yPos, parent, definition)
     inputBox.Text = tostring(normalized)
   end))
   return nextCardY(yPos, RATE_CARD_H)
-end
-local function createKeybindOnlyCard(title, yPos, parent, configKey)
-  local f = cardFrame(yPos, CARD_H, parent); addOptionText(f, title, CARD_H, -78)
-  makeKeycap(f, configKey); return nextCardY(yPos, CARD_H), f
 end
 local function createKeybindSelector(yPos, parent, definition)
   return createActionShortcutCard(definition or "Stop Functions", yPos, parent, "Keybind", function()
@@ -2618,18 +2614,6 @@ function ExodusUI.setup(deps, preview)
       and (definition.kind ~= "keybind_selector" or UIState.desktop)
     then
       yR = createComponent(yR, colRight, definition)
-    end
-  end
-  if UIState.desktop then
-    for _, shortcut in ipairs({
-      { "Auto Parry Key", "ParryKeybind" },
-      { "Auto Spam Key", "ClashKeybind" },
-      { "Manual Spam Key", "SpamKeybind" },
-      { "Auto Dark Key", "DarkKeybind" },
-      { "Auto Jump Key", "JumpKeybind" },
-      { "Up Dash Key", "UpDashKeybind" },
-    }) do
-      yR = createKeybindOnlyCard(shortcut[1], yR, colRight, shortcut[2])
     end
   end
   colRight.CanvasSize = UDim2.fromOffset(0, yR + CARD_GAP); colRight.CanvasPosition = Vector2.zero
