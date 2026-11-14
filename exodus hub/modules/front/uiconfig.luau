@@ -55,6 +55,16 @@ local CONFIG = {
       mobileToast = "Manual Spam UI",
     },
     {
+      kind = "segmented",
+      title = "Spam activation",
+      key = "ManualSpamMode",
+      joined = true,
+      options = {
+        { value = "Toggle", label = "Toggle" },
+        { value = "Hold", label = "Hold" },
+      },
+    },
+    {
       kind = "keybind_selector",
       title = "Stop Functions",
     },
@@ -159,6 +169,7 @@ local CONFIG = {
       CPF = "rate",
       MS = "rate",
       SpamRateMode = "rateMode",
+      ManualSpamMode = "spamActivation",
       ClickMethod = "clickMethod",
       Keybind = "keyCode",
       SpamKeybind = "keyCode",
@@ -209,6 +220,7 @@ local CONFIG = {
       CPF = 0.36,
       MS = 33,
       SpamRateMode = "CPF",
+      ManualSpamMode = "Toggle",
       ClickMethod = "Deflect",
       Keybind = Enum.KeyCode.F9,
       SpamKeybind = Enum.KeyCode.F,

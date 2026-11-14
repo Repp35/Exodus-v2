@@ -32,6 +32,7 @@ local UIState = {
   toastGeneration = 0,
   toastTween = nil,
   keyCapture = false,
+  manualHoldInput = nil,
 }
 
 local setSpam
@@ -287,8 +288,12 @@ local function bindInput()
     if isKey(input, panicKey) then
       setSpam(false)
       if type(Controls.onPanic) == "function" then Controls.onPanic() end
-    elseif isKey(input, spamKey) and config.ManualSpamEnabled == true then
-      setSpam(not UIState.spamOn)
+    elseif isKey(input, spamKey) then
+      if config.ManualSpamMode == "Hold" then
+        if not UIState.manualHoldInput then UIState.manualHoldInput = input; setSpam(true) end
+      else
+        setSpam(not UIState.spamOn)
+      end
     elseif isKey(input, config.ParryKeybind) then
       toggleSetting("AutoParry", "Auto Parry")
     elseif isKey(input, config.ClashKeybind) then
@@ -301,6 +306,15 @@ local function bindInput()
       if type(Controls.onUpDash) == "function" then Controls.onUpDash() end
       if showToast then showToast("Up Dash") end
     end
+  end))
+  trackConn(UIS.InputEnded:Connect(function(input)
+    local held = UIState.manualHoldInput
+    if held and (held == input or (inputBinding(held) and inputBinding(held) == inputBinding(input))) then
+      UIState.manualHoldInput = nil; setSpam(false)
+    end
+  end))
+  trackConn(UIS.WindowFocusReleased:Connect(function()
+    if UIState.manualHoldInput then UIState.manualHoldInput = nil; setSpam(false) end
   end))
 end
 
@@ -437,6 +451,7 @@ local function showMini(v)
     }, EASE_OUT, DIR_OUT)
     return UIState.miniTween
   end
+  if UIState.manualHoldInput then UIState.manualHoldInput = nil; setSpam(false) end
   if not miniGui.Visible then return end
   local tween = twPlay(miniGui, 0.24, {
     Position = hiddenPosition,
@@ -503,7 +518,7 @@ local function cleanupUI()
   end
   UIState.pageTweens = {}; UIState.panelOpen = false
   UIState.clashBallOn = false; UIState.closing = false
-  UIState.keyCapture = false; UIState.panelTween = nil
+  UIState.keyCapture = false; UIState.manualHoldInput = nil; UIState.panelTween = nil
   UIState.btnTween = nil; UIState.toastGeneration += 1
   safeCancel(UIState.toastTween); UIState.toastTween = nil
   UIState.btnIsDragging = function() return false end
@@ -1029,29 +1044,14 @@ local function keyName(value)
 
   local name = typeof(value) == "EnumItem" and value.Name or tostring(value or "—"); return names[name] or name
 end
-local function makeKeycap(parent, configKey, rightAligned, baseHeight)
-  local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 32, 28, parent, C.btnDark); keycap.Name = "Shortcut_" .. configKey
-  keycap.Position = UDim2.new(1, -132, 0, 10); keycap.TextSize = 9
-  keycap.ZIndex = 11; shortcutLabels[configKey] = keycap
-  local arrow = makeBtn("⌄", 0, 0, 24, 28, parent, C.btnDark); arrow.Name = "ShortcutSettings"
-  arrow.Position = UDim2.new(1, -96, 0, 10); arrow.ZIndex = 11
-  local editor = makeBtn("Shortcut: " .. keyName(Utils.getConfigValue(configKey)), 10, (baseHeight or CARD_H) + 4, 0, 30, parent, C.btnBlue); editor.Size = UDim2.new(1, -20, 0, 30)
-  editor.Name = "ShortcutEditor"; editor.Visible = false
-  editor.ZIndex = 11; editor.TextSize = 12
-  local expanded = false
-  if rightAligned then keycap.Position = UDim2.new(1, -68, 0, 10); arrow.Position = UDim2.new(1, -32, 0, 10) end
-  local function expand()
-    expanded = not expanded; local delta = expanded and 44 or -44
-    editor.Visible = expanded; arrow.Text = expanded and "⌃" or "⌄"
-    parent.Size += UDim2.fromOffset(0, delta); local layoutDelta = delta * CARD_SCALE
-    for _, sibling in ipairs(parent.Parent:GetChildren()) do
-      if sibling:IsA("GuiObject") and sibling ~= parent and sibling.Position.Y.Offset > parent.Position.Y.Offset then sibling.Position += UDim2.fromOffset(0, layoutDelta) end
-    end
-    if parent.Parent:IsA("ScrollingFrame") then parent.Parent.CanvasSize += UDim2.fromOffset(0, layoutDelta) end
-  end
-  trackConn(arrow.Activated:Connect(expand)); trackConn(keycap.Activated:Connect(expand))
-  bindKeyCapture(editor, function(binding)
-    if setConfigValue(configKey, binding) then keycap.Text = keyName(binding); editor.Text = "Shortcut: " .. keyName(binding) end
+local function makeKeycap(parent, configKey)
+  local keycap = makeBtn(keyName(Utils.getConfigValue(configKey)), 0, 0, 50, 26, parent, C.btnDark)
+  keycap.Name = "Shortcut_" .. configKey
+  keycap.Position = UDim2.new(1, -58, 0, 5); keycap.TextSize = 11
+  keycap.TextTruncate = Enum.TextTruncate.AtEnd; keycap.ZIndex = 11
+  shortcutLabels[configKey] = keycap
+  bindKeyCapture(keycap, function(binding)
+    if setConfigValue(configKey, binding) then keycap.Text = keyName(binding) end
   end)
   return keycap
 end
@@ -1111,7 +1111,8 @@ local function createToggleCard(option, configKey, yPos, parent, onAfter, shortc
   local title, description = optionInfo(option); local height = description and CARD_H + 22 or CARD_H
   local f = cardFrame(yPos, height, parent, fixedWidth); addOptionText(f, option, height, UIState.desktop and shortcutKey and -148 or -78)
   local config = Utils.getConfig(); local initial = configKey and config[configKey] == true
-  local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial); toggleTrack.Position = UDim2.new(1, -INNER_PAD - 48, 0.5, -15)
+  local toggleTrack, toggleThumb, setVisual = makeToggle(f, initial)
+  toggleTrack.Position = UDim2.new(1, UIState.desktop and shortcutKey and -120 or -INNER_PAD - 48, 0.5, -15)
   if configKey == "UniversalFly" or configKey == "UniversalSpeedEnabled" or configKey == "UniversalGravityEnabled" then statusToggleVisuals[configKey] = setVisual end
   if UIState.desktop and shortcutKey then makeKeycap(f, shortcutKey, false, height) end
   if configKey == "AutoSpam" then autoClashTrack = toggleTrack; autoClashThumb = toggleThumb end
@@ -1511,6 +1512,47 @@ local function createDropdown(yPos, parent, definition)
   end))
   return nextCardY(yPos, RATE_CARD_H)
 end
+local function createSegmented(yPos, parent, definition)
+  local options = definition.options or {}
+  local card = cardFrame(yPos, RATE_CARD_H, parent)
+  cardLabel(optionInfo(definition), card)
+  local track = inst("Frame", {
+    Size = UDim2.new(1, -20, 0, 30), Position = UDim2.fromOffset(10, 28),
+    BackgroundColor3 = C.inputBg, BorderSizePixel = 0, ZIndex = 7, Parent = card,
+  })
+  corner(track, 9); stroke(track, C.border, 1)
+  local thumb = inst("Frame", {
+    Size = UDim2.new(1 / #options, -4, 1, -4), BackgroundColor3 = C.accent,
+    BorderSizePixel = 0, ZIndex = 8, Parent = track,
+  })
+  corner(thumb, 7)
+  local buttons = {}
+  local function paint(animated)
+    local current = Utils.getConfigValue(definition.key)
+    for index, option in ipairs(options) do
+      local active = current == option.value
+      if active then
+        twPlay(thumb, animated and 0.25 or 0, {
+          Position = UDim2.new((index - 1) / #options, 2, 0, 2),
+          BackgroundColor3 = index == 1 and C.accent or C.accentPink,
+        }, EASE_OUT, DIR_OUT)
+      end
+      twPlay(buttons[index], animated and 0.18 or 0, { TextColor3 = active and C.text or C.subtext }, EASE_SINE, DIR_INOUT)
+    end
+  end
+  for index, option in ipairs(options) do
+    local button = inst("TextButton", {
+      Size = UDim2.new(1 / #options, 0, 1, 0), Position = UDim2.new((index - 1) / #options, 0, 0, 0),
+      BackgroundTransparency = 1, Text = option.label, TextColor3 = C.subtext,
+      TextSize = 13, Font = Enum.Font.GothamBold, ZIndex = 9, Parent = track,
+    })
+    buttons[index] = button
+    trackConn(button.Activated:Connect(function()
+      if setConfigValue(definition.key, option.value) then paint(true) end
+    end))
+  end
+  paint(false); return nextCardY(yPos, RATE_CARD_H), card
+end
 local function createRateSelector(yPos, parent, definition)
   local f = cardFrame(yPos, RATE_CARD_H, parent); local config = Utils.getConfig()
   config.CPS = Utils.normalizeSpamRate(config.CPS, 25.5); config.CPF = Utils.normalizeSpamRate(config.CPF, 0.3917)
@@ -1626,7 +1668,7 @@ local function togglePanel()
   safeCancel(UIState.btnTween)
   if UIState.panelOpen then
     if not configPanel.Visible then configPanel.GroupTransparency = 1; configPanel.Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97) end
-    configPanel.Visible = true; UIState.panelTween = twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
+    configPanel.Visible = true; UIState.panelTween = twPlay(configPanel, 0.5, { Size = UDim2.new(0, PW, 0, PH), GroupTransparency = 0 }, EASE_OUT, DIR_OUT)
     UIState.btnTween = twPlay(floatingButton, 0.2, { BackgroundTransparency = 0.6, TextTransparency = 0, Size = UDim2.new(0, 44, 0, 44) }, EASE_OUT, DIR_IN)
   else
     UIState.panelTween = twPlay(configPanel, 0.26, { Size = UDim2.new(0, PW * 0.97, 0, PH * 0.97), GroupTransparency = 1 }, EASE_OUT, DIR_IN)
@@ -2021,7 +2063,7 @@ function ExodusUI.setup(deps)
   trackConn(RunService.Heartbeat:Connect(updateInformation)); bindInput()
   floatingButton = inst("TextButton", {
     Name = "ExodusFloatingButton",
-    Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE),
+    Size = UDim2.fromOffset(BTN_SIZE * 0.7, BTN_SIZE * 0.7),
     Position = btnPos(),
     BackgroundColor3 = C.header,
     BackgroundTransparency = 1,
@@ -2038,7 +2080,8 @@ function ExodusUI.setup(deps)
   floatingButtonStroke.Transparency = 1; registerFlow(floatingButtonStroke)
   task.defer(function()
     if not floatingButton or not floatingButton.Parent then return end
-    twPlay(floatingButton, 0.26, { BackgroundTransparency = 0.1, TextTransparency = 0 }, EASE_OUT, DIR_OUT); twPlay(floatingButtonStroke, 0.26, { Transparency = 0 }, EASE_OUT, DIR_OUT)
+    twPlay(floatingButton, 0.75, { BackgroundTransparency = 0.1, TextTransparency = 0, Size = UDim2.fromOffset(BTN_SIZE, BTN_SIZE) }, EASE_OUT, DIR_OUT)
+    twPlay(floatingButtonStroke, 0.75, { Transparency = 0 }, EASE_OUT, DIR_OUT)
   end)
   local config = Utils.getConfig(); local clashX = config.ClashBallX or 14
   local clashY = config.ClashBallY or (viewport().Y / 2 - CLASH_SIZE / 2)
@@ -2240,7 +2283,15 @@ function ExodusUI.setup(deps)
     Parent = miniGui,
   })
   corner(spamButton, 10)
-  trackConn(spamButton.Activated:Connect(function() setSpam(not UIState.spamOn) end))
+  trackConn(spamButton.Activated:Connect(function()
+    if Utils.getConfigValue("ManualSpamMode") ~= "Hold" then setSpam(not UIState.spamOn) end
+  end))
+  trackConn(spamButton.InputBegan:Connect(function(input)
+    if Utils.getConfigValue("ManualSpamMode") ~= "Hold" or UIState.manualHoldInput then return end
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+      UIState.manualHoldInput = input; setSpam(true)
+    end
+  end))
   miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY)
   makeDraggable(miniTitleBar, miniGui, function()
     setConfigValue("MiniX", miniGui.Position.X.Offset); setConfigValue("MiniY", miniGui.Position.Y.Offset)
@@ -2427,28 +2478,40 @@ function ExodusUI.setup(deps)
   end
   colLeft.CanvasSize = UDim2.new(0, 0, 0, yL); cardLabel("Spam", colRight)
   local yR = 26
+  local manualSpamVisual
   local components = {
     rate_selector = createRateSelector,
     dropdown = createDropdown,
+    segmented = createSegmented,
     keybind_selector = createKeybindSelector,
     toggle = function(yPos, parent, definition)
       return createToggleCard(definition, definition.key, yPos, parent, toggleCallbacks[definition.key], definition.shortcutKey)
     end,
     off_on = function(yPos, parent, definition)
-      local configKey = UIState.desktop and definition.desktopKey or definition.mobileKey
-      return createStatusToggleCard(definition, yPos, parent, {
+      local configKey
+      if not UIState.desktop then configKey = definition.mobileKey end
+      local nextY, card, visual = createStatusToggleCard(definition, yPos, parent, {
         configKey = configKey,
+        getState = UIState.desktop and function() return Utils.isManualSpamActive() end or nil,
         shortcutKey = UIState.desktop and definition.shortcutKey or nil,
         rightAligned = UIState.desktop,
-        onToggle = statusToggleCallbacks[configKey],
-        toastLabel = UIState.desktop and definition.toastLabel or definition.mobileToast,
+        onToggle = UIState.desktop and function(requested)
+          if Utils.getConfigValue("ManualSpamMode") == "Hold" then return Utils.isManualSpamActive() end
+          setSpam(requested); return requested
+        end or statusToggleCallbacks[configKey],
+        toastLabel = UIState.desktop and definition.title or definition.mobileToast,
       })
+      if UIState.desktop then manualSpamVisual = visual end
+      return nextY, card
     end,
   }
 
   for _, definition in ipairs(UIConfig.panelComponents) do
     local createComponent = components[definition.kind]
-    if createComponent and (definition.kind ~= "keybind_selector" or UIState.desktop) then yR = createComponent(yR, colRight, definition) end
+    if createComponent and (definition.kind ~= "keybind_selector" or UIState.desktop) then
+      if definition.joined then yR -= CARD_GAP end
+      yR = createComponent(yR, colRight, definition)
+    end
   end
   local settingsLeft = inst("ScrollingFrame", {
     AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -2582,24 +2645,48 @@ function ExodusUI.setup(deps)
       indeedRows[#indeedRows + 1] = { span = CARD_GAP }; indeedY += CARD_GAP
     end
   end
+  for _, row in ipairs(indeedRows) do
+    if row.parentKey and row.root and indeedParents[row.parentKey] then
+      local parentRow = indeedParents[row.parentKey]
+      parentRow.baseHeight = parentRow.baseHeight or parentRow.root.Size.Y.Offset
+      parentRow.children = parentRow.children or {}
+      local childOffset = 0
+      for _, child in ipairs(parentRow.children) do childOffset += child.root.Size.Y.Offset + 5 end
+      row.root.Parent = parentRow.root
+      row.root.Position = UDim2.fromOffset(6, parentRow.baseHeight + childOffset)
+      row.root.Size = UDim2.new(1, -12, 0, row.root.Size.Y.Offset)
+      row.root.BackgroundTransparency = 0.45
+      local scale = row.root:FindFirstChild("CardScale")
+      if scale then scale.Scale = 1; scale:SetAttribute("BaseScale", 1) end
+      parentRow.root.ClipsDescendants = true
+      parentRow.children[#parentRow.children + 1] = row
+    end
+  end
+  local indeedInitialized = false
   local function refreshIndeedChildren()
     local config = Utils.getConfig(); local y = 5
-    local function visible(row, visiting)
-      local key = row.parentKey
-      if not key then return true end
-      if config[key] ~= true or visiting[key] then return false end
-      visiting[key] = true; local parent = indeedParents[key]
-      return not parent or visible(parent, visiting)
-    end
+    local duration = indeedInitialized and 0.28 or 0
     for _, row in ipairs(indeedRows) do
-      local shown = visible(row, {})
-      if row.root then
-        row.root.Visible = shown; local position = row.root.Position
-        row.root.Position = UDim2.new(position.X.Scale, position.X.Offset, 0, shown and y or 0)
+      if not row.parentKey then
+        local extra = 0
+        if row.children then
+          for _, child in ipairs(row.children) do extra += child.root.Size.Y.Offset + 5 end
+          local expanded = config[row.children[1].parentKey] == true
+          twPlay(row.root, duration, {
+            Size = UDim2.new(row.root.Size.X.Scale, row.root.Size.X.Offset, 0, row.baseHeight + (expanded and extra or 0)),
+          }, EASE_OUT, DIR_OUT)
+          if expanded then extra *= CARD_SCALE else extra = 0 end
+        end
+        if row.root then
+          row.root.Visible = true
+          local pos = row.root.Position
+          twPlay(row.root, duration, { Position = UDim2.new(pos.X.Scale, pos.X.Offset, 0, y) }, EASE_OUT, DIR_OUT)
+        end
+        y += row.span + extra
       end
-      if shown then y += row.span end
     end
     indeedContent.CanvasSize = UDim2.fromOffset(0, y + CARD_GAP)
+    indeedInitialized = true
   end
   refreshIndeedChildren(); cardLabel("Automatic Abilities", autosLeft)
   cardLabel("Quick Controls", autosRight)
@@ -2958,6 +3045,7 @@ function ExodusUI.setup(deps)
     trackConn(Utils.observeSpam(function()
       local manual = Utils.isManualSpamActive()
       if UIState.spamOn ~= manual then setSpam(manual) end
+      if manualSpamVisual then manualSpamVisual(manual) end
     end))
   end
   if type(Utils.observeConfig) == "function" then
@@ -2984,8 +3072,8 @@ function ExodusUI.setup(deps)
         if autoDarkSetVisual then autoDarkSetVisual(changes.AutoDark == true) end
       end
       if changes.AutoJump ~= nil then paintJumpBall(changes.AutoJump == true) end
-      if changes.ManualSpamEnabled ~= nil and UIState.desktop then
-        if not changes.ManualSpamEnabled then setSpam(false) end
+      if changes.ManualSpamMode ~= nil then
+        UIState.manualHoldInput = nil; setSpam(false)
       end
     end))
   end

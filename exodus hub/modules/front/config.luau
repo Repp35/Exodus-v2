@@ -22,6 +22,7 @@ local CONFIG = {
     keyCode = "keybind inválido: %s",
     rateMode = "SpamRateMode inválido",
     clickMethod = "ClickMethod inválido",
+    spamActivation = "ManualSpamMode inválido",
   },
 }
 
@@ -46,6 +47,7 @@ local validators = {
   keyCode = validKeyCode,
   rateMode = function(value) return value == "CPS" or value == "CPF" or value == "MS" or value == "Auto" end,
   clickMethod = function(value) return value == "Deflect" or value == "Direct" or value == "Input" end,
+  spamActivation = function(value) return value == "Toggle" or value == "Hold" end,
 }
 
 local function validateValue(key, kind, value)
