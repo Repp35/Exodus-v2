@@ -122,6 +122,7 @@ local CONFIG = {
     { name = "character", path = "modules/logic/aux/character.luau" },
     { name = "dumper", path = "modules/logic/extras/universal/dumper.luau" },
     { name = "servers", path = "modules/logic/extras/universal/servers.luau" },
+    { name = "uilibrary", path = "modules/front/library.luau" },
     { name = "ui", path = "modules/front/ui.luau" },
   },
 }
@@ -511,7 +512,7 @@ local function initializeModules(loaded)
   local characterBinds, bindModule, bindError = collectCharacterBinds(loaded)
   if not characterBinds then error(("%s: %s"):format(tostring(bindModule), tostring(bindError)), 2) end
   for _, name in ipairs(MODULE_ORDER) do
-    if name ~= "utils" and name ~= "config" and name ~= "uiconfig" then
+    if name ~= "utils" and name ~= "config" and name ~= "uiconfig" and name ~= "uilibrary" then
       local module = loaded[name]
       if type(module) ~= "table" or type(module.setup) ~= "function" then error("API interna ausente: " .. name .. ".setup", 2) end
       local deps = loaded.permissions.resolve(name, loaded)
