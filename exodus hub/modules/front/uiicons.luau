@@ -17,11 +17,11 @@ local CONFIG = {
     },
     chevron = {
       png = "iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAABNklEQVR4nO2XMU7DQBBF4zgNQuIeQaKDgrtQQKTcKeJcVByAEgo6EvwoMiNPrBjF3kGMYZ5k7cqW/v4/67V3Z7MkSZIkSZLkfwBUQDVJfWBu+vWk9LUqQA2cdwd00J8f0feZCSN+DTwBL8BK7i0c9BfS3hj9Bzt2iXgl1xnwzCHr0hAd869G+xO4LA5hXp0L4A3YAVtpi0L0mN8CH9K/ledl60EFgHsR3kmFRofoMa/FAdjIzPusM7MO1qUhTjD/qGPi+Uk1A48OMcB87WreI8Svmy8JEcb8mBDhzA8NEdL8gBB3wBX7f0gs8yeEQNp3049lXukJ0dDShDWvfDMTDe32IKZ55UiI+JXv0gmhld/IvdjmFdoN4JJ2V/mjx1F3ODwiTse4hf2O0v38nCRJkiRJkvwRvgDtG80g9ENmrgAAAABJRU5ErkJggg==",
-      fallback = "rbxasset://textures/ui/Settings/DropDown/Arrow.png",
+      fallback = "rbxasset://textures/ui/Settings/DropDown/DropDown.png",
     },
     minimize = {
       png = "iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAA8klEQVR4nO3VsUoEMRSF4XN2RhAUtBEEa7Gy9H18D9/DVt/HykbwPWxE3N9iZyDITgzOzmpxviZDZpJ7bzIkUkRERERERMRyAAP+j/F+/AhY2V6Pz3OTa1HE62x//nqicRWADjjeUX4tcXvgqMxhyuTLceWBG0mPkk4kvdbG7NC5pFNJd7Yfyr/gu63JFFUfSnqWdLlElg3Wkq5tv0wV0U+NtA1wIOls6PpYKMmt4Ye212bny742QDe0t8A7f+MeWFE5PKpVAR524krShTZbuq/j9M320+xZatUvjYa7oGk1hyL2dpGNZt0BEREREREREXVfcjPipu/0aSgAAAAASUVORK5CYII=",
-      fallback = "rbxasset://textures/ui/Settings/DropDown/Arrow.png",
+      fallback = "rbxasset://textures/ui/Settings/Slider/Less.png",
     },
   },
 }
