@@ -1822,7 +1822,7 @@ local function animateClose(action)
 end
 
 -- setup
-function ExodusUI.setup(deps)
+function ExodusUI.setup(deps, preview)
   if
     type(deps) ~= "table"
     or type(deps.Utils) ~= "table"
@@ -1853,7 +1853,7 @@ function ExodusUI.setup(deps)
   Dumper = deps.Dumper; Controls = type(deps.Controls) == "table" and deps.Controls or {}
   local playerGui = Players.LocalPlayer:WaitForChild("PlayerGui")
   if type(_G.ExodusUICleanup) == "function" then
-    if type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
+    if not preview and type(_G.ExodusUIFadeOut) == "function" then pcall(_G.ExodusUIFadeOut) end
     _G.ExodusUICleanup()
   else
     local old = playerGui:FindFirstChild("ExodusUISystem")
@@ -1861,7 +1861,8 @@ function ExodusUI.setup(deps)
   end
   UIState.panelOpen = false; UIState.spamOn = false
   UIState.clashBallOn = false; UIState.closing = false
-  UIState.desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil
+  UIState.desktop = Utils.getConfigValue("ForcePCUI") == true or UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled
+  UIState.panelTween = nil
   UIState.btnTween = nil; shortcutLabels = {}
   _G.ExodusUIRestore = restoreAfterReloadFailure; persistentLayerForPlayer()
   _G.ExodusUICleanup = cleanupUI; _G.ExodusUIFadeOut = fadeOutForReplacement
@@ -2844,6 +2845,30 @@ function ExodusUI.setup(deps)
   local hubY = createToggleCard({
     title = "Notifications",
   }, notificationKey, 4, hubSettings)
+  hubY = createToggleCard({
+    title = "Modo PC",
+    description = "Pré-visualiza a interface de PC. Desative para voltar ao modo automático.",
+  }, "ForcePCUI", hubY, hubSettings, function()
+    local currentGui, scroll = screenGui, hubSettings.CanvasPosition
+    if UIState.manualHoldInput then UIState.manualHoldInput = nil; setSpam(false) end
+    task.defer(function()
+      if screenGui ~= currentGui or not currentGui.Parent or UIState.closing then return end
+      local ok, reason = ExodusUI.setup(deps, { scroll = scroll })
+      if not ok then warn("[Exodus] Falha ao atualizar interface: " .. tostring(reason)) end
+    end)
+  end)
+  hubY = createClickCard({
+    title = "Resetar personagem",
+    description = "Reinicia seu personagem na partida.",
+  }, hubY, hubSettings, function()
+    local character = Players.LocalPlayer and Players.LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid and humanoid.Health > 0 then
+      humanoid.Health = 0
+    elseif showToast then
+      showToast("Personagem indisponível", true)
+    end
+  end)
   hubY = createClickCard({ title = "Rejoin", description = "Reconecta ao servidor atual." }, hubY, hubSettings, function()
     if type(Controls.onRejoin) == "function" then Controls.onRejoin() end
   end)
@@ -2877,8 +2902,14 @@ function ExodusUI.setup(deps)
       if rebuilt then togglePanel() else warn("[Exodus] Reset UI: " .. tostring(detail)) end
     end)
   end))
-  hubSettings.CanvasSize = UDim2.fromOffset(0, nextCardY(hubY, CARD_H)); local page = 1
+  hubSettings.CanvasSize = UDim2.fromOffset(0, nextCardY(hubY, CARD_H)); local page = preview and CONFIG_PAGE or 1
   local settingsReturnPage = 1
+  if preview then
+    for index, group in ipairs(pageGroups) do
+      group.Visible = index == CONFIG_PAGE; group.GroupTransparency = index == CONFIG_PAGE and 0 or 1
+    end
+    if typeof(preview.scroll) == "Vector2" then hubSettings.CanvasPosition = preview.scroll end
+  end
   local pageInputShield = inst("TextButton", {
     Name = "PageInputShield",
     Size = UDim2.new(0, PW - PAD * 2, 0, CONTENT_H),
@@ -3080,7 +3111,7 @@ function ExodusUI.setup(deps)
   end
   local currentGui = screenGui
   local function refreshDevice()
-    local desktop = UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled
+    local desktop = Utils.getConfigValue("ForcePCUI") == true or UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled
     if desktop == UIState.desktop or UIState.closing then return end
     task.defer(function()
       if screenGui ~= currentGui or not currentGui.Parent then return end
@@ -3092,6 +3123,7 @@ function ExodusUI.setup(deps)
     trackConn(UIS:GetPropertyChangedSignal(property):Connect(refreshDevice))
   end
   setSpam(Utils.isManualSpamActive(), true); _G.ExodusUIReturnAfterUpdate = nil
+  if preview then togglePanel() end
   return true
 end
 
