@@ -91,7 +91,7 @@ function Controller.create(context)
     BackgroundTransparency = 0.03,
     GroupTransparency = 0,
     Visible = false,
-    ZIndex = 5,
+    ZIndex = context.theme.LAYERS.panel,
     ClipsDescendants = true,
     Parent = context.refs.screenGui,
   })

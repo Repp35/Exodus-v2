@@ -103,6 +103,7 @@ CONFIG.SELECTOR_COLORS = {
 CONFIG.DROPDOWN = { gap = 5, margin = 6, rowHeight = 32, rowGap = 3, padding = 4, selectionDelay = 0.18 }
 CONFIG.PAGE_OFFSET = 18
 CONFIG.SCROLLBAR = 3
+CONFIG.LAYERS = { panel = 30 }
 
 -- public-api
 Theme.tokens = CONFIG

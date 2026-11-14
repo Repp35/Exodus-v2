@@ -175,6 +175,23 @@ end
 _G.ExodusUICleanup();finishTweens()
 ''')
 
+    def test_menu_is_above_floating_controls_and_they_work_when_minimized(self):
+        self.run_lua('''
+local service=game:GetService('UserInputService');service.KeyboardEnabled=false;service.MouseEnabled=false;service.TouchEnabled=true
+config.MiniSpamVisible=true
+assert(ui.setup(fullDeps(),{open=true}));flushDeferred();finishTweens()
+local screen=playerGui:FindFirstChild('ExodusUISystem')
+local panel=findDescendant(screen,'ExodusPanel');local mini=findDescendant(screen,'ExodusSpamMini')
+assert(screen.ZIndexBehavior==Enum.ZIndexBehavior.Sibling and panel.Visible and mini.Visible)
+for _, child in ipairs(screen:GetChildren()) do
+ if child:IsA('GuiObject') and child~=panel then assert(panel.ZIndex>child.ZIndex,'floating control covers menu') end
+end
+click(findDescendant(panel,'MinimizePanel'));finishTweens()
+assert(not panel.Visible and mini.Visible)
+click(findDescendant(mini,'SpamButton'));assert(manual,'minimizing blocked the floating control')
+_G.ExodusUICleanup();finishTweens()
+''')
+
     def test_dropdown_stays_below_trigger_and_follows_motion_and_scaling(self):
         self.run_lua('''
 local kit=newKit()
