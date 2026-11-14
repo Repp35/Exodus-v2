@@ -22,14 +22,17 @@ Não há promessa de ganho de FPS medido. As melhorias de desempenho são estrut
 
 | Arquivo em `exodus hub/modules/front/` | Responsabilidade |
 | --- | --- |
-| `uitheme.luau` | Tokens visuais e perfis de movimento |
-| `uiruntime.luau` | Escopos, cancelamento de tweens e posse de ponteiro |
-| `uiicons.luau` | PNGs locais com cache; alternativas nativas quando o executor não suporta assets locais |
-| `uikit.luau` | Primitivos e componentes; independente dos recursos do jogo |
-| `uipages.luau` | Validação de modelos, seções, colunas, navegação e expansão de filhos |
-| `uiconfig.luau` | Definição declarativa das seis páginas e schema de configurações existente |
-| `uiactions.luau` | Adaptação das ações do hub aos callbacks da biblioteca |
-| `ui.luau` | Janela, controles flutuantes, telemetria, notificações e integração com o loader |
+| `library/theme.luau` | Tokens visuais e perfis de movimento |
+| `library/runtime.luau` | Escopos, cancelamento de tweens e posse de ponteiro |
+| `library/icons.luau` | PNGs locais com cache; alternativas nativas quando o executor não suporta assets locais |
+| `library/core.luau` | Primitivos e componentes; independente dos recursos do jogo |
+| `library/pages.luau` | Validação de modelos, seções, colunas, navegação e expansão de filhos |
+| `app/definitions.luau` | Definição declarativa das seis páginas e schema de configurações existente |
+| `app/actions.luau` | Adaptação das ações do hub aos callbacks da biblioteca |
+| `library/components/` | Implementações de controles, entradas, seleção, dropdown e apresentação |
+| `controllers/` | Contexto, janela, controles flutuantes, entrada, notificações, telemetria e ciclo de vida |
+| `app/notification-policy.luau` | Regras de notificações por plataforma e origem |
+| `ui.luau` | Composição e integração com o loader |
 
 O loader registra os módulos da biblioteca e inicializa suas dependências pelo grafo de contratos existente. A distribuição continua copiando os módulos e assinando seus conteúdos. As rotinas de combate e movimento não foram modificadas.
 
@@ -135,7 +138,7 @@ local pages = UIPages.create(kit, panel, definitions, {
 
 `columns` aceita 1 ou 2. `width` limita e centraliza o conteúdo de uma página. Seções e componentes aceitam `desktopOnly`/`mobileOnly`. `parentKey` agrupa controles abaixo do pai e usa a mesma expansão animada em qualquer página. `visibleWhen` condiciona a linha a uma chave booleana; `abilityOnly` usa `context.abilitiesEnabled` no hub. Filhos devem ter pais presentes no mesmo modelo e dispositivo. O schema rejeita IDs duplicados, tipos desconhecidos e dependências ausentes ou cíclicas.
 
-No hub, `action` e `feature` são resolvidos em `uiactions.luau`. Para adicionar uma opção, adicione sua definição em `uiconfig.luau`, registre a chave no schema de configuração do módulo responsável e, se necessário, ligue a ação no adaptador. Não crie uma nova função de layout por página.
+No hub, `action` e `feature` são resolvidos em `app/actions.luau`. Para adicionar uma opção, adicione sua definição em `app/definitions.luau`, registre a chave no schema de configuração do módulo responsável e, se necessário, ligue a ação no adaptador. Não crie uma nova função de layout por página.
 
 O controlador oferece:
 
@@ -180,8 +183,16 @@ Na revisão ampliada, `cooldown_context_regression.py` e `fierce_grace_regressio
 
 ## Ícones sem glifos ou emojis
 
-`kit.icon(parent, name, properties?)` cria um ImageLabel. `settings`, `chevron` e `minimize` são PNGs embarcados em `uiicons.luau`; a navegação reutiliza o chevron com rotação. Não há dependência de fonte para desenhar os ícones.
+`kit.icon(parent, name, properties?)` cria um ImageLabel. `settings`, `chevron` e `minimize` são PNGs embarcados em `library/icons.luau`; a navegação reutiliza o chevron com rotação. Não há dependência de fonte para desenhar os ícones.
 
 O PNG/SVG de configurações vem de [CHORUS-HUB---demo/assets/tabs](https://github.com/Repp35/CHORUS-HUB---demo/tree/main/assets/tabs), com a licença ISC preservada em `exodus hub/assets/ui/LUCIDE_LICENSE.txt`. Os PNGs e SVGs de origem ficam em `exodus hub/assets/ui`. Quando disponíveis, `writefile` e `getcustomasset`/`getsynasset` carregam os bytes locais, sem download em runtime; em ambientes sem esse suporte, o adaptador usa imagens nativas do Roblox.
 
 Depois de editar um PNG, execute `python3 "exodus hub/indeed/build_ui_icons.py"` e o formatter. O gerador atualiza os bytes embarcados e a versão do caminho de cache, impedindo que uma textura antiga seja reutilizada. A CI executa o gerador com `--check` para detectar divergências.
+
+## Atalhos e notificações
+
+Os atalhos declarados nas definições são registrados no schema automaticamente. Os novos atalhos começam sem tecla; clique no atalho para configurá-lo, use Backspace ou Delete para limpar e Escape para cancelar. Teclas já associadas a outra função são recusadas. O acionamento usa o mesmo controle e a mesma ação da página, respeitando a disponibilidade de habilidades.
+
+Notificações operacionais críticas e de atualização permanecem visíveis. Notificações de sistema comuns seguem a opção da plataforma; no PC, a opção filha permite avisos para funções alternadas por atalho. Interações normais, Manual Spam e Up Dash não geram avisos repetitivos.
+
+No dropdown, pressionar apenas realça o contorno. A seleção ocorre ao ativar a opção; ela permanece visível por um breve intervalo antes do fade.

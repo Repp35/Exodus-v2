@@ -123,9 +123,9 @@ local CONFIG = {
           title = "Clash Indicators",
           column = 2,
           components = {
-            { kind = "toggle", title = "Clash Distance", key = "ClashDistanceVisible" },
-            { kind = "toggle", title = "Ball travel time", key = "ClashTravelTimeVisible" },
-            { kind = "toggle", title = "AutoSpam Gates", key = "ClashGateInfoVisible" },
+            { kind = "toggle", title = "Clash Distance", key = "ClashDistanceVisible", shortcutKey = "DistanceInfoKeybind" },
+            { kind = "toggle", title = "Ball travel time", key = "ClashTravelTimeVisible", shortcutKey = "TravelInfoKeybind" },
+            { kind = "toggle", title = "AutoSpam Gates", key = "ClashGateInfoVisible", shortcutKey = "GateInfoKeybind" },
           },
         },
       },
@@ -138,10 +138,10 @@ local CONFIG = {
         {
           title = "Utilities",
           components = {
-            { kind = "toggle", title = "Anti AFK", action = "antiAFK" },
-            { kind = "toggle", title = "Sword", action = "spinSword" },
-            { kind = "toggle", title = "Emote", action = "spinEmote" },
-            { kind = "toggle", title = "Explosion", action = "spinExplosion" },
+            { kind = "toggle", title = "Anti AFK", action = "antiAFK", shortcutKey = "AntiAFKKeybind" },
+            { kind = "toggle", title = "Sword", action = "spinSword", shortcutKey = "SwordKeybind" },
+            { kind = "toggle", title = "Emote", action = "spinEmote", shortcutKey = "EmoteKeybind" },
+            { kind = "toggle", title = "Explosion", action = "spinExplosion", shortcutKey = "ExplosionKeybind" },
           },
         },
       },
@@ -156,9 +156,9 @@ local CONFIG = {
           column = 1,
           components = {
             { kind = "toggle", title = "Auto Dark", key = "AutoDark", shortcutKey = "DarkKeybind", abilityOnly = true },
-            { kind = "toggle", title = "Auto Fierce", key = "AutoFierce", abilityOnly = true },
+            { kind = "toggle", title = "Auto Fierce", key = "AutoFierce", shortcutKey = "FierceKeybind", abilityOnly = true },
             { kind = "toggle", title = "Auto Jump", key = "AutoJump", shortcutKey = "JumpKeybind", abilityOnly = true },
-            { kind = "toggle", title = "Auto Dash (clash)", key = "AutoClashUpDash", abilityOnly = true },
+            { kind = "toggle", title = "Auto Dash (clash)", key = "AutoClashUpDash", shortcutKey = "AutoDashKeybind", abilityOnly = true },
           },
         },
         {
@@ -214,8 +214,15 @@ local CONFIG = {
         {
           title = "Universal Controls",
           components = {
-            { kind = "toggle", title = "Infinite Jump", description = "Permite pular no ar.", key = "UniversalInfiniteJump", feature = "InfiniteJump" },
-            { kind = "toggle", title = "Fly", description = "Permite voar livremente.", key = "UniversalFly", feature = "Fly" },
+            {
+              kind = "toggle",
+              title = "Infinite Jump",
+              description = "Permite pular no ar.",
+              key = "UniversalInfiniteJump",
+              shortcutKey = "InfiniteJumpKeybind",
+              feature = "InfiniteJump",
+            },
+            { kind = "toggle", title = "Fly", description = "Permite voar livremente.", key = "UniversalFly", shortcutKey = "FlyKeybind", feature = "Fly" },
             {
               kind = "scroll",
               title = "Fly Speed",
@@ -228,7 +235,14 @@ local CONFIG = {
               increment = 0.1,
               valueName = "x",
             },
-            { kind = "toggle", title = "Speed", description = "Ativa a velocidade personalizada.", key = "UniversalSpeedEnabled", feature = "Speed" },
+            {
+              kind = "toggle",
+              title = "Speed",
+              description = "Ativa a velocidade personalizada.",
+              key = "UniversalSpeedEnabled",
+              shortcutKey = "SpeedKeybind",
+              feature = "Speed",
+            },
             {
               kind = "scroll",
               title = "Speed",
@@ -241,7 +255,14 @@ local CONFIG = {
               increment = 1,
               valueName = "WalkSpeed",
             },
-            { kind = "toggle", title = "Gravity", description = "Ativa a gravidade personalizada.", key = "UniversalGravityEnabled", feature = "Gravity" },
+            {
+              kind = "toggle",
+              title = "Gravity",
+              description = "Ativa a gravidade personalizada.",
+              key = "UniversalGravityEnabled",
+              shortcutKey = "GravityKeybind",
+              feature = "Gravity",
+            },
             {
               kind = "scroll",
               title = "Gravity",
@@ -259,9 +280,17 @@ local CONFIG = {
               title = "Invisicam",
               description = "Remove o personagem da visão da câmera.",
               key = "UniversalInvisicam",
+              shortcutKey = "InvisicamKeybind",
               feature = "Invisicam",
             },
-            { kind = "toggle", title = "Noclip", description = "Permite atravessar objetos.", key = "UniversalNoclip", feature = "Noclip" },
+            {
+              kind = "toggle",
+              title = "Noclip",
+              description = "Permite atravessar objetos.",
+              key = "UniversalNoclip",
+              shortcutKey = "NoclipKeybind",
+              feature = "Noclip",
+            },
           },
         },
       },
@@ -275,7 +304,16 @@ local CONFIG = {
       sections = {
         {
           components = {
-            { kind = "toggle", title = "Notifications", action = "notifications" },
+            { kind = "toggle", title = "System Notifications", key = "DesktopNotifications", desktopOnly = true },
+            {
+              kind = "toggle",
+              title = "Shortcut Notifications",
+              description = "Avisa ao alternar funções por atalho. Manual Spam e Up Dash ficam silenciosos.",
+              key = "DesktopShortcutNotifications",
+              parentKey = "DesktopNotifications",
+              desktopOnly = true,
+            },
+            { kind = "toggle", title = "System Notifications", key = "MobileNotifications", mobileOnly = true },
             {
               kind = "toggle",
               title = "Modo PC",
@@ -295,6 +333,7 @@ local CONFIG = {
     schema = {
       MobileNotifications = "boolean",
       DesktopNotifications = "boolean",
+      DesktopShortcutNotifications = "boolean",
       ForcePCUI = "boolean",
       AutoParry = "boolean",
       AutoParryWindowFactor = "rate",
@@ -350,8 +389,9 @@ local CONFIG = {
       PanelY = "position",
     },
     defaults = {
-      MobileNotifications = false,
+      MobileNotifications = true,
       DesktopNotifications = true,
+      DesktopShortcutNotifications = true,
       ForcePCUI = false,
       AutoParry = true,
       AutoParryWindowFactor = 0.3,
@@ -392,6 +432,19 @@ local CONFIG = {
     },
   },
 }
+
+-- shortcuts
+for _, page in ipairs(CONFIG.PAGES) do
+  for _, section in ipairs(page.sections) do
+    for _, definition in ipairs(section.components or {}) do
+      local key = definition.shortcutKey
+      if key then
+        CONFIG.SETTINGS.schema[key] = "keyCode"
+        if CONFIG.SETTINGS.defaults[key] == nil then CONFIG.SETTINGS.defaults[key] = Enum.KeyCode.Unknown end
+      end
+    end
+  end
+end
 
 -- public-api
 UIConfig.pages = CONFIG.PAGES

@@ -4,6 +4,8 @@ Covers state and lifecycle behavior, not engine rendering, text metrics or sched
 The system Lua 5.4 shared library is required, as in the existing runtime harnesses.
 """
 import ctypes
+import hashlib
+import json
 import re
 import unittest
 from pathlib import Path
@@ -26,8 +28,15 @@ def lua(source):
                   lambda m: f'{m[1]} = {m[1]} {m[2]} ({m[3]})', source)
 
 
+MODULE_PATHS = dict(re.findall(r'\{\s*name\s*=\s*"(\w+)",\s*path\s*=\s*"([^"]+)"\s*\}', (ROOT / 'loader.luau').read_text()))
+
+
+def module_path(name):
+    return ROOT / MODULE_PATHS[name]
+
+
 def module(name):
-    source = lua((ROOT / 'modules/front' / f'{name}.luau').read_text())
+    source = lua(module_path(name).read_text())
     return f'{name} = assert(load([==[{source}]==], "@{name}.luau"))()\n'
 
 
@@ -39,12 +48,12 @@ function table.freeze(t) return t end
 function math.clamp(x,a,b) return math.max(a,math.min(b,x)) end
 '''
 MOCK = (Path(__file__).parent / 'fixtures/roblox_ui.txt').read_text()
-MODULES = ''.join(module(name) for name in ('uitheme', 'uiruntime', 'uiicons', 'uikit', 'uipages', 'uiconfig', 'uiactions', 'ui'))
+MODULES = ''.join(module(name) for name in ('uitheme', 'uiruntime', 'uiicons', 'uidisplay', 'uicontrols', 'uiinputs', 'uiselection', 'uidropdown', 'uikit', 'uipages', 'uiconfig', 'uinotifications', 'uiactions', 'uicontext', 'uiwindow', 'uifloating', 'uinotificationview', 'uitelemetry', 'uiinput', 'uilifecycle', 'ui'))
 SETUP = '''
 assert(uitheme.setup())
 assert(uiruntime.setup({Theme=uitheme}))
 assert(uiicons.setup({Theme=uitheme}))
-assert(uikit.setup({Theme=uitheme,Runtime=uiruntime,Icons=uiicons}))
+assert(uikit.setup({Theme=uitheme,Runtime=uiruntime,Icons=uiicons,Display=uidisplay,ControlComponents=uicontrols,Inputs=uiinputs,Selection=uiselection,Dropdown=uidropdown}))
 local config=table.clone(uiconfig.__config.defaults)
 config.UniversalFly=false;config.UniversalFlySpeed=1;config.UniversalSpeedEnabled=false;config.UniversalSpeed=16
 config.UniversalGravityEnabled=false;config.UniversalGravity=196.2
@@ -90,7 +99,7 @@ local function newKit(extra)
 end
 local function fullDeps()
  return {Utils=utils,UIConfig=uiconfig,GameInfo=gameInfo,AutoSpam={getStatus=function() return {} end},
-  UIKit=uikit,UIPages=uipages,UIActions=uiactions,Runtime=uiruntime,Theme=uitheme,Controls={}}
+  UIKit=uikit,UIPages=uipages,UIActions=uiactions,Runtime=uiruntime,Theme=uitheme,NotificationPolicy=uinotifications,Context=uicontext,Window=uiwindow,Floating=uifloating,Notifications=uinotificationview,Telemetry=uitelemetry,Input=uiinput,Lifecycle=uilifecycle,Controls={}}
 end
 '''
 
@@ -103,12 +112,45 @@ class UILibraryTests(unittest.TestCase):
         try:
             result = LIB.luaL_loadbufferx(state, source, len(source), b'ui_library_tests', None)
             if not result:
-                result = LIB.lua_pcallk(state, 0, 0, 0, 0, None)
+                result = LIB.lua_pcallk(state, 0, 1, 0, 0, None)
             if result:
                 error = LIB.lua_tolstring(state, -1, None)
                 self.fail(error.decode() if error else 'Unknown Lua error')
+            value = LIB.lua_tolstring(state, -1, None)
+            return value.decode() if value else None
         finally:
             LIB.lua_close(state)
+
+    def scene_digest(self, desktop):
+        script = '''
+local service=game:GetService('UserInputService')
+service.KeyboardEnabled=DESKTOP;service.MouseEnabled=DESKTOP;service.TouchEnabled=not DESKTOP
+assert(ui.setup(fullDeps(),{open=true}));flushDeferred();finishTweens()
+local keys={'ClassName','Name','Size','Position','AnchorPoint','LayoutOrder','BackgroundColor3','BackgroundTransparency','Text','TextSize','Font','TextColor3','TextTransparency','Image','ImageTransparency','Rotation','CornerRadius','Color','Thickness','Padding','PaddingLeft','PaddingRight','PaddingTop','PaddingBottom','AutomaticSize','AutomaticCanvasSize','ScrollBarThickness','GroupTransparency','Visible','ZIndex'}
+local function atom(value)
+ if type(value)~='table' then return tostring(value) end
+ if value.__type=='EnumItem' then return value.Name end
+ local parts={}
+ for key,item in pairs(value) do if key~='__type' then parts[#parts+1]=tostring(key)..'='..atom(item) end end
+ table.sort(parts);return '{'..table.concat(parts,',')..'}'
+end
+local function tree(root)
+ local parts={}
+ for _,key in ipairs(keys) do parts[#parts+1]=key..'='..atom(root._props[key]) end
+ local children={}
+ for _,child in ipairs(root:GetChildren()) do children[#children+1]=tree(child) end
+ table.sort(children)
+ return '('..table.concat(parts,';')..'['..table.concat(children)..'])'
+end
+return tree(playerGui)
+'''.replace('DESKTOP', 'true' if desktop else 'false')
+        return hashlib.sha256(self.run_lua(script).encode()).hexdigest()
+
+    def test_modularization_preserves_desktop_and_mobile_scene_properties(self):
+        expected = json.loads((Path(__file__).parent / 'fixtures/ui-scene.json').read_text())
+        for desktop in (True, False):
+            with self.subTest(desktop=desktop):
+                self.assertEqual(self.scene_digest(desktop), expected['desktop' if desktop else 'mobile'])
 
     def test_dropdown_stays_below_trigger_and_follows_motion_and_scaling(self):
         self.run_lua('''
@@ -199,7 +241,7 @@ _G.ExodusUICleanup();finishTweens();assert(listenerCount()==0 and activeTweenCou
     def test_embedded_png_icons_load_once_without_network(self):
         expected = (ROOT / 'assets/ui/settings.png').read_bytes()
         literal = '"' + ''.join(f'\\{byte:03d}' for byte in expected) + '"'
-        revision = re.search(r'VERSION = "([^"]+)"', (ROOT / 'modules/front/uiicons.luau').read_text())[1]
+        revision = re.search(r'VERSION = "([^"]+)"', module_path('uiicons').read_text())[1]
         self.run_lua('''
 local files, writes={},0
 makefolder=function() end;isfolder=function() return true end
@@ -213,9 +255,92 @@ panel:Destroy()
 ''')
 
     def test_hub_has_no_font_icons_or_emojis(self):
-        sources = '\n'.join(p.read_text() for p in (ROOT / 'modules/front').glob('*.luau'))
+        sources = '\n'.join(p.read_text() for p in (ROOT / 'modules/front').rglob('*.luau'))
         self.assertNotRegex(sources, '[\\U0001F300-\\U0001FAFF\\u2600-\\u27FF\\uFE0F]')
         self.assertNotIn('▾', sources)
+
+    def test_dropdown_press_is_preview_and_selection_remains_visible_before_fade(self):
+        self.run_lua('''
+local kit=newKit();local select=kit.Components.dropdown(panel,{key='ClickMethod',choices={'Deflect','Direct'}})
+local trigger=findDescendant(select.Root,'Select');local touch=input('Touch',110,110)
+trigger.InputBegan:Fire(touch);finishTweens()
+assert(select.Border.Color==uitheme.tokens.COLORS.accent and not playerGui:FindFirstChild('ExodusDropdown'))
+game:GetService('UserInputService').InputEnded:Fire(touch);finishTweens()
+assert(config.ClickMethod=='Deflect','holding the opener selected a value')
+click(trigger);finishTweens();local portal=playerGui:FindFirstChild('ExodusDropdown')
+local item
+for _, object in ipairs(portal:GetDescendants()) do if object:IsA('TextButton') and object.Text=='Direct' then item=object end end
+assert(item)
+item.MouseEnter:Fire();item.InputBegan:Fire(touch);finishTweens()
+assert(item:FindFirstChildOfClass('UIStroke').Transparency==0 and config.ClickMethod=='Deflect')
+game:GetService('UserInputService').InputEnded:Fire(touch);click(item);finishTweens()
+assert(config.ClickMethod=='Direct' and portal.Parent and item.BackgroundTransparency==0.25,'selection vanished before feedback')
+flushDelays();assert(portal.Parent,'fade must run after the selection delay')
+finishTweens();assert(not portal.Parent)
+click(trigger);kit.dismiss();flushDelays();finishTweens();assert(not playerGui:FindFirstChild('ExodusDropdown'))
+kit.destroy();assert(listenerCount()==0)
+''')
+
+    def test_shortcut_registry_uses_the_same_actions_and_can_clear_bindings(self):
+        self.run_lua('''
+local calls=0;local deps=fullDeps();deps.Controls.onUniversalToggle=function(feature,enabled) assert(feature=='Fly' and enabled);calls=calls+1 end
+assert(ui.setup(deps,{open=true}));flushDeferred();finishTweens()
+local root=playerGui:FindFirstChild('ExodusUISystem');local fly=findDescendant(root,'UniversalFly')
+local cap=findDescendant(fly,'Shortcut_FlyKeybind')
+assert(config.FlyKeybind==Enum.KeyCode.Unknown)
+click(cap);game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'K'))
+assert(config.FlyKeybind==Enum.KeyCode.K)
+game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'K'),false)
+assert(config.UniversalFly and calls==1,'shortcut did not use the rendered control action')
+local toast=findDescendant(playerGui,'ExodusToast');assert(toast and findDescendant(toast,'TextLabel').Text=='Fly On')
+click(cap);game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'P'))
+assert(config.FlyKeybind==Enum.KeyCode.K,'duplicate shortcut replaced an existing binding')
+click(cap);game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'Backspace'))
+assert(config.FlyKeybind==Enum.KeyCode.Unknown)
+utils.setConfig({FierceKeybind=Enum.KeyCode.L});abilities=false
+game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'L'),false);assert(not config.AutoFierce)
+_G.ExodusUICleanup();finishTweens();assert(listenerCount()==0)
+''')
+
+    def test_notification_policy_and_desktop_child_are_platform_specific(self):
+        self.run_lua('''
+local policy=uinotifications.shouldShow
+assert(policy(config,true,{category='shortcut',topic='AutoSpam'}))
+assert(not policy(config,false,{category='shortcut',topic='AutoSpam'}))
+for _, desktop in ipairs({true,false}) do
+ assert(not policy(config,desktop,{category='interaction'}))
+ assert(not policy(config,desktop,{category='shortcut',topic='manualSpam'}))
+ assert(not policy(config,desktop,{category='shortcut',topic='upDash'}))
+ assert(policy(config,desktop,{category='system'}))
+end
+config.DesktopShortcutNotifications=false;assert(not policy(config,true,{category='shortcut'}))
+config.DesktopNotifications=false;config.MobileNotifications=false
+assert(not policy(config,true,{category='system'}) and not policy(config,false,{category='system'}))
+assert(policy(config,false,{category='critical'}) and policy(config,true,{category='lifecycle'}))
+config.DesktopNotifications=true
+assert(ui.setup(fullDeps(),{open=true}));flushDeferred();finishTweens()
+local root=playerGui:FindFirstChild('ExodusUISystem');assert(findDescendant(root,'DesktopShortcutNotifications'))
+utils.setConfig({DesktopNotifications=false});finishTweens()
+assert(not uiruntime.isVisible(findDescendant(root,'DesktopShortcutNotifications')))
+_G.ExodusUICleanup();finishTweens()
+local service=game:GetService('UserInputService');service.KeyboardEnabled=false;service.MouseEnabled=false;service.TouchEnabled=true
+assert(ui.setup(fullDeps(),{open=true}));flushDeferred();finishTweens()
+root=playerGui:FindFirstChild('ExodusUISystem')
+for _, object in ipairs(root:GetDescendants()) do assert(object.Name~='DesktopShortcutNotifications','PC-only option appeared on mobile') end
+_G.ExodusUICleanup();finishTweens()
+''')
+
+    def test_manual_spam_and_up_dash_do_not_emit_gameplay_toasts(self):
+        self.run_lua('''
+local dash=0;local deps=fullDeps();deps.Controls.onUpDash=function() dash=dash+1 end
+assert(ui.setup(deps,{open=true}));flushDeferred();finishTweens()
+local service=game:GetService('UserInputService')
+service.InputBegan:Fire(input('Keyboard',0,0,'F'),false)
+service.InputBegan:Fire(input('Keyboard',0,0,'U'),false)
+assert(manual and dash==1)
+for _, object in ipairs(playerGui:GetDescendants()) do assert(object.Name~='ExodusToast') end
+_G.ExodusUICleanup();finishTweens()
+''')
 
     def test_navigation_races_share_one_controller_and_preserve_scroll(self):
         self.run_lua('''
