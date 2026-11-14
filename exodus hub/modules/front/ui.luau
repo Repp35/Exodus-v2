@@ -335,8 +335,7 @@ local function makeDraggable(handle, target, onDragEnd, disableOnMobile, coordin
     local dx, dy = input.Position.X - startX, input.Position.Y - startY
     if state == "Pressed" and (dx * dx + dy * dy) >= THRESH_SQ then state, wasDragged = "Dragging", true end
     if state == "Dragging" then
-      local vp, sz = viewport(), target.AbsoluteSize
-      local scale = coordinateScale and coordinateScale() or 1
+      local vp, sz = viewport(), target.AbsoluteSize; local scale = coordinateScale and coordinateScale() or 1
       scale = math.max(scale, 0.01)
       target.Position = UDim2.new(
         0,
@@ -436,29 +435,23 @@ end
 local MINI_W, MINI_H = CONFIG.MINI_W, CONFIG.MINI_H
 local function miniScreenScale() return responsiveScale and responsiveScale.Scale or 1 end
 local function miniLayout(scale)
-  local view, screenScale = viewport(), math.max(miniScreenScale(), 0.01)
-  local width, height = MINI_W * scale, MINI_H * scale
-  local screenWidth, screenHeight = view.X / screenScale, view.Y / screenScale
-  local config = Utils.getConfig()
+  local view, screenScale = viewport(), math.max(miniScreenScale(), 0.01); local width, height = MINI_W * scale, MINI_H * scale
+  local screenWidth, screenHeight = view.X / screenScale, view.Y / screenScale; local config = Utils.getConfig()
   local x = math.clamp(config.MiniX or (screenWidth - width - 14), 0, math.max(0, screenWidth - width))
-  local y = math.clamp(config.MiniY or (screenHeight / 2 - height / 2), 0, math.max(0, screenHeight - height))
-  return x, y, width, height, screenWidth
+  local y = math.clamp(config.MiniY or (screenHeight / 2 - height / 2), 0, math.max(0, screenHeight - height)); return x, y, width, height, screenWidth
 end
 local function applyMiniScale(value)
   if not miniGui or not miniGui.Parent then return end
-  local scale = math.clamp(tonumber(value) or 1, 0.5, 2)
-  local x, y, width, height = miniLayout(scale)
+  local scale = math.clamp(tonumber(value) or 1, 0.5, 2); local x, y, width, height = miniLayout(scale)
   twPlay(miniGui, 0.18, { Size = UDim2.fromOffset(width, height) }, EASE_OUT, DIR_OUT)
   if miniGui.Visible then twPlay(miniGui, 0.18, { Position = UDim2.fromOffset(x, y) }, EASE_OUT, DIR_OUT) end
 end
 local function showMini(v)
   if UIState.desktop then v = false end
   if not miniGui or not miniGui.Parent then return end
-  local config = Utils.getConfig()
-  local miniX, miniY, _, _, screenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
-  local hiddenPosition = UDim2.new(0, screenWidth + 30, 0, miniY)
-  UIState.miniGeneration += 1; local generation = UIState.miniGeneration
-  safeCancel(UIState.miniTween)
+  local config = Utils.getConfig(); local miniX, miniY, _, _, screenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
+  local hiddenPosition = UDim2.new(0, screenWidth + 30, 0, miniY); UIState.miniGeneration += 1
+  local generation = UIState.miniGeneration; safeCancel(UIState.miniTween)
   if v then
     if not miniGui.Visible then
       miniGui.Position = hiddenPosition; miniGui.GroupTransparency = 1
@@ -2232,8 +2225,7 @@ function ExodusUI.setup(deps, preview)
     pulseBall(ball)
     if showToast then showToast("Up Dash") end
   end)
-  paintJumpBall(config.AutoJump == true)
-  local _, miniY, miniWidth, miniHeight, miniScreenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
+  paintJumpBall(config.AutoJump == true); local _, miniY, miniWidth, miniHeight, miniScreenWidth = miniLayout(tonumber(config.MiniSpamScale) or 1)
   local MINI_OFF_X = miniScreenWidth + 30
   miniGui = inst("CanvasGroup", {
     Name = "ExodusSpamMini",
@@ -2313,8 +2305,7 @@ function ExodusUI.setup(deps, preview)
     ZIndex = 16,
     Parent = miniGui,
   })
-  corner(spamButton, 10)
-  inst("UITextSizeConstraint", { MaxTextSize = 30, MinTextSize = 12 }, spamButton)
+  corner(spamButton, 10); inst("UITextSizeConstraint", { MaxTextSize = 30, MinTextSize = 12 }, spamButton)
   trackConn(spamButton.Activated:Connect(function()
     if Utils.getConfigValue("ManualSpamMode") ~= "Hold" then setSpam(not UIState.spamOn) end
   end))
@@ -2323,9 +2314,7 @@ function ExodusUI.setup(deps, preview)
     if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then UIState.manualHoldInput = input; setSpam(true) end
   end))
   miniGui.Position = UDim2.new(0, MINI_OFF_X, 0, miniY)
-  local function saveMiniPosition()
-    Utils.setConfig({ MiniX = miniGui.Position.X.Offset, MiniY = miniGui.Position.Y.Offset })
-  end
+  local function saveMiniPosition() Utils.setConfig({ MiniX = miniGui.Position.X.Offset, MiniY = miniGui.Position.Y.Offset }) end
   makeDraggable(miniTitleBar, miniGui, saveMiniPosition, false, miniScreenScale, saveMiniPosition)
   configPanel = inst("CanvasGroup", {
     Name = "ExodusPanel",
@@ -2514,9 +2503,7 @@ function ExodusUI.setup(deps, preview)
     rate_selector = createRateSelector,
     dropdown = createDropdown,
     segmented = createSegmented,
-    scroll = function(yPos, parent, definition)
-      return createScrollCard(definition, yPos, parent)
-    end,
+    scroll = function(yPos, parent, definition) return createScrollCard(definition, yPos, parent) end,
     keybind_selector = createKeybindSelector,
     toggle = function(yPos, parent, definition)
       return createToggleCard(definition, definition.key, yPos, parent, toggleCallbacks[definition.key], definition.shortcutKey)
