@@ -1445,8 +1445,7 @@ local function createDropdown(yPos, parent, definition)
       safeDisconnect(followConnection); untrackConn(followConnection)
       followConnection = nil
     end
-    local oldPopup, oldGroup = popup, fadeGroup
-    popup, fadeGroup = nil, nil
+    local oldPopup, oldGroup = popup, fadeGroup; popup, fadeGroup = nil, nil
     safeCancel(fadeTween); fadeTween = nil
     if oldPopup then
       local dismiss = oldPopup:FindFirstChild("Dismiss")
@@ -1455,7 +1454,9 @@ local function createDropdown(yPos, parent, definition)
         oldPopup:Destroy()
       else
         twPlay(oldGroup, 0.18, { GroupTransparency = 1 }, EASE_SINE, DIR_OUT)
-        task.delay(0.18, function() if oldPopup.Parent then oldPopup:Destroy() end end)
+        task.delay(0.18, function()
+          if oldPopup.Parent then oldPopup:Destroy() end
+        end)
       end
     end
     if arrow.Parent then twPlay(arrow, 0.18, { Rotation = 0 }, EASE_OUT, DIR_OUT) end
@@ -1497,11 +1498,15 @@ local function createDropdown(yPos, parent, definition)
       ZIndex = 1,
       Parent = popup,
     })
-    dismiss.Activated:Connect(function() if popup == popupRef then close() end end)
+    dismiss.Activated:Connect(function()
+      if popup == popupRef then close() end
+    end)
     fadeGroup = inst("CanvasGroup", {
       Size = UDim2.fromOffset(button.AbsoluteSize.X, 0),
-      BackgroundTransparency = 1, GroupTransparency = 1,
-      ZIndex = 2, Parent = popup,
+      BackgroundTransparency = 1,
+      GroupTransparency = 1,
+      ZIndex = 2,
+      Parent = popup,
     })
     local group = fadeGroup
     local list = inst("ScrollingFrame", {
@@ -1568,10 +1573,8 @@ local function createDropdown(yPos, parent, definition)
     end
     closeActiveDropdown = close; local height, width = updatePosition()
     if not popup then return end
-    group.Size = UDim2.fromOffset(width, height)
-    fadeTween = twPlay(group, 0.18, { GroupTransparency = 0 }, EASE_SINE, DIR_OUT)
-    twPlay(arrow, 0.2, { Rotation = 180 }, EASE_OUT, DIR_OUT)
-    twPlay(border, 0.2, { Color = C.accent }, EASE_OUT, DIR_OUT)
+    group.Size = UDim2.fromOffset(width, height); fadeTween = twPlay(group, 0.18, { GroupTransparency = 0 }, EASE_SINE, DIR_OUT)
+    twPlay(arrow, 0.2, { Rotation = 180 }, EASE_OUT, DIR_OUT); twPlay(border, 0.2, { Color = C.accent }, EASE_OUT, DIR_OUT)
     followConnection = trackConn(RunService.Heartbeat:Connect(function()
       local nextHeight, nextWidth = updatePosition()
       if popup and nextHeight then
