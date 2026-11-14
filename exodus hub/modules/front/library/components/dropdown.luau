@@ -137,8 +137,8 @@ function Components.install(context)
         local selected = choiceValue(choice) == value
         local item = button(list, choiceLabel(choice), {
           LayoutOrder = index,
-          BackgroundColor3 = C.accent,
-          BackgroundTransparency = selected and 0.25 or 1,
+          BackgroundColor3 = C.cardHover,
+          BackgroundTransparency = selected and 0.1 or 1,
           TextColor3 = selected and C.text or C.subtext,
           ZIndex = 3,
         })
@@ -146,7 +146,7 @@ function Components.install(context)
         local refresh = kit.feedback(openScope, item, function(active, pressed)
           local selectedNow = choiceValue(choice) == value; menuMotion.play(border, "feedback", { Transparency = (active or selectedNow) and 0 or 1, Color = active and C.accent or C.border })
           menuMotion.play(item, "feedback", {
-            BackgroundTransparency = selectedNow and 0.25 or (pressed and 0.45 or (active and 0.7 or 1)),
+            BackgroundTransparency = (selectedNow or active) and 0.1 or 1,
             TextColor3 = (active or selectedNow) and C.text or C.subtext,
           })
         end, function() return not selecting and not closing end)
