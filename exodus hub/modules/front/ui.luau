@@ -119,7 +119,10 @@ local function stroke(obj, col, th)
 end
 local function twPlay(obj, duration, props)
   if not obj or obj.Parent == nil then return nil end
-  if shellMotion and shellScope.alive then return shellMotion.play(obj, duration, props) end
+  if shellMotion and shellScope.alive then
+    if obj:IsA("CanvasGroup") and props.GroupTransparency ~= nil then return shellMotion.group(obj, duration, props) end
+    return shellMotion.play(obj, duration, props)
+  end
   local profile = CONFIG.MOTION[type(duration) == "string" and duration or "control"]
   local tween = TweenService:Create(obj, TweenInfo.new(type(duration) == "number" and duration or profile.duration, profile.style, profile.direction), props); tween:Play()
   return tween
@@ -1473,18 +1476,19 @@ function ExodusUI.setup(deps, preview)
     Parent = titleGroup,
   })
   minimizeButton = inst("TextButton", {
+    Name = "MinimizePanel",
     Size = UDim2.new(0, 30, 0, 30),
     Position = UDim2.new(1, -PAD - 30, 0.5, -15),
     BackgroundColor3 = C.btnDark,
     BackgroundTransparency = 0.3,
-    Text = "—",
+    Text = "",
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 14,
     Font = Enum.Font.GothamBold,
     ZIndex = 7,
     Parent = titleBar,
   })
-  corner(minimizeButton, 8)
+  corner(minimizeButton, 8); uiKit.icon(minimizeButton, "minimize")
   trackConn(minimizeButton.MouseEnter:Connect(function() twPlay(minimizeButton, "feedback", { BackgroundTransparency = 0 }) end))
   trackConn(minimizeButton.MouseLeave:Connect(function() twPlay(minimizeButton, "feedback", { BackgroundTransparency = 0.3 }) end))
   trackConn(minimizeButton.Activated:Connect(function()
@@ -1496,14 +1500,14 @@ function ExodusUI.setup(deps, preview)
     Position = UDim2.new(1, -PAD - 66, 0.5, -15),
     BackgroundColor3 = C.btnDark,
     BackgroundTransparency = 0.3,
-    Text = "⚙",
+    Text = "",
     TextColor3 = Color3.new(1, 1, 1),
     TextSize = 18,
     Font = Enum.Font.GothamBold,
     ZIndex = 9,
     Parent = titleBar,
   })
-  corner(settingsButton, 8)
+  corner(settingsButton, 8); uiKit.icon(settingsButton, "settings")
   killBtn = inst("TextButton", {
     Size = UDim2.new(0, 124, 0, 26),
     Position = UDim2.new(1, -PAD - 124, 1, -PAD - 26),
@@ -1526,7 +1530,7 @@ function ExodusUI.setup(deps, preview)
     Size = UDim2.new(0, 32, 0, 26),
     Position = UDim2.new(0, PAD, 1, -PAD - 26),
     BackgroundColor3 = C.btnDark,
-    Text = "‹",
+    Text = "",
     TextColor3 = C.text,
     TextSize = 20,
     Font = Enum.Font.GothamBold,
@@ -1550,7 +1554,7 @@ function ExodusUI.setup(deps, preview)
     Size = UDim2.new(0, 32, 0, 26),
     Position = UDim2.new(0, PAD + 118, 1, -PAD - 26),
     BackgroundColor3 = C.btnDark,
-    Text = "›",
+    Text = "",
     TextColor3 = C.text,
     TextSize = 20,
     Font = Enum.Font.GothamBold,
@@ -1558,6 +1562,7 @@ function ExodusUI.setup(deps, preview)
     Parent = configPanel,
   })
   corner(previous, 6); corner(nextPage, 6)
+  local previousIcon = uiKit.icon(previous, "chevron", { Rotation = 90 }); local nextIcon = uiKit.icon(nextPage, "chevron", { Rotation = -90 })
   local actions
   local rebuildQueued = false
   local function rebuild(reset)
@@ -1584,8 +1589,8 @@ function ExodusUI.setup(deps, preview)
     pageLabel.Text = state.utility and state.title or tostring(state.index) .. "/" .. tostring(state.count) .. " " .. state.title; previous.Visible = not state.utility
     nextPage.Visible = not state.utility; previous.Active = state.index ~= nil and state.index > 1
     previous.Selectable = previous.Active; nextPage.Active = state.index ~= nil and state.index < state.count
-    nextPage.Selectable = nextPage.Active; previous.TextTransparency = previous.Active and 0 or 0.7
-    nextPage.TextTransparency = nextPage.Active and 0 or 0.7; settingsButton.BackgroundColor3 = state.id == "config" and C.accent or C.btnDark
+    nextPage.Selectable = nextPage.Active; previousIcon.ImageTransparency = previous.Active and 0 or 0.7
+    nextIcon.ImageTransparency = nextPage.Active and 0 or 0.7; settingsButton.BackgroundColor3 = state.id == "config" and C.accent or C.btnDark
   end
   pageController = UIPages.create(uiKit, configPanel, UIConfig.pages, {
     desktop = UIState.desktop,

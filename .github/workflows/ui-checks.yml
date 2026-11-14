@@ -24,6 +24,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y liblua5.4-0
       - name: Validate module contracts and UI behavior
         run: python3 -m unittest discover -s "exodus hub/indeed/tests" -p "test_*.py"
+      - name: Validate bundled PNG icons
+        run: python3 "exodus hub/indeed/build_ui_icons.py" --check
       - name: Validate close and reload transitions
         run: python3 "exodus hub/indeed/tests/ui_transition_regression.py"
       - name: Check Luau syntax and formatting

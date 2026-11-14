@@ -92,6 +92,15 @@ CONFIG.MOTION = {
     direction = Enum.EasingDirection.Out,
   },
 }
+CONFIG.SELECTOR_COLORS = {
+  CPS = CONFIG.COLORS.accent,
+  CPF = CONFIG.COLORS.accentPink,
+  MS = Color3.fromRGB(234, 179, 8),
+  Auto = CONFIG.COLORS.autoMode,
+  Toggle = CONFIG.COLORS.accent,
+  Hold = CONFIG.COLORS.hold,
+}
+CONFIG.DROPDOWN = { gap = 5, margin = 6, rowHeight = 32, rowGap = 3, padding = 4 }
 CONFIG.PAGE_OFFSET = 18
 CONFIG.SCROLLBAR = 3
 

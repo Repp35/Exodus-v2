@@ -4,6 +4,7 @@
 local UIKit = {}
 local Theme
 local Runtime
+local Icons
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
@@ -15,7 +16,7 @@ local CONFIG = {
 
 -- setup
 function UIKit.setup(deps)
-  Theme, Runtime = deps.Theme.tokens, deps.Runtime; return true
+  Theme, Runtime, Icons = deps.Theme.tokens, deps.Runtime, deps.Icons; return true
 end
 
 -- helpers
@@ -44,7 +45,7 @@ function UIKit.create(options)
   local motion = Runtime.motion(scope, options.reducedMotion); local C, FONT, TEXT = Theme.COLORS, Theme.FONT, Theme.TEXT
   local bindings, components, drags, observers = {}, {}, {}, {}
   local popupClose, capture
-  local kit = { Theme = Theme, Components = components, scope = scope, motion = motion, suspended = false }; local motions = { [motion] = true }
+  local kit = { icon = Icons.create, Theme = Theme, Components = components, scope = scope, motion = motion, suspended = false }; local motions = { [motion] = true }
   function kit.createMotion(lifetime)
     local owned = Runtime.motion(lifetime, options.reducedMotion); motions[owned] = true
     lifetime.add(function() motions[owned] = nil end)
@@ -467,7 +468,10 @@ function UIKit.create(options)
       value = nextValue
       for index, choice in ipairs(choices) do
         local selected = choiceValue(choice) == value
-        if selected then handle.motion.play(thumb, "control", { Position = UDim2.new((index - 1) / #choices, 2, 0, 2) }) end
+        if selected then
+          local color = type(choice) == "table" and choice.color or nil; color = color or (definition.colors and definition.colors[value]) or Theme.SELECTOR_COLORS[value] or C.accent
+          handle.motion.play(thumb, "control", { Position = UDim2.new((index - 1) / #choices, 2, 0, 2), BackgroundColor3 = color })
+        end
         handle.motion.play(buttons[index], "control", { TextColor3 = selected and C.text or C.subtext })
       end
     end
@@ -491,17 +495,25 @@ function UIKit.create(options)
     definition = definition or {}; local choices = definition.options or definition.choices or {}
     local handle = control(parent, definition, Theme.RATE_CARD_H); title(handle, definition, 0, 24)
     local trigger = button(handle.Root, "", { Name = "Select", Size = UDim2.new(1, -20, 0, 28), Position = UDim2.fromOffset(10, 29) })
+    local selectedLabel = text(trigger, "", {
+      Name = "Selected",
+      Position = UDim2.fromOffset(10, 0),
+      Size = UDim2.new(1, -38, 1, 0),
+      ZIndex = 11,
+    })
+    local arrow = kit.icon(trigger, "chevron", { Position = UDim2.new(1, -16, 0.5, 0), Size = UDim2.fromOffset(14, 14) })
     local value, openScope
     local function close()
       if popupClose == close then popupClose = nil end
       if openScope then openScope.destroy(); openScope = nil end
+      handle.motion.play(arrow, "feedback", { Rotation = 0 })
     end
     function handle.setValue(nextValue)
       value = nextValue; local label = tostring(value or definition.placeholder or "Select")
       for _, choice in ipairs(choices) do
         if choiceValue(choice) == value then label = choiceLabel(choice); break end
       end
-      trigger.Text = label .. " ▾"
+      selectedLabel.Text = label
     end
     function handle.getValue() return value end
     local function open()
@@ -516,10 +528,11 @@ function UIKit.create(options)
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
       }, options.parent.Parent)
       local menu = inst("CanvasGroup", { BackgroundColor3 = C.card, GroupTransparency = 1, ZIndex = 1 }, portal); kit.corner(menu)
-      kit.stroke(menu, C.accent)
+      kit.stroke(menu)
       local list = inst("ScrollingFrame", {
         Size = UDim2.fromScale(1, 1),
         BackgroundTransparency = 1,
+        Active = true,
         CanvasSize = UDim2.new(),
         ScrollBarThickness = Theme.SCROLLBAR,
         ScrollBarImageColor3 = C.accent,
@@ -528,23 +541,36 @@ function UIKit.create(options)
       }, menu)
       local menuMotion = kit.createMotion(openScope)
       openScope.add(portal, function() portal:Destroy() end)
+      local ensureRoom = true
       local function position()
         if not trigger.Parent or not Runtime.isVisible(trigger) then close(); return end
         local camera = workspace.CurrentCamera; local view = camera and camera.ViewportSize or Vector2.new(1920, 1080)
         local pos, size = trigger.AbsolutePosition, trigger.AbsoluteSize; local ancestor = trigger.Parent
+        local scroll
         while ancestor and ancestor ~= options.parent do
           if
             ancestor:IsA("ScrollingFrame") and (pos.Y + size.Y <= ancestor.AbsolutePosition.Y or pos.Y >= ancestor.AbsolutePosition.Y + ancestor.AbsoluteSize.Y)
           then
             close(); return
           end
+          if not scroll and ancestor:IsA("ScrollingFrame") then
+            scroll = ancestor
+          end
           ancestor = ancestor.Parent
         end
-        local scale = math.max(0.1, size.Y / 28); local row, gap, pad = 32 * scale, 3 * scale, 4 * scale
+        local layout = Theme.DROPDOWN; local scale = math.max(0.1, size.Y / 28)
+        local row, gap, pad = layout.rowHeight * scale, layout.rowGap * scale, layout.padding * scale
         local desired = math.min(#choices, definition.maxVisible or CONFIG.DROPDOWN_ROWS) * (row + gap) + pad * 2
-        local below, above = math.max(0, view.Y - pos.Y - size.Y - 12), math.max(0, pos.Y - 12); local down = below >= desired or below >= above
-        local height = math.min(desired, down and below or above); local width = math.min(size.X, math.max(1, view.X - 12))
-        menu.Size = UDim2.fromOffset(width, height); menu.Position = UDim2.fromOffset(math.clamp(pos.X, 6, math.max(6, view.X - width - 6)), down and pos.Y + size.Y + 5 or pos.Y - height - 5)
+        local bottom = math.max(pos.Y + size.Y, handle.Root.AbsolutePosition.Y + handle.Root.AbsoluteSize.Y); local margin, spacing = layout.margin, layout.gap * scale
+        local below = math.max(0, view.Y - bottom - spacing - margin); local moved = false
+        if ensureRoom and scroll and below < desired then
+          local room = math.max(0, handle.Root.AbsolutePosition.Y - scroll.AbsolutePosition.Y - pad); local shift = math.min(desired - below, room)
+          if shift > 0 then scroll.CanvasPosition = Vector2.new(scroll.CanvasPosition.X, scroll.CanvasPosition.Y + shift / scale); moved = true end
+        end
+        ensureRoom = false; local height = math.min(desired, below)
+        if height <= 0 and not moved then close(); return end
+        local width = math.min(size.X, math.max(1, view.X - margin * 2)); menu.AnchorPoint = Vector2.zero
+        menu.Size = UDim2.fromOffset(width, height); menu.Position = UDim2.fromOffset(math.clamp(pos.X, margin, math.max(margin, view.X - width - margin)), bottom + spacing)
         list.CanvasSize = UDim2.fromOffset(0, #choices * (row + gap) + pad * 2)
         for index, item in ipairs(list:GetChildren()) do
           if item:IsA("TextButton") then
@@ -568,7 +594,8 @@ function UIKit.create(options)
       end
       position()
       if not openScope then return end
-      menuMotion.play(menu, "feedback", { GroupTransparency = 0 }); openScope.connect(RunService.Heartbeat, position)
+      menuMotion.group(menu, "feedback", { GroupTransparency = 0 }); handle.motion.play(arrow, "feedback", { Rotation = 180 })
+      openScope.connect(RunService.Heartbeat, position)
       openScope.connect(UIS.InputBegan, function(input)
         if input.KeyCode == Enum.KeyCode.Escape then close(); return end
         if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
@@ -642,9 +669,12 @@ end
 -- contract
 UIKit.__contract = {
   provides = { "setup", "create" },
-  requires = { Theme = "uitheme", Runtime = "uiruntime" },
+  requires = { Theme = "uitheme", Runtime = "uiruntime", Icons = "uiicons" },
   requiresData = { Theme = { "tokens" } },
-  requiresMethods = { Runtime = { "scope", "motion", "isVisible", "bindDrag" } },
+  requiresMethods = {
+    Runtime = { "scope", "motion", "isVisible", "bindDrag" },
+    Icons = { "create" },
+  },
 }
 
 return UIKit

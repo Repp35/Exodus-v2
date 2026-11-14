@@ -24,17 +24,18 @@ Não há promessa de ganho de FPS medido. As melhorias de desempenho são estrut
 | --- | --- |
 | `uitheme.luau` | Tokens visuais e perfis de movimento |
 | `uiruntime.luau` | Escopos, cancelamento de tweens e posse de ponteiro |
+| `uiicons.luau` | PNGs locais com cache; alternativas nativas quando o executor não suporta assets locais |
 | `uikit.luau` | Primitivos e componentes; independente dos recursos do jogo |
 | `uipages.luau` | Validação de modelos, seções, colunas, navegação e expansão de filhos |
 | `uiconfig.luau` | Definição declarativa das seis páginas e schema de configurações existente |
 | `uiactions.luau` | Adaptação das ações do hub aos callbacks da biblioteca |
 | `ui.luau` | Janela, controles flutuantes, telemetria, notificações e integração com o loader |
 
-O loader registra os cinco módulos novos e inicializa suas dependências pelo grafo de contratos existente. A distribuição continua copiando os módulos e assinando seus conteúdos. As rotinas de combate e movimento não foram modificadas.
+O loader registra os módulos da biblioteca e inicializa suas dependências pelo grafo de contratos existente. A distribuição continua copiando os módulos e assinando seus conteúdos. As rotinas de combate e movimento não foram modificadas.
 
 ## Criar uma biblioteca
 
-Depois de inicializar `uitheme`, `uiruntime` e `uikit` pelo loader (ou por seus métodos `setup`):
+Depois de inicializar `uitheme`, `uiruntime`, `uiicons` e `uikit` pelo loader (ou por seus métodos `setup`):
 
 ```lua
 local kit = UIKit.create({
@@ -75,8 +76,8 @@ Todos os componentes retornam `Root`, `setEnabled(boolean)`, `setVisible(boolean
 - `textInput`: `placeholder`, `parse`, `format`, `onSubmit(text, enterPressed)`, `setText`, `getText`.
 - `number`: campo numérico finito, `min`, `max`, `displayScale`. Ex.: valor `0.3`, escala `100`, exibição `30`.
 - `slider`: `min`, `max`, `increment`/`step`, `valueName`, `compact`. Suporta mouse, toque e setas quando selecionado.
-- `dropdown`: `options`/`choices`, `placeholder`, `maxVisible`. Fecha ao navegar, minimizar, sair do viewport, clicar fora ou pressionar Escape.
-- `segmented` e `tabs`: mesma API de seleção; as opções podem ser valores ou `{ value, label }`.
+- `dropdown`: `options`/`choices`, `placeholder`, `maxVisible`. O popup fica preso abaixo do acionador, acompanha movimento/escala e limita a altura com rolagem; ao abrir, pode rolar o contêiner para liberar espaço. Fecha ao navegar, minimizar, sair do viewport, clicar fora ou pressionar Escape.
+- `segmented` e `tabs`: mesma API de seleção; as opções podem ser valores ou `{ value, label, color? }`. A cor vem da opção, de `definition.colors[value]`, de `tokens.SELECTOR_COLORS[value]` ou do accent, nessa ordem. CPS/CPF/MS/Auto e Toggle/Hold mantêm suas cores por modo.
 - `progressBar`: valor normalizado entre `0` e `1`.
 - `divider`: separador.
 - `rate_selector`: composição do segmented e campo numérico para CPS/CPF/MS/Auto; não altera os valores ao montar ou trocar o modo.
@@ -157,7 +158,7 @@ Mudanças de configuração observadas pelo kit atualizam automaticamente visibi
 
 `uitheme.tokens.MOTION` define `press`, `feedback`, `control`, `page` e `panel`. Controles usam o mesmo easing cúbico de saída. Tempos diferentes representam funções diferentes, não implementações específicas de páginas. Somente efeitos ambientes, como a duração aleatória das partículas, usam tempos próprios.
 
-`kit.createMotion(scope)` cria movimento pertencente a um escopo e inclui esse movimento em suspend/resume. `motion.play(instance, preset, properties, onComplete?)` cancela tweens que disputam as mesmas propriedades; callbacks de sucesso não rodam para tweens cancelados. O controlador ainda usa uma geração de navegação para impedir callbacks antigos de reativarem páginas.
+`kit.createMotion(scope)` cria movimento pertencente a um escopo e inclui esse movimento em suspend/resume. `motion.group(canvasGroup, preset, properties, onComplete?)` sincroniza a transparência do grupo com seus contornos diretos, inclusive nos ciclos de minimizar/reabrir e substituir a UI. `motion.play(instance, preset, properties, onComplete?)` cancela tweens que disputam as mesmas propriedades; callbacks de sucesso não rodam para tweens cancelados. O controlador ainda usa uma geração de navegação para impedir callbacks antigos de reativarem páginas.
 
 `uiruntime.scope()` oferece `add(resource, dispose?)`, `connect(signal, callback)`, `remove(resource)`, `forget(resource)`, `child()` e `destroy()`. `remove` descarta; `forget` apenas retira o registro. `alive` permite que tarefas com espera abandonem trabalho após o descarte.
 
@@ -176,3 +177,11 @@ Os testes cobrem todas as páginas em PC/mobile, navegação rápida e Config, b
 Ainda é necessário conferir no Roblox: renderização, recorte e métricas de texto, rolagem e toque reais, arrasto com escala reduzida, alternância entre paisagem/retrato, notificações durante reload e fidelidade visual das seis páginas. Os testes simulados não substituem essa conferência nem medem FPS.
 
 Na revisão ampliada, `cooldown_context_regression.py` e `fierce_grace_regression.py` também passam. Três harnesses antigos falham tanto nesta branch quanto no commit base `56e175c`: `parry_runtime_regression.py` e `spam_timer_regression.py` não fornecem `Utils` para `Remote.setup`; `update_channel_regression.py` não fornece `CONFIG` ao trecho extraído. Essas falhas foram reproduzidas numa cópia limpa do commit base. A CI desta alteração executa os contratos, os testes comportamentais e a regressão de transições da UI.
+
+## Ícones sem glifos ou emojis
+
+`kit.icon(parent, name, properties?)` cria um ImageLabel. `settings`, `chevron` e `minimize` são PNGs embarcados em `uiicons.luau`; a navegação reutiliza o chevron com rotação. Não há dependência de fonte para desenhar os ícones.
+
+O PNG/SVG de configurações vem de [CHORUS-HUB---demo/assets/tabs](https://github.com/Repp35/CHORUS-HUB---demo/tree/main/assets/tabs), com a licença ISC preservada em `exodus hub/assets/ui/LUCIDE_LICENSE.txt`. Os PNGs e SVGs de origem ficam em `exodus hub/assets/ui`. Quando disponíveis, `writefile` e `getcustomasset`/`getsynasset` carregam os bytes locais, sem download em runtime; em ambientes sem esse suporte, o adaptador usa imagens nativas do Roblox.
+
+Depois de editar um PNG, execute `python3 "exodus hub/indeed/build_ui_icons.py"` e o formatter. O gerador atualiza os bytes embarcados e a versão do caminho de cache, impedindo que uma textura antiga seja reutilizada. A CI executa o gerador com `--check` para detectar divergências.
