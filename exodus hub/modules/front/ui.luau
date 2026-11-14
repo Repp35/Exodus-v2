@@ -1409,6 +1409,7 @@ local function createDropdown(yPos, parent, definition)
     corner(line, 1)
   end
   local popup, followConnection
+  local opening = false
   local close
   close = function()
     if closeActiveDropdown == close then closeActiveDropdown = nil end
@@ -1421,10 +1422,27 @@ local function createDropdown(yPos, parent, definition)
     if border.Parent then twPlay(border, 0.18, { Color = C.border }, EASE_OUT, DIR_OUT) end
   end
   local function open()
+    if opening then return end
     if closeActiveDropdown then closeActiveDropdown() end
     if not screenGui or not screenGui.Parent or not button.Parent or #options == 0 then return end
+    opening = true
+    local owner = screenGui
     local scale = math.max(button.AbsoluteSize.Y / 28, 0.1); local rowHeight, gap, padding = 32 * scale, 3 * scale, 4 * scale
     local contentHeight = #options * (rowHeight + gap) + padding * 2; local desiredHeight = math.min(#options, definition.maxVisible or 4) * (rowHeight + gap) + padding * 2
+    if parent:IsA("ScrollingFrame") then
+      local cam = workspace.CurrentCamera; local view = cam and cam.ViewportSize or Vector2.new(1920, 1080)
+      local available = view.Y - f.AbsolutePosition.Y - f.AbsoluteSize.Y - 10 * scale
+      local need = math.max(0, desiredHeight - available)
+      local room = math.max(0, button.AbsolutePosition.Y - parent.AbsolutePosition.Y - 4 * scale)
+      local shift = math.min(need, room)
+      if shift > 0 then
+        local uiScale = math.max(responsiveScale and responsiveScale.Scale or 1, 0.01)
+        parent.CanvasPosition = Vector2.new(parent.CanvasPosition.X, parent.CanvasPosition.Y + shift / uiScale)
+        RunService.Heartbeat:Wait()
+      end
+    end
+    opening = false
+    if screenGui ~= owner or not owner.Parent or not button.Parent or not UIState.panelOpen then return end
     popup = inst("ScreenGui", {
       Name = "ExodusDropdown",
       ResetOnSpawn = false,
@@ -1496,10 +1514,10 @@ local function createDropdown(yPos, parent, definition)
       local pos, size = button.AbsolutePosition, button.AbsoluteSize; local parentPos, parentSize = parent.AbsolutePosition, parent.AbsoluteSize
       if pos.Y + size.Y <= parentPos.Y or pos.Y >= parentPos.Y + parentSize.Y then close(); return end
       local screen = workspace.CurrentCamera; local view = screen and screen.ViewportSize or Vector2.new(1920, 1080)
-      local margin, space = 6 * scale, 4 * scale; local below = math.max(0, view.Y - pos.Y - size.Y - margin - space)
-      local above = math.max(0, pos.Y - margin - space); local upward = below < desiredHeight and above > below
-      local height = math.max(0, math.min(desiredHeight, upward and above or below)); local x = math.clamp(pos.X, margin, math.max(margin, view.X - size.X - margin))
-      list.AnchorPoint = upward and Vector2.new(0, 1) or Vector2.new(0, 0); list.Position = UDim2.fromOffset(x, upward and (pos.Y - space) or (pos.Y + size.Y + space))
+      local margin, space = 6 * scale, 4 * scale; local cardBottom = f.AbsolutePosition.Y + f.AbsoluteSize.Y
+      local below = math.max(0, view.Y - cardBottom - margin - space)
+      local height = math.max(0, math.min(desiredHeight, below)); local x = math.clamp(pos.X, margin, math.max(margin, view.X - size.X - margin))
+      list.AnchorPoint = Vector2.new(0, 0); list.Position = UDim2.fromOffset(x, cardBottom + space)
       return height, size.X
     end
     closeActiveDropdown = close; local height, width = updatePosition()
@@ -2458,7 +2476,10 @@ function ExodusUI.setup(deps, preview)
     Position = UDim2.new(0, COL_W + GAP, 0, 0),
     BackgroundTransparency = 1,
     BorderSizePixel = 0,
-    ScrollBarThickness = 2,
+    Active = true,
+    ScrollingDirection = Enum.ScrollingDirection.Y,
+    ScrollBarThickness = 4,
+    ScrollBarImageColor3 = C.accent,
     CanvasSize = UDim2.new(0, 0, 0, 0),
     ZIndex = 6,
     Parent = pageGroups[1],
@@ -2500,6 +2521,10 @@ function ExodusUI.setup(deps, preview)
   local yR = 26
   local manualSpamVisual
   local components = {
+    section = function(yPos, parent, definition)
+      cardLabel(definition.title, parent, yPos + 5)
+      return yPos + 28
+    end,
     rate_selector = createRateSelector,
     dropdown = createDropdown,
     segmented = createSegmented,
@@ -2529,11 +2554,18 @@ function ExodusUI.setup(deps, preview)
 
   for _, definition in ipairs(UIConfig.panelComponents) do
     local createComponent = components[definition.kind]
-    if createComponent and not (UIState.desktop and definition.mobileOnly) and (definition.kind ~= "keybind_selector" or UIState.desktop) then
-      if definition.joined then yR -= CARD_GAP end
+    if
+      createComponent
+      and not (UIState.desktop and definition.mobileOnly)
+      and not (not UIState.desktop and definition.desktopOnly)
+      and (definition.kind ~= "keybind_selector" or UIState.desktop)
+    then
+      if definition.joined then yR -= math.min(3, CARD_GAP) end
       yR = createComponent(yR, colRight, definition)
     end
   end
+  colRight.CanvasSize = UDim2.fromOffset(0, yR + CARD_GAP)
+  colRight.CanvasPosition = Vector2.zero
   local settingsLeft = inst("ScrollingFrame", {
     AutomaticCanvasSize = Enum.AutomaticSize.Y,
     CanvasSize = UDim2.new(),

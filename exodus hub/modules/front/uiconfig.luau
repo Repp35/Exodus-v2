@@ -47,6 +47,10 @@ local CONFIG = {
       },
     },
     {
+      kind = "section",
+      title = "Spam manual",
+    },
+    {
       kind = "off_on",
       title = "Manual Spam",
       mobileKey = "MiniSpamVisible",
@@ -73,6 +77,11 @@ local CONFIG = {
       max = 2,
       increment = 0.05,
       valueName = "x",
+    },
+    {
+      kind = "section",
+      title = "Atalhos",
+      desktopOnly = true,
     },
     {
       kind = "keybind_selector",
