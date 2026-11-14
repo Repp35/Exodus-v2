@@ -192,6 +192,29 @@ click(findDescendant(mini,'SpamButton'));assert(manual,'minimizing blocked the f
 _G.ExodusUICleanup();finishTweens()
 ''')
 
+    def test_children_account_for_scale_and_have_vertical_padding(self):
+        self.run_lua('''
+local scale=Instance.new('UIScale');scale.Scale=0.5;scale.Parent=screen
+config.ParentEnabled=true
+local kit=newKit({reducedMotion=true})
+local definitions={{id='main',title='Main',columns=1,sections={{components={
+ {kind='toggle',key='ParentEnabled'},
+ {kind='toggle',key='ChildEnabled',parentKey='ParentEnabled'},
+}}}}}
+local pages=uipages.create(kit,panel,definitions,{desktop=true})
+local child=pages.getControl('ChildEnabled');local content=child.Root.Parent.Parent
+local container=content.Parent;local layout=content:FindFirstChildOfClass('UIListLayout')
+local padding=content:FindFirstChildOfClass('UIPadding')
+assert(padding.PaddingTop.Offset==6 and padding.PaddingBottom.Offset==6)
+layout.AbsoluteContentSize=Vector2.new(100,44)
+assert(container.Size.Y.Offset==100,'scaled child height was clipped')
+layout.AbsoluteContentSize=Vector2.new(100,70)
+assert(container.Size.Y.Offset==152,'content changes must update the full expanded height')
+utils.setConfig({ParentEnabled=false});assert(not container.Visible and container.Size.Y.Offset==0)
+utils.setConfig({ParentEnabled=true});assert(container.Visible and container.Size.Y.Offset==152)
+kit.destroy();scale:Destroy()
+''')
+
     def test_dropdown_stays_below_trigger_and_follows_motion_and_scaling(self):
         self.run_lua('''
 local kit=newKit()

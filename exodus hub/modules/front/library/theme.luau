@@ -104,6 +104,7 @@ CONFIG.DROPDOWN = { gap = 5, margin = 6, rowHeight = 32, rowGap = 3, padding = 4
 CONFIG.PAGE_OFFSET = 18
 CONFIG.SCROLLBAR = 3
 CONFIG.LAYERS = { panel = 30 }
+CONFIG.CHILD_VERTICAL_PADDING = 6
 
 -- public-api
 Theme.tokens = CONFIG
