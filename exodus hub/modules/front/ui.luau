@@ -1561,16 +1561,17 @@ local function createDropdown(yPos, parent, definition)
     outsideConnection = trackConn(UIS.InputBegan:Connect(function(input)
       if popup ~= popupRef then return end
       if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
-      local point = input.Position
-      local bp, bs = button.AbsolutePosition, button.AbsoluteSize
-      local gp, gs = group.AbsolutePosition, group.AbsoluteSize
-      local onButton = point.X >= bp.X and point.X <= bp.X + bs.X and point.Y >= bp.Y and point.Y <= bp.Y + bs.Y
+      local point = input.Position; local bp, bs = button.AbsolutePosition, button.AbsoluteSize
+      local gp, gs = group.AbsolutePosition, group.AbsoluteSize; local onButton = point.X >= bp.X and point.X <= bp.X + bs.X and point.Y >= bp.Y and point.Y <= bp.Y + bs.Y
       local onList = point.X >= gp.X and point.X <= gp.X + gs.X and point.Y >= gp.Y and point.Y <= gp.Y + gs.Y
       if not onButton and not onList then close() end
     end))
     local originalClose = close
     close = function(immediate)
-      if outsideConnection then safeDisconnect(outsideConnection); untrackConn(outsideConnection); outsideConnection = nil end
+      if outsideConnection then
+        safeDisconnect(outsideConnection); untrackConn(outsideConnection)
+        outsideConnection = nil
+      end
       originalClose(immediate)
     end
     closeActiveDropdown = close; local height, width = updatePosition()
