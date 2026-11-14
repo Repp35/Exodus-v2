@@ -1861,8 +1861,7 @@ function ExodusUI.setup(deps, preview)
   end
   UIState.panelOpen = false; UIState.spamOn = false
   UIState.clashBallOn = false; UIState.closing = false
-  UIState.desktop = Utils.getConfigValue("ForcePCUI") == true or UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled
-  UIState.panelTween = nil
+  UIState.desktop = Utils.getConfigValue("ForcePCUI") == true or UIS.KeyboardEnabled or UIS.MouseEnabled or not UIS.TouchEnabled; UIState.panelTween = nil
   UIState.btnTween = nil; shortcutLabels = {}
   _G.ExodusUIRestore = restoreAfterReloadFailure; persistentLayerForPlayer()
   _G.ExodusUICleanup = cleanupUI; _G.ExodusUIFadeOut = fadeOutForReplacement
@@ -2845,30 +2844,36 @@ function ExodusUI.setup(deps, preview)
   local hubY = createToggleCard({
     title = "Notifications",
   }, notificationKey, 4, hubSettings)
-  hubY = createToggleCard({
-    title = "Modo PC",
-    description = "Pré-visualiza a interface de PC. Desative para voltar ao modo automático.",
-  }, "ForcePCUI", hubY, hubSettings, function()
-    local currentGui, scroll = screenGui, hubSettings.CanvasPosition
-    if UIState.manualHoldInput then UIState.manualHoldInput = nil; setSpam(false) end
-    task.defer(function()
-      if screenGui ~= currentGui or not currentGui.Parent or UIState.closing then return end
-      local ok, reason = ExodusUI.setup(deps, { scroll = scroll })
-      if not ok then warn("[Exodus] Falha ao atualizar interface: " .. tostring(reason)) end
-    end)
-  end)
-  hubY = createClickCard({
-    title = "Resetar personagem",
-    description = "Reinicia seu personagem na partida.",
-  }, hubY, hubSettings, function()
-    local character = Players.LocalPlayer and Players.LocalPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if humanoid and humanoid.Health > 0 then
-      humanoid.Health = 0
-    elseif showToast then
-      showToast("Personagem indisponível", true)
+  hubY = createToggleCard(
+    {
+      title = "Modo PC",
+      description = "Pré-visualiza a interface de PC. Desative para voltar ao modo automático.",
+    },
+    "ForcePCUI",
+    hubY,
+    hubSettings,
+    function()
+      local currentGui, scroll = screenGui, hubSettings.CanvasPosition
+      if UIState.manualHoldInput then UIState.manualHoldInput = nil; setSpam(false) end
+      task.defer(function()
+        if screenGui ~= currentGui or not currentGui.Parent or UIState.closing then return end
+        local ok, reason = ExodusUI.setup(deps, { scroll = scroll })
+        if not ok then warn("[Exodus] Falha ao atualizar interface: " .. tostring(reason)) end
+      end)
     end
-  end)
+  )
+  hubY = createClickCard(
+    {
+      title = "Resetar personagem",
+      description = "Reinicia seu personagem na partida.",
+    },
+    hubY,
+    hubSettings,
+    function()
+      local character = Players.LocalPlayer and Players.LocalPlayer.Character; local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+      if humanoid and humanoid.Health > 0 then humanoid.Health = 0 elseif showToast then showToast("Personagem indisponível", true) end
+    end
+  )
   hubY = createClickCard({ title = "Rejoin", description = "Reconecta ao servidor atual." }, hubY, hubSettings, function()
     if type(Controls.onRejoin) == "function" then Controls.onRejoin() end
   end)
