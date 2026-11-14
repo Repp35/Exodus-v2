@@ -350,9 +350,7 @@ local function targetChanged(state, target, time, snapshot, serverTime)
     state.departedAt, state.departedServerAt, state.departedTo = time, serverTime, target
   elseif switchedToMe then
     local matchingReturn = previous == state.departedTo and state.departedAt
-    if state.active and state.departedAt then
-      local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime)
-    end
+    if state.active and state.departedAt then local duration = elapsed(state.departedAt, state.departedServerAt, time, serverTime) end
     if not state.active and matchingReturn then armReturn(state, previous, time, snapshot, serverTime) end
     state.departedAt, state.departedServerAt, state.departedTo = nil, nil, nil
   end
