@@ -1,0 +1,32 @@
+name: UI library checks
+
+on:
+  pull_request:
+    paths:
+      - 'exodus hub/**'
+      - '.github/workflows/ui-checks.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'exodus hub/**'
+      - '.github/workflows/ui-checks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lua runtime for behavioral tests
+        run: sudo apt-get update && sudo apt-get install -y liblua5.4-0
+      - name: Validate module contracts and UI behavior
+        run: python3 -m unittest discover -s "exodus hub/indeed/tests" -p "test_*.py"
+      - name: Validate close and reload transitions
+        run: python3 "exodus hub/indeed/tests/ui_transition_regression.py"
+      - name: Check Luau syntax and formatting
+        run: |
+          chmod +x "exodus hub/indeed/stylua-linux-x86_64"
+          python3 "exodus hub/indeed/formatter.py" --check "exodus hub"

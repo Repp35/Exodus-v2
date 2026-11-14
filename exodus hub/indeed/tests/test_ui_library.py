@@ -1,0 +1,296 @@
+"""Behavioral UI checks with a small Roblox test double and real Lua execution.
+
+Covers state and lifecycle behavior, not engine rendering, text metrics or scheduling.
+The system Lua 5.4 shared library is required, as in the existing runtime harnesses.
+"""
+import ctypes
+import re
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+LIB = ctypes.CDLL('liblua5.4.so.0')
+LIB.luaL_newstate.restype = ctypes.c_void_p
+LIB.luaL_openlibs.argtypes = [ctypes.c_void_p]
+LIB.luaL_loadbufferx.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_char_p]
+LIB.luaL_loadbufferx.restype = ctypes.c_int
+LIB.lua_pcallk.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_long, ctypes.c_void_p]
+LIB.lua_pcallk.restype = ctypes.c_int
+LIB.lua_tolstring.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
+LIB.lua_tolstring.restype = ctypes.c_char_p
+LIB.lua_close.argtypes = [ctypes.c_void_p]
+
+
+def lua(source):
+    return re.sub(r'([A-Za-z_][\w.]*) ([+\-*/])= ([^;\n]+?)(?=;|\n| end)',
+                  lambda m: f'{m[1]} = {m[1]} {m[2]} ({m[3]})', source)
+
+
+def module(name):
+    source = lua((ROOT / 'modules/front' / f'{name}.luau').read_text())
+    return f'{name} = assert(load([==[{source}]==], "@{name}.luau"))()\n'
+
+
+PRELUDE = '''
+function table.clone(t) local copy={} for k,v in pairs(t) do copy[k]=v end return copy end
+function table.clear(t) for k in pairs(t) do t[k]=nil end end
+function table.find(t,x) for k,v in ipairs(t) do if v==x then return k end end end
+function table.freeze(t) return t end
+function math.clamp(x,a,b) return math.max(a,math.min(b,x)) end
+'''
+MOCK = (Path(__file__).parent / 'fixtures/roblox_ui.txt').read_text()
+MODULES = ''.join(module(name) for name in ('uitheme', 'uiruntime', 'uikit', 'uipages', 'uiconfig', 'uiactions', 'ui'))
+SETUP = '''
+assert(uitheme.setup())
+assert(uiruntime.setup({Theme=uitheme}))
+assert(uikit.setup({Theme=uitheme,Runtime=uiruntime}))
+local config=table.clone(uiconfig.__config.defaults)
+config.UniversalFly=false;config.UniversalFlySpeed=1;config.UniversalSpeedEnabled=false;config.UniversalSpeed=16
+config.UniversalGravityEnabled=false;config.UniversalGravity=196.2
+local changed,spamChanged=signal(),signal()
+local writes,manual=0,false
+local utils={
+ getConfigValue=function(key) return config[key] end,
+ getConfig=function() return table.clone(config) end,
+ setConfig=function(patch)
+  writes=writes+1
+  local changes={}
+  for key,value in pairs(patch) do if config[key]~=value then config[key]=value;changes[key]=value end end
+  if next(changes) then changed:Fire(changes) end
+  return true
+ end,
+ observeConfig=function(fn) return changed:Connect(fn) end,
+ observeSpam=function(fn) return spamChanged:Connect(fn) end,
+ getLocalPlayer=function() return game:GetService('Players').LocalPlayer end,
+ isActive=function() return true end,
+ isManualSpamActive=function() return manual end,
+ setManualSpamActive=function(value) if manual~=value then manual=value;spamChanged:Fire() end end,
+ resetConfig=function() return true end,
+ normalizeSpamRate=function(value,fallback) return tonumber(value) or fallback end,
+ recordError=function() end, stop=function() end,
+ name=function() return 'Exodus' end,version=function() return '2' end,author=function() return 'Repp' end,
+}
+local abilities=true
+local abilityChanged=signal()
+local gameInfo={
+ areAbilitiesEnabled=function() return abilities end,
+ observeAbilityMode=function(fn) return abilityChanged:Connect(fn) end,
+ getSnapshotAt=function() return {} end,isSnapshotValid=function() return false end,
+ createCrateNetwork=function() return {} end,spinCrate=function() return true end,
+}
+assert(uiactions.setup({Utils=utils,GameInfo=gameInfo,Dumper={isRunning=function() return false end,start=function() return true end}}))
+local playerGui=game:GetService('Players').LocalPlayer:FindFirstChildOfClass('PlayerGui')
+local screen=Instance.new('ScreenGui');screen.DisplayOrder=100;screen.Parent=playerGui
+local panel=Instance.new('Frame');panel.Parent=screen
+local function newKit(extra)
+ local options={parent=screen,read=utils.getConfigValue,write=function(k,v) return utils.setConfig({[k]=v}) end,observe=utils.observeConfig}
+ for key,value in pairs(extra or {}) do options[key]=value end
+ return uikit.create(options)
+end
+local function fullDeps()
+ return {Utils=utils,UIConfig=uiconfig,GameInfo=gameInfo,AutoSpam={getStatus=function() return {} end},
+  UIKit=uikit,UIPages=uipages,UIActions=uiactions,Runtime=uiruntime,Theme=uitheme,Controls={}}
+end
+'''
+
+
+class UILibraryTests(unittest.TestCase):
+    def run_lua(self, script):
+        source = (PRELUDE + MOCK + MODULES + SETUP + script).encode()
+        state = LIB.luaL_newstate()
+        LIB.luaL_openlibs(state)
+        try:
+            result = LIB.luaL_loadbufferx(state, source, len(source), b'ui_library_tests', None)
+            if not result:
+                result = LIB.lua_pcallk(state, 0, 0, 0, 0, None)
+            if result:
+                error = LIB.lua_tolstring(state, -1, None)
+                self.fail(error.decode() if error else 'Unknown Lua error')
+        finally:
+            LIB.lua_close(state)
+
+    def test_navigation_races_share_one_controller_and_preserve_scroll(self):
+        self.run_lua('''
+local kit=newKit()
+local actions=uiactions.create({scope=kit.scope,controls={},desktop=true,notify=function() end,persistent=function() end,setSpam=utils.setManualSpamActive,showMini=function() end,rebuild=function() end})
+local pages=uipages.create(kit,panel,uiconfig.pages,{desktop=true,read=utils.getConfigValue,resolve=actions.resolve})
+assert(pages.state().id=='main')
+pages.select('utilities');pages.get('utilities').columns[1].CanvasPosition=Vector2.new(0,79)
+pages.toggle('config');pages.toggle('config');pages.select('indeed')
+finishTweens()
+assert(pages.state().id=='indeed' and not pages.state().transitioning)
+local visible=0
+for _, definition in ipairs(uiconfig.pages) do
+ local root=pages.get(definition.id).Root
+ if root.Visible then visible=visible+1;assert(definition.id=='indeed' and root.GroupTransparency==0) end
+end
+assert(visible==1 and not findDescendant(panel,'PageInputShield').Visible)
+pages.select('utilities');finishTweens()
+assert(pages.get('utilities').columns[1].CanvasPosition.Y==79)
+local snapshot=pages.snapshot();pages.select('main',false);pages.restore(snapshot)
+assert(pages.state().id=='utilities' and pages.get('utilities').columns[1].CanvasPosition.Y==79)
+kit.destroy();assert(activeTweenCount()==0)
+''')
+
+    def test_controls_sync_external_values_without_writing_on_mount(self):
+        self.run_lua('''
+local kit=newKit()
+local toggle=kit.Components.toggle(panel,{title='Parry',key='AutoParry'})
+local slider=kit.Components.slider(panel,{title='Size',key='MiniSpamScale',min=0.5,max=2,increment=0.05})
+local select=kit.Components.dropdown(panel,{title='Method',key='ClickMethod',choices={{value='Deflect',label='Standard'},{value='Direct',label='Direct remote'}}})
+local rate=kit.Components.rate_selector(panel,{title='Rate'})
+assert(writes==0,'mount must not rewrite settings')
+utils.setConfig({AutoParry=false,MiniSpamScale=1.5,ClickMethod='Direct',SpamRateMode='MS',MS=42})
+assert(not toggle.getValue() and slider.getValue()==1.5 and select.getValue()=='Direct')
+assert(rate.getValue()=='MS' and findDescendant(rate.Root,'RateInput').Text=='42')
+assert(findDescendant(select.Root,'Select').Text=='Direct remote ▾')
+click(findDescendant(toggle.Root,'CardHitbox'));assert(config.AutoParry)
+local before=writes;toggle.setValue(false);assert(writes==before,'setValue must be silent')
+kit.destroy();local value=toggle.getValue();utils.setConfig({AutoParry=true});assert(toggle.getValue()==value)
+assert(activeTweenCount()==0 and listenerCount()==0,'destroy must release subscriptions')
+assert(#panel:GetChildren()==0,'destroy must remove owned controls')
+''')
+
+    def test_invalid_numbers_rollback_and_failed_writes_keep_visual_value(self):
+        self.run_lua('''
+local kit=newKit({write=function() return false end})
+local toggle=kit.Components.toggle(panel,{key='AutoParry'});click(findDescendant(toggle.Root,'CardHitbox'));assert(toggle.getValue())
+local input=kit.Components.number(panel,{title='Lead',key='AutoParryWindowFactor',min=0,max=35,displayScale=100})
+local box=findDescendant(input.Root,'Input')
+box.Text='nan';box.FocusLost:Fire(false);assert(input.getValue()==0.3 and tonumber(box.Text)==30)
+box.Text='35';box.FocusLost:Fire(false);assert(input.getValue()==0.3 and tonumber(box.Text)==30)
+kit.destroy()
+local writable=newKit();local lead=writable.Components.number(panel,{key='AutoParryWindowFactor',min=0,max=35,displayScale=100})
+local field=findDescendant(lead.Root,'Input');field.Text='999';field.FocusLost:Fire(false);assert(config.AutoParryWindowFactor==0.35)
+writable.destroy()
+''')
+
+    def test_drag_owns_one_pointer_and_stops_on_navigation_or_focus_loss(self):
+        self.run_lua('''
+local kit=newKit();local slider=kit.Components.slider(panel,{key='MiniSpamScale',min=0.5,max=2,increment=0.05})
+local hit=findDescendant(slider.Root,'SliderHitbox');local track=findDescendant(slider.Root,'Track')
+track.AbsolutePosition=Vector2.new(100,100);track.AbsoluteSize=Vector2.new(200,6)
+local touch=input('Touch',150,100);hit.InputBegan:Fire(touch);local initial=slider.getValue()
+game:GetService('UserInputService').InputChanged:Fire(input('Touch',300,100));assert(slider.getValue()==initial,'second finger changed slider')
+touch.Position=Vector2.new(250,100);game:GetService('UserInputService').InputChanged:Fire(touch);assert(slider.getValue()>initial)
+kit.dismiss();local stopped=slider.getValue();touch.Position=Vector2.new(300,100);game:GetService('UserInputService').InputChanged:Fire(touch);assert(slider.getValue()==stopped)
+hit.InputBegan:Fire(input('MouseButton1',100,100));game:GetService('UserInputService').WindowFocusReleased:Fire()
+local lost=slider.getValue();game:GetService('UserInputService').InputChanged:Fire(input('MouseMovement',300,100));assert(slider.getValue()==lost)
+kit.destroy()
+''')
+
+    def test_popups_capture_and_component_disposal_release_global_events(self):
+        self.run_lua('''
+local baseline=listenerCount();local kit=newKit();local selected=kit.Components.dropdown(panel,{key='ClickMethod',choices={'Deflect','Direct'}})
+local cap=kit.Components.button(panel,{title='Panic',shortcutKey='Keybind'})
+local trigger=findDescendant(selected.Root,'Select')
+trigger.AbsolutePosition=Vector2.new(100,690)
+click(trigger);local portal=playerGui:FindFirstChild('ExodusDropdown');assert(portal)
+local menu=portal:FindFirstChildOfClass('CanvasGroup');assert(menu.Position.Y.Offset<690,'popup should open above near bottom')
+kit.dismiss();assert(not playerGui:FindFirstChild('ExodusDropdown'))
+click(findDescendant(cap.Root,'Shortcut_Keybind'));game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'Escape'))
+assert(config.Keybind==Enum.KeyCode.F9)
+click(findDescendant(cap.Root,'Shortcut_Keybind'));game:GetService('UserInputService').InputBegan:Fire(input('Keyboard',0,0,'K'))
+assert(config.Keybind==Enum.KeyCode.K)
+selected.destroy();cap.destroy();kit.destroy();finishTweens()
+assert(listenerCount()==baseline and activeTweenCount()==0)
+''')
+
+    def test_all_pages_render_on_desktop_and_mobile_and_rebuild_cleanly(self):
+        self.run_lua('''
+local baseline=listenerCount();local deps=fullDeps()
+assert(ui.setup(deps,{open=true}));flushDeferred();finishTweens()
+local root=playerGui:FindFirstChild('ExodusUISystem');assert(root)
+click(findDescendant(root,'NextPage'));click(findDescendant(root,'HubSettingsButton'));click(findDescendant(root,'HubSettingsButton'));finishTweens()
+local first=listenerCount()
+assert(ui.setup(deps,{open=true}));flushDeferred();finishTweens();assert(listenerCount()==first,'desktop rebuild leaked listeners')
+_G.ExodusUICleanup();assert(listenerCount()==baseline and activeTweenCount()==0,'desktop cleanup leaked')
+local inputService=game:GetService('UserInputService');inputService.KeyboardEnabled=false;inputService.MouseEnabled=false;inputService.TouchEnabled=true
+assert(ui.setup(deps,{open=true}));flushDeferred();finishTweens()
+root=playerGui:FindFirstChild('ExodusUISystem')
+assert(findDescendant(root,'MiniSpamScale'))
+abilities=false;abilityChanged:Fire(false)
+local automatic=findDescendant(root,'Page_automatic')
+assert(not findDescendant(automatic,'AutoJump').Parent.Visible)
+_G.ExodusUICleanup();assert(listenerCount()==baseline and activeTweenCount()==0,'mobile cleanup leaked')
+''')
+
+    def test_schema_rejects_invalid_page_and_child_relationships(self):
+        self.run_lua('''
+local kit=newKit()
+local function valid(pages) return pcall(uipages.validate,pages,kit.Components) end
+assert(not valid({{id='x',title='X',columns=3,sections={}}}))
+assert(not valid({{id='x',title='X',columns=1,sections={{components={{kind='missing'}}}}}}))
+assert(not valid({{id='x',title='X',columns=1,sections={{components={{kind='toggle',key='a',parentKey='b'}}}}}}))
+assert(not valid({{id='x',title='X',columns=1,sections={{components={{kind='toggle',key='a',parentKey='b'},{kind='toggle',key='b',parentKey='a'}}}}}}))
+assert(valid(uiconfig.pages))
+kit.destroy()
+''')
+
+    def test_device_preview_restores_page_scroll_and_releases_hold(self):
+        self.run_lua('''
+local service=game:GetService('UserInputService')
+service.KeyboardEnabled=false;service.MouseEnabled=false;service.TouchEnabled=true
+assert(ui.setup(fullDeps(),{open=true}));flushDeferred();finishTweens()
+local root=playerGui:FindFirstChild('ExodusUISystem')
+click(findDescendant(root,'NextPage'));click(findDescendant(root,'NextPage'));finishTweens()
+local column=findDescendant(findDescendant(root,'Page_utilities'),'Column1')
+column.CanvasPosition=Vector2.new(0,91)
+click(findDescendant(root,'HubSettingsButton'));finishTweens()
+local preview=findDescendant(root,'ForcePCUI');click(findDescendant(preview,'CardHitbox'))
+flushDeferred();flushDeferred();finishTweens()
+root=playerGui:FindFirstChild('ExodusUISystem')
+assert(findDescendant(root,'Page_config').Visible,'preview lost active page')
+assert(findDescendant(findDescendant(root,'Page_utilities'),'Column1').CanvasPosition.Y==91,'preview lost scroll')
+click(findDescendant(root,'HubSettingsButton'));finishTweens()
+assert(findDescendant(root,'Page_utilities').Visible,'preview lost return page')
+utils.setConfig({ManualSpamMode='Hold'})
+service.InputBegan:Fire(input('Keyboard',0,0,'F'),false);assert(manual)
+_G.ExodusUICleanup();assert(not manual,'hold survived cleanup')
+''')
+
+    def test_suspend_stops_owned_motion_and_resume_restores_interaction(self):
+        self.run_lua('''
+local kit=newKit();local toggle=kit.Components.toggle(panel,{key='AutoParry'})
+assert(activeTweenCount()>0)
+kit.suspend();assert(activeTweenCount()==0)
+click(findDescendant(toggle.Root,'CardHitbox'));assert(config.AutoParry)
+kit.resume();click(findDescendant(toggle.Root,'CardHitbox'));assert(not config.AutoParry)
+finishTweens();kit.destroy();assert(activeTweenCount()==0 and listenerCount()==0)
+''')
+
+    def test_replacement_preserves_update_notification_and_waits_for_fade(self):
+        self.run_lua('''
+assert(ui.setup(fullDeps(),{open=true}));flushDeferred();finishTweens()
+_G.ExodusShowPersistentNotification('Updating...','update','info')
+local co=coroutine.create(function() _G.ExodusUIFadeOut(true) end)
+local ok,err=coroutine.resume(co);assert(ok,err);assert(coroutine.status(co)=='suspended')
+finishTweens()
+local card=findDescendant(playerGui,'Notification_update')
+assert(card.GroupTransparency==0,'update notification enter was cancelled by replacement')
+ok,err=coroutine.resume(co);assert(ok,err);assert(coroutine.status(co)=='dead')
+_G.ExodusUIRestore('simulated failure');finishTweens()
+local root=playerGui:FindFirstChild('ExodusUISystem')
+local toggle=findDescendant(root,'AutoParry')
+click(findDescendant(toggle,'CardHitbox'));assert(not config.AutoParry,'failed reload did not resume controls')
+_G.ExodusUICleanup();finishTweens()
+''')
+
+    def test_zero_duration_navigation_and_nested_visibility(self):
+        self.run_lua('''
+local kit=newKit({reducedMotion=true})
+local actions=uiactions.create({scope=kit.scope,controls={},desktop=true,notify=function() end,persistent=function() end,setSpam=utils.setManualSpamActive,showMini=function() end,rebuild=function() end})
+local pages=uipages.create(kit,panel,uiconfig.pages,{desktop=true,read=utils.getConfigValue,resolve=actions.resolve})
+pages.select('indeed');assert(not pages.state().transitioning and activeTweenCount()==0)
+local fly=pages.getControl('UniversalFly');local speed=pages.getControl('UniversalFlySpeed')
+assert(not uiruntime.isVisible(speed.Root))
+utils.setConfig({UniversalFly=true});pages.refresh();assert(uiruntime.isVisible(speed.Root))
+utils.setConfig({UniversalFly=false});pages.refresh();utils.setConfig({UniversalFly=true});pages.refresh()
+assert(uiruntime.isVisible(speed.Root))
+pages.destroy();assert(activeTweenCount()==0)
+kit.destroy()
+''')
+
+
+if __name__ == '__main__':
+    unittest.main()
