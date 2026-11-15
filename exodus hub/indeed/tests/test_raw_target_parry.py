@@ -187,7 +187,7 @@ cd.blocking=false; assert(ap.tryRedirectReturn(snap,tm)); assert(fires==1)
 """)
 
     def test_radius_tti_gate_uses_minimum_and_maximum_speed_windows(self):
-        for speed, window, boundary in ((16, 0.85, 22.9), (600, 0.2, 158.5)):
+        for speed, boundary, near_boundary in ((16, 20.5, 9.3), (600, 128.5, 38.5)):
             with self.subTest(speed=speed):
                 self.check_ap("""
 g.getAveragePing=function() return 0.05,0.05,1 end
@@ -202,10 +202,10 @@ snap.syncSpeed={speed}; snap.speed={speed}; snap.velocity=v(-{speed})
 snap.position=v({boundary}+0.001); packet(42)
 assert(fires==0,'full window gate fired before arrival horizon')
 local timing=ap.getTiming(snap)
-assert(math.abs(timing.radiusGateLead-{window})<1e-9)
 assert(math.abs(timing.defenseRadius-(8.5+{speed}*0.05))<1e-9)
-assert(timing.tti>{window})
-snap.position=v({boundary}-0.000001); frameCb(1/60)
+assert(timing.radiusGateFactor>=0.4 and timing.radiusGateFactor<0.9)
+assert(timing.tti>timing.radiusGateLead)
+snap.position=v({near_boundary}-0.000001); frameCb(1/60)
 assert(fires==1,'full window TTI gate did not fire')
 """)
 
@@ -222,9 +222,9 @@ frameCb(1/60); assert(fires==1,'intersecting direction did not activate TTI gate
     def test_radius_tti_uses_player_relative_velocity(self):
         self.check_ap("""
 g.getAveragePing=function() return 0.05,0.05,1 end
-snap.position=v(158.5); root.AssemblyLinearVelocity=v(-100)
+snap.position=v(100); root.AssemblyLinearVelocity=v(-100)
 packet(42); assert(fires==0,'gate ignored player retreat')
-assert(math.abs(ap.getTiming(snap).tti-0.24)<1e-9)
+assert(math.abs(ap.getTiming(snap).tti-0.123)<1e-9)
 root.AssemblyLinearVelocity=v(100); frameCb(1/60)
 assert(fires==1,'gate ignored player approach')
 """)
@@ -234,7 +234,7 @@ assert(fires==1,'gate ignored player approach')
 g.getAveragePing=function() return 0.05,0.05,1 end
 snap.position=v(170); packet(42)
 assert(fires==0,'ping added to both radius and TTI horizon')
-snap.position=v(150); cd.blocking=true; frameCb(1/60)
+snap.position=v(70); cd.blocking=true; frameCb(1/60)
 assert(fires==0,'TTI gate bypassed cooldown')
 cd.blocking=false; frameCb(1/60); assert(fires==1)
 cd.lastParriedAt=tm+0.001; frameCb(1/60); assert(fires==1,'TTI gate duplicated cycle')
@@ -253,6 +253,37 @@ local second=ap.getTiming(snap)
 assert(first.defenseRadius==second.defenseRadius)
 assert(first.tti==second.tti,'window changed actual TTI to radius')
 assert(first.radiusGateLead~=second.radiusGateLead)
+""")
+
+    def test_tti_factor_starts_at_0_4_and_rises_with_urgency(self):
+        self.check_ap("""
+g.getAveragePing=function() return 0,0,1 end
+local geometry=g.getAutoParryGeometry
+g.getAutoParryGeometry=function(speed,factor)
+  local result=geometry(speed,factor); result.deflectWindow=0.2; result.noWindowParryRadius=8.5; return result
+end
+snap.syncSpeed=600; snap.speed=600; snap.velocity=v(-600); snap.position=v(500)
+local far=ap.getTiming(snap); assert(math.abs(far.radiusGateFactor-0.4)<1e-9)
+snap.position=v(100); frameCb(1/60); local near=ap.getTiming(snap)
+assert(near.radiusGateFactor>far.radiusGateFactor and near.radiusGateFactor<0.9)
+snap.position=v(8.5); frameCb(1/60); local inside=ap.getTiming(snap)
+assert(math.abs(inside.radiusGateFactor-0.9)<1e-9)
+""")
+
+    def test_fast_target_return_temporarily_raises_tti_factor(self):
+        self.check_ap("""
+g.getAveragePing=function() return 0,0,1 end
+local geometry=g.getAutoParryGeometry
+g.getAutoParryGeometry=function(speed,factor)
+  local result=geometry(speed,factor); result.deflectWindow=0.2; result.noWindowParryRadius=8.5; return result
+end
+snap.syncSpeed=600; snap.speed=600; snap.velocity=v(-600); snap.position=v(500)
+packet(42); local initial=ap.getTiming(snap).radiusGateFactor
+tm=tm+0.05; packet(99); tm=tm+0.05; packet(42)
+local returned=ap.getTiming(snap); assert(returned.returnInterval<0.2)
+assert(returned.radiusGateFactor>initial)
+tm=tm+1; frameCb(1/60); local decayed=ap.getTiming(snap)
+assert(decayed.radiusGateFactor<returned.radiusGateFactor)
 """)
 
 if __name__ == "__main__":
