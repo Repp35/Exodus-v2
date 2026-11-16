@@ -16,6 +16,8 @@ local CONFIG = {
   TICK_INTERVAL = 1 / 120,
 }
 
+local PROFILES = { normal = { speed = 120, duration = 0.2 } }
+
 -- helpers
 local function now() return utils and utils.now() or os.clock() end
 local function rootOf(player, record)
@@ -34,6 +36,36 @@ local function disconnect(connection)
     connection:Disconnect()
   end
 end
+local function estimate(record, time)
+  if
+    not record.observedAt
+    or not record.position
+    or not record.velocity
+    or time < record.observedAt
+    or time < record.positionAt
+    or time - record.positionAt > CONFIG.MAX_SAMPLE_GAP
+  then
+    return nil
+  end
+  local elapsed = time - record.observedAt; local remaining = math.max(0, PROFILES.normal.duration - elapsed)
+  return {
+    ability = "unknown",
+    observedAt = record.observedAt,
+    sampledAt = record.positionAt,
+    signalActive = record.signalActive,
+    position = record.position,
+    velocity = record.velocity,
+    observedDisplacement = (record.position - record.observedPosition).Magnitude,
+    guaranteedRemainingDistance = 0,
+    normalModel = {
+      duration = PROFILES.normal.duration,
+      elapsedSinceObserved = elapsed,
+      estimatedRemaining = remaining,
+      estimatedRemainingDistance = record.velocity.Magnitude * remaining,
+      estimatedEndPosition = record.position + record.velocity * remaining,
+    },
+  }
+end
 local function emit(player, record, position, velocity, previous, time, confirmed)
   local newConfirmation = confirmed and record.confirmedSignalAt ~= record.signalAt
   if not newConfirmation and time - (record.lastDetection or -math.huge) < CONFIG.DETECTION_GAP then return end
@@ -50,6 +82,7 @@ local function emit(player, record, position, velocity, previous, time, confirme
       signalAt = record.signalAt,
       signalActive = record.signalActive,
       previousPosition = previous,
+      estimate = estimate(record, time),
     })
   end
 end
@@ -57,11 +90,12 @@ end
 -- sampling
 local function resetCharacter(record, character)
   record.character = character; record.root, record.position, record.positionAt = nil, nil, nil
-  record.lastDetection, record.signalAt, record.signalActive, record.confirmedSignalAt = nil, -math.huge, false, nil
+  record.lastDetection, record.signalAt, record.signalActive, record.confirmedSignalAt = nil, -math.huge, false, nil; record.observedAt, record.observedPosition, record.velocity = nil, nil, nil
 end
 local function observe(player, record, time, suppliedRoot)
   local character = player.Character
   if record.character ~= character then resetCharacter(record, character) end
+  if record.positionAt and time >= record.positionAt and time - record.positionAt < CONFIG.TICK_INTERVAL then return end
   if not character or not character.Parent then return end
   local root = suppliedRoot or rootOf(player, record)
   if suppliedRoot then record.root = suppliedRoot end
@@ -73,11 +107,11 @@ local function observe(player, record, time, suppliedRoot)
     if measured.Magnitude > velocity.Magnitude and measured.Magnitude < CONFIG.MAX_MEASURED_SPEED then velocity = measured end
   end
   local signal = gameInfo.isPlayerDashing(player)
-  if signal and not record.signalActive then record.signalAt = time end
+  if signal and not record.signalActive then record.signalAt, record.observedAt, record.observedPosition = time, time, position end
   record.signalActive = signal; local speed = velocity.Magnitude
   local fast = speed >= CONFIG.MIN_SPEED; local signaled = signal or time - record.signalAt <= CONFIG.SIGNAL_GRACE
+  record.position, record.positionAt, record.velocity = position, time, velocity
   if signaled and fast then emit(player, record, position, velocity, previous, time, true) end
-  record.position, record.positionAt = position, time
 end
 
 -- player-tracking
@@ -127,7 +161,6 @@ function Dash.tick(time, excludeLocal, center, radius)
   if not players then return end
   time = type(time) == "number" and time or now()
   if time ~= time or math.abs(time) == math.huge then return end
-  if time >= lastTick and time - lastTick < CONFIG.TICK_INTERVAL then return end
   lastTick = time
   if type(center) == "number" then
     local player = players:GetPlayerByUserId(center); local record = player and records[player]
@@ -144,7 +177,8 @@ function Dash.tick(time, excludeLocal, center, radius)
         local root = rootOf(player, record)
         if root and root.Parent then
           local delta = root.Position - center
-          if delta:Dot(delta) <= limit then observe(player, record, time, root) else record.position, record.positionAt, record.signalActive, record.signalAt = nil, nil, false, -math.huge end
+          if delta:Dot(delta) <= limit then observe(player, record, time, root)
+          else record.position, record.positionAt, record.signalActive, record.signalAt = nil, nil, false, -math.huge; record.observedAt, record.observedPosition, record.velocity = nil, nil, nil end
         end
       end
     end
@@ -163,6 +197,20 @@ function Dash.teardown()
 end
 
 -- public-api
+function Dash.getProfiles()
+  return {
+    normal = {
+      speed = PROFILES.normal.speed,
+      duration = PROFILES.normal.duration,
+      nominalDistance = PROFILES.normal.speed * PROFILES.normal.duration,
+    },
+  }
+end
+function Dash.getEstimate(userId)
+  local player = players and players:GetPlayerByUserId(userId); local record = player and records[player]
+  if not record then return nil end
+  return estimate(record, now())
+end
 function Dash.getStatus()
   local count = #recordList
   return {
@@ -180,7 +228,7 @@ Dash.__contract = {
     Utils = { "apiVersion", "getPlayers", "now", "trackGlobal", "untrackGlobal" },
     GameInfo = { "isPlayerDashing" },
   },
-  provides = { "setup", "setHandler", "tick", "resetState", "teardown", "getStatus" },
+  provides = { "setup", "setHandler", "tick", "resetState", "teardown", "getStatus", "getProfiles", "getEstimate" },
 }
 
 return Dash

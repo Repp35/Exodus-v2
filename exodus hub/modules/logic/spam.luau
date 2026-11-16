@@ -74,7 +74,10 @@ local function sync()
   task.spawn(function()
     local boundAutoSpam = autoSpam
     local function guard() return token == generation and boundUtils.isActive() and (boundUtils.isManualSpamActive() or boundUtils.isAutoSpamActive()) end
-    local function allowed() return guard() and (boundUtils.isManualSpamActive() or boundAutoSpam.canSend()) end
+    local function allowed()
+      if not guard() then return false end
+      return (boundUtils.isManualSpamActive() and boundAutoSpam.canSendManual()) or boundAutoSpam.canSend()
+    end
     local ok, err = xpcall(function()
       local credit, previous = 0, os.clock(); local clicksPerSecond = mode == "MS" and 1000 / rate or rate
       while guard() do
@@ -121,6 +124,7 @@ function Spam.setup(deps)
     or type(deps.GameInfo) ~= "table"
     or type(deps.AutoSpam) ~= "table"
     or type(deps.AutoSpam.canSend) ~= "function"
+    or type(deps.AutoSpam.canSendManual) ~= "function"
     or type(deps.GameInfo.getAutoSpamDelay) ~= "function"
     or type(deps.GameInfo.getMinimumSpamInterval) ~= "function"
     or type(deps.Remote.fireParry) ~= "function"
@@ -191,7 +195,7 @@ Spam.__contract = {
   },
   requiresMethods = {
     Remote = { "fireParry" },
-    AutoSpam = { "canSend" },
+    AutoSpam = { "canSend", "canSendManual" },
     GameInfo = { "getAutoSpamDelay", "getMinimumSpamInterval" },
     Utils = {
       "apiVersion",
