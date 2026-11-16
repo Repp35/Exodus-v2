@@ -410,10 +410,11 @@ function Controller.create(context)
     if changes.MiniSpamScale ~= nil or changes.MiniSpamWidth ~= nil or changes.MiniSpamHeight ~= nil then applyMiniScale(Utils.getConfigValue("MiniSpamScale")) end
     if changes.ManualSpamMode ~= nil then UIState.manualHoldInput = nil; setSpam(false) end
   end
+  local lastAbilityMode
   local function updateAbilityVisibility()
-    context.pages.refresh(); local enabled = GameInfo.areAbilitiesEnabled() and not UIState.desktop
-    context.refs.darkBall.Visible = enabled; context.refs.jumpBall.Visible = enabled
-    context.refs.upDashBall.Visible = enabled
+    lastAbilityMode = GameInfo.areAbilitiesEnabled(); context.pages.refresh()
+    local enabled = lastAbilityMode and not UIState.desktop; context.refs.darkBall.Visible = enabled
+    context.refs.jumpBall.Visible = enabled; context.refs.upDashBall.Visible = enabled
   end
   if not UIState.desktop and config.ClashBallVisible then twPlay(context.refs.clashBall, "control", { Position = UDim2.new(0, clashX, 0, clashY) }) end
   if not UIState.desktop and config.ParryBallVisible then twPlay(context.refs.parryBall, "control", { Position = UDim2.new(0, parryX, 0, parryY) }) end
@@ -433,6 +434,13 @@ function Controller.create(context)
     sync = sync,
     refreshAbilities = function()
       updateAbilityVisibility(); trackConn(GameInfo.observeAbilityMode(updateAbilityVisibility))
+      local elapsed = 0
+      trackConn(context.services.RunService.Heartbeat:Connect(function(delta)
+        elapsed += delta
+        if elapsed < 0.25 then return end
+        elapsed = 0
+        if GameInfo.areAbilitiesEnabled() ~= lastAbilityMode then updateAbilityVisibility() end
+      end))
     end,
   }
 end

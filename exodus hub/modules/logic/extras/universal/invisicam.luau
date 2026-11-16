@@ -1,7 +1,9 @@
 -- [[ invisicam ]]
 
 local Invisicam = {}
+
 local Utils
+local configObserver
 
 -- configuration
 local CONFIG = {
@@ -25,7 +27,7 @@ local function startInvisicam()
   if not player then return false, "LocalPlayer unavailable" end
   local readOk, previous = pcall(function() return player.DevCameraOcclusionMode end)
   if not readOk then return false, "Camera occlusion property unavailable" end
-  if previous == Enum.DevCameraOcclusionMode.Invisicam then savedOcclusion, savedOcclusionMode = nil, false; return true end
+  if previous == Enum.DevCameraOcclusionMode.Invisicam then savedOcclusion, savedOcclusionMode = Enum.DevCameraOcclusionMode.Zoom, true; return true end
   local ok, reason = pcall(function() player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam end)
   if not ok then return false, tostring(reason) end
   savedOcclusion, savedOcclusionMode = previous, true; return true
@@ -44,12 +46,16 @@ function Invisicam.setEnabled(enabled)
   enabledState = true; return true
 end
 function Invisicam.teardown()
+  if configObserver then configObserver:Disconnect(); configObserver = nil end
   stopInvisicam(); Utils = nil
   return true
 end
 function Invisicam.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "missing dependency: Utils" end
   Invisicam.teardown(); Utils = deps.Utils
+  configObserver = Utils.observeConfig(function(changes)
+    if changes.UniversalInvisicam ~= nil then Invisicam.setEnabled(changes.UniversalInvisicam == true) end
+  end)
   if Utils.getConfigValue("UniversalInvisicam") == true then return Invisicam.setEnabled(true) end
   return true
 end
@@ -58,7 +64,7 @@ Invisicam.__config = CONFIG
 -- contract
 Invisicam.__contract = {
   requires = { Utils = "utils" },
-  requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer" } },
+  requiresMethods = { Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer" } },
   provides = { "setup", "teardown", "setEnabled" },
 }
 

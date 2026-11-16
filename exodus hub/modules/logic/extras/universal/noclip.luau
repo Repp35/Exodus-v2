@@ -1,7 +1,9 @@
 -- [[ noclip ]]
 
 local Noclip = {}
+
 local Utils
+local configObserver
 
 -- configuration
 local CONFIG = {
@@ -93,12 +95,16 @@ function Noclip.setEnabled(enabled)
   return true
 end
 function Noclip.teardown()
+  if configObserver then configObserver:Disconnect(); configObserver = nil end
   stopNoclip(); enabledState = false
   Utils = nil; return true
 end
 function Noclip.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   Noclip.teardown(); Utils = deps.Utils
+  configObserver = Utils.observeConfig(function(changes)
+    if changes.UniversalNoclip ~= nil then Noclip.setEnabled(changes.UniversalNoclip == true) end
+  end)
   if Utils.getConfigValue("UniversalNoclip") == true then return Noclip.setEnabled(true) end
   return true
 end
@@ -107,7 +113,7 @@ Noclip.__config = CONFIG
 -- contract
 Noclip.__contract = {
   requires = { Utils = "utils" },
-  requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
+  requiresMethods = { Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
   provides = { "setup", "teardown", "setEnabled" },
 }
 

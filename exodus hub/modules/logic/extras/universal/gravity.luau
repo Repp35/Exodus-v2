@@ -1,7 +1,9 @@
 -- [[ gravity ]]
 
 local Gravity = {}
+
 local Utils
+local configObserver
 
 -- configuration
 local CONFIG = {
@@ -74,12 +76,16 @@ function Gravity.setValue(value)
   updateGravity(); return true
 end
 function Gravity.teardown()
+  if configObserver then configObserver:Disconnect(); configObserver = nil end
   stopGravity(); enabledState = false
   Utils = nil; return true
 end
 function Gravity.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   Gravity.teardown(); Utils = deps.Utils
+  configObserver = Utils.observeConfig(function(changes)
+    if changes.UniversalGravityEnabled ~= nil then Gravity.setEnabled(changes.UniversalGravityEnabled == true) end
+  end)
   gravityValue = tonumber(Utils.getConfigValue("UniversalGravity")) or Workspace.Gravity
   if Utils.getConfigValue("UniversalGravityEnabled") == true then return Gravity.setEnabled(true) end
   return true
@@ -89,7 +95,7 @@ Gravity.__config = CONFIG
 -- contract
 Gravity.__contract = {
   requires = { Utils = "utils" },
-  requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
+  requiresMethods = { Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
   provides = { "setup", "teardown", "setEnabled", "setValue" },
 }
 

@@ -1,7 +1,9 @@
 -- [[ speed ]]
 
 local Speed = {}
+
 local Utils
+local configObserver
 
 -- configuration
 local CONFIG = {
@@ -103,12 +105,16 @@ function Speed.setValue(value)
   return applySpeed()
 end
 function Speed.teardown()
+  if configObserver then configObserver:Disconnect(); configObserver = nil end
   stopSpeed(); states.Speed = false
   Utils = nil; return true
 end
 function Speed.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   Speed.teardown(); Utils = deps.Utils
+  configObserver = Utils.observeConfig(function(changes)
+    if changes.UniversalSpeedEnabled ~= nil then Speed.setEnabled(changes.UniversalSpeedEnabled == true) end
+  end)
   speedValue = tonumber(Utils.getConfigValue("UniversalSpeed")) or CONFIG.defaults.UniversalSpeed
   if Utils.getConfigValue("UniversalSpeedEnabled") == true then return Speed.setEnabled(true) end
   return true
@@ -118,7 +124,7 @@ Speed.__config = CONFIG
 -- contract
 Speed.__contract = {
   requires = { Utils = "utils" },
-  requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
+  requiresMethods = { Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
   provides = { "setup", "teardown", "setEnabled", "setValue" },
 }
 

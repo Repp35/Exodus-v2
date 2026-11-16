@@ -1,7 +1,9 @@
 -- [[ infinitejump ]]
 
 local InfiniteJump = {}
+
 local Utils
+local configObserver
 
 -- configuration
 local CONFIG = {
@@ -80,12 +82,16 @@ function InfiniteJump.setEnabled(enabled)
   return true
 end
 function InfiniteJump.teardown()
+  if configObserver then configObserver:Disconnect(); configObserver = nil end
   stopInfiniteJump(); states.InfiniteJump = false
   Utils = nil; return true
 end
 function InfiniteJump.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   InfiniteJump.teardown(); Utils = deps.Utils
+  configObserver = Utils.observeConfig(function(changes)
+    if changes.UniversalInfiniteJump ~= nil then InfiniteJump.setEnabled(changes.UniversalInfiniteJump == true) end
+  end)
   if Utils.getConfigValue("UniversalInfiniteJump") == true then return InfiniteJump.setEnabled(true) end
   return true
 end
@@ -94,7 +100,7 @@ InfiniteJump.__config = CONFIG
 -- contract
 InfiniteJump.__contract = {
   requires = { Utils = "utils" },
-  requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
+  requiresMethods = { Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
   provides = { "setup", "teardown", "setEnabled" },
 }
 

@@ -1,7 +1,9 @@
 -- [[ fly ]]
 
 local Fly = {}
+
 local Utils
+local configObserver
 
 -- configuration
 local CONFIG = {
@@ -179,12 +181,16 @@ function Fly.setValue(value)
   return true
 end
 function Fly.teardown()
+  if configObserver then configObserver:Disconnect(); configObserver = nil end
   stopFly(); states.Fly = false
   Utils = nil; return true
 end
 function Fly.setup(deps)
   if type(deps) ~= "table" or type(deps.Utils) ~= "table" then return false, "dependência ausente: Utils" end
   Fly.teardown(); Utils = deps.Utils
+  configObserver = Utils.observeConfig(function(changes)
+    if changes.UniversalFly ~= nil then Fly.setEnabled(changes.UniversalFly == true) end
+  end)
   if Utils.getConfigValue("UniversalFly") == true then return Fly.setEnabled(true) end
   return true
 end
@@ -193,7 +199,7 @@ Fly.__config = CONFIG
 -- contract
 Fly.__contract = {
   requires = { Utils = "utils" },
-  requiresMethods = { Utils = { "getConfigValue", "setConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
+  requiresMethods = { Utils = { "getConfigValue", "setConfig", "observeConfig", "getLocalPlayer", "trackGlobal", "untrackGlobal" } },
   provides = { "setup", "teardown", "setEnabled", "setValue" },
 }
 
