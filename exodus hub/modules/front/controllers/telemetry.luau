@@ -13,11 +13,12 @@ function Controller.setup() return true end
 function Controller.create(context)
   local playerGui = context.playerGui; local Utils = context.deps.Utils
   local GameInfo = context.deps.GameInfo; local AutoSpam = context.deps.AutoSpam
-  local C = context.theme.COLORS; local RunService = context.services.RunService
-  local Players = context.services.Players; local inst = context.inst
-  local corner = context.corner; local twPlay = context.twPlay
-  local setTextIfChanged = context.setTextIfChanged; local trackConn = context.trackConn
-  local untrackConn = context.untrackConn; local safeDisconnect = context.safeDisconnect
+  local AutoParry = context.deps.AutoParry; local C = context.theme.COLORS
+  local RunService = context.services.RunService; local Players = context.services.Players
+  local inst = context.inst; local corner = context.corner
+  local twPlay = context.twPlay; local setTextIfChanged = context.setTextIfChanged
+  local trackConn = context.trackConn; local untrackConn = context.untrackConn
+  local safeDisconnect = context.safeDisconnect
   context.refs.informationGui = inst("ScreenGui", {
     Name = "ExodusInformationOverlay",
     DisplayOrder = 2147483647,
@@ -123,8 +124,21 @@ function Controller.create(context)
     ZIndex = 20,
     Parent = context.refs.informationGui,
   })
-  local setDistanceVisible = compactInformation(distanceLabel); local setTravelVisible = compactInformation(travelLabel)
-  local setGateVisible = compactInformation(gateLabel); local nextGateUpdate, nextTravelUpdate, nextDistanceUpdate = 0, 0, 0
+  local apLabel = inst("TextLabel", {
+    Name = "APMaxCps",
+    Size = UDim2.fromOffset(1, 1),
+    AnchorPoint = Vector2.new(1, 0.5),
+    Position = UDim2.new(1, 0, 0.5, 0),
+    BackgroundColor3 = C.header,
+    Text = "",
+    TextColor3 = C.text,
+    TextSize = 14,
+    Font = Enum.Font.GothamSemibold,
+    Parent = context.refs.informationGui,
+  })
+  local setAPVisible = compactInformation(apLabel); local setDistanceVisible = compactInformation(distanceLabel)
+  local setTravelVisible = compactInformation(travelLabel); local setGateVisible = compactInformation(gateLabel)
+  local nextGateUpdate, nextTravelUpdate, nextDistanceUpdate = 0, 0, 0
   local function validGate(value)
     return type(value) == "string" and value ~= "" and value ~= "null" and value ~= "nil" and value ~= "inactive" and value ~= "detached"
   end
@@ -134,15 +148,20 @@ function Controller.create(context)
     return telemetryStatus, telemetrySnapshot
   end
   local function formatSpeed(snapshot)
-    if not GameInfo.isSnapshotValid(snapshot) then return "—" end
+    if not GameInfo.isSnapshotValid(snapshot) then return nil end
     local speed = tonumber(snapshot.syncSpeed)
     if not speed or speed ~= speed or speed <= 0 or speed == math.huge then speed = snapshot.speed end
-    return type(speed) == "number" and speed == speed and speed >= 0 and speed < math.huge and string.format("%.0f", speed) or "—"
+    return type(speed) == "number" and speed == speed and speed >= 0 and speed < math.huge and string.format("%.0f", speed) or nil
   end
   local function updateInformation()
     if not context.refs.informationGui.Parent then return end
     local time = os.clock(); local gateEnabled = Utils.getConfigValue("ClashGateInfoVisible") == true
     local travelVisible = Utils.getConfigValue("ClashTravelTimeVisible") == true; local distanceVisible = Utils.getConfigValue("ClashDistanceVisible") == true
+    local apVisible = Utils.getConfigValue("APMaxCpsVisible") == true; setAPVisible(apVisible)
+    if apVisible then
+      local apStatus = AutoParry.getStatus(); local peak = apStatus and apStatus.maxObservedCps
+      setTextIfChanged(apLabel, "AP max CPS (observed): " .. (type(peak) == "number" and string.format("%.2f", peak) or "—"))
+    end
     if not gateEnabled and not travelVisible and not distanceVisible then
       setGateVisible(false); setTravelVisible(false)
       setDistanceVisible(false); return
@@ -162,60 +181,59 @@ function Controller.create(context)
       setTextIfChanged(gateLabel, table.concat(lines, "\n"))
     end
     local gateVisible = gateEnabled and gateLabel.Text ~= ""; setGateVisible(gateVisible)
-    setTravelVisible(travelVisible)
     if travelVisible and time >= nextTravelUpdate then
       nextTravelUpdate = time + 0.05; local status, snapshot = getTelemetry(time)
       local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
-      if not stats then
-        setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\nBall travel time: —")
-      else
+      local lines = {}
+      if speedText then lines[#lines + 1] = "Current SPD: " .. speedText end
+      if stats then
         local me = Players.LocalPlayer and Players.LocalPlayer.UserId
-        local text
         if stats.frozen then
           if stats.deceasedId then
-            local who = stats.deceasedId == me and "You" or "Opponent"; local value = stats.fatalTravelTime and string.format("%.0f ms", stats.fatalTravelTime * 1000) or "unavailable"
-            local previousWho = stats.penultimateTarget == me and "you" or (stats.penultimateTarget == stats.partnerId and "opponent" or "—")
-            local previous = stats.penultimateTravelTime and string.format("%.0f ms", stats.penultimateTravelTime * 1000) or "unavailable"
-            text = who .. " died\nTarget time to death: " .. value .. "\nPrevious (" .. previousWho .. "): " .. previous
+            lines[#lines + 1] = (stats.deceasedId == me and "You" or "Opponent") .. " died"
+            if type(stats.fatalTravelTime) == "number" then lines[#lines + 1] = string.format("Target time to death: %.0f ms", stats.fatalTravelTime * 1000) end
+            if type(stats.penultimateTravelTime) == "number" and stats.penultimateTarget then
+              local who = stats.penultimateTarget == me and "you"
+                or (stats.penultimateTarget == stats.partnerId and "opponent" or tostring(stats.penultimateTarget))
+              lines[#lines + 1] = string.format("Previous (%s): %.0f ms", who, stats.penultimateTravelTime * 1000)
+            end
           else
-            text = "Clash ended\nFinal time: unavailable"
+            lines[#lines + 1] = "Clash ended"
           end
         else
-          local value = stats.travelStartedAt and string.format("%.0f ms", math.max(0, time - stats.travelStartedAt) * 1000) or "—"
-          local who = stats.travelTarget == me and "You" or (stats.travelTarget == stats.partnerId and "Opponent" or "—")
-          local last = stats.lastTravelTime and string.format("%.0f ms", stats.lastTravelTime * 1000) or "—"
-          local lastWho = stats.lastTravelTarget == me and "you" or (stats.lastTravelTarget == stats.partnerId and "opponent" or "—")
-          text = "Target: " .. who .. " | Time: " .. value .. "\nLast exchange (" .. lastWho .. "): " .. last
+          if stats.travelTarget and stats.travelStartedAt then
+            local who = stats.travelTarget == me and "You" or (stats.travelTarget == stats.partnerId and "Opponent" or tostring(stats.travelTarget))
+            lines[#lines + 1] = string.format("Target: %s | Time: %.0f ms", who, math.max(0, time - stats.travelStartedAt) * 1000)
+          end
+          if stats.lastTravelTarget and type(stats.lastTravelTime) == "number" then
+            local who = stats.lastTravelTarget == me and "you" or (stats.lastTravelTarget == stats.partnerId and "opponent" or tostring(stats.lastTravelTarget))
+            lines[#lines + 1] = string.format("Last exchange (%s): %.0f ms", who, stats.lastTravelTime * 1000)
+          end
         end
-        setTextIfChanged(travelLabel, "Current SPD: " .. speedText .. "\n" .. text)
       end
+      setTextIfChanged(travelLabel, table.concat(lines, "\n"))
     end
-    setDistanceVisible(distanceVisible)
-    if not distanceVisible or time < nextDistanceUpdate then return end
-    nextDistanceUpdate = time + 0.1; local status, snapshot = getTelemetry(time)
-    local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
-    local text
-    if stats and (not stats.frozen or stats.endReason == "jogador morreu") then
-      local function sampleText(sample)
-        if not sample then return "—" end
-        local distance = type(sample.distance) == "number" and string.format("%.1f", sample.distance) or "?"
-        local speed = type(sample.speed) == "number" and string.format("%.0f", sample.speed) or "?"; return distance .. " studs | SPD " .. speed
+    setTravelVisible(travelVisible and travelLabel.Text ~= "")
+    if distanceVisible and time >= nextDistanceUpdate then
+      nextDistanceUpdate = time + 0.1; local status, snapshot = getTelemetry(time)
+      local stats = status and status.clashStats; local speedText = formatSpeed(snapshot)
+      local lines = {}
+      if speedText then lines[#lines + 1] = "Current SPD: " .. speedText end
+      if stats and (not stats.frozen or stats.endReason == "jogador morreu") then
+        local function addSample(name, sample)
+          if not sample then return end
+          local parts = {}
+          if type(sample.distance) == "number" then parts[#parts + 1] = string.format("%.1f studs", sample.distance) end
+          if type(sample.speed) == "number" then parts[#parts + 1] = string.format("SPD %.0f", sample.speed) end
+          if #parts > 0 then lines[#lines + 1] = name .. ": " .. table.concat(parts, " | ") end
+        end
+        addSample("Start", stats.startSample); addSample(stats.frozen and "Player died" or "Current", stats.endSample)
+        if type(stats.currentCps) == "number" then lines[#lines + 1] = string.format("Current CPS: %.2f", stats.currentCps) end
+        if type(stats.duration) == "number" then lines[#lines + 1] = string.format("Duration: %.2fs", stats.duration) end
       end
-      local cps = type(stats.currentCps) == "number" and string.format("%.2f", stats.currentCps) or "—"
-      text = string.format(
-        "Current SPD: %s\nStart: %s\n%s: %s\nCurrent CPS: %s | %.2fs",
-        speedText,
-        sampleText(stats.startSample),
-        stats.frozen and (stats.endReason == "jogador morreu" and "Player died" or (stats.endReason == "oponente morreu" and "Opponent died" or "End"))
-          or "Current",
-        sampleText(stats.endSample),
-        cps,
-        stats.duration or 0
-      )
-    else
-      text = "Current SPD: " .. speedText .. "\nClash: —\nCurrent CPS: —"
+      setTextIfChanged(distanceLabel, table.concat(lines, "\n"))
     end
-    setTextIfChanged(distanceLabel, text)
+    setDistanceVisible(distanceVisible and distanceLabel.Text ~= "")
   end
   local elapsed = 0
   trackConn(RunService.Heartbeat:Connect(function(dt)

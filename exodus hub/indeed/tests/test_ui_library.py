@@ -98,7 +98,7 @@ local function newKit(extra)
  return uikit.create(options)
 end
 local function fullDeps()
- return {Utils=utils,UIConfig=uiconfig,GameInfo=gameInfo,AutoSpam={getStatus=function() return {} end},
+ return {Utils=utils,UIConfig=uiconfig,GameInfo=gameInfo,AutoSpam={getStatus=function() return {} end},AutoParry={getStatus=function() return {} end},
   UIKit=uikit,UIPages=uipages,UIActions=uiactions,Runtime=uiruntime,Theme=uitheme,NotificationPolicy=uinotifications,Context=uicontext,Window=uiwindow,Floating=uifloating,Notifications=uinotificationview,Telemetry=uitelemetry,Input=uiinput,Lifecycle=uilifecycle,Controls={}}
 end
 '''

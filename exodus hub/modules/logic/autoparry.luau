@@ -3,6 +3,7 @@
 -- module
 local AutoParry = {}
 local utils, gameInfo, remote, cooldownInfo
+local maxObservedCps = nil
 local state = {
   phase = "detached",
   reason = "initial",
@@ -166,6 +167,7 @@ local function activeWindowFactor() return configuredFactor() end
 local function recordAutoParryRequest()
   local now, previous = clock(), state.lastAutoParryClickAt; local interval = previous and now - previous or nil
   state.autoParryCps = finite(interval) and interval > 0 and 1 / interval or 0; state.lastAutoParryClickAt = now
+  if state.autoParryCps > 0 then maxObservedCps = math.max(maxObservedCps or 0, state.autoParryCps) end
 end
 local function trainingGeometry(speed, factor)
   speed = finite(speed) and math.max(speed, CONFIG.TRAINING_BASE_SPEED) or CONFIG.TRAINING_BASE_SPEED; local span = CONFIG.TRAINING_MAX_SPEED - CONFIG.TRAINING_BASE_SPEED
@@ -970,6 +972,7 @@ function AutoParry.getStatus()
       samples = state.pingCount,
     },
     cps = state.autoParryCps,
+    maxObservedCps = maxObservedCps,
     windowFactor = state.windowFactor,
     cpsGate = {
       adaptive = false,
