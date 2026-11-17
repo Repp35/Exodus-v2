@@ -18,11 +18,8 @@ from typing import Iterable, Sequence
 
 
 FORMATTER_PATH = Path(__file__).resolve()
-HUB_ROOT = next(
-    (parent for parent in FORMATTER_PATH.parents if (parent / "stylua.toml").is_file()),
-    FORMATTER_PATH.parent,
-)
 DEFAULT_CONFIG = FORMATTER_PATH.parent / "stylua.toml"
+HUB_ROOT = DEFAULT_CONFIG.parent.parent
 LUA_SUFFIXES = {".luau"}
 SKIP_DIRS = {
     ".git",
@@ -1086,20 +1083,20 @@ def collect_files(paths: Sequence[Path], patterns: Sequence[str]) -> list[Path]:
         if not path.is_file():
             raise FormatterError(f"Não é um arquivo ou pasta: {path}")
         if path.suffix.lower() not in LUA_SUFFIXES:
-            raise FormatterError(f"O arquivo precisa ser .lua ou .luau: {path}")
+            raise FormatterError(f"O arquivo precisa ser .luau: {path}")
 
         resolved = path.resolve()
         files.setdefault(resolved, resolved)
 
     if not files:
-        raise FormatterError("Nenhum arquivo .lua ou .luau encontrado.")
-    return sorted(files.values(), key=lambda item: str(item).casefold())
+        raise FormatterError("Nenhum arquivo .luau encontrado.")
+    return sorted(files.values(), key=lambda item: (str(item).casefold(), str(item)))
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Formata arquivos Lua/Luau em lote usando o StyLua e as preferências "
+            "Formata arquivos Luau em lote usando o StyLua e as preferências "
             "definidas em stylua.toml. Sem caminhos, processa a pasta do hub."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -1108,7 +1105,7 @@ def build_parser() -> argparse.ArgumentParser:
         "paths",
         nargs="*",
         type=Path,
-        help="arquivos .lua/.luau ou pastas; pastas são percorridas recursivamente",
+        help="arquivos .luau ou pastas; pastas são percorridas recursivamente",
     )
 
     output = parser.add_mutually_exclusive_group()
@@ -1367,7 +1364,7 @@ def format_files(args: argparse.Namespace) -> int:
         args.title = args.title.strip()
         if not args.title or any(char in args.title for char in "\r\n") or "]]" in args.title:
             raise FormatterError("--title precisa ser um título de uma linha, sem ']]'.")
-    if not args.in_place:
+    if not args.in_place and not args.check:
         source_set = set(sources)
         for source_path in sources:
             destination = output_path_for(source_path, in_place=False)
@@ -1393,14 +1390,18 @@ def format_files(args: argparse.Namespace) -> int:
     with tempfile.TemporaryDirectory(prefix="exodus-format-") as temporary_directory:
         stage_root = Path(temporary_directory)
         staged_files = []
+        originals: dict[Path, bytes] = {}
 
         for index, source_path in enumerate(sources, start=1):
+            original = source_path.read_bytes()
             try:
-                source = source_path.read_text(encoding="utf-8-sig")
+                source = original.decode("utf-8-sig")
             except UnicodeDecodeError as error:
                 raise FormatterError(f"Arquivo não está em UTF-8: {source_path} ({error})") from error
+            if args.check or args.in_place:
+                originals[source_path] = original
 
-            prepared = source
+            prepared = source.replace("\r\n", "\n").replace("\r", "\n")
             prepared = strip_unwanted_comments(prepared, preserve_sections=True)
             prepared = organize_literal_constants(prepared)
             prepared = remove_empty_lines(prepared)
@@ -1471,14 +1472,8 @@ def format_files(args: argparse.Namespace) -> int:
         if args.check:
             changed = []
             for staged_path, source_path in staged_to_source.items():
-                formatted = formatted_content(staged_path, source_path)
-                try:
-                    original = source_path.read_text(encoding="utf-8-sig")
-                except UnicodeDecodeError as error:
-                    raise FormatterError(
-                        f"Arquivo não está em UTF-8: {source_path} ({error})"
-                    ) from error
-                if formatted != original:
+                formatted = formatted_content(staged_path, source_path).encode("utf-8")
+                if formatted != originals[source_path]:
                     changed.append(source_path)
                     print(f"Precisa formatar: {source_path}")
             if not changed:
@@ -1486,11 +1481,14 @@ def format_files(args: argparse.Namespace) -> int:
             return 1 if changed else 0
 
         for staged_path, source_path in staged_to_source.items():
+            formatted = formatted_content(staged_path, source_path)
+            if args.in_place and formatted.encode("utf-8") == originals[source_path]:
+                continue
             destination = output_path_for(source_path, args.in_place)
             permissions = source_path.stat().st_mode & 0o777
             write_atomically(
                 destination,
-                formatted_content(staged_path, source_path),
+                formatted,
                 permissions,
             )
             if args.verbose:

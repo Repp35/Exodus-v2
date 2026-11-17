@@ -3,7 +3,10 @@ import sys
 import tempfile
 import unittest
 import re
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import formatter
@@ -11,13 +14,55 @@ import formatter
 
 class FormatterStyleTests(unittest.TestCase):
     def test_module_sections_are_top_level(self):
-        for path in sorted((formatter.HUB_ROOT.parent / "modules").rglob("*.luau")):
+        paths = sorted((formatter.HUB_ROOT / "modules").rglob("*.luau"))
+        self.assertTrue(paths, "nenhum módulo Luau encontrado")
+        for path in paths:
             with self.subTest(path=path):
                 for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                     self.assertFalse(
                         line[:1].isspace() and re.fullmatch(r"\s+--\s+[A-Za-z][A-Za-z0-9_/-]*\s*", line),
                         f"seção aninhada em {path}:{line_number}",
                     )
+
+    def test_default_paths_include_loader_and_modules(self):
+        paths = formatter.collect_files([], [])
+        self.assertIn(formatter.HUB_ROOT / "loader.luau", paths)
+        self.assertTrue(any(path.is_relative_to(formatter.HUB_ROOT / "modules") for path in paths))
+
+    def test_check_does_not_require_distinct_output_paths(self):
+        with tempfile.TemporaryDirectory() as directory, redirect_stdout(StringIO()):
+            root = Path(directory)
+            first = root / "sample.luau"
+            second = root / "sample_formatted.luau"
+            for path in (first, second):
+                path.write_text("return 1\n", encoding="utf-8")
+            args = formatter.build_parser().parse_args(["--check", str(first), str(second)])
+            self.assertEqual(formatter.format_files(args), 1)
+            self.assertEqual(first.read_bytes(), b"return 1\n")
+            self.assertEqual(second.read_bytes(), b"return 1\n")
+
+    def test_check_agrees_with_in_place_on_bom_and_crlf(self):
+        with tempfile.TemporaryDirectory() as directory, redirect_stdout(StringIO()):
+            path = Path(directory) / "sample.luau"
+            parser = formatter.build_parser()
+            format_args = parser.parse_args(["--in-place", str(path)])
+            check_args = parser.parse_args(["--check", str(path)])
+            path.write_text("return 1\n", encoding="utf-8")
+            self.assertEqual(formatter.format_files(format_args), 0)
+            expected = path.read_bytes()
+
+            for original in (b"\xef\xbb\xbf" + expected, expected.replace(b"\n", b"\r\n")):
+                with self.subTest(original=original):
+                    path.write_bytes(original)
+                    self.assertEqual(formatter.format_files(check_args), 1)
+                    self.assertEqual(path.read_bytes(), original)
+                    self.assertEqual(formatter.format_files(format_args), 0)
+                    self.assertEqual(path.read_bytes(), expected)
+                    self.assertEqual(formatter.format_files(check_args), 0)
+
+            with patch.object(formatter, "write_atomically") as write:
+                self.assertEqual(formatter.format_files(format_args), 0)
+                write.assert_not_called()
 
     def test_nested_named_table_expands_without_splitting_values(self):
         source = ('    connectionCounts = { global = #state.globalConnections, '
