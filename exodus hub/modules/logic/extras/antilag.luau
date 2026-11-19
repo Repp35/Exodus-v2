@@ -675,7 +675,8 @@ end
 local function renderDecision(position, half, previous, outsideSince, now, view, turnHold)
   local delta = position - view.position; local options = view.options
   local origin = view.focus or view.position; local rangeDelta = position - origin
-  local dx, dy, dz = math.max(0, math.abs(rangeDelta.X) - half.X), math.max(0, math.abs(rangeDelta.Y) - half.Y), math.max(0, math.abs(rangeDelta.Z) - half.Z); local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
+  local dx, dy, dz = math.max(0, math.abs(rangeDelta.X) - half.X), math.max(0, math.abs(rangeDelta.Y) - half.Y), math.max(0, math.abs(rangeDelta.Z) - half.Z)
+  local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
   if surfaceDistance > options.CullDistance then return "distance", nil end
   local vertical = verticalDecision(position.Y - half.Y, position.Y + half.Y, view.position.Y, previous, options)
   if vertical then return vertical, nil end
@@ -899,8 +900,7 @@ local function createSpatialController(services, getOption)
     if services.GetFocusY then cameraSnapshot.options.CullAnchorY = services.GetFocusY() end
     if services.GetFloorY then cameraSnapshot.options.CullFloorY = services.GetFloorY() end
     if not active or not alive then return end
-    local restoreLimit = math.min(#hiddenEntries, 32)
-    local restoreDeadline = os.clock() + math.max(0, deadline - os.clock()) * 0.5
+    local restoreLimit = math.min(#hiddenEntries, 32); local restoreDeadline = os.clock() + math.max(0, deadline - os.clock()) * 0.5
     for _ = 1, restoreLimit do
       if #hiddenEntries == 0 or os.clock() >= restoreDeadline then break end
       if hiddenCursor > #hiddenEntries then hiddenCursor = 1 end
@@ -943,8 +943,7 @@ local function createSpatialController(services, getOption)
   end
   function controller:Refresh()
     if not active then return end
-    nextCycleAt, cycling, work = 0, false, nil
-    updateLobby()
+    nextCycleAt, cycling, work = 0, false, nil; updateLobby()
   end
   function controller:GetStatus()
     return { Tracked = trackedCount, Hidden = hiddenCount, Chunks = #chunkList, LobbyHidden = lobbyHidden, Indexing = #stack > 0 or head <= tail }
@@ -1092,8 +1091,7 @@ local function startSession()
       local character = viewedCharacter(); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
       local root = character and character:FindFirstChild("HumanoidRootPart")
       if root and humanoid and humanoid.Health > 0 then
-        local footY = root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5
-        owner.floorY = owner.floorY and math.min(owner.floorY, footY) or footY
+        local footY = root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5; owner.floorY = owner.floorY and math.min(owner.floorY, footY) or footY
       end
       return owner.floorY and owner.floorY - 2 or nil
     end,
