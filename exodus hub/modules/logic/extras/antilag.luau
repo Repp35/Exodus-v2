@@ -8,8 +8,7 @@ local MAX_REVEALS_PER_TICK = 4
 local function shouldHideVisual(object, reason)
   if revealedVisuals[object] then return false end
   if reason then return true end
-  revealedVisuals[object] = true
-  return false
+  revealedVisuals[object] = true; return false
 end
 
 -- configuration
@@ -708,7 +707,7 @@ local function createSpatialController(services, getOption)
   local driver
   local connections = {}; local hiddenCount, trackedCount = 0, 0
   local lobbyHidden, lastLobby = false, nil; local elapsed, holdUntil, lastLook = 1, 0, nil
-    local cameraSnapshot, lastCameraFrame
+  local cameraSnapshot, lastCameraFrame
   local hiddenEntries, hiddenCursor = {}, 1
   local function option(key, fallback)
     local value = getOption(key)
@@ -900,13 +899,13 @@ local function createSpatialController(services, getOption)
       else
         local position, half = visualBounds(object); local reason = position and renderDecision(position, half, entry.reason, entry.outsideSince, now, cameraSnapshot, now < holdUntil)
         if not shouldHideVisual(object, reason) then
-          entry.reason, entry.outsideSince = nil, nil; setHidden(entry, false); revealCount += 1
+          entry.reason, entry.outsideSince = nil, nil; setHidden(entry, false)
+          revealCount += 1
         else
           hiddenCursor += 1
         end
       end
     end
-
   end
   local function clearSpatial()
     for _, entry in pairs(records) do
@@ -914,8 +913,7 @@ local function createSpatialController(services, getOption)
       setHidden(entry, false)
     end
     records, chunks, chunkList, stack, pending, queued = {}, {}, {}, {}, {}, {}; head, tail, chunkIndex, trackedCount = 1, 0, 1, 0
-    lastLook, elapsed = nil, 1
-    hiddenEntries, hiddenCursor, lastCameraFrame = {}, 1, nil
+    lastLook, elapsed = nil, 1; hiddenEntries, hiddenCursor, lastCameraFrame = {}, 1, nil
   end
   local function refreshDriver()
     if driver then driver:Disconnect(); driver = nil end
