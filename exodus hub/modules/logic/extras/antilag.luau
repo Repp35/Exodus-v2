@@ -1006,10 +1006,10 @@ end
 local function requestedProfile()
   local profile = table.clone(PROFILE); local distance = tonumber(setting("AntiLagRenderDistance"))
   if not distance or distance ~= distance or math.abs(distance) == math.huge then distance = CONFIG.defaults.AntiLagRenderDistance end
-  profile.CullDistance = math.clamp(distance, 1, 1200)
-  local removeEffects = setting("AntiLagRemoveEffects") == true; profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds")
-  profile.HideLobbyInMatch = setting("AntiLagHideLobby"); profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = removeEffects, removeEffects, removeEffects
-  profile.GameNoVFX, profile.GameReducedUI = removeEffects, removeEffects; return profile
+  profile.CullDistance = math.clamp(distance, 1, 1200); local removeEffects = setting("AntiLagRemoveEffects") == true
+  profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds"); profile.HideLobbyInMatch = setting("AntiLagHideLobby")
+  profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = removeEffects, removeEffects, removeEffects; profile.GameNoVFX, profile.GameReducedUI = removeEffects, removeEffects
+  return profile
 end
 local function loadNativeModules(owner)
   if not owner.compatible then return end
