@@ -674,8 +674,7 @@ end
 local function renderDecision(position, half, previous, outsideSince, now, view, turnHold)
   local delta = position - view.position; local options = view.options
   local origin = view.focus or view.position; local rangeDelta = position - origin
-  local dx, dy, dz = math.abs(rangeDelta.X) + half.X, math.abs(rangeDelta.Y) + half.Y, math.abs(rangeDelta.Z) + half.Z
-  local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
+  local dx, dy, dz = math.abs(rangeDelta.X) + half.X, math.abs(rangeDelta.Y) + half.Y, math.abs(rangeDelta.Z) + half.Z; local surfaceDistance = math.sqrt(dx * dx + dy * dy + dz * dz)
   if surfaceDistance > options.CullDistance then return "distance", nil end
   local vertical = verticalDecision(position.Y - half.Y, position.Y + half.Y, view.position.Y, previous, options)
   if vertical then return vertical, nil end
@@ -806,10 +805,7 @@ local function createSpatialController(services, getOption)
     trackedCount += 1
     if cameraSnapshot then
       local actualPosition, half = visualBounds(object)
-      if actualPosition then
-        entry.reason, entry.outsideSince = renderDecision(actualPosition, half, nil, nil, os.clock(), cameraSnapshot, false)
-        setHidden(entry, entry.reason ~= nil)
-      end
+      if actualPosition then entry.reason, entry.outsideSince = renderDecision(actualPosition, half, nil, nil, os.clock(), cameraSnapshot, false); setHidden(entry, entry.reason ~= nil) end
     end
   end
   local function enqueue(object)
@@ -1008,11 +1004,10 @@ local function setting(key)
   return value
 end
 local function requestedProfile()
-  local profile = table.clone(PROFILE)
-  profile.CullDistance = 128; local removeEffects = setting("AntiLagRemoveEffects") == true
-  profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds"); profile.HideLobbyInMatch = setting("AntiLagHideLobby")
-  profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = removeEffects, removeEffects, removeEffects; profile.GameNoVFX, profile.GameReducedUI = removeEffects, removeEffects
-  return profile
+  local profile = table.clone(PROFILE); profile.CullDistance = 128
+  local removeEffects = setting("AntiLagRemoveEffects") == true; profile.GameSwordSounds = not setting("AntiLagRemoveSwordSounds")
+  profile.HideLobbyInMatch = setting("AntiLagHideLobby"); profile.Particles, profile.TrailsAndBeams, profile.LegacyEffects = removeEffects, removeEffects, removeEffects
+  profile.GameNoVFX, profile.GameReducedUI = removeEffects, removeEffects; return profile
 end
 local function loadNativeModules(owner)
   if not owner.compatible then return end
@@ -1080,9 +1075,7 @@ local function startSession()
     local scripts = player:FindFirstChild("PlayerScripts") or player:WaitForChild("PlayerScripts", 10); assert(scripts, "PlayerScripts indisponível")
     owner.adapter = createGameAdapter({ Workspace = workspace, Player = player, PlayerScripts = scripts }, getOption)
   end
-  local function viewedCharacter()
-    return player.Character
-  end
+  local function viewedCharacter() return player.Character end
   owner.spatial = createSpatialController({
     Workspace = workspace,
     Roots = visualRoots,
@@ -1093,11 +1086,9 @@ local function startSession()
       return root and root.Position.Y or nil
     end,
     GetFloorY = function()
-      local character = viewedCharacter()
-      local humanoid = character and character:FindFirstChildOfClass("Humanoid"); local root = character and character:FindFirstChild("HumanoidRootPart")
-      if root and humanoid and humanoid.Health > 0 then
-        return root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5 - 2
-      end
+      local character = viewedCharacter(); local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+      local root = character and character:FindFirstChild("HumanoidRootPart")
+      if root and humanoid and humanoid.Health > 0 then return root.Position.Y - humanoid.HipHeight - root.Size.Y * 0.5 - 2 end
       return nil
     end,
     GetFocusPosition = function()
